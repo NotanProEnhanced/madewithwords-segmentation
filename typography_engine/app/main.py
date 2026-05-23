@@ -6,9 +6,11 @@ Later phases add /render.
 """
 from __future__ import annotations
 
+import json
 import uuid
+from typing import List, Optional
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -20,11 +22,27 @@ from .pipeline.debugviz import render_debug_set
 from .pipeline.edges import detect_edges
 from .pipeline.landmarks import detect_landmarks, haar_face_bbox
 from .pipeline.pathgen import catmull_rom_to_bezier_d
+from .pipeline.portrait import build_portrait
 from .pipeline.preprocess import load_and_normalize
 from .pipeline.raster import write_png
 from .pipeline.silhouette import extract_silhouette
 from .pipeline.svgbuild import SvgDoc, validate_svg
 from .pipeline.warnings import WarningCollector
+
+
+def _parse_words(words: Optional[str], words_json: Optional[str]) -> List[str]:
+    """Accept words as JSON array string or as a comma/newline separated string."""
+    if words_json:
+        try:
+            data = json.loads(words_json)
+            if isinstance(data, list):
+                return [str(x) for x in data]
+        except json.JSONDecodeError:
+            pass
+    if words:
+        raw = words.replace("\n", ",")
+        return [w for w in (s.strip() for s in raw.split(",")) if w]
+    return []
 
 # Stroke styling for region debug output (hex only).
 _REGION_COLORS = {
@@ -153,6 +171,77 @@ async def debug_regions(image: UploadFile = File(...)) -> JSONResponse:
             "region_names": an.regions.names(),
             "svg": f"/outputs/{svg_path.name}",
             "png": f"/outputs/{png_path.name}",
+            "warnings": warns.as_list(),
+        }
+    )
+
+
+@app.post("/render")
+async def render(
+    image: UploadFile = File(...),
+    words: Optional[str] = Form(None),
+    words_json: Optional[str] = Form(None),
+    min_font_px: Optional[float] = Form(None),
+    uppercase: bool = Form(True),
+    background_hex: Optional[str] = Form(None),
+    foreground_hex: Optional[str] = Form(None),
+) -> JSONResponse:
+    """Render a typographic portrait: validated SVG + PNG from approved words."""
+    warns = WarningCollector()
+    img_bytes = await image.read()
+    if not img_bytes:
+        return JSONResponse({"ok": False, "error": "empty_upload"}, status_code=400)
+
+    word_list = _parse_words(words, words_json)
+    if not word_list:
+        return JSONResponse({"ok": False, "error": "no_words"}, status_code=400)
+
+    cfg = RenderConfig()
+    if min_font_px is not None:
+        cfg.min_font_px = float(min_font_px)
+    if background_hex:
+        cfg.background_hex = background_hex
+    if foreground_hex:
+        cfg.foreground_hex = foreground_hex
+    try:
+        cfg.validate()
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": "bad_config", "detail": str(e)}, status_code=400)
+
+    try:
+        an = analyze_image(img_bytes, cfg, warns)
+        result = build_portrait(an, word_list, cfg, warns, uppercase=uppercase)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
+    except Exception as e:  # noqa: BLE001
+        warns.error("render", "render_failed", str(e))
+        return JSONResponse({"ok": False, "error": "render_failed", "detail": str(e), "warnings": warns.as_list()}, status_code=500)
+
+    if warns.has_errors():
+        return JSONResponse({"ok": False, "error": "render_incomplete", "warnings": warns.as_list()}, status_code=422)
+
+    job_id = uuid.uuid4().hex[:12]
+    svg_path = OUTPUTS_DIR / f"{job_id}.svg"
+    svg_path.write_text(result.svg, encoding="utf-8")
+    png_path = OUTPUTS_DIR / f"{job_id}.png"
+    try:
+        write_png(result.svg, png_path, output_width=cfg.canvas_w)
+    except Exception as e:  # noqa: BLE001
+        warns.warn("render", "png_export_failed", f"PNG export failed: {e}")
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "job_id": job_id,
+            "working_size": {"w": an.img.w, "h": an.img.h},
+            "face_source": an.face_source,
+            "words_used": word_list,
+            "text_runs": [
+                {"region": r.region, "font_size": r.font_size, "kind": r.kind, "chars": len(r.text)}
+                for r in result.runs
+            ],
+            "svg": f"/outputs/{svg_path.name}",
+            "png": f"/outputs/{png_path.name}" if png_path.exists() else None,
             "warnings": warns.as_list(),
         }
     )

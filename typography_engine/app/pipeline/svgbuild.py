@@ -59,6 +59,28 @@ class SvgDoc:
         """Path placed in <defs> purely as a textPath target (not drawn)."""
         self.defs.append(f'<path id="{esc(path_id)}" d="{esc(d)}" />')
 
+    def add_text_on_path(
+        self,
+        path_id: str,
+        d: str,
+        text: str,
+        font_size: float,
+        fill: str = "#000000",
+        font_family: str = "Arial, Helvetica, sans-serif",
+        font_weight: str = "bold",
+        letter_spacing: float = 0.0,
+        start_offset: str = "0%",
+    ) -> None:
+        """Register the target path in defs and flow text along it."""
+        self.add_def_path(path_id, d)
+        ls = f' letter-spacing="{letter_spacing}"' if letter_spacing else ""
+        self.body.append(
+            f'<text font-family="{esc(font_family)}" font-size="{font_size}" '
+            f'font-weight="{esc(font_weight)}" fill="{require_hex(fill)}"{ls}>'
+            f'<textPath xlink:href="#{esc(path_id)}" startOffset="{esc(start_offset)}">'
+            f"{esc(text)}</textPath></text>"
+        )
+
     def to_svg(self) -> str:
         require_hex(self.background)
         defs = "\n".join(self.defs)
