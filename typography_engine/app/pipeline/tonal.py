@@ -20,13 +20,14 @@ is ever cut and no stranded single letters appear.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
 
 from ..config import RenderConfig
-from .svgbuild import SvgDoc, esc
+from .svgbuild import SvgDoc, esc, require_hex
 from .textlayout import TextRun, normalize_words
 from .warnings import WarningCollector
 
@@ -109,51 +110,116 @@ def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) ->
     return dark * (1.0 - w) + np.clip(dark ** 0.55, 0.0, 1.0) * w
 
 
-# Feature placement priority: the first approved word anchors the most
-# important feature (eyes/brow), then jaw, then the silhouette crown frames it.
-_FEATURE_PRIORITY = {"brow_line": 0, "jaw_line": 1, "lip_line": 1, "silhouette": 2}
+# Interior features that anchor the likeness, in word-assignment priority order:
+# the first approved word lands on the eyes, then the mouth, then jaw. Each is a
+# span of MediaPipe mesh indices whose bounding box centers the word on the
+# feature. Words share ONE headline size (a clean multiple of the texture font)
+# so they read as a consistent tier rather than mismatched labels.
+_JAW = (172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397)
+_FEATURE_BANDS = (
+    ("eyes", _EYE_L + _EYE_R),
+    ("mouth", _LIPS),
+    ("jaw", _JAW),
+)
 
 
-def _add_feature_words(
-    doc: SvgDoc,
-    an,
-    scale: float,
-    approved: Sequence[str],
-    cfg: RenderConfig,
-    H: int,
-    warns: WarningCollector,
-    uppercase: bool,
-) -> List[TextRun]:
-    """Tier 1: large readable words flowed along the key facial features.
+@dataclass
+class _Placement:
+    name: str
+    word: str
+    cx: float
+    cy: float
+    font: float
+    angle: float
+    w: float
+    h: float
 
-    The tonal grid (tier 2) carries shading/likeness; this layer places the
-    user's words at a legible size on the eyes/brow, jaw and silhouette so a
-    viewer reads them at arm's length. Words are haloed to stay legible over the
-    texture. Failures here are non-fatal -- the texture portrait stands alone."""
-    from .textlayout import RegionPath, layout_text_runs
 
-    regions = getattr(getattr(an, "regions", None), "paths", None)
-    if not regions:
+def _feature_placements(
+    an, scale: float, approved: Sequence[str], cfg: RenderConfig, W: int, H: int, font_texture: float
+) -> List[_Placement]:
+    """One word centered on each interior feature, all at one headline size.
+
+    The headline size is a fixed multiple of the texture font (so the two tiers
+    are typographically related) clamped to the face's scale, then reduced just
+    enough that the widest word still fits its feature. Words follow the head
+    tilt (eye-line angle)."""
+    lm = getattr(an, "landmarks", None)
+    if lm is None:
         return []
+    pts = lm.points * scale
 
-    scaled = [
-        RegionPath(rp.name, rp.points * scale, rp.closed, rp.kind) for rp in regions
-    ]
-    scaled.sort(key=lambda rp: _FEATURE_PRIORITY.get(rp.name, 9))
+    le = pts[list(_EYE_L)].mean(axis=0)
+    re = pts[list(_EYE_R)].mean(axis=0)
+    angle = float(np.degrees(np.arctan2(re[1] - le[1], re[0] - le[0])))
+    if abs(angle) > 35:  # implausible tilt -> keep level
+        angle = 0.0
+    face_h = float(pts[:, 1].max() - pts[:, 1].min()) or float(H)
 
-    local = WarningCollector()  # don't let supplementary-layer warnings fail the render
-    runs = layout_text_runs(scaled, approved, cfg, image_h=H, warns=local, uppercase=uppercase)
-    for r in runs:
-        doc.add_haloed_text_on_path(
-            path_id=f"feat_{r.path_id}",
-            d=r.path_d,
-            text=r.text,
-            font_size=r.font_size,
-            fill=cfg.foreground_hex,
-            halo=cfg.background_hex,
-            font_family=cfg.primary_font_family,
-            font_weight=cfg.font_weight,
-            start_offset=r.start_offset,
+    # Gather feature boxes first so the headline size can respect every feature.
+    boxes = []
+    wi = 0
+    for name, grp in _FEATURE_BANDS:
+        if wi >= len(_FEATURE_BANDS):
+            break
+        p = pts[list(grp)]
+        x0, x1 = float(p[:, 0].min()), float(p[:, 0].max())
+        y0, y1 = float(p[:, 1].min()), float(p[:, 1].max())
+        boxes.append((name, approved[wi % len(approved)], (x0 + x1) / 2.0, (y0 + y1) / 2.0, x1 - x0))
+        wi += 1
+
+    # Headline size: ~4x the texture, capped by face height, then shrunk so the
+    # widest word fits ~1.25x its feature width (keeps words inside the face).
+    font = min(4.0 * font_texture, 0.085 * face_h)
+    for _name, word, _cx, _cy, fw in boxes:
+        n = max(1, len(word))
+        fit = (fw * 1.25) / (n * _MONO_ADVANCE)
+        font = min(font, fit) if fit > 0 else font
+    font = max(font, font_texture * 1.6)
+
+    out: List[_Placement] = []
+    used: List[Tuple[float, float, float, float]] = []
+    for name, word, cx, cy, _fw in boxes:
+        w = max(1, len(word)) * _MONO_ADVANCE * font
+        h = font
+        if any(abs(cx - ux) < (w + uw) * 0.30 and abs(cy - uy) < (h + uh) * 0.62
+               for ux, uy, uw, uh in used):
+            continue
+        out.append(_Placement(name, word, cx, cy, font, angle, w, h))
+        used.append((cx, cy, w, h))
+    return out
+
+
+def _knockout_dark(dark: np.ndarray, placements: List[_Placement]) -> None:
+    """Blank the fine texture under each big word so it sits in clean negative
+    space and reads as the feature itself rather than colliding with the grid."""
+    H, W = dark.shape[:2]
+    for pl in placements:
+        pad_w, pad_h = pl.w * 0.05, pl.h * 0.10
+        x0 = int(max(0, pl.cx - pl.w / 2 - pad_w))
+        x1 = int(min(W, pl.cx + pl.w / 2 + pad_w))
+        y0 = int(max(0, pl.cy - pl.h / 2 - pad_h))
+        y1 = int(min(H, pl.cy + pl.h / 2 + pad_h))
+        if x1 > x0 and y1 > y0:
+            dark[y0:y1, x0:x1] = 0.0
+
+
+def _render_feature_words(
+    doc: SvgDoc, placements: List[_Placement], cfg: RenderConfig
+) -> List[TextRun]:
+    runs: List[TextRun] = []
+    for pl in placements:
+        baseline = pl.cy + pl.font * 0.35
+        rot = f' transform="rotate({pl.angle:.2f} {pl.cx:.1f} {pl.cy:.1f})"' if pl.angle else ""
+        doc.add(
+            f'<text x="{pl.cx:.1f}" y="{baseline:.1f}" text-anchor="middle"'
+            f'{rot} font-family="{esc(_MONO_FAMILY)}" font-size="{pl.font:.2f}" '
+            f'font-weight="{esc(cfg.font_weight)}" '
+            f'fill="{require_hex(cfg.foreground_hex)}">{esc(pl.word)}</text>'
+        )
+        runs.append(
+            TextRun(region=pl.name, path_id=f"feat_{pl.name}", path_d="",
+                    text=pl.word, font_size=round(pl.font, 2), kind="primary")
         )
     return runs
 
@@ -211,6 +277,16 @@ def build_tonal_portrait(
     if auto_tone:
         dark = _auto_tone(dark, mset, target_tone, max_shift=0.18)
     dark = _emphasize_features(dark, an, scale, mset)
+
+    # Tier 1: place large words on the interior features, then blank the fine
+    # texture beneath them so the grid (tier 2) flows around clean negative space.
+    font_texture = min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px))
+    placements = (
+        _feature_placements(an, scale, approved, cfg, W, H, font_texture)
+        if feature_words else []
+    )
+    if placements:
+        _knockout_dark(dark, placements)
 
     font = min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px))
     cell_w = font * _MONO_ADVANCE
@@ -306,7 +382,7 @@ def build_tonal_portrait(
     if not runs:
         warns.error("text", "no_runs", "Tonal fill produced no text (subject too bright or mask empty).")
 
-    if feature_words:
-        runs.extend(_add_feature_words(doc, an, scale, approved, cfg, H, warns, uppercase))
+    if placements:
+        runs.extend(_render_feature_words(doc, placements, cfg))
 
     return doc.to_svg(), runs
