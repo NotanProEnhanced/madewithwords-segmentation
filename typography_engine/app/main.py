@@ -46,15 +46,10 @@ def _parse_words(words: Optional[str], words_json: Optional[str]) -> List[str]:
 
 # Stroke styling for region debug output (hex only).
 _REGION_COLORS = {
-    "face_oval": "#000000",
-    "hair": "#7a3b00",
-    "neck": "#005f73",
-    "left_eye": "#9b2226",
-    "right_eye": "#9b2226",
-    "left_brow": "#bb3e03",
-    "right_brow": "#bb3e03",
-    "nose": "#3a0ca3",
-    "lips": "#d00000",
+    "silhouette": "#000000",
+    "jaw_line": "#005f73",
+    "brow_line": "#bb3e03",
+    "lip_line": "#d00000",
 }
 
 app = FastAPI(title="Typography Portrait Engine", version=__version__)

@@ -17,9 +17,8 @@ class PortraitResult:
     runs: List[TextRun]
 
 
-# Draw order: large primary contours first, fine detail last (sits on top).
-_ORDER = ["hair", "face_oval", "neck", "left_brow", "right_brow",
-          "left_eye", "right_eye", "nose", "lips"]
+# Draw order: large primary contour first, fine detail last (sits on top).
+_ORDER = ["silhouette", "brow_line", "jaw_line", "lip_line"]
 
 
 def _ordered_regions(an: Analysis):

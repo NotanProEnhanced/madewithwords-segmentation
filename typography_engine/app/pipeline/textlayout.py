@@ -24,15 +24,10 @@ _FILL_RATIO_OPEN = 0.98
 
 # Per-region font size as a fraction of image height, before clamping.
 _REGION_FONT_FRACTION = {
-    "face_oval": 0.052,
-    "hair": 0.050,
-    "neck": 0.048,
-    "lips": 0.030,
-    "left_eye": 0.022,
-    "right_eye": 0.022,
-    "left_brow": 0.022,
-    "right_brow": 0.022,
-    "nose": 0.024,
+    "silhouette": 0.055,
+    "jaw_line": 0.030,
+    "brow_line": 0.026,
+    "lip_line": 0.026,
 }
 _DEFAULT_FRACTION = 0.030
 
