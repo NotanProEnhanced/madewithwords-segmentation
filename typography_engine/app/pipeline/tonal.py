@@ -109,6 +109,55 @@ def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) ->
     return dark * (1.0 - w) + np.clip(dark ** 0.55, 0.0, 1.0) * w
 
 
+# Feature placement priority: the first approved word anchors the most
+# important feature (eyes/brow), then jaw, then the silhouette crown frames it.
+_FEATURE_PRIORITY = {"brow_line": 0, "jaw_line": 1, "lip_line": 1, "silhouette": 2}
+
+
+def _add_feature_words(
+    doc: SvgDoc,
+    an,
+    scale: float,
+    approved: Sequence[str],
+    cfg: RenderConfig,
+    H: int,
+    warns: WarningCollector,
+    uppercase: bool,
+) -> List[TextRun]:
+    """Tier 1: large readable words flowed along the key facial features.
+
+    The tonal grid (tier 2) carries shading/likeness; this layer places the
+    user's words at a legible size on the eyes/brow, jaw and silhouette so a
+    viewer reads them at arm's length. Words are haloed to stay legible over the
+    texture. Failures here are non-fatal -- the texture portrait stands alone."""
+    from .textlayout import RegionPath, layout_text_runs
+
+    regions = getattr(getattr(an, "regions", None), "paths", None)
+    if not regions:
+        return []
+
+    scaled = [
+        RegionPath(rp.name, rp.points * scale, rp.closed, rp.kind) for rp in regions
+    ]
+    scaled.sort(key=lambda rp: _FEATURE_PRIORITY.get(rp.name, 9))
+
+    local = WarningCollector()  # don't let supplementary-layer warnings fail the render
+    runs = layout_text_runs(scaled, approved, cfg, image_h=H, warns=local, uppercase=uppercase)
+    for r in runs:
+        doc.add_haloed_text_on_path(
+            path_id=f"feat_{r.path_id}",
+            d=r.path_d,
+            text=r.text,
+            font_size=r.font_size,
+            fill=cfg.foreground_hex,
+            halo=cfg.background_hex,
+            font_family=cfg.primary_font_family,
+            font_weight=cfg.font_weight,
+            start_offset=r.start_offset,
+        )
+    return runs
+
+
 def build_tonal_portrait(
     an,
     words: Sequence[str],
@@ -126,6 +175,7 @@ def build_tonal_portrait(
     seed: int = 1234,
     contrast: float = 2.2,
     pivot: float = 0.42,
+    feature_words: bool = True,
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
     if not approved:
@@ -255,4 +305,8 @@ def build_tonal_portrait(
 
     if not runs:
         warns.error("text", "no_runs", "Tonal fill produced no text (subject too bright or mask empty).")
+
+    if feature_words:
+        runs.extend(_add_feature_words(doc, an, scale, approved, cfg, H, warns, uppercase))
+
     return doc.to_svg(), runs

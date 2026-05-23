@@ -185,6 +185,7 @@ async def render(
     uppercase: bool = Form(True),
     background_hex: Optional[str] = Form(None),
     foreground_hex: Optional[str] = Form(None),
+    png_width: int = Form(2000),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
@@ -225,7 +226,7 @@ async def render(
     svg_path.write_text(result.svg, encoding="utf-8")
     png_path = OUTPUTS_DIR / f"{job_id}.png"
     try:
-        write_png(result.svg, png_path, output_width=cfg.canvas_w)
+        write_png(result.svg, png_path, output_width=max(cfg.canvas_w, int(png_width)))
     except Exception as e:  # noqa: BLE001
         warns.warn("render", "png_export_failed", f"PNG export failed: {e}")
 

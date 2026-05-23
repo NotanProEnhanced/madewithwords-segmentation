@@ -84,6 +84,37 @@ class SvgDoc:
             f"{esc(text)}</textPath></text>"
         )
 
+    def add_haloed_text_on_path(
+        self,
+        path_id: str,
+        d: str,
+        text: str,
+        font_size: float,
+        fill: str = "#000000",
+        halo: str = "#ffffff",
+        halo_width: Optional[float] = None,
+        font_family: str = "Arial, Helvetica, sans-serif",
+        font_weight: str = "bold",
+        start_offset: str = "0%",
+    ) -> None:
+        """Flow large readable text along a path with a halo so it stays legible
+        over the tonal texture beneath it (white outline drawn first, ink on top)."""
+        self.add_def_path(path_id, d)
+        hw = halo_width if halo_width is not None else font_size * 0.14
+        common = (
+            f'font-family="{esc(font_family)}" font-size="{font_size}" '
+            f'font-weight="{esc(font_weight)}"'
+        )
+        tp = (
+            f'<textPath xlink:href="#{esc(path_id)}" startOffset="{esc(start_offset)}">'
+            f"{esc(text)}</textPath>"
+        )
+        self.body.append(
+            f'<text {common} fill="{require_hex(halo)}" stroke="{require_hex(halo)}" '
+            f'stroke-width="{hw:.2f}" stroke-linejoin="round">{tp}</text>'
+        )
+        self.body.append(f'<text {common} fill="{require_hex(fill)}">{tp}</text>')
+
     def to_svg(self) -> str:
         require_hex(self.background)
         defs = "\n".join(self.defs)
