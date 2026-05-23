@@ -1,25 +1,20 @@
-"""Tonal word-fill portrait.
+"""Tonal word-fill portrait (variable-size quadtree packer).
 
-Reproduce the photo's light and shadow as a single mosaic of the approved words.
-The subject's tone is sharpened (CLAHE + unsharp) and contrast-stretched, then
-every glyph is shaded by the tone it lands on (light gray on skin midtones,
-near-black on hair, brows, eyes and lips), so the assembled field carries smooth
-gradients and reads as the person's face. Masked to the silhouette so the
-background stays clean.
+Reproduce the photo's light and shadow as a mosaic of the approved words at
+*varying* sizes, so the result is both a likeness and genuinely readable.
 
-Two things make the text read as part of the face rather than stamped on it:
+The subject is split with a quadtree: a cell subdivides only where there is
+detail (high local tone variance) or where the silhouette edge crosses it.
+Flat regions -- cheeks, forehead, clothing -- stay large and hold big, readable
+words; the eyes, nose, mouth and outline recurse down to fine type that carries
+the fidelity. Size therefore emerges from the image itself rather than a fixed
+grid, which is what lets the words be read without mushing the face.
 
-  * Rows are traced as streamlines through a flow field derived from the face's
-    own form, so lines of text bend around the eyes, nose, cheeks and jaw, and
-    each glyph is rotated to the local contour tangent.
-  * Word choice is importance-weighted: the most important words (input order)
-    are steered onto the recognition features (eyes, brows, lips, nose) while
-    later words fill the flatter areas. There is no separate size tier -- every
-    glyph is the same size; only placement and shade vary.
-
-Each contiguous run is packed with whole words from the approved list; a word is
-placed only when it fits the run entirely. No word is ever cut and no stranded
-single letters appear.
+Word choice tracks cell size: the largest (most readable) cells take the most
+important words (input order), so a viewer reads the words that matter first;
+later words fill the smaller, busier cells. Every glyph is shaded by the tone it
+lands on, masked to the silhouette so the background stays clean. Only whole
+words are placed -- never a cut word or a stranded letter.
 """
 from __future__ import annotations
 
@@ -37,9 +32,9 @@ from .warnings import WarningCollector
 _MONO_FAMILY = "'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', monospace"
 _MONO_ADVANCE = 0.6  # glyph advance as a fraction of em for monospace fonts
 
-# Per-glyph gray ramp (0-255): the lightest inked cells render near this light
-# gray, the darkest features near-black, so tone gradients carry the likeness.
-_SHADE_LIGHT = 194
+# Per-glyph gray ramp (0-255): lightest inked cells near this light gray, darkest
+# features near-black, so tone gradients carry the likeness.
+_SHADE_LIGHT = 188
 _SHADE_DARK = 0
 
 # MediaPipe 478-point mesh index groups for the recognition features.
@@ -60,8 +55,8 @@ def _sharpen(gray: np.ndarray) -> np.ndarray:
 
 
 def _tone_field(gray: np.ndarray, mask: np.ndarray, gamma: float, floor: float) -> np.ndarray:
-    """Return per-pixel darkness in [0,1] (1 = ink), contrast-stretched within
-    the subject so the full tonal range is used and bright skin drops toward 0."""
+    """Per-pixel darkness in [0,1] (1 = ink), contrast-stretched within the
+    subject so the full tonal range is used and bright skin drops toward 0."""
     m = mask > 127
     vals = gray[m] if int(m.sum()) > 50 else gray.reshape(-1)
     lo, hi = np.percentile(vals, [1.5, 98.5])
@@ -77,8 +72,8 @@ def _tone_field(gray: np.ndarray, mask: np.ndarray, gamma: float, floor: float) 
 
 
 def _auto_tone(dark: np.ndarray, mset: np.ndarray, target: float, max_shift: float) -> np.ndarray:
-    """Even out overall brightness across images by shifting the in-subject mean
-    darkness toward `target` (clamped, contrast-preserving)."""
+    """Even out overall brightness by shifting the in-subject mean darkness toward
+    `target` (clamped, contrast-preserving)."""
     vals = dark[mset]
     if vals.size < 50:
         return dark
@@ -106,58 +101,24 @@ def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) ->
     return dark * (1.0 - w) + np.clip(dark ** 0.55, 0.0, 1.0) * w
 
 
-def _flow_field(gray: np.ndarray, mask: np.ndarray, sigma: float, max_tilt_deg: float = 18.0
-                ) -> Tuple[np.ndarray, np.ndarray]:
-    """Gentle unit vector field the text rows bend along.
-
-    Built from the iso-brightness tangent (perpendicular to the smoothed image
-    gradient) so flow leans *along* the face's shading transitions -- around the
-    eye sockets, down the nose, along the cheek and jaw. Only the strongest edges
-    bend it; flat areas stay horizontal. Biased rightward and tilt-limited so the
-    mosaic stays orderly."""
-    g = cv2.GaussianBlur(gray.astype(np.float32), (0, 0), sigma)
-    gx = cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3)
-    gy = cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3)
-    mag = np.sqrt(gx * gx + gy * gy)
-
-    # Tangent to iso-contours, oriented to point rightward.
-    tx, ty = -gy, gx
-    flip = tx < 0
-    tx = np.where(flip, -tx, tx)
-    ty = np.where(flip, -ty, ty)
-    n = np.maximum(mag, 1e-6)
-    tx, ty = tx / n, ty / n
-
-    inside = mask > 127
-    mref = float(np.percentile(mag[inside], 88)) if int(inside.sum()) > 50 else float(mag.max() or 1.0)
-    w = np.clip(mag / max(mref, 1e-6), 0.0, 1.0)  # only strong edges bend the flow
-    vx = (1.0 - w) * 1.0 + w * tx
-    vy = w * ty
-
-    vx = cv2.GaussianBlur(vx, (0, 0), sigma * 1.5)
-    vy = cv2.GaussianBlur(vy, (0, 0), sigma * 1.5)
-    vx = np.maximum(vx, 0.05)  # keep sweeping rightward
-    maxt = float(np.tan(np.radians(max_tilt_deg)))
-    slope = np.clip(vy / np.maximum(vx, 1e-6), -maxt, maxt)
-    vy = slope * vx
-    norm = np.maximum(np.sqrt(vx * vx + vy * vy), 1e-6)
-    return vx / norm, vy / norm
-
-
-def _importance_field(an, scale: float, W: int, H: int, row_h: float) -> Optional[np.ndarray]:
-    """[0,1] field, high on the recognition features, used to steer the most
-    important words onto the eyes/brows/lips/nose. None when no landmarks."""
-    lm = getattr(an, "landmarks", None)
-    if lm is None:
-        return None
-    fm = np.zeros((H, W), np.float32)
-    pts = lm.points * scale
-    for grp in _FEATURE_GROUPS:
-        hull = cv2.convexHull(np.array([pts[i] for i in grp], np.int32))
-        cv2.fillConvexPoly(fm, hull, 1.0)
-    fm = cv2.GaussianBlur(fm, (0, 0), max(1.0, row_h * 2.0))
-    peak = float(fm.max())
-    return fm / peak if peak > 0 else None
+def _detail_profile(dark: np.ndarray, mset: np.ndarray, sigma_rows: float) -> np.ndarray:
+    """Per-image-row detail (0..1): high where that horizontal band crosses busy
+    structure (eyes, nose, mouth, edges), low across flat skin/clothing. Drives
+    the row height -- fine rows through detail, tall readable rows through flats."""
+    d32 = dark.astype(np.float32)
+    gx = cv2.Sobel(d32, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(d32, cv2.CV_32F, 0, 1, ksize=3)
+    gm = cv2.GaussianBlur(np.sqrt(gx * gx + gy * gy), (0, 0), 3.0) * mset
+    counts = np.maximum(mset.sum(axis=1), 1)
+    drow = gm.sum(axis=1) / counts  # mean detail per row, within the subject
+    drow = cv2.GaussianBlur(drow.reshape(-1, 1).astype(np.float32), (0, 0), sigma_rows).ravel()
+    rows_in = mset.any(axis=1)
+    if int(rows_in.sum()) < 4:
+        return np.zeros_like(drow)
+    lo, hi = np.percentile(drow[rows_in], [25, 95])
+    if hi - lo < 1e-6:
+        return np.zeros_like(drow)
+    return np.clip((drow - lo) / (hi - lo), 0.0, 1.0)
 
 
 def build_tonal_portrait(
@@ -176,7 +137,7 @@ def build_tonal_portrait(
     jitter: float = 0.7,
     seed: int = 1234,
     contrast: float = 2.2,
-    pivot: float = 0.42,
+    pivot: float = 0.40,
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
     if not approved:
@@ -196,7 +157,6 @@ def build_tonal_portrait(
     if mask.shape[:2] != (h0, w0):
         mask = cv2.resize(mask, (w0, h0), interpolation=cv2.INTER_NEAREST)
 
-    # Upsample so the mosaic is fine while glyphs stay >= min_font.
     if w0 < render_w:
         scale = render_w / float(w0)
         W = int(round(w0 * scale))
@@ -212,128 +172,91 @@ def build_tonal_portrait(
     if auto_tone:
         dark = _auto_tone(dark, mset, target_tone, max_shift=0.18)
     dark = _emphasize_features(dark, an, scale, mset)
+    tone_s = cv2.GaussianBlur(dark, (0, 0), 2.0)
 
-    font = min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px))
-    cell_w = font * _MONO_ADVANCE
-    row_h = font * 0.92
-    rows = max(1, int(H / row_h))
-    cols = int(W / cell_w) + 2
-
-    # Tone smoothed at cell scale (so each glyph reflects its neighbourhood) and
-    # the flow field whose vertical lean bends the rows and rotates the glyphs.
-    tone_s = cv2.GaussianBlur(dark, (0, 0), max(1.0, cell_w * 0.8))
-    vx_f, vy_f = _flow_field(gray, mask, sigma=max(2.0, row_h * 1.2))
-    deg_f = np.degrees(np.arctan2(vy_f, vx_f)).astype(np.float32)
-    imp = _importance_field(an, scale, W, H, row_h)
+    min_font = max(8.0, cfg.min_font_px)
+    max_font = max(min_font + 6.0, min(cfg.max_font_px, W * 0.05))
+    detail = _detail_profile(dark, mset, sigma_rows=max(2.0, min_font))
 
     doc = SvgDoc(width=W, height=H, background=cfg.background_hex)
     runs: List[TextRun] = []
-    cursor = 0
     span = max(1, _SHADE_LIGHT - _SHADE_DARK)
     inv_level = max(1e-3, 1.0 - level)
     rng = np.random.default_rng(seed)
 
-    # Rows stay in vertical lanes (fixed horizontal advance) but drift with the
-    # flow's vertical lean, hard-clamped so a row bows around features without
-    # ever crossing its neighbours; a mild spring relaxes it back in flat areas.
-    flow_gain = 1.2
-    spring = 0.12
-    max_drift = 0.45 * row_h
+    def shade_hex(tone: float) -> str:
+        norm = (tone - level) / inv_level
+        norm = (norm - pivot) * contrast + pivot
+        norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
+        g = _SHADE_LIGHT - int(round(span * (norm ** power)))
+        g = 0 if g < 0 else (255 if g > 255 else g)
+        return f"#{g:02x}{g:02x}{g:02x}"
 
-    def pick_word(avail: int, ix: int, iy: int) -> int:
-        """Index of a word that fits `avail` cells, biased by local importance:
-        high importance -> top-priority (early) words."""
-        if imp is not None:
-            target = (1.0 - float(imp[iy, ix])) * (ntok - 1) + rng.normal() * 0.5
-            order = sorted(range(ntok), key=lambda j: abs(j - target))
-        else:
-            order = [(cursor + j) % ntok for j in range(ntok)]
+    def pick_word(size_norm: float, avail_chars: int) -> int:
+        # Bigger rows (size_norm -> 1) lean toward the most important (early)
+        # words, so the big readable words are the ones that matter.
+        target = (1.0 - size_norm) * (ntok - 1) + rng.normal() * 0.7
+        order = sorted(range(ntok), key=lambda j: abs(j - target))
         for j in order:
-            if len(tokens[j]) <= avail:
+            if len(tokens[j]) <= avail_chars:
                 return j
         return -1
 
-    for r in range(rows):
-        y_nom = (r + 0.5) * row_h + (rng.random() - 0.5) * row_h * jitter * 0.4
-        y = y_nom
-        pts: List[Tuple[float, float, float, int, int, bool, float]] = []  # x,y,deg,ix,iy,inside,tone
-        for c in range(cols):
-            x = c * cell_w
-            xi = 0 if x < 0 else (W - 1 if x >= W else int(x))
-            yi = 0 if y < 0 else (H - 1 if y >= H else int(y))
-            inside = bool(mset[yi, xi])
-            pts.append((x, y, float(deg_f[yi, xi]), xi, yi, inside, float(tone_s[yi, xi])))
-            y += float(vy_f[yi, xi]) * cell_w * flow_gain
-            y -= spring * (y - y_nom)
-            d = y - y_nom
-            if d > max_drift:
-                y = y_nom + max_drift
-            elif d < -max_drift:
-                y = y_nom - max_drift
+    # Walk top->bottom in variable-height rows. Each row spans the full width as
+    # one dense, continuous, per-letter-shaded line (this is what keeps the face
+    # readable as tone); its font is set by the band's detail so the eyes/mouth
+    # get fine rows and the flat forehead/cheeks/clothing get tall readable ones.
+    y = 0.0
+    while y < H:
+        yi = min(H - 1, int(y))
+        d = float(detail[yi])
+        F = max_font - d * (max_font - min_font)
+        F = max(min_font, min(max_font, F))
+        row_h = F * 0.92
+        size_norm = (F - min_font) / max(1e-3, max_font - min_font)
+        adv = F * _MONO_ADVANCE
+        cy = y + row_h * 0.5
+        cyi = min(H - 1, max(0, int(cy)))
+        baseline = y + F * 0.78
 
-        npts = len(pts)
-        c = 0
-        while c < npts:
-            if not (pts[c][5] and pts[c][6] > level):
-                c += 1
-                continue
-            start = c
-            while c < npts and pts[c][5] and pts[c][6] > level:
-                c += 1
-            end = c
-            pos = start
-            placed: List[Tuple[str, float, float, float, float]] = []  # ch,x,y,deg,tone
-            first = True
-            while True:
-                need = 0 if first else 1  # one blank cell between words
-                avail = end - pos - need
-                if avail < shortest:
-                    break
-                j = pick_word(avail, pts[pos][3], pts[pos][4])
-                if j < 0:
-                    break
-                cursor = (j + 1) % ntok
-                if not first:
-                    px, py, pd = pts[pos][0], pts[pos][1], pts[pos][2]
-                    placed.append((" ", px, py, pd, 0.0))
-                    pos += 1
-                for ch in tokens[j]:
-                    px, py, pd, pt = pts[pos][0], pts[pos][1], pts[pos][2], pts[pos][6]
-                    placed.append((ch, px, py, pd, pt))
-                    pos += 1
-                first = False
-            if not any(ch != " " for ch, *_ in placed):
-                continue
+        spans = []
+        placed_words: List[str] = []
+        gx = 0.0
+        while gx < W:
+            avail_chars = int((W - gx) / adv)
+            if avail_chars < shortest:
+                break
+            j = pick_word(size_norm, avail_chars)
+            if j < 0:
+                break
+            wd = tokens[j]
+            drawn = False
+            for ch in wd:
+                cxc = gx + adv * 0.5
+                cxi = min(W - 1, max(0, int(cxc)))
+                if mset[cyi, cxi]:
+                    spans.append(
+                        f'<tspan x="{gx:.0f}" fill="{shade_hex(float(tone_s[cyi, cxi]))}">'
+                        f'{esc(ch)}</tspan>'
+                    )
+                    drawn = True
+                gx += adv
+            if drawn:
+                placed_words.append(wd)
+            gx += adv  # blank cell between words
+        y += row_h
 
-            spans = []
-            for ch, px, py, pd, pt in placed:
-                if ch == " ":
-                    continue
-                norm = (pt - level) / inv_level
-                norm = (norm - pivot) * contrast + pivot
-                norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
-                g = _SHADE_LIGHT - int(round(span * (norm ** power)))
-                rot = f' rotate="{pd:.0f}"' if abs(pd) > 0.5 else ""
-                spans.append(
-                    f'<tspan x="{px:.0f}" y="{py:.0f}"{rot} '
-                    f'fill="#{g:02x}{g:02x}{g:02x}">{esc(ch)}</tspan>'
-                )
-            if not spans:
-                continue
-            doc.add(
-                f'<text font-family="{esc(_MONO_FAMILY)}" font-size="{font:.2f}" '
-                f'font-weight="{esc(cfg.font_weight)}">' + "".join(spans) + "</text>"
-            )
-            runs.append(
-                TextRun(
-                    region="tonal",
-                    path_id=f"row{r}_{start}",
-                    path_d="",
-                    text="".join(ch for ch, *_ in placed),
-                    font_size=round(font, 2),
-                    kind="primary",
-                )
-            )
+        if not spans:
+            continue
+        doc.add(
+            f'<text y="{baseline:.0f}" font-family="{esc(_MONO_FAMILY)}" '
+            f'font-size="{F:.1f}" font-weight="{esc(cfg.font_weight)}">'
+            + "".join(spans) + "</text>"
+        )
+        runs.append(
+            TextRun(region="tonal", path_id=f"row{int(y)}", path_d="",
+                    text=" ".join(placed_words), font_size=round(F, 1), kind="primary")
+        )
 
     if not runs:
         warns.error("text", "no_runs", "Tonal fill produced no text (subject too bright or mask empty).")
