@@ -122,6 +122,8 @@ def build_tonal_portrait(
     power: float = 1.0,
     auto_tone: bool = True,
     target_tone: float = 0.50,
+    jitter: float = 0.7,
+    seed: int = 1234,
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
     if not approved:
@@ -173,9 +175,14 @@ def build_tonal_portrait(
     cursor = 0
     span = max(1, _SHADE_LIGHT - _SHADE_DARK)
     inv_level = max(1e-3, 1.0 - level)
+    # Seeded (reproducible) per-row jitter offsets break up the rigid column grid
+    # so words don't form vertical "rivers" or horizontal banding.
+    rng = np.random.default_rng(seed)
 
     for r in range(rows):
-        baseline = (r + 0.5) * row_h + font * 0.34
+        ox = (rng.random() - 0.5) * cell_w * jitter
+        oy = (rng.random() - 0.5) * row_h * jitter * 0.5
+        baseline = (r + 0.5) * row_h + font * 0.34 + oy
         row = grid[r]
         ink = row > level
         c = 0
@@ -221,7 +228,7 @@ def build_tonal_portrait(
                 norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
                 g = _SHADE_LIGHT - int(round(span * (norm ** power)))
                 spans.append(
-                    f'<tspan x="{cell * cell_w:.1f}" fill="#{g:02x}{g:02x}{g:02x}">'
+                    f'<tspan x="{cell * cell_w + ox:.1f}" fill="#{g:02x}{g:02x}{g:02x}">'
                     f"{esc(ch)}</tspan>"
                 )
             if not spans:
