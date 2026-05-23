@@ -11,7 +11,7 @@ import uuid
 from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -62,6 +62,11 @@ app = FastAPI(title="Typography Portrait Engine", version=__version__)
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/")
+def index() -> RedirectResponse:
+    return RedirectResponse(url="/static/index.html")
 
 
 @app.get("/health")

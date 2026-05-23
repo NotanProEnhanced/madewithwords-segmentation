@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Typography Portrait Engine</title>
+<style>
+  :root { --fg:#111; --line:#ddd; --accent:#000; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Arial, Helvetica, sans-serif; color:var(--fg); background:#fafafa; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line); background:#fff; }
+  header h1 { margin:0; font-size:18px; }
+  header p { margin:4px 0 0; font-size:13px; color:#666; }
+  main { display:flex; gap:20px; padding:20px; flex-wrap:wrap; }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px; }
+  .controls { width:340px; flex:0 0 340px; }
+  .output { flex:1 1 480px; min-width:360px; }
+  label { display:block; font-size:13px; font-weight:bold; margin:14px 0 4px; }
+  input[type=text], input[type=number], textarea {
+    width:100%; padding:8px; border:1px solid var(--line); border-radius:5px; font-size:14px;
+  }
+  textarea { min-height:70px; resize:vertical; }
+  .row { display:flex; gap:10px; }
+  .row > div { flex:1; }
+  .inline { display:flex; align-items:center; gap:8px; margin-top:12px; }
+  .inline label { margin:0; }
+  button { margin-top:16px; width:100%; padding:10px; border:0; border-radius:6px;
+    background:var(--accent); color:#fff; font-size:14px; font-weight:bold; cursor:pointer; }
+  button.secondary { background:#fff; color:#000; border:1px solid #000; }
+  button:disabled { opacity:.5; cursor:default; }
+  .preview { width:100%; border:1px dashed var(--line); border-radius:6px; background:#fff;
+    min-height:300px; display:flex; align-items:center; justify-content:center; }
+  .preview img { max-width:100%; max-height:640px; }
+  .meta { font-size:12px; color:#444; margin-top:10px; word-break:break-all; }
+  .warns { margin-top:12px; }
+  .warn { font-size:12px; padding:6px 8px; border-radius:4px; margin-bottom:4px; }
+  .warn.warning { background:#fff4e5; color:#7a4b00; }
+  .warn.error { background:#fdecea; color:#8a1c1c; }
+  .warn.info { background:#eef4ff; color:#1c3a8a; }
+  .debug-imgs { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .debug-imgs figure { margin:0; width:140px; }
+  .debug-imgs img { width:100%; border:1px solid var(--line); border-radius:4px; }
+  .debug-imgs figcaption { font-size:11px; text-align:center; color:#666; }
+  .links a { font-size:13px; margin-right:14px; }
+  .status { font-size:13px; margin-top:10px; min-height:18px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Typography Portrait Engine</h1>
+  <p>Deterministic vector portraits from a photo + your own words. Only your approved words are used.</p>
+</header>
+<main>
+  <section class="panel controls">
+    <label for="image">Portrait image</label>
+    <input type="file" id="image" accept="image/*" />
+
+    <label for="words">Words / phrases (comma or newline separated)</label>
+    <textarea id="words" placeholder="DREAM, COURAGE, CODE, NAVY, PIONEER, LEGEND">DREAM, COURAGE, CODE, NAVY, PIONEER, LEGEND</textarea>
+
+    <div class="row">
+      <div>
+        <label for="minfont">Min font (px)</label>
+        <input type="number" id="minfont" value="14" min="6" max="80" step="1" />
+      </div>
+      <div>
+        <label for="fg">Text color</label>
+        <input type="text" id="fg" value="#000000" />
+      </div>
+      <div>
+        <label for="bg">Background</label>
+        <input type="text" id="bg" value="#ffffff" />
+      </div>
+    </div>
+
+    <div class="inline">
+      <input type="checkbox" id="uppercase" checked />
+      <label for="uppercase">Uppercase words</label>
+    </div>
+
+    <button id="renderBtn">Render portrait</button>
+    <button id="debugBtn" class="secondary">Show analysis (silhouette / edges)</button>
+    <div class="status" id="status"></div>
+  </section>
+
+  <section class="panel output">
+    <div class="preview" id="preview"><span style="color:#999">Preview will appear here</span></div>
+    <div class="links" id="links"></div>
+    <div class="meta" id="meta"></div>
+    <div class="debug-imgs" id="debugImgs"></div>
+    <div class="warns" id="warns"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const statusEl = $("status");
+
+function setBusy(b, msg) {
+  $("renderBtn").disabled = b;
+  $("debugBtn").disabled = b;
+  statusEl.textContent = msg || "";
+}
+
+function renderWarnings(warnings) {
+  const c = $("warns");
+  c.innerHTML = "";
+  (warnings || []).forEach(w => {
+    const d = document.createElement("div");
+    d.className = "warn " + (w.severity || "warning");
+    d.textContent = `[${w.stage}/${w.code}] ${w.message}`;
+    c.appendChild(d);
+  });
+}
+
+function requireImage() {
+  const f = $("image").files[0];
+  if (!f) { setBusy(false, "Please choose an image first."); return null; }
+  return f;
+}
+
+async function doRender() {
+  const f = requireImage(); if (!f) return;
+  setBusy(true, "Rendering…");
+  $("debugImgs").innerHTML = "";
+  const fd = new FormData();
+  fd.append("image", f);
+  fd.append("words", $("words").value);
+  fd.append("min_font_px", $("minfont").value);
+  fd.append("uppercase", $("uppercase").checked ? "true" : "false");
+  fd.append("foreground_hex", $("fg").value);
+  fd.append("background_hex", $("bg").value);
+  try {
+    const res = await fetch("/render", { method: "POST", body: fd });
+    const data = await res.json();
+    renderWarnings(data.warnings);
+    if (!data.ok) { setBusy(false, "Error: " + (data.error || res.status)); return; }
+    const img = data.png || data.svg;
+    $("preview").innerHTML = `<img src="${img}?t=${Date.now()}" alt="portrait" />`;
+    $("links").innerHTML =
+      `<a href="${data.svg}" target="_blank">Download SVG</a>` +
+      (data.png ? `<a href="${data.png}" target="_blank">Download PNG</a>` : "");
+    const runs = (data.text_runs || []).map(r => `${r.region}@${r.font_size}px`).join(", ");
+    $("meta").textContent = `face: ${data.face_source} · regions: ${runs}`;
+    setBusy(false, "Done.");
+  } catch (e) {
+    setBusy(false, "Request failed: " + e);
+  }
+}
+
+async function doDebug() {
+  const f = requireImage(); if (!f) return;
+  setBusy(true, "Analyzing…");
+  const fd = new FormData();
+  fd.append("image", f);
+  try {
+    const res = await fetch("/debug/preprocess", { method: "POST", body: fd });
+    const data = await res.json();
+    renderWarnings(data.warnings);
+    if (!data.ok) { setBusy(false, "Error: " + (data.error || res.status)); return; }
+    const imgs = data.debug_images || {};
+    $("debugImgs").innerHTML = Object.entries(imgs).map(([k, url]) =>
+      `<figure><img src="${url}?t=${Date.now()}"/><figcaption>${k}</figcaption></figure>`).join("");
+    const s = data.silhouette || {};
+    $("meta").textContent =
+      `face: ${data.face_source} · silhouette coverage ${(s.coverage*100||0).toFixed(1)}% · confidence ${s.confidence}`;
+    $("preview").innerHTML = imgs.overlay
+      ? `<img src="${imgs.overlay}?t=${Date.now()}"/>`
+      : `<span style="color:#999">No overlay produced</span>`;
+    $("links").innerHTML = "";
+    setBusy(false, "Analysis done.");
+  } catch (e) {
+    setBusy(false, "Request failed: " + e);
+  }
+}
+
+$("renderBtn").addEventListener("click", doRender);
+$("debugBtn").addEventListener("click", doDebug);
+</script>
+</body>
+</html>
