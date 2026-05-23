@@ -37,7 +37,12 @@ def build_portrait(
     regions = _ordered_regions(an)
     runs = layout_text_runs(regions, words, cfg, an.img.h, warns, uppercase=uppercase)
 
-    doc = SvgDoc(width=an.img.w, height=an.img.h, background=cfg.background_hex)
+    doc = SvgDoc(
+        width=an.img.w,
+        height=an.img.h,
+        background=cfg.background_hex,
+        content_margin=0.08,
+    )
     for r in runs:
         doc.add_text_on_path(
             path_id=r.path_id,
@@ -48,6 +53,7 @@ def build_portrait(
             font_family=cfg.primary_font_family,
             font_weight=cfg.font_weight,
             letter_spacing=cfg.letter_spacing_px,
+            start_offset=r.start_offset,
         )
 
     svg = doc.to_svg()

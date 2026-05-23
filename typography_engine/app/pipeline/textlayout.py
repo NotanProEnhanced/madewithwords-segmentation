@@ -40,6 +40,17 @@ class TextRun:
     text: str
     font_size: float
     kind: str
+    start_offset: str = "0%"
+
+
+# Per-region (start, end) fractions of path length to occupy with text. The
+# silhouette starts slightly in and stops before its ends so words don't curl
+# into the sharp shoulder/frame corners where the path turns vertical.
+_REGION_SPAN = {
+    "silhouette": (0.065, 0.91),
+}
+_DEFAULT_SPAN_OPEN = (0.0, _FILL_RATIO_OPEN)
+_DEFAULT_SPAN_CLOSED = (0.0, _FILL_RATIO_CLOSED)
 
 
 def polyline_length(points: np.ndarray, closed: bool) -> float:
@@ -148,8 +159,9 @@ def layout_text_runs(
         pts = _orient_left_to_right(rp)
         oriented = RegionPath(rp.name, pts, rp.closed, rp.kind)
         length = polyline_length(oriented.points, oriented.closed)
-        fill_ratio = _FILL_RATIO_CLOSED if oriented.closed else _FILL_RATIO_OPEN
-        budget = length * fill_ratio
+        default_span = _DEFAULT_SPAN_CLOSED if oriented.closed else _DEFAULT_SPAN_OPEN
+        start_frac, end_frac = _REGION_SPAN.get(oriented.name, default_span)
+        budget = length * (end_frac - start_frac)
 
         # Shrink font from the region's base size toward the minimum until the
         # shortest approved word fits the path. Never go below cfg.min_font_px.
@@ -182,6 +194,7 @@ def layout_text_runs(
                 text=text,
                 font_size=round(size, 2),
                 kind=oriented.kind,
+                start_offset=f"{start_frac * 100:.1f}%",
             )
         )
 

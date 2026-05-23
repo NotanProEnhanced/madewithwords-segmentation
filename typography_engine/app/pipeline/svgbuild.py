@@ -30,6 +30,9 @@ class SvgDoc:
     width: float
     height: float
     background: str = "#ffffff"
+    # Uniform inset (fraction of each side) so contours touching the image edge
+    # are scaled inward, leaving whitespace and preventing glyph clipping.
+    content_margin: float = 0.0
     defs: List[str] = field(default_factory=list)
     body: List[str] = field(default_factory=list)
 
@@ -85,6 +88,12 @@ class SvgDoc:
         require_hex(self.background)
         defs = "\n".join(self.defs)
         body = "\n".join(self.body)
+        m = max(0.0, min(0.3, self.content_margin))
+        if m > 0:
+            s = 1.0 - 2.0 * m
+            tx = m * self.width
+            ty = m * self.height
+            body = f'<g transform="translate({tx},{ty}) scale({s})">\n{body}\n</g>'
         return (
             '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n'
             f'<svg xmlns="http://www.w3.org/2000/svg" '

@@ -103,7 +103,9 @@ def _clean_outline(sil: Silhouette, warns: WarningCollector) -> Optional[np.ndar
 
     ys = pts[:, 1]
     yspan = float(ys.max() - ys.min()) or 1.0
-    band = 0.06 * yspan
+    # Drop a generous bottom band so the open arc terminates on the smoother
+    # neck/shoulder sides rather than winding through the neckline notch.
+    band = 0.13 * yspan
     is_bottom = (ys >= ys.max() - band) | (ys >= H - 3)
 
     n = len(pts)
@@ -129,9 +131,12 @@ def _clean_outline(sil: Silhouette, warns: WarningCollector) -> Optional[np.ndar
             i = (i + 1) % n
         arc = np.array(arc_pts, dtype=np.float32)
 
-    if len(arc) < 8:
+    if len(arc) < 12:
         warns.warn("regions", "outline_open_failed", "Could not open the silhouette boundary cleanly.")
         return None
+    # Trim the slice endpoints, which sit in the steep cut region and otherwise
+    # make the first/last glyphs curl.
+    arc = arc[2:-2]
     # Orient so the crown reads left-to-right (start at the lower-left end).
     if arc[0, 0] > arc[-1, 0]:
         arc = arc[::-1].copy()
@@ -191,17 +196,10 @@ def build_regions(
 
         jaw = _horizontal_arc(
             lm, _connection_indices("FACE_LANDMARKS_FACE_OVAL"),
-            warns, "jaw_line", y_lo=0.6, y_hi=1.0,
+            warns, "jaw_line", y_lo=0.62, y_hi=1.0,
         )
         if jaw is not None:
             rs.paths.append(RegionPath("jaw_line", jaw, closed=False, kind="secondary"))
-
-        lip = _horizontal_arc(
-            lm, _connection_indices("FACE_LANDMARKS_LIPS"),
-            warns, "lip_line", y_lo=0.0, y_hi=0.5,
-        )
-        if lip is not None:
-            rs.paths.append(RegionPath("lip_line", lip, closed=False, kind="secondary"))
     else:
         warns.warn("regions", "no_landmarks", "No face landmarks; rendering silhouette outline only.")
 
