@@ -41,7 +41,7 @@ class RenderConfig:
     foreground_hex: str = "#000000"
 
     # Readability guards.
-    min_font_px: float = 14.0          # never emit text below this
+    min_font_px: float = 20.0          # never emit text below this
     max_font_px: float = 120.0
     primary_font_family: str = "Arial, Helvetica, sans-serif"
     font_weight: str = "bold"
