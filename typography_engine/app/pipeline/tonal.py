@@ -1,14 +1,16 @@
 """Tonal word-fill portrait.
 
 Reproduce the photo's light and shadow as a monospace grid of the approved
-words: each grid cell prints the next letter of the words where the image is
-dark (hair, brows, eyes, lips, shadows) and stays blank where it is bright
-(skin, background). Ordered (Bayer) dithering turns continuous tone into glyph
-density, so the assembled grid reads as the person's face. Masked to the
-silhouette so the background stays clean.
+words: cells where the image is dark (hair, brows, eyes, lips, shadows) are
+inked and cells that are bright (skin highlights, background) stay blank. A
+tone threshold turns the continuous image into solid dark masses, so the
+assembled grid reads as the person's face. Masked to the silhouette so the
+background stays clean.
 
-Only letters from the approved word list are ever emitted (cycled in order, so
-contiguous dark runs spell the words).
+Each contiguous dark run is packed with whole words from the approved list
+(cycled in order); a word is placed only when it fits the run entirely, and
+runs too short to hold any word stay blank. No word is ever cut and no stranded
+single letters appear.
 """
 from __future__ import annotations
 
@@ -22,24 +24,6 @@ from ..config import RenderConfig
 from .svgbuild import SvgDoc, esc
 from .textlayout import TextRun, normalize_words
 from .warnings import WarningCollector
-
-# 8x8 Bayer ordered-dither threshold matrix, normalized to (0,1).
-_BAYER8 = (
-    np.array(
-        [
-            [0, 32, 8, 40, 2, 34, 10, 42],
-            [48, 16, 56, 24, 50, 18, 58, 26],
-            [12, 44, 4, 36, 14, 46, 6, 38],
-            [60, 28, 52, 20, 62, 30, 54, 22],
-            [3, 35, 11, 43, 1, 33, 9, 41],
-            [51, 19, 59, 27, 49, 17, 57, 25],
-            [15, 47, 7, 39, 13, 45, 5, 37],
-            [63, 31, 55, 23, 61, 29, 53, 21],
-        ],
-        dtype=np.float32,
-    )
-    + 0.5
-) / 64.0
 
 _MONO_FAMILY = "'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', monospace"
 _MONO_ADVANCE = 0.6  # glyph advance as a fraction of em for monospace fonts
@@ -73,16 +57,18 @@ def build_tonal_portrait(
     render_w: int = 1500,
     gamma: float = 1.7,
     floor: float = 0.32,
+    level: float = 0.32,
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
     if not approved:
         warns.error("text", "no_words", "No approved words supplied; cannot place typography.")
         return "", []
 
-    src = "".join(re.sub(r"\s+", "", w) for w in approved)
-    if not src:
+    tokens = [t for t in (re.sub(r"\s+", "", w) for w in approved) if t]
+    if not tokens:
         warns.error("text", "no_words", "Approved words contained no letters.")
         return "", []
+    shortest = min(len(t) for t in tokens)
 
     gray = an.img.gray
     mask = an.silhouette.mask
@@ -114,21 +100,48 @@ def build_tonal_portrait(
     runs: List[TextRun] = []
     cursor = 0
 
+    ntok = len(tokens)
     for r in range(rows):
         cy = (r + 0.5) * row_h
         yi = int(min(H - 1, max(0, round(cy))))
-        chars: List[str] = []
-        placed = 0
+        # Mark which cells fall on dark (inked) tone via the ordered dither.
+        ink = [False] * cols
         for c in range(cols):
             cx = (c + 0.5) * cell_w
             xi = int(min(W - 1, max(0, round(cx))))
             d = dark[yi, xi] if mset[yi, xi] else 0.0
-            if d > _BAYER8[r % 8, c % 8]:
-                chars.append(src[cursor % len(src)])
-                cursor += 1
-                placed += 1
-            else:
-                chars.append(" ")
+            ink[c] = d > level
+        # Fill each contiguous inked run with whole words only. Runs shorter
+        # than the shortest word stay blank, so no word is ever cut and no
+        # stranded single letters appear.
+        chars = [" "] * cols
+        placed = 0
+        c = 0
+        while c < cols:
+            if not ink[c]:
+                c += 1
+                continue
+            start = c
+            while c < cols and ink[c]:
+                c += 1
+            run = c - start  # length of this contiguous dark run, in cells
+            pos = start
+            end = start + run
+            while end - pos >= shortest:
+                remaining = end - pos
+                chosen = None
+                for i in range(ntok):
+                    t = tokens[(cursor + i) % ntok]
+                    if len(t) <= remaining:
+                        chosen = t
+                        cursor = (cursor + i + 1) % ntok
+                        break
+                if chosen is None:
+                    break
+                for ch in chosen:
+                    chars[pos] = ch
+                    pos += 1
+                placed += len(chosen)
         if placed == 0:
             continue
         row_str = "".join(chars).rstrip()
