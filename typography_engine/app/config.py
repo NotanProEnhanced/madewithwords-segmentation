@@ -24,6 +24,12 @@ FACE_LANDMARKER_URL = (
     "face_landmarker/float16/1/face_landmarker.task"
 )
 
+SELFIE_SEGMENTER_MODEL = MODELS_DIR / "selfie_segmenter.tflite"
+SELFIE_SEGMENTER_URL = (
+    "https://storage.googleapis.com/mediapipe-models/image_segmenter/"
+    "selfie_segmenter/float16/latest/selfie_segmenter.tflite"
+)
+
 
 @dataclass
 class RenderConfig:

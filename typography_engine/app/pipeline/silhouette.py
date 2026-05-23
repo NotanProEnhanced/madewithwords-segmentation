@@ -1,18 +1,110 @@
-"""Foreground silhouette extraction via OpenCV GrabCut.
+"""Foreground silhouette extraction.
 
-Deterministic and self-contained (no external model download required). Returns
-a binary mask (255 = subject) plus a confidence score so callers can decide
-whether to trust the silhouette or emit a warning.
+Primary method is MediaPipe's selfie ImageSegmenter, which separates person
+from background far more cleanly than heuristics. If the model or MediaPipe is
+unavailable we fall back to a deterministic OpenCV GrabCut seeded by the face
+box. Returns a binary mask (255 = subject) plus a confidence score so callers
+can decide whether to trust the silhouette or emit a warning.
 """
 from __future__ import annotations
 
+import urllib.request
 from dataclasses import dataclass
+from threading import Lock
+from typing import Optional
 
 import cv2
 import numpy as np
 
+from ..config import SELFIE_SEGMENTER_MODEL, SELFIE_SEGMENTER_URL
 from .preprocess import LoadedImage
 from .warnings import WarningCollector
+
+_SEG_LOCK = Lock()
+_SEGMENTER = None
+_SEG_INIT_ERROR: Optional[str] = None
+
+
+def _ensure_seg_model(warns: WarningCollector) -> bool:
+    if SELFIE_SEGMENTER_MODEL.exists():
+        return True
+    try:
+        SELFIE_SEGMENTER_MODEL.parent.mkdir(parents=True, exist_ok=True)
+        urllib.request.urlretrieve(SELFIE_SEGMENTER_URL, SELFIE_SEGMENTER_MODEL)
+        return SELFIE_SEGMENTER_MODEL.exists()
+    except Exception as e:
+        warns.warn("silhouette", "seg_model_download_failed", f"Could not fetch selfie model: {e}")
+        return False
+
+
+def _get_segmenter(warns: WarningCollector):
+    global _SEGMENTER, _SEG_INIT_ERROR
+    with _SEG_LOCK:
+        if _SEGMENTER is not None:
+            return _SEGMENTER
+        if _SEG_INIT_ERROR is not None:
+            return None
+        if not _ensure_seg_model(warns):
+            _SEG_INIT_ERROR = "model_unavailable"
+            return None
+        try:
+            from mediapipe.tasks.python import BaseOptions
+            from mediapipe.tasks.python.vision import (
+                ImageSegmenter,
+                ImageSegmenterOptions,
+                RunningMode,
+            )
+
+            opts = ImageSegmenterOptions(
+                base_options=BaseOptions(model_asset_path=str(SELFIE_SEGMENTER_MODEL)),
+                running_mode=RunningMode.IMAGE,
+                output_confidence_masks=True,
+            )
+            _SEGMENTER = ImageSegmenter.create_from_options(opts)
+            return _SEGMENTER
+        except Exception as e:
+            _SEG_INIT_ERROR = str(e)
+            warns.warn("silhouette", "seg_init_failed", f"MediaPipe segmenter unavailable: {e}")
+            return None
+
+
+def _clean_mask(fg: np.ndarray) -> np.ndarray:
+    """Keep the largest connected component, fill holes, smooth the edge."""
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, kernel, iterations=1)
+    fg = cv2.morphologyEx(fg, cv2.MORPH_CLOSE, kernel, iterations=2)
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(fg, connectivity=8)
+    if num > 1:
+        largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+        fg = np.where(labels == largest, 255, 0).astype(np.uint8)
+    return fg
+
+
+def _selfie_mask(img: LoadedImage, warns: WarningCollector) -> Optional[np.ndarray]:
+    seg = _get_segmenter(warns)
+    if seg is None:
+        return None
+    try:
+        import mediapipe as mp
+
+        rgb = cv2.cvtColor(img.bgr, cv2.COLOR_BGR2RGB)
+        result = seg.segment(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
+    except Exception as e:
+        warns.warn("silhouette", "seg_failed", f"Selfie segmentation error: {e}")
+        return None
+    masks = getattr(result, "confidence_masks", None)
+    if not masks:
+        return None
+    prob = np.squeeze(np.asarray(masks[0].numpy_view()))
+    h, w = img.bgr.shape[:2]
+    if prob.shape[:2] != (h, w):
+        prob = cv2.resize(prob, (w, h), interpolation=cv2.INTER_LINEAR)
+    fg = (prob > 0.5).astype(np.uint8) * 255
+    coverage = float((fg > 127).sum()) / float(h * w)
+    if coverage < 0.05 or coverage > 0.97:
+        # Implausible person mask; let GrabCut try instead.
+        return None
+    return _clean_mask(fg)
 
 
 @dataclass
@@ -64,6 +156,16 @@ def extract_silhouette(
     iters: int = 5,
 ) -> Silhouette:
     h, w = img.bgr.shape[:2]
+
+    # Primary: MediaPipe selfie segmentation (clean person/background cut).
+    selfie = _selfie_mask(img, warns)
+    if selfie is not None:
+        bbox = _bbox_of(selfie)
+        coverage = float((selfie > 127).sum()) / float(h * w)
+        conf = max(0.85, _confidence(selfie, bbox, coverage))
+        return Silhouette(mask=selfie, bbox=bbox, coverage=coverage, confidence=conf)
+
+    # Fallback: deterministic GrabCut seeded by the face box.
     gc_mask = np.full((h, w), cv2.GC_PR_BGD, dtype=np.uint8)
 
     # Thin border ring is almost always background in a portrait.

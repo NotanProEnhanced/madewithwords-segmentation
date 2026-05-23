@@ -1,5 +1,6 @@
 outputs/
 models/*.task
+models/*.tflite
 __pycache__/
 *.pyc
 .venv/

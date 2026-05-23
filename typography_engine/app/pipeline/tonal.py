@@ -3,8 +3,9 @@
 Reproduce the photo's light and shadow as a monospace grid of the approved
 words. The subject's tone is sharpened (CLAHE + unsharp) and contrast-stretched,
 then each grid cell takes the area-averaged darkness beneath it so the field is
-smooth. Cells dark enough to clear a low threshold are inked; near-white
-highlights and the background stay blank. Every inked glyph is shaded by the
+smooth. The whole masked subject is filled with words -- even bright skin and
+white hair render as faint light-gray words -- while only the background stays
+blank. Every inked glyph is shaded by the
 exact tone it lands on (light gray on skin midtones, near-black on hair, brows,
 eyes and lips), so the assembled grid carries smooth gradients and reads as the
 person's face. When facial landmarks are available the eyes, brows, lips and
@@ -34,7 +35,9 @@ _MONO_ADVANCE = 0.6  # glyph advance as a fraction of em for monospace fonts
 
 # Per-glyph gray ramp (0-255): the lightest inked cells render near this light
 # gray, the darkest features near-black, so tone gradients carry the likeness.
-_SHADE_LIGHT = 224
+# The light end is clamped well below white so bright skin and white hair still
+# render as faint words instead of dropping out to blank.
+_SHADE_LIGHT = 202
 _SHADE_DARK = 0
 
 # MediaPipe 478-point mesh index groups for the recognition features we deepen.
@@ -95,8 +98,8 @@ def build_tonal_portrait(
     uppercase: bool = True,
     render_w: int = 2600,
     gamma: float = 1.0,
-    floor: float = 0.06,
-    level: float = 0.08,
+    floor: float = 0.0,
+    level: float = 0.02,
     power: float = 1.0,
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
