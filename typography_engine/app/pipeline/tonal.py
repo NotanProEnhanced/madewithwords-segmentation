@@ -19,12 +19,15 @@ is ever cut and no stranded single letters appear.
 """
 from __future__ import annotations
 
+import glob
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
 from ..config import RenderConfig
 from .svgbuild import SvgDoc, esc, require_hex
@@ -168,14 +171,15 @@ def _feature_placements(
         boxes.append((name, approved[wi % len(approved)], (x0 + x1) / 2.0, (y0 + y1) / 2.0, x1 - x0))
         wi += 1
 
-    # Headline size: ~4x the texture, capped by face height, then shrunk so the
-    # widest word fits ~1.25x its feature width (keeps words inside the face).
-    font = min(4.0 * font_texture, 0.085 * face_h)
+    # Headline size: a bold multiple of the texture, capped by face height, then
+    # shrunk so the widest word fits ~1.5x its feature width. The letterform
+    # knockout lets these run large without punching white holes in the likeness.
+    font = min(6.0 * font_texture, 0.11 * face_h)
     for _name, word, _cx, _cy, fw in boxes:
         n = max(1, len(word))
-        fit = (fw * 1.25) / (n * _MONO_ADVANCE)
+        fit = (fw * 1.5) / (n * _MONO_ADVANCE)
         font = min(font, fit) if fit > 0 else font
-    font = max(font, font_texture * 1.6)
+    font = max(font, font_texture * 1.8)
 
     out: List[_Placement] = []
     used: List[Tuple[float, float, float, float]] = []
@@ -190,18 +194,69 @@ def _feature_placements(
     return out
 
 
+_MONO_TTF_CANDIDATES = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+    "/usr/share/fonts/**/DejaVuSansMono-Bold.ttf",
+    "/usr/share/fonts/**/LiberationMono-Bold.ttf",
+    "/usr/share/fonts/**/DejaVuSansMono.ttf",
+)
+
+
+@lru_cache(maxsize=16)
+def _mono_ttf(size: int) -> Optional[ImageFont.FreeTypeFont]:
+    for pat in _MONO_TTF_CANDIDATES:
+        for m in sorted(glob.glob(pat, recursive=True)):
+            try:
+                return ImageFont.truetype(m, size)
+            except Exception:  # noqa: BLE001
+                continue
+    return None
+
+
 def _knockout_dark(dark: np.ndarray, placements: List[_Placement]) -> None:
-    """Blank the fine texture under each big word so it sits in clean negative
-    space and reads as the feature itself rather than colliding with the grid."""
+    """Carve the fine texture out of the *letterforms* of each big word (not a
+    bounding box) so the grid flows right up to the glyph edges and the word
+    reads as woven into the texture rather than stamped on a white label.
+
+    The mask is rasterized with the same monospace TTF CairoSVG renders, rotated
+    to the head tilt, and dilated slightly to leave a hairline of clear space."""
     H, W = dark.shape[:2]
+    mask = np.zeros((H, W), np.uint8)
+    drew_glyphs = False
     for pl in placements:
-        pad_w, pad_h = pl.w * 0.05, pl.h * 0.10
-        x0 = int(max(0, pl.cx - pl.w / 2 - pad_w))
-        x1 = int(min(W, pl.cx + pl.w / 2 + pad_w))
-        y0 = int(max(0, pl.cy - pl.h / 2 - pad_h))
-        y1 = int(min(H, pl.cy + pl.h / 2 + pad_h))
-        if x1 > x0 and y1 > y0:
-            dark[y0:y1, x0:x1] = 0.0
+        f = _mono_ttf(max(4, int(round(pl.font))))
+        if f is None:
+            pad_w, pad_h = pl.w * 0.05, pl.h * 0.10
+            x0 = int(max(0, pl.cx - pl.w / 2 - pad_w)); x1 = int(min(W, pl.cx + pl.w / 2 + pad_w))
+            y0 = int(max(0, pl.cy - pl.h / 2 - pad_h)); y1 = int(min(H, pl.cy + pl.h / 2 + pad_h))
+            if x1 > x0 and y1 > y0:
+                mask[y0:y1, x0:x1] = 255
+            continue
+        l, t, r, b = f.getbbox(pl.word)
+        tw, th = max(1, r - l), max(1, b - t)
+        pad = int(pl.font * 0.6) + 2
+        tile = Image.new("L", (tw + 2 * pad, th + 2 * pad), 0)
+        ImageDraw.Draw(tile).text((pad - l, pad - t), pl.word, fill=255, font=f)
+        if pl.angle:
+            tile = tile.rotate(-pl.angle, expand=True, resample=Image.BILINEAR)
+        ta = np.asarray(tile)
+        th2, tw2 = ta.shape
+        # Tile is built with the glyph bbox centered, matching the SVG word's
+        # anchor=middle horizontal center and ~baseline-0.35em visual center.
+        x0 = int(round(pl.cx - tw2 / 2.0)); y0 = int(round(pl.cy - th2 / 2.0))
+        xs0, ys0 = max(0, x0), max(0, y0)
+        xs1, ys1 = min(W, x0 + tw2), min(H, y0 + th2)
+        if xs1 <= xs0 or ys1 <= ys0:
+            continue
+        sub = ta[ys0 - y0:ys1 - y0, xs0 - x0:xs1 - x0]
+        region = mask[ys0:ys1, xs0:xs1]
+        np.maximum(region, sub, out=region)
+        drew_glyphs = True
+    if drew_glyphs:
+        avg_font = float(np.mean([pl.font for pl in placements]))
+        k = max(3, int(round(avg_font * 0.10)) | 1)
+        mask = cv2.dilate(mask, np.ones((k, k), np.uint8), 1)
+    dark[mask > 110] = 0.0
 
 
 def _render_feature_words(
