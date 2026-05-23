@@ -51,10 +51,13 @@ _FEATURE_GROUPS = (_EYE_L, _EYE_R, _BROW_L, _BROW_R, _LIPS, _NOSE)
 
 
 def _sharpen(gray: np.ndarray) -> np.ndarray:
-    """Local-contrast (CLAHE) + unsharp mask so features keep their edges."""
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
+    """Local-contrast (CLAHE) + unsharp mask so features keep their edges.
+
+    A fairly strong CLAHE deepens the subtle shadows on soft, evenly-lit faces
+    (eyes, nose, smile lines) so flat subjects don't render washed-out."""
+    clahe = cv2.createCLAHE(clipLimit=3.2, tileGridSize=(7, 7)).apply(gray)
     blur = cv2.GaussianBlur(clahe, (0, 0), 2.4)
-    return cv2.addWeighted(clahe, 1.7, blur, -0.7, 0)
+    return cv2.addWeighted(clahe, 1.8, blur, -0.8, 0)
 
 
 def _tone_field(gray: np.ndarray, mask: np.ndarray, gamma: float, floor: float) -> np.ndarray:
@@ -72,6 +75,22 @@ def _tone_field(gray: np.ndarray, mask: np.ndarray, gamma: float, floor: float) 
         dark = dark ** gamma
     dark[~m] = 0.0
     return dark
+
+
+def _auto_tone(dark: np.ndarray, mset: np.ndarray, target: float, max_shift: float) -> np.ndarray:
+    """Even out overall brightness across images by shifting the in-subject mean
+    darkness toward `target` (clamped). Gentle and contrast-preserving: it tames
+    unusually dark or light subjects without flattening local detail (feature
+    contrast is handled by the CLAHE/unsharp step instead)."""
+    vals = dark[mset]
+    if vals.size < 50:
+        return dark
+    shift = float(np.clip(target - float(vals.mean()), -max_shift, max_shift))
+    if abs(shift) < 1e-3:
+        return dark
+    d = np.clip(dark + shift, 0.0, 1.0)
+    d[~mset] = 0.0
+    return d
 
 
 def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.ndarray:
@@ -101,6 +120,8 @@ def build_tonal_portrait(
     floor: float = 0.0,
     level: float = 0.02,
     power: float = 1.0,
+    auto_tone: bool = True,
+    target_tone: float = 0.50,
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
     if not approved:
@@ -133,6 +154,8 @@ def build_tonal_portrait(
 
     mset = mask > 127
     dark = _tone_field(_sharpen(gray), mask, gamma=gamma, floor=floor)
+    if auto_tone:
+        dark = _auto_tone(dark, mset, target_tone, max_shift=0.18)
     dark = _emphasize_features(dark, an, scale, mset)
 
     font = min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px))
