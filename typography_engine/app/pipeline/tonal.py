@@ -124,6 +124,8 @@ def build_tonal_portrait(
     target_tone: float = 0.50,
     jitter: float = 0.7,
     seed: int = 1234,
+    contrast: float = 1.8,
+    pivot: float = 0.45,
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
     if not approved:
@@ -225,6 +227,8 @@ def build_tonal_portrait(
                     continue
                 cell = start + k
                 norm = (row[cell] - level) / inv_level
+                # Contrast S-curve: push darks toward black, lights toward light.
+                norm = (norm - pivot) * contrast + pivot
                 norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
                 g = _SHADE_LIGHT - int(round(span * (norm ** power)))
                 spans.append(
