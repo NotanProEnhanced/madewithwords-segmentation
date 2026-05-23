@@ -1,0 +1,4 @@
+# Test-only dependencies (not required to run the service).
+-r requirements.txt
+pytest>=8.0
+httpx>=0.27
