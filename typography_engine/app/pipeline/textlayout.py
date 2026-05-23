@@ -14,11 +14,13 @@ import numpy as np
 
 from ..config import RenderConfig
 from .regions import RegionPath
+from .textmeasure import text_width
 from .warnings import WarningCollector
 
-# Approximate average glyph advance as a fraction of font size for bold sans
-# (includes spaces). Used only to estimate how many characters fill a path.
-_GLYPH_ADVANCE = 0.62
+# Fraction of a path's length to fill with text. Closed loops leave a gap so the
+# end does not collide with the start; open paths can fill almost fully.
+_FILL_RATIO_CLOSED = 0.92
+_FILL_RATIO_OPEN = 0.98
 
 # Per-region font size as a fraction of image height, before clamping.
 _REGION_FONT_FRACTION = {
@@ -65,22 +67,60 @@ def normalize_words(words: Sequence[str], uppercase: bool) -> List[str]:
     return out
 
 
-def _fill_string(words: List[str], target_chars: int, start_word: int) -> str:
-    """Build a space-joined string from cycled words up to ~target_chars."""
+def _fill_string_measured(
+    words: List[str], target_px: float, font_size: float, start_word: int
+) -> str:
+    """Append cycled words while the measured width stays under target_px.
+
+    Stops *before* exceeding the budget so text never overflows / wraps past the
+    path start. Always returns at least one word if one fits.
+    """
     if not words:
         return ""
     parts: List[str] = []
-    length = 0
     i = start_word
     guard = 0
-    max_iters = target_chars * 2 + 50
-    while length < target_chars and guard < max_iters:
+    max_iters = 4000
+    while guard < max_iters:
         w = words[i % len(words)]
+        candidate = " ".join(parts + [w])
+        if text_width(candidate, font_size) > target_px and parts:
+            break
         parts.append(w)
-        length += len(w) + 1
         i += 1
         guard += 1
-    return " ".join(parts) if parts else words[0]
+        if not parts:  # safety
+            break
+    return " ".join(parts)
+
+
+def _orient_left_to_right(rp: RegionPath) -> np.ndarray:
+    """Orient a path so flowed text reads upright.
+
+    Open paths: ensure points run left->right.
+    Closed loops: ensure the path direction at the topmost point points right,
+    so text along the top edge is upright (not mirrored) and starts there.
+    """
+    pts = rp.points
+    if len(pts) < 3:
+        return pts
+
+    if not rp.closed:
+        if pts[-1, 0] < pts[0, 0]:
+            return pts[::-1].copy()
+        return pts
+
+    n = len(pts)
+    top = int(np.argmin(pts[:, 1]))
+    nxt = pts[(top + 1) % n]
+    prv = pts[(top - 1) % n]
+    tangent_x = nxt[0] - prv[0]
+    rotated = np.roll(pts, -top, axis=0)  # start the loop at the topmost point
+    if tangent_x < 0:
+        # Reverse winding but keep the topmost point first.
+        rotated = rotated[::-1].copy()
+        rotated = np.roll(rotated, 1, axis=0)
+    return rotated
 
 
 def font_size_for(region: str, image_h: int, cfg: RenderConfig) -> float:
@@ -102,39 +142,51 @@ def layout_text_runs(
         warns.error("text", "no_words", "No approved words supplied; cannot place typography.")
         return []
 
+    # Shortest approved word governs whether a path can host any readable word.
+    shortest_word = min(approved, key=len)
+
+    from .pathgen import catmull_rom_to_bezier_d
+
     runs: List[TextRun] = []
     word_cursor = 0
     for i, rp in enumerate(regions):
-        size = font_size_for(rp.name, image_h, cfg)
-        length = polyline_length(rp.points, rp.closed)
+        pts = _orient_left_to_right(rp)
+        oriented = RegionPath(rp.name, pts, rp.closed, rp.kind)
+        length = polyline_length(oriented.points, oriented.closed)
+        fill_ratio = _FILL_RATIO_CLOSED if oriented.closed else _FILL_RATIO_OPEN
+        budget = length * fill_ratio
 
-        # Can at least one approved word fit at the (already min-clamped) size?
-        shortest = min(len(w) for w in approved)
-        min_word_px = shortest * size * _GLYPH_ADVANCE
-        if length < min_word_px:
+        # Shrink font from the region's base size toward the minimum until the
+        # shortest approved word fits the path. Never go below cfg.min_font_px.
+        base = font_size_for(oriented.name, image_h, cfg)
+        size = base
+        while size > cfg.min_font_px and text_width(shortest_word, size) > budget:
+            size = max(cfg.min_font_px, size * 0.9)
+
+        if text_width(shortest_word, size) > budget:
             warns.warn(
                 "text",
                 "path_too_short",
-                f"Region '{rp.name}' path ({length:.0f}px) too short for a readable word "
-                f"at {size:.0f}px; skipped to preserve readability.",
+                f"Region '{oriented.name}' path ({length:.0f}px) cannot fit even "
+                f"'{shortest_word}' at the minimum {cfg.min_font_px:.0f}px; skipped "
+                f"to preserve readability.",
             )
             continue
 
-        target_chars = max(1, int(length / (size * _GLYPH_ADVANCE)))
-        text = _fill_string(approved, target_chars, word_cursor)
-        word_cursor += 1  # rotate starting word so regions vary
+        text = _fill_string_measured(approved, budget, size, word_cursor)
+        if not text:
+            continue
+        word_cursor += 1  # rotate starting word so adjacent regions differ
 
-        from .pathgen import catmull_rom_to_bezier_d
-
-        path_d = catmull_rom_to_bezier_d(rp.points, rp.closed)
+        path_d = catmull_rom_to_bezier_d(oriented.points, oriented.closed)
         runs.append(
             TextRun(
-                region=rp.name,
-                path_id=f"tp_{rp.name}_{i}",
+                region=oriented.name,
+                path_id=f"tp_{oriented.name}_{i}",
                 path_d=path_d,
                 text=text,
                 font_size=round(size, 2),
-                kind=rp.kind,
+                kind=oriented.kind,
             )
         )
 

@@ -139,7 +139,18 @@ def _x_envelope(pts: np.ndarray, take: str, bins: int) -> Optional[np.ndarray]:
     if len(out) < 4:
         return None
     arr = np.array(out, dtype=np.float32)
-    return arr[np.argsort(arr[:, 0])]
+    arr = arr[np.argsort(arr[:, 0])]
+    # Rolling-median on y to suppress single-column spikes (e.g. a pole/medal
+    # poking out of the silhouette) that would otherwise twist the text path.
+    y = arr[:, 1].copy()
+    k = 3
+    half = k // 2
+    ys = y.copy()
+    for j in range(len(y)):
+        lo, hi = max(0, j - half), min(len(y), j + half + 1)
+        ys[j] = float(np.median(y[lo:hi]))
+    arr[:, 1] = ys
+    return arr
 
 
 def build_regions(
