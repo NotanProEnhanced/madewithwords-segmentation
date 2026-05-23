@@ -37,7 +37,7 @@ _MONO_ADVANCE = 0.6  # glyph advance as a fraction of em for monospace fonts
 # gray, the darkest features near-black, so tone gradients carry the likeness.
 # The light end is clamped well below white so bright skin and white hair still
 # render as faint words instead of dropping out to blank.
-_SHADE_LIGHT = 202
+_SHADE_LIGHT = 194
 _SHADE_DARK = 0
 
 # MediaPipe 478-point mesh index groups for the recognition features we deepen.
@@ -124,8 +124,8 @@ def build_tonal_portrait(
     target_tone: float = 0.50,
     jitter: float = 0.7,
     seed: int = 1234,
-    contrast: float = 1.8,
-    pivot: float = 0.45,
+    contrast: float = 2.2,
+    pivot: float = 0.42,
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
     if not approved:
