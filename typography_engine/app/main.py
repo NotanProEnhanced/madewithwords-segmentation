@@ -14,13 +14,30 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .config import OUTPUTS_DIR, STATIC_DIR, RenderConfig
+from .pipeline.analyze import analyze_image
 from .pipeline.capabilities import probe
 from .pipeline.debugviz import render_debug_set
 from .pipeline.edges import detect_edges
 from .pipeline.landmarks import detect_landmarks, haar_face_bbox
+from .pipeline.pathgen import catmull_rom_to_bezier_d
 from .pipeline.preprocess import load_and_normalize
+from .pipeline.raster import write_png
 from .pipeline.silhouette import extract_silhouette
+from .pipeline.svgbuild import SvgDoc, validate_svg
 from .pipeline.warnings import WarningCollector
+
+# Stroke styling for region debug output (hex only).
+_REGION_COLORS = {
+    "face_oval": "#000000",
+    "hair": "#7a3b00",
+    "neck": "#005f73",
+    "left_eye": "#9b2226",
+    "right_eye": "#9b2226",
+    "left_brow": "#bb3e03",
+    "right_brow": "#bb3e03",
+    "nose": "#3a0ca3",
+    "lips": "#d00000",
+}
 
 app = FastAPI(title="Typography Portrait Engine", version=__version__)
 
@@ -85,6 +102,57 @@ async def debug_preprocess(image: UploadFile = File(...)) -> JSONResponse:
                 "confidence": round(sil.confidence, 3),
             },
             "debug_images": file_urls,
+            "warnings": warns.as_list(),
+        }
+    )
+
+
+@app.post("/debug/regions")
+async def debug_regions(image: UploadFile = File(...)) -> JSONResponse:
+    """Phase 3: derive region paths and render them as a stroked debug SVG/PNG."""
+    warns = WarningCollector()
+    img_bytes = await image.read()
+    if not img_bytes:
+        return JSONResponse({"ok": False, "error": "empty_upload"}, status_code=400)
+
+    cfg = RenderConfig()
+    try:
+        an = analyze_image(img_bytes, cfg, warns)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
+    doc = SvgDoc(width=an.img.w, height=an.img.h, background="#ffffff")
+    region_summary = []
+    for i, rp in enumerate(an.regions.paths):
+        d = catmull_rom_to_bezier_d(rp.points, rp.closed)
+        color = _REGION_COLORS.get(rp.name, "#000000")
+        sw = 2.4 if rp.kind == "primary" else 1.4
+        doc.add_path(f"{rp.name}_{i}", d, stroke=color, fill="none", stroke_width=sw)
+        region_summary.append({"name": rp.name, "kind": rp.kind, "points": int(len(rp.points)), "closed": rp.closed})
+
+    svg_text = doc.to_svg()
+    try:
+        validate_svg(svg_text)
+    except (ValueError, Exception) as e:  # noqa: BLE001
+        warns.error("svg", "validation_failed", str(e))
+        return JSONResponse({"ok": False, "error": "svg_invalid", "detail": str(e), "warnings": warns.as_list()}, status_code=500)
+
+    job_id = uuid.uuid4().hex[:12]
+    svg_path = OUTPUTS_DIR / f"{job_id}_regions.svg"
+    svg_path.write_text(svg_text, encoding="utf-8")
+    png_path = OUTPUTS_DIR / f"{job_id}_regions.png"
+    write_png(svg_text, png_path)
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "job_id": job_id,
+            "working_size": {"w": an.img.w, "h": an.img.h},
+            "face_source": an.face_source,
+            "regions": region_summary,
+            "region_names": an.regions.names(),
+            "svg": f"/outputs/{svg_path.name}",
+            "png": f"/outputs/{png_path.name}",
             "warnings": warns.as_list(),
         }
     )
