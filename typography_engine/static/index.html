@@ -13,55 +13,48 @@
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
-    -webkit-font-smoothing:antialiased}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
   body{min-height:100dvh;display:flex;flex-direction:column;align-items:center}
   .wrap{width:100%;max-width:560px;padding:24px 20px 64px;flex:1;display:flex;flex-direction:column}
   header{text-align:center;padding:18px 0 8px}
   .brand{font-family:var(--serif);font-size:30px;letter-spacing:.5px;color:var(--navy);font-weight:700}
   .tag{color:var(--muted);font-size:15px;margin-top:6px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-top:22px}
 
-  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-    box-shadow:var(--shadow);padding:18px;margin-top:22px}
-
-  .drop{border:2px dashed #d8d3c8;border-radius:16px;padding:34px 18px;text-align:center;
-    cursor:pointer;transition:.18s;background:#fcfbf9}
+  .drop{border:2px dashed #d8d3c8;border-radius:16px;padding:34px 18px;text-align:center;cursor:pointer;transition:.18s;background:#fcfbf9}
   .drop.drag{border-color:var(--navy);background:#f3f5fa}
-  .drop .ico{font-size:14px;letter-spacing:.18em;color:var(--muted);text-transform:uppercase}
+  .drop .ico{font-size:13px;letter-spacing:.18em;color:var(--muted);text-transform:uppercase}
   .drop .big{font-weight:600;margin-top:8px;font-size:17px}
   .drop .small{color:var(--muted);font-size:13px;margin-top:4px}
   .preview{position:relative;border-radius:16px;overflow:hidden;display:none}
   .preview img{width:100%;display:block}
-  .preview .change{position:absolute;right:10px;bottom:10px;background:rgba(255,255,255,.92);
-    border:none;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;
-    box-shadow:0 2px 10px rgba(0,0,0,.15)}
+  .preview .change{position:absolute;right:10px;bottom:10px;background:rgba(255,255,255,.92);border:none;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.15)}
 
   label.field{display:block;margin-top:18px}
   .field .lbl{font-weight:600;font-size:15px}
   .field .hint{color:var(--muted);font-size:13px;margin:2px 0 8px}
-  textarea,input[type=text]{width:100%;border:1px solid var(--line);border-radius:12px;
-    padding:12px 14px;font-size:16px;font-family:var(--sans);resize:none;background:#fff;color:var(--ink)}
+  textarea,input[type=text]{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:16px;font-family:var(--sans);resize:none;background:#fff;color:var(--ink)}
   textarea:focus,input:focus{outline:none;border-color:var(--navy)}
 
-  .btn{display:block;width:100%;border:none;border-radius:999px;background:var(--navy);color:#fff;
-    font-size:17px;font-weight:600;padding:15px;margin-top:22px;cursor:pointer;transition:.15s;
-    text-align:center;text-decoration:none}
+  .btn{display:block;width:100%;border:none;border-radius:999px;background:var(--navy);color:#fff;font-size:17px;font-weight:600;padding:15px;margin-top:22px;cursor:pointer;transition:.15s;text-align:center;text-decoration:none}
   .btn:disabled{opacity:.4;cursor:default}
   .btn.secondary{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}
   .btn.ghost{background:none;color:var(--muted);box-shadow:none;font-weight:500;font-size:15px;margin-top:14px}
 
   #result{display:none}
-  .stage{position:relative;border-radius:18px;overflow:hidden;background:#fff;border:1px solid var(--line);
-    box-shadow:var(--shadow);min-height:260px;display:flex;align-items:center;justify-content:center}
-  .stage img{width:100%;display:block;animation:fade .6s ease}
-  @keyframes fade{from{opacity:0}to{opacity:1}}
-  .stage .busy{position:absolute;inset:0;background:rgba(250,249,247,.85);display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:14px}
-  .stage .busy.hide{display:none}
-  .spin{width:30px;height:30px;border-radius:50%;border:3px solid #d9d6cf;border-top-color:var(--navy);
-    animation:spin .9s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  .busy .msg{font-family:var(--serif);color:var(--navy);font-size:16px}
+  .stage{position:relative;border-radius:18px;overflow:hidden;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);min-height:280px;display:flex;align-items:center;justify-content:center}
+  #portrait{width:100%;display:block;opacity:0}
+  #portrait.assemble{animation:assemble 1.05s cubic-bezier(.22,.61,.36,1) forwards}
+  #portrait.shown{opacity:1}
+  @keyframes assemble{0%{opacity:0;filter:blur(18px);transform:scale(1.06)}60%{opacity:1}100%{opacity:1;filter:blur(0);transform:scale(1)}}
+
+  .busy{position:absolute;inset:0;background:var(--paper);display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .busy.hide{opacity:0;pointer-events:none;transition:opacity .5s ease}
+  .tokens{position:absolute;inset:0}
+  .tok{position:absolute;font-family:var(--serif);color:var(--navy);white-space:nowrap;will-change:transform,opacity;
+    transform:translate(-50%,-50%);animation:float 3.2s ease-in-out infinite}
+  @keyframes float{0%,100%{margin-top:0}50%{margin-top:-7px}}
+  .msg{position:relative;z-index:2;font-family:var(--serif);color:var(--navy);font-size:16px;background:rgba(250,249,247,.7);padding:6px 14px;border-radius:999px}
 
   .swatches{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin:20px 0 4px}
   .sw{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;width:56px}
@@ -69,32 +62,24 @@
   .sw.sel .chip{box-shadow:0 0 0 2.5px var(--navy)}
   .sw .nm{font-size:11px;color:var(--muted)}
   .sw.sel .nm{color:var(--navy);font-weight:600}
+  .sw .rdy{font-size:9px;color:#b8b3a8;height:10px}
 
   .keepsake{margin-top:18px}
   .toggle{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:14px}
-  .toggle .t-lbl{font-weight:600}
-  .toggle .t-sub{color:var(--muted);font-size:13px}
+  .toggle .t-lbl{font-weight:600}.toggle .t-sub{color:var(--muted);font-size:13px}
   .sw-switch{width:48px;height:28px;border-radius:999px;background:#d8d3c8;position:relative;transition:.18s;flex:0 0 auto}
-  .sw-switch::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;
-    background:#fff;transition:.18s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
-  .sw-switch.on{background:var(--navy)}
-  .sw-switch.on::after{transform:translateX(20px)}
-  .keepfields{display:none;margin-top:6px}
-  .keepfields.show{display:block}
+  .sw-switch::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:.18s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .sw-switch.on{background:var(--navy)}.sw-switch.on::after{transform:translateX(20px)}
+  .keepfields{display:none;margin-top:6px}.keepfields.show{display:block}
 
-  .actions{display:flex;gap:12px;margin-top:22px}
-  .actions .btn{margin-top:0}
-  .err{display:none;background:#fff;border:1px solid #f0d9d9;border-left:4px solid #c0392b;
-    border-radius:12px;padding:14px 16px;margin-top:18px;color:#7a2e2e;font-size:15px}
+  .actions{display:flex;gap:12px;margin-top:22px}.actions .btn{margin-top:0}
+  .err{display:none;background:#fff;border:1px solid #f0d9d9;border-left:4px solid #c0392b;border-radius:12px;padding:14px 16px;margin-top:18px;color:#7a2e2e;font-size:15px}
   footer{color:var(--muted);font-size:12px;text-align:center;margin-top:30px}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <div class="brand">Typortrait</div>
-    <div class="tag">Someone you love, made from your words.</div>
-  </header>
+  <header><div class="brand">Typortrait</div><div class="tag">Someone you love, made from your words.</div></header>
 
   <section id="input" class="card">
     <div id="drop" class="drop">
@@ -102,18 +87,13 @@
       <div class="big">Add a photo</div>
       <div class="small">A clear head-and-shoulders shot works best. Tap to choose or take one.</div>
     </div>
-    <div id="preview" class="preview">
-      <img id="previewImg" alt="your photo" />
-      <button id="changePhoto" class="change">Change photo</button>
-    </div>
+    <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
     <input id="file" type="file" accept="image/*" hidden />
-
     <label class="field">
       <span class="lbl">The words that make them <em>them</em></span>
       <span class="hint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
       <textarea id="words" rows="3" placeholder="GRACE, KIND, BRILLIANT, MOM, ALWAYS"></textarea>
     </label>
-
     <button id="create" class="btn" disabled>Create portrait</button>
     <div id="errInput" class="err"></div>
   </section>
@@ -121,31 +101,20 @@
   <section id="result">
     <div class="stage">
       <img id="portrait" alt="your typortrait" />
-      <div id="busy" class="busy"><div class="spin"></div><div class="msg">Composing your portrait…</div></div>
+      <div id="busy" class="busy"><div id="tokens" class="tokens"></div><div class="msg">Composing from your words…</div></div>
     </div>
-
     <div id="swatches" class="swatches"></div>
-
     <div class="card keepsake">
       <div class="toggle" id="keepToggle">
-        <div>
-          <div class="t-lbl">Make it a keepsake</div>
-          <div class="t-sub">Add a name and caption, framed as a poster.</div>
-        </div>
+        <div><div class="t-lbl">Make it a keepsake</div><div class="t-sub">Add a name and caption, framed as a poster.</div></div>
         <div id="keepSwitch" class="sw-switch"></div>
       </div>
       <div id="keepFields" class="keepfields">
-        <label class="field"><span class="lbl">Name</span>
-          <input id="title" type="text" placeholder="Grace Hopper" /></label>
-        <label class="field"><span class="lbl">Caption <span style="color:var(--muted);font-weight:400">(optional)</span></span>
-          <input id="caption" type="text" placeholder="1906 – 1992 · Forever curious" /></label>
+        <label class="field"><span class="lbl">Name</span><input id="title" type="text" placeholder="Grace Hopper" /></label>
+        <label class="field"><span class="lbl">Caption <span style="color:var(--muted);font-weight:400">(optional)</span></span><input id="caption" type="text" placeholder="1906 – 1992 · Forever curious" /></label>
       </div>
     </div>
-
-    <div class="actions">
-      <a id="dlPng" class="btn" download>Download</a>
-      <a id="dlSvg" class="btn secondary" download>Print quality</a>
-    </div>
+    <div class="actions"><a id="dlPng" class="btn" download>Download</a><a id="dlSvg" class="btn secondary" download>Print quality</a></div>
     <button id="restart" class="btn ghost">Start a new portrait</button>
     <div id="errResult" class="err"></div>
   </section>
@@ -155,20 +124,13 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const INKS = [
-  ["navy","#0d1b3a","Navy"],
-  ["photo","conic","Photo"],
-  ["sepia","#5a3a1a","Sepia"],
-  ["burgundy","#4a0d18","Burgundy"],
-  ["forest","#0f2e1e","Forest"],
-  ["gold_noir","gold","Gold noir"],
-  ["mono","#555555","Mono"],
-];
+const INKS = [["navy","#0d1b3a","Navy"],["photo","conic","Photo"],["sepia","#5a3a1a","Sepia"],
+  ["burgundy","#4a0d18","Burgundy"],["forest","#0f2e1e","Forest"],["gold_noir","gold","Gold noir"],["mono","#555555","Mono"]];
 const state = { file:null, ink:"navy", poster:false };
+let cache = {};               // ink -> {png,svg}  (valid for current photo/words/poster state)
 
-const drop=$("#drop"), fileInput=$("#file"), preview=$("#preview"), previewImg=$("#previewImg");
-const words=$("#words"), createBtn=$("#create");
-
+/* ---------- input ---------- */
+const drop=$("#drop"), fileInput=$("#file"), preview=$("#preview"), previewImg=$("#previewImg"), words=$("#words"), createBtn=$("#create");
 function refreshCreate(){ createBtn.disabled = !(state.file && words.value.trim()); }
 words.addEventListener("input", refreshCreate);
 drop.addEventListener("click", ()=>fileInput.click());
@@ -177,12 +139,10 @@ $("#changePhoto").addEventListener("click", e=>{e.stopPropagation();fileInput.cl
 ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));
 drop.addEventListener("drop", e=>{ if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
 fileInput.addEventListener("change", e=>{ if(e.target.files[0]) setFile(e.target.files[0]); });
-function setFile(f){
-  if(!f.type.startsWith("image/")) return;
-  state.file=f; previewImg.src=URL.createObjectURL(f);
-  preview.style.display="block"; drop.style.display="none"; refreshCreate();
-}
+function setFile(f){ if(!f.type.startsWith("image/"))return; state.file=f; previewImg.src=URL.createObjectURL(f);
+  preview.style.display="block"; drop.style.display="none"; refreshCreate(); }
 
+/* ---------- swatches ---------- */
 const swatchEl=$("#swatches");
 INKS.forEach(([id,col,label])=>{
   const el=document.createElement("div"); el.className="sw"+(id==="navy"?" sel":""); el.dataset.ink=id;
@@ -191,65 +151,109 @@ INKS.forEach(([id,col,label])=>{
   else if(col==="gold") chip.style.background="radial-gradient(circle at 50% 42%, #e8c66a 0 40%, #0d0f13 44%)";
   else chip.style.background=col;
   const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
-  el.append(chip,nm);
-  el.addEventListener("click", ()=>{ if(state.ink===id) return;
-    state.ink=id; [...swatchEl.children].forEach(c=>c.classList.toggle("sel",c.dataset.ink===id)); render(); });
+  const rdy=document.createElement("div"); rdy.className="rdy"; rdy.dataset.ink=id;
+  el.append(chip,nm,rdy);
+  el.addEventListener("click", ()=>selectInk(id));
   swatchEl.append(el);
 });
+function markSel(){ [...swatchEl.children].forEach(c=>c.classList.toggle("sel",c.dataset.ink===state.ink)); }
+function markReady(){ document.querySelectorAll(".rdy").forEach(r=>r.textContent = cache[r.dataset.ink]?"ready":""); }
 
+/* ---------- keepsake ---------- */
 const keepSwitch=$("#keepSwitch"), keepFields=$("#keepFields"), title=$("#title"), caption=$("#caption");
-$("#keepToggle").addEventListener("click", ()=>{
-  state.poster=!state.poster;
-  keepSwitch.classList.toggle("on",state.poster);
-  keepFields.classList.toggle("show",state.poster);
-  render();
-});
-let tmr; [title,caption].forEach(inp=>inp.addEventListener("input",()=>{clearTimeout(tmr);tmr=setTimeout(render,700);}));
+$("#keepToggle").addEventListener("click", ()=>{ state.poster=!state.poster;
+  keepSwitch.classList.toggle("on",state.poster); keepFields.classList.toggle("show",state.poster);
+  invalidate(); render(state.ink,{animate:false}).then(prewarm); });
+let tmr; [title,caption].forEach(inp=>inp.addEventListener("input",()=>{clearTimeout(tmr);
+  tmr=setTimeout(()=>{ invalidate(); render(state.ink,{animate:false}).then(prewarm); },650);}));
 
-const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy");
+/* ---------- views ---------- */
+const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy"), tokensEl=$("#tokens");
 const dlPng=$("#dlPng"), dlSvg=$("#dlSvg"), errResult=$("#errResult"), errInput=$("#errInput");
+createBtn.addEventListener("click", ()=>{ errInput.style.display="none";
+  inputView.style.display="none"; resultView.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
+  invalidate(); render(state.ink,{animate:true}).then(prewarm); });
+$("#restart").addEventListener("click", ()=>{ resultView.style.display="none"; inputView.style.display="block";
+  invalidate(); portrait.src=""; portrait.className=""; });
 
-createBtn.addEventListener("click", ()=>{
-  errInput.style.display="none";
-  inputView.style.display="none"; resultView.style.display="block";
-  window.scrollTo({top:0,behavior:"smooth"}); render();
-});
-$("#restart").addEventListener("click", ()=>{ resultView.style.display="none"; inputView.style.display="block"; });
+function invalidate(){ cache={}; markReady(); }
 
-async function render(){
+function selectInk(id){
+  if(id===state.ink) return;
+  state.ink=id; markSel();
+  if(cache[id]){ showImage(cache[id], "none"); }      // instant
+  else { render(id,{animate:false}); }
+}
+
+/* ---------- assembly animation ---------- */
+function spawnTokens(){
+  tokensEl.innerHTML="";
+  const ws=(words.value.toUpperCase().match(/[A-Z0-9']+/g)||["LOVE"]);
+  const N=18;
+  for(let i=0;i<N;i++){
+    const t=document.createElement("div"); t.className="tok"; t.textContent=ws[i%ws.length];
+    t.style.left=(8+Math.random()*84)+"%"; t.style.top=(10+Math.random()*80)+"%";
+    t.style.fontSize=(14+Math.random()*20)+"px"; t.style.opacity=(.18+Math.random()*.5).toFixed(2);
+    t.style.animationDelay=(-Math.random()*3)+"s";
+    tokensEl.append(t);
+  }
+}
+function convergeTokens(){
+  const w=tokensEl.clientWidth, h=tokensEl.clientHeight;
+  [...tokensEl.children].forEach((t,i)=>{
+    const l=t.offsetLeft, tp=t.offsetTop;
+    t.style.animation="none";
+    t.style.transition=`transform .7s cubic-bezier(.4,0,.2,1) ${i*28}ms, opacity .7s ${i*28}ms`;
+    t.style.transform=`translate(${(w/2-l)}px, ${(h/2-tp)}px) scale(.25)`;
+    t.style.opacity="0";
+  });
+}
+
+/* ---------- render ---------- */
+function showImage(entry, mode){           // mode: 'assemble' | 'quick' | 'none'
+  dlPng.href=entry.png||entry.svg; dlSvg.href=entry.svg;
+  portrait.className="";
+  portrait.onload=()=>{
+    if(mode==="assemble"){ convergeTokens(); portrait.classList.add("assemble");
+      setTimeout(()=>busy.classList.add("hide"),520); }
+    else { portrait.classList.add("shown"); busy.classList.add("hide"); }
+  };
+  portrait.src=(entry.png||entry.svg)+"?t="+Date.now();
+}
+function showBusy(animate){
+  busy.classList.remove("hide");
+  if(animate){ spawnTokens(); $(".msg").textContent="Composing from your words…"; }
+  else { tokensEl.innerHTML=""; $(".msg").textContent="Recolouring…"; }
+}
+
+async function render(ink,{animate=false,background=false}={}){
   if(!state.file) return;
-  busy.classList.remove("hide"); errResult.style.display="none";
+  if(!background){ showBusy(animate); errResult.style.display="none"; }
   const fd=new FormData();
-  fd.append("image", state.file);
-  fd.append("words", words.value.trim());
-  fd.append("ink", state.ink);
-  fd.append("poster", state.poster ? "true":"false");
-  fd.append("png_width","1500");
-  if(state.poster){ fd.append("title", title.value.trim()); fd.append("caption", caption.value.trim()); }
+  fd.append("image",state.file); fd.append("words",words.value.trim());
+  fd.append("ink",ink); fd.append("poster",state.poster?"true":"false"); fd.append("png_width","1500");
+  if(state.poster){ fd.append("title",title.value.trim()); fd.append("caption",caption.value.trim()); }
   try{
-    const r=await fetch("/render",{method:"POST",body:fd});
-    const data=await r.json();
-    if(!r.ok || !data.ok){
-      const msg = data.detail || friendly(data.error) || "Something went wrong. Try another photo.";
-      if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block";
-        errInput.textContent=msg; errInput.style.display="block"; }
+    const r=await fetch("/render",{method:"POST",body:fd}); const data=await r.json();
+    if(!r.ok||!data.ok){
+      if(background) return;
+      const msg=data.detail||friendly(data.error)||"Something went wrong. Try another photo.";
+      if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; errInput.textContent=msg; errInput.style.display="block"; }
       else { errResult.textContent=msg; errResult.style.display="block"; }
       busy.classList.add("hide"); return;
     }
-    const bust="?t="+Date.now();
-    portrait.onload=()=>busy.classList.add("hide");
-    portrait.src=(data.png||data.svg)+bust;
-    dlPng.href=data.png||data.svg; dlSvg.href=data.svg;
-  }catch(e){
-    errResult.textContent="Network error — please try again.";
-    errResult.style.display="block"; busy.classList.add("hide");
-  }
+    cache[ink]={png:data.png,svg:data.svg}; markReady();
+    if(ink===state.ink && !background) showImage(cache[ink], animate?"assemble":"quick");
+  }catch(e){ if(!background){ errResult.textContent="Network error — please try again."; errResult.style.display="block"; busy.classList.add("hide"); } }
 }
-function friendly(code){
-  return ({no_words:"Add a few words first.",
-    unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",
-    empty_upload:"Please add a photo."})[code];
+
+/* pre-render the other inks in the background so swatch taps are instant */
+async function prewarm(){
+  for(const [id] of INKS){ if(id===state.ink||cache[id]) continue; await render(id,{background:true}); }
 }
+function friendly(code){ return ({no_words:"Add a few words first.",
+  unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",
+  empty_upload:"Please add a photo."})[code]; }
 </script>
 </body>
 </html>
