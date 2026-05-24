@@ -42,19 +42,15 @@
   .btn.ghost{background:none;color:var(--muted);box-shadow:none;font-weight:500;font-size:15px;margin-top:14px}
 
   #result{display:none}
-  .stage{position:relative;border-radius:18px;overflow:hidden;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);min-height:280px;display:flex;align-items:center;justify-content:center}
-  #portrait{width:100%;display:block;opacity:0}
-  #portrait.assemble{animation:assemble 1.05s cubic-bezier(.22,.61,.36,1) forwards}
+  .stage{position:relative;border-radius:18px;overflow:hidden;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);min-height:280px}
+  #portrait{width:100%;display:block;opacity:0;transition:opacity .45s ease}
   #portrait.shown{opacity:1}
-  @keyframes assemble{0%{opacity:0;filter:blur(18px);transform:scale(1.06)}60%{opacity:1}100%{opacity:1;filter:blur(0);transform:scale(1)}}
-
-  .busy{position:absolute;inset:0;background:var(--paper);display:flex;align-items:center;justify-content:center;overflow:hidden}
+  #assembly{position:absolute;inset:0;width:100%;height:100%;display:none}
+  .busy{position:absolute;inset:0;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
   .busy.hide{opacity:0;pointer-events:none;transition:opacity .5s ease}
-  .tokens{position:absolute;inset:0}
-  .tok{position:absolute;font-family:var(--serif);color:var(--navy);white-space:nowrap;will-change:transform,opacity;
-    transform:translate(-50%,-50%);animation:float 3.2s ease-in-out infinite}
-  @keyframes float{0%,100%{margin-top:0}50%{margin-top:-7px}}
-  .msg{position:relative;z-index:2;font-family:var(--serif);color:var(--navy);font-size:16px;background:rgba(250,249,247,.7);padding:6px 14px;border-radius:999px}
+  .spin{width:30px;height:30px;border-radius:50%;border:3px solid #d9d6cf;border-top-color:var(--navy);animation:spin .9s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .msg{font-family:var(--serif);color:var(--navy);font-size:16px}
 
   .swatches{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin:20px 0 4px}
   .sw{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;width:56px}
@@ -83,8 +79,7 @@
 
   <section id="input" class="card">
     <div id="drop" class="drop">
-      <div class="ico">Photo</div>
-      <div class="big">Add a photo</div>
+      <div class="ico">Photo</div><div class="big">Add a photo</div>
       <div class="small">A clear head-and-shoulders shot works best. Tap to choose or take one.</div>
     </div>
     <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
@@ -101,7 +96,8 @@
   <section id="result">
     <div class="stage">
       <img id="portrait" alt="your typortrait" />
-      <div id="busy" class="busy"><div id="tokens" class="tokens"></div><div class="msg">Composing from your words…</div></div>
+      <canvas id="assembly"></canvas>
+      <div id="busy" class="busy"><div class="spin"></div><div class="msg">Composing from your words…</div></div>
     </div>
     <div id="swatches" class="swatches"></div>
     <div class="card keepsake">
@@ -124,10 +120,12 @@
 
 <script>
 const $ = s => document.querySelector(s);
+const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+const ANIM_CAP = 2600;                 // max glyphs animated (perf); image shows all
 const INKS = [["navy","#0d1b3a","Navy"],["photo","conic","Photo"],["sepia","#5a3a1a","Sepia"],
   ["burgundy","#4a0d18","Burgundy"],["forest","#0f2e1e","Forest"],["gold_noir","gold","Gold noir"],["mono","#555555","Mono"]];
 const state = { file:null, ink:"navy", poster:false };
-let cache = {};               // ink -> {png,svg}  (valid for current photo/words/poster state)
+let cache = {};
 
 /* ---------- input ---------- */
 const drop=$("#drop"), fileInput=$("#file"), preview=$("#preview"), previewImg=$("#previewImg"), words=$("#words"), createBtn=$("#create");
@@ -152,9 +150,7 @@ INKS.forEach(([id,col,label])=>{
   else chip.style.background=col;
   const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
   const rdy=document.createElement("div"); rdy.className="rdy"; rdy.dataset.ink=id;
-  el.append(chip,nm,rdy);
-  el.addEventListener("click", ()=>selectInk(id));
-  swatchEl.append(el);
+  el.append(chip,nm,rdy); el.addEventListener("click", ()=>selectInk(id)); swatchEl.append(el);
 });
 function markSel(){ [...swatchEl.children].forEach(c=>c.classList.toggle("sel",c.dataset.ink===state.ink)); }
 function markReady(){ document.querySelectorAll(".rdy").forEach(r=>r.textContent = cache[r.dataset.ink]?"ready":""); }
@@ -168,67 +164,92 @@ let tmr; [title,caption].forEach(inp=>inp.addEventListener("input",()=>{clearTim
   tmr=setTimeout(()=>{ invalidate(); render(state.ink,{animate:false}).then(prewarm); },650);}));
 
 /* ---------- views ---------- */
-const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy"), tokensEl=$("#tokens");
-const dlPng=$("#dlPng"), dlSvg=$("#dlSvg"), errResult=$("#errResult"), errInput=$("#errInput");
+const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy");
+const canvas=$("#assembly"), dlPng=$("#dlPng"), dlSvg=$("#dlSvg"), errResult=$("#errResult"), errInput=$("#errInput");
 createBtn.addEventListener("click", ()=>{ errInput.style.display="none";
   inputView.style.display="none"; resultView.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
   invalidate(); render(state.ink,{animate:true}).then(prewarm); });
 $("#restart").addEventListener("click", ()=>{ resultView.style.display="none"; inputView.style.display="block";
-  invalidate(); portrait.src=""; portrait.className=""; });
-
+  invalidate(); portrait.src=""; portrait.className=""; canvas.style.display="none"; });
 function invalidate(){ cache={}; markReady(); }
 
 function selectInk(id){
-  if(id===state.ink) return;
-  state.ink=id; markSel();
-  if(cache[id]){ showImage(cache[id], "none"); }      // instant
-  else { render(id,{animate:false}); }
+  if(id===state.ink) return; state.ink=id; markSel();
+  if(cache[id]) showImage(cache[id]);          // instant
+  else render(id,{animate:false});
 }
 
-/* ---------- assembly animation ---------- */
-function spawnTokens(){
-  tokensEl.innerHTML="";
-  const ws=(words.value.toUpperCase().match(/[A-Z0-9']+/g)||["LOVE"]);
-  const N=18;
-  for(let i=0;i<N;i++){
-    const t=document.createElement("div"); t.className="tok"; t.textContent=ws[i%ws.length];
-    t.style.left=(8+Math.random()*84)+"%"; t.style.top=(10+Math.random()*80)+"%";
-    t.style.fontSize=(14+Math.random()*20)+"px"; t.style.opacity=(.18+Math.random()*.5).toFixed(2);
-    t.style.animationDelay=(-Math.random()*3)+"s";
-    tokensEl.append(t);
-  }
-}
-function convergeTokens(){
-  const w=tokensEl.clientWidth, h=tokensEl.clientHeight;
-  [...tokensEl.children].forEach((t,i)=>{
-    const l=t.offsetLeft, tp=t.offsetTop;
-    t.style.animation="none";
-    t.style.transition=`transform .7s cubic-bezier(.4,0,.2,1) ${i*28}ms, opacity .7s ${i*28}ms`;
-    t.style.transform=`translate(${(w/2-l)}px, ${(h/2-tp)}px) scale(.25)`;
-    t.style.opacity="0";
-  });
-}
-
-/* ---------- render ---------- */
-function showImage(entry, mode){           // mode: 'assemble' | 'quick' | 'none'
+/* ---------- final image (no animation) ---------- */
+function showImage(entry){
   dlPng.href=entry.png||entry.svg; dlSvg.href=entry.svg;
-  portrait.className="";
-  portrait.onload=()=>{
-    if(mode==="assemble"){ convergeTokens(); portrait.classList.add("assemble");
-      setTimeout(()=>busy.classList.add("hide"),520); }
-    else { portrait.classList.add("shown"); busy.classList.add("hide"); }
+  canvas.style.display="none";
+  portrait.classList.remove("shown");
+  portrait.onload=()=>{ portrait.classList.add("shown"); busy.classList.add("hide"); };
+  portrait.src=(entry.png||entry.svg)+"?t="+Date.now();
+}
+
+/* ---------- per-glyph assembly ---------- */
+let SW=1000, SH=1250;
+function parseGlyphs(svgText){
+  const d=new DOMParser().parseFromString(svgText,"image/svg+xml");
+  const root=d.documentElement;
+  const vb=(root.getAttribute("viewBox")||"0 0 1000 1250").split(/\s+/); SW=+vb[2]; SH=+vb[3];
+  let arr=[];
+  root.querySelectorAll("text").forEach(t=>{
+    const fs=parseFloat(t.getAttribute("font-size")||"20");
+    t.querySelectorAll("tspan").forEach(s=>{
+      const x=parseFloat(s.getAttribute("x")), y=parseFloat(s.getAttribute("y"));
+      if(isNaN(x)||isNaN(y)) return;
+      arr.push({x,y,fs,col:s.getAttribute("fill")||"#0d1b3a",ch:s.textContent||""});
+    });
+  });
+  if(arr.length>ANIM_CAP){ const st=Math.ceil(arr.length/ANIM_CAP); arr=arr.filter((_,i)=>i%st===0); }
+  arr.forEach(g=>{ const a=Math.random()*6.283, rad=(0.18+Math.random()*0.82)*SW;
+    g.sx=g.x+Math.cos(a)*rad; g.sy=g.y+Math.sin(a)*rad; g.dl=Math.random()*0.45;
+    g.font=`bold ${g.fs}px 'DejaVu Sans Mono','Liberation Mono',monospace`; });
+  return arr;
+}
+function runAssembly(glyphs, onDone){
+  const ctx=canvas.getContext("2d");
+  const cssW=portrait.clientWidth, cssH=portrait.clientHeight||(cssW*SH/SW);
+  const dpr=Math.min(2, window.devicePixelRatio||1);
+  canvas.width=Math.round(cssW*dpr); canvas.height=Math.round(cssH*dpr);
+  canvas.style.display="block";
+  const k=(cssW*dpr)/SW;
+  ctx.textBaseline="alphabetic"; ctx.textAlign="left";
+  const DUR=1700, REL=0.45, t0=performance.now();
+  function step(now){
+    const t=Math.min(1,(now-t0)/DUR);
+    ctx.setTransform(1,0,0,1,0,0); ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.setTransform(k,0,0,k,0,0);
+    for(const g of glyphs){
+      let p=(t-g.dl)/(1-REL); p=p<=0?0:(p>=1?1:1-Math.pow(1-p,3));
+      ctx.globalAlpha=0.80+0.20*p; ctx.fillStyle=g.col; ctx.font=g.font;
+      ctx.fillText(g.ch, g.sx+(g.x-g.sx)*p, g.sy+(g.y-g.sy)*p);
+    }
+    if(t<1) requestAnimationFrame(step); else onDone();
+  }
+  requestAnimationFrame(step);
+}
+function animateReveal(entry, svgText){
+  const glyphs=parseGlyphs(svgText);
+  dlPng.href=entry.png||entry.svg; dlSvg.href=entry.svg;
+  portrait.classList.remove("shown");
+  portrait.onload=()=>{                       // sized (still invisible); play, then cross-fade in
+    busy.classList.add("hide");
+    runAssembly(glyphs, ()=>{
+      portrait.classList.add("shown");
+      setTimeout(()=>{ canvas.style.display="none"; }, 480);
+    });
   };
   portrait.src=(entry.png||entry.svg)+"?t="+Date.now();
 }
-function showBusy(animate){
-  busy.classList.remove("hide");
-  if(animate){ spawnTokens(); $(".msg").textContent="Composing from your words…"; }
-  else { tokensEl.innerHTML=""; $(".msg").textContent="Recolouring…"; }
-}
 
+/* ---------- render ---------- */
+function showBusy(){ busy.classList.remove("hide"); $(".msg").textContent="Composing from your words…"; errResult.style.display="none"; }
 async function render(ink,{animate=false,background=false}={}){
   if(!state.file) return;
-  if(!background){ showBusy(animate); errResult.style.display="none"; }
+  if(!background) showBusy();
   const fd=new FormData();
   fd.append("image",state.file); fd.append("words",words.value.trim());
   fd.append("ink",ink); fd.append("poster",state.poster?"true":"false"); fd.append("png_width","1500");
@@ -243,14 +264,15 @@ async function render(ink,{animate=false,background=false}={}){
       busy.classList.add("hide"); return;
     }
     cache[ink]={png:data.png,svg:data.svg}; markReady();
-    if(ink===state.ink && !background) showImage(cache[ink], animate?"assemble":"quick");
+    if(background || ink!==state.ink) return;
+    if(animate && !REDUCED){
+      let svgText=""; try{ svgText=await (await fetch(data.svg)).text(); }catch(e){}
+      if(svgText){ animateReveal(cache[ink], svgText); return; }
+    }
+    showImage(cache[ink]);
   }catch(e){ if(!background){ errResult.textContent="Network error — please try again."; errResult.style.display="block"; busy.classList.add("hide"); } }
 }
-
-/* pre-render the other inks in the background so swatch taps are instant */
-async function prewarm(){
-  for(const [id] of INKS){ if(id===state.ink||cache[id]) continue; await render(id,{background:true}); }
-}
+async function prewarm(){ for(const [id] of INKS){ if(id===state.ink||cache[id]) continue; await render(id,{background:true}); } }
 function friendly(code){ return ({no_words:"Add a few words first.",
   unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",
   empty_upload:"Please add a photo."})[code]; }
