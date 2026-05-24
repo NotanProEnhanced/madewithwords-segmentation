@@ -187,6 +187,9 @@ async def render(
     background_hex: Optional[str] = Form(None),
     foreground_hex: Optional[str] = Form(None),
     ink: str = Form("navy"),
+    poster: bool = Form(False),
+    title: Optional[str] = Form(None),
+    caption: Optional[str] = Form(None),
     png_width: int = Form(2000),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
@@ -243,12 +246,25 @@ async def render(
     if warns.has_errors():
         return JSONResponse({"ok": False, "error": "render_incomplete", "warnings": warns.as_list()}, status_code=422)
 
+    # Opt-in designed-composition layer: wrap the bare portrait into a titled poster.
+    svg_out = result.svg
+    composed = False
+    if poster:
+        from .pipeline.compose import compose_poster
+        svg_out = compose_poster(result.svg, ink_choice, title=title, caption=caption)
+        try:
+            validate_svg(svg_out)
+            composed = True
+        except Exception as e:  # noqa: BLE001
+            warns.warn("compose", "poster_failed", f"Poster composition failed: {e}")
+            svg_out = result.svg
+
     job_id = uuid.uuid4().hex[:12]
     svg_path = OUTPUTS_DIR / f"{job_id}.svg"
-    svg_path.write_text(result.svg, encoding="utf-8")
+    svg_path.write_text(svg_out, encoding="utf-8")
     png_path = OUTPUTS_DIR / f"{job_id}.png"
     try:
-        write_png(result.svg, png_path, output_width=max(cfg.canvas_w, int(png_width)))
+        write_png(svg_out, png_path, output_width=max(cfg.canvas_w, int(png_width)))
     except Exception as e:  # noqa: BLE001
         warns.warn("render", "png_export_failed", f"PNG export failed: {e}")
 
@@ -260,6 +276,7 @@ async def render(
             "face_source": an.face_source,
             "faces": len(an.faces),
             "ink": ink_choice,
+            "composed": composed,
             "words_used": word_list,
             "text_runs": [
                 {"region": r.region, "font_size": r.font_size, "kind": r.kind, "chars": len(r.text)}

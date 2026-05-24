@@ -89,6 +89,23 @@ def test_render_color_ink():
     assert "rgb(" not in svg_text and "hsl(" not in svg_text
 
 
+def test_render_poster_composition():
+    """Opt-in poster wraps the portrait with a title/caption and stays valid SVG."""
+    r = client.post(
+        "/render",
+        files={"image": ("face.jpg", _sample_face_bytes(), "image/jpeg")},
+        data={"words": "CODE,DREAM", "poster": "true",
+              "title": "Grace Hopper", "caption": "1906 - 1992"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True and body["composed"] is True
+    svg_text = (OUTPUTS_DIR / Path(body["svg"]).name).read_text()
+    ET.fromstring(svg_text)
+    assert "GRACE HOPPER" in svg_text  # title is upcased into the poster
+    assert "rgb(" not in svg_text and "hsl(" not in svg_text
+
+
 def test_render_rejects_empty_words():
     r = client.post(
         "/render",
