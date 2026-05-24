@@ -93,13 +93,61 @@ def _auto_tone(dark: np.ndarray, mset: np.ndarray, target: float, max_shift: flo
     return d
 
 
+def _faces_of(an):
+    faces = getattr(an, "faces", None)
+    if faces:
+        return faces
+    lm = getattr(an, "landmarks", None)
+    return [lm] if lm is not None else []
+
+
+def _balance_faces(dark: np.ndarray, an, scale: float, mset: np.ndarray,
+                   target_mean: float = 0.46) -> np.ndarray:
+    """Per-face local-contrast normalization so a pale, low-contrast face renders
+    with the same ink depth as a high-contrast one.
+
+    The global tone stretch in `_tone_field` spans the whole subject, so on a
+    light face beside dark clothing the face collapses into a narrow bright band
+    and washes out. Here each detected face's own darkness range is stretched and
+    lifted toward a target mean, blended through a feathered oval so there is no
+    seam at the jaw/neck and the rest of the portrait is untouched."""
+    faces = _faces_of(an)
+    if not faces:
+        return dark
+    H, W = dark.shape[:2]
+    out = dark.copy()
+    for face in faces:
+        pts = face.points * scale
+        cx, cy = float(pts[:, 0].mean()), float(pts[:, 1].mean())
+        fw = float(pts[:, 0].max() - pts[:, 0].min())
+        fh = float(pts[:, 1].max() - pts[:, 1].min())
+        if fw < 4 or fh < 4:
+            continue
+        # Feathered oval over the face (a bit larger than the landmark hull).
+        wm = np.zeros((H, W), np.float32)
+        cv2.ellipse(wm, (int(cx), int(cy)), (int(fw * 0.72), int(fh * 0.85)),
+                    0, 0, 360, 1.0, -1)
+        wm = cv2.GaussianBlur(wm, (0, 0), max(2.0, fw * 0.18)) * mset
+        core = wm > 0.6
+        if int(core.sum()) < 50:
+            continue
+        vals = dark[core]
+        lo, hi = np.percentile(vals, [8, 92])
+        if hi - lo < 0.04:
+            hi = lo + 0.04
+        stretched = np.clip((dark - lo) / (hi - lo), 0.0, 1.0)
+        cur = float(stretched[core].mean())
+        if 0.02 < cur < 0.98:
+            g = float(np.clip(np.log(target_mean) / np.log(cur), 0.5, 1.7))
+            stretched = stretched ** g
+        out = out * (1.0 - wm) + stretched * wm
+    return np.clip(out, 0.0, 1.0)
+
+
 def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.ndarray:
     """Deepen the eyes, brows, lips and nostrils of every face so each person's
     likeness anchors there (supports group portraits, not just one subject)."""
-    faces = getattr(an, "faces", None)
-    if not faces:
-        lm = getattr(an, "landmarks", None)
-        faces = [lm] if lm is not None else []
+    faces = _faces_of(an)
     if not faces:
         return dark
     H, W = dark.shape[:2]
@@ -165,6 +213,7 @@ def build_tonal_portrait(
     dark = _tone_field(_sharpen(gray), mask, gamma=gamma, floor=floor)
     if auto_tone:
         dark = _auto_tone(dark, mset, target_tone, max_shift=0.18)
+    dark = _balance_faces(dark, an, scale, mset)
     dark = _emphasize_features(dark, an, scale, mset)
 
     font = min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px))
