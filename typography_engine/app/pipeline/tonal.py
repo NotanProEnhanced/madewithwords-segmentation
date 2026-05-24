@@ -166,8 +166,9 @@ def _balance_faces(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.n
 
 
 def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.ndarray:
-    """Deepen the eyes, brows, lips and nostrils of every face so each person's
-    likeness anchors there (supports group portraits, not just one subject)."""
+    """Deepen the brows, lips and nostrils of every face so the likeness anchors
+    there. Eyes are handled separately (_sharpen_eyes) -- they need local
+    contrast, not the uniform darkening that flattens iris/sclera/catchlight."""
     faces = _faces_of(an)
     if not faces:
         return dark
@@ -175,12 +176,50 @@ def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) ->
     fm = np.zeros((H, W), np.uint8)
     for face in faces:
         pts = face.points * scale
-        for grp in _FEATURE_GROUPS:
+        for grp in (_BROW_L, _BROW_R, _LIPS, _NOSE):
             hull = cv2.convexHull(np.array([pts[i] for i in grp], np.int32))
             cv2.fillConvexPoly(fm, hull, 255)
     fm = cv2.dilate(fm, np.ones((5, 5), np.uint8), 1)
     w = (cv2.GaussianBlur(fm, (0, 0), 3.0).astype(np.float32) / 255.0) * mset
     return dark * (1.0 - w) + np.clip(dark ** 0.55, 0.0, 1.0) * w
+
+
+def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.ndarray:
+    """Maximize local contrast in each eye so the iris/lash read dark and the
+    sclera/catchlight read light -- the structures the eye locks onto. Unlike the
+    whole-face balance (kept gentle to avoid muddiness), strong contrast is
+    *desirable* here, so we stretch hard and unsharp within a feathered eye box."""
+    faces = _faces_of(an)
+    if not faces:
+        return dark
+    H, W = dark.shape[:2]
+    out = dark.copy()
+    for face in faces:
+        pts = face.points * scale
+        for grp in (_EYE_L, _EYE_R):
+            ep = pts[list(grp)]
+            x0, y0 = float(ep[:, 0].min()), float(ep[:, 1].min())
+            x1, y1 = float(ep[:, 0].max()), float(ep[:, 1].max())
+            ew, eh = x1 - x0, y1 - y0
+            if ew < 6 or eh < 4:
+                continue
+            bx0 = int(max(0, x0 - ew * 0.30)); bx1 = int(min(W, x1 + ew * 0.30))
+            by0 = int(max(0, y0 - eh * 0.80)); by1 = int(min(H, y1 + eh * 0.80))
+            if bx1 - bx0 < 6 or by1 - by0 < 6:
+                continue
+            patch = out[by0:by1, bx0:bx1]
+            lo, hi = np.percentile(patch, [5, 95])
+            if hi - lo < 0.05:
+                continue
+            st = np.clip((patch - lo) / (hi - lo), 0.0, 1.0)
+            blur = cv2.GaussianBlur(st, (0, 0), max(1.0, ew * 0.05))
+            sharp = np.clip(st + (st - blur) * 0.9, 0.0, 1.0)
+            ph, pw = patch.shape[:2]
+            fm = np.zeros((ph, pw), np.float32)
+            cv2.ellipse(fm, (pw // 2, ph // 2), (pw // 2, ph // 2), 0, 0, 360, 1.0, -1)
+            fm = cv2.GaussianBlur(fm, (0, 0), max(1.0, ew * 0.12)) * mset[by0:by1, bx0:bx1]
+            out[by0:by1, bx0:bx1] = patch * (1.0 - fm) + sharp * fm
+    return np.clip(out, 0.0, 1.0)
 
 
 def build_tonal_portrait(
@@ -237,6 +276,7 @@ def build_tonal_portrait(
         dark = _auto_tone(dark, mset, target_tone, max_shift=0.18)
     dark = _balance_faces(dark, an, scale, mset)
     dark = _emphasize_features(dark, an, scale, mset)
+    dark = _sharpen_eyes(dark, an, scale, mset)
 
     font = min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px))
     cell_w = font * _MONO_ADVANCE
