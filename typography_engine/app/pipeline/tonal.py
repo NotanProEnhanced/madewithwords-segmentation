@@ -169,7 +169,7 @@ def build_tonal_portrait(
 
     font = min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px))
     cell_w = font * _MONO_ADVANCE
-    row_h = font * 0.92
+    row_h = font * 0.80
     cols = max(1, int(W / cell_w))
     rows = max(1, int(H / row_h))
 
