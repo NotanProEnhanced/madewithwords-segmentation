@@ -187,6 +187,8 @@ async def render(
     background_hex: Optional[str] = Form(None),
     foreground_hex: Optional[str] = Form(None),
     ink: str = Form("navy"),
+    style: str = Form("mosaic"),
+    message: Optional[str] = Form(None),
     poster: bool = Form(False),
     title: Optional[str] = Form(None),
     caption: Optional[str] = Form(None),
@@ -232,11 +234,24 @@ async def render(
             status_code=422,
         )
 
-    from .pipeline.tonal import _PALETTES
-    ink_choice = ink if ink in _PALETTES or ink == "photo" else "mono"
+    from .pipeline.tonal import _PALETTES, _CALLIGRAM, build_calligram
+    from .pipeline.svgbuild import validate_svg as _validate
+    ink_choice = ink if ink in _PALETTES or ink == "photo" else "navy"
+    style_choice = "story" if style == "story" else "mosaic"
 
     try:
-        result = build_portrait(an, word_list, cfg, warns, uppercase=uppercase, ink=ink_choice)
+        if style_choice == "story":
+            # Continuous-prose calligram from the user's message (falls back to
+            # the approved words if no passage was supplied).
+            passage = (message or "").strip() or " ".join(word_list)
+            ink_hex, bg_hex = _CALLIGRAM.get(ink_choice, _CALLIGRAM["navy"])
+            svg, runs = build_calligram(an, passage, cfg, warns, ink_hex=ink_hex, bg_hex=bg_hex)
+            if svg:
+                _validate(svg)
+            from .pipeline.portrait import PortraitResult
+            result = PortraitResult(svg=svg, runs=runs)
+        else:
+            result = build_portrait(an, word_list, cfg, warns, uppercase=uppercase, ink=ink_choice)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
     except Exception as e:  # noqa: BLE001
@@ -276,6 +291,7 @@ async def render(
             "face_source": an.face_source,
             "faces": len(an.faces),
             "ink": ink_choice,
+            "style": style_choice,
             "composed": composed,
             "words_used": word_list,
             "text_runs": [

@@ -68,6 +68,9 @@
   .sw-switch.on{background:var(--navy)}.sw-switch.on::after{transform:translateX(20px)}
   .keepfields{display:none;margin-top:6px}.keepfields.show{display:block}
 
+  .seg{display:flex;gap:6px;background:#f1efe9;border-radius:999px;padding:4px;margin-top:4px}
+  .seg button{flex:1;border:none;background:none;border-radius:999px;padding:9px;font-size:14px;font-weight:600;color:var(--muted);font-family:var(--sans);cursor:pointer}
+  .seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(0,0,0,.08)}
   .actions{display:flex;gap:12px;margin-top:22px}.actions .btn{margin-top:0}
   .err{display:none;background:#fff;border:1px solid #f0d9d9;border-left:4px solid #c0392b;border-radius:12px;padding:14px 16px;margin-top:18px;color:#7a2e2e;font-size:15px}
   footer{color:var(--muted);font-size:12px;text-align:center;margin-top:30px}
@@ -84,9 +87,13 @@
     </div>
     <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
     <input id="file" type="file" accept="image/*" hidden />
+    <div class="seg" id="styleSeg">
+      <button type="button" data-style="mosaic" class="on">Word mosaic</button>
+      <button type="button" data-style="story">Story</button>
+    </div>
     <label class="field">
-      <span class="lbl">The words that make them <em>them</em></span>
-      <span class="hint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
+      <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
+      <span class="hint" id="wordsHint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
       <textarea id="words" rows="3" placeholder="GRACE, KIND, BRILLIANT, MOM, ALWAYS"></textarea>
     </label>
     <button id="create" class="btn" disabled>Create portrait</button>
@@ -124,13 +131,29 @@ const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce
 const ANIM_CAP = 2600;                 // max glyphs animated (perf); image shows all
 const INKS = [["navy","#0d1b3a","Navy"],["photo","conic","Photo"],["sepia","#5a3a1a","Sepia"],
   ["burgundy","#4a0d18","Burgundy"],["forest","#0f2e1e","Forest"],["gold_noir","gold","Gold noir"],["mono","#555555","Mono"]];
-const state = { file:null, ink:"navy", poster:false };
+const state = { file:null, ink:"navy", poster:false, style:"mosaic" };
 let cache = {};
 
 /* ---------- input ---------- */
 const drop=$("#drop"), fileInput=$("#file"), preview=$("#preview"), previewImg=$("#previewImg"), words=$("#words"), createBtn=$("#create");
 function refreshCreate(){ createBtn.disabled = !(state.file && words.value.trim()); }
 words.addEventListener("input", refreshCreate);
+// Style toggle: word mosaic vs continuous-prose story.
+const wordsLbl=$("#wordsLbl"), wordsHint=$("#wordsHint");
+$("#styleSeg").addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  state.style=b.dataset.style;
+  [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
+  const story=state.style==="story";
+  wordsLbl.innerHTML = story ? "Their message, in your words" : "The words that make them <em>them</em>";
+  wordsHint.textContent = story
+    ? "Paste a letter, lyrics, a story, a tribute — it becomes the portrait."
+    : "Their name, what you love, a date, an inside joke. Separate with commas.";
+  words.rows = story ? 5 : 3;
+  words.placeholder = story
+    ? "You are the kindest soul I know. From the day you were born…"
+    : "GRACE, KIND, BRILLIANT, MOM, ALWAYS";
+});
 drop.addEventListener("click", ()=>fileInput.click());
 $("#changePhoto").addEventListener("click", e=>{e.stopPropagation();fileInput.click();});
 ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
@@ -252,7 +275,8 @@ async function render(ink,{animate=false,background=false}={}){
   if(!background) showBusy();
   const fd=new FormData();
   fd.append("image",state.file); fd.append("words",words.value.trim());
-  fd.append("ink",ink); fd.append("poster",state.poster?"true":"false"); fd.append("png_width","1500");
+  fd.append("ink",ink); fd.append("style",state.style); fd.append("message",words.value.trim());
+  fd.append("poster",state.poster?"true":"false"); fd.append("png_width","1500");
   if(state.poster){ fd.append("title",title.value.trim()); fd.append("caption",caption.value.trim()); }
   try{
     const r=await fetch("/render",{method:"POST",body:fd}); const data=await r.json();
@@ -265,7 +289,7 @@ async function render(ink,{animate=false,background=false}={}){
     }
     cache[ink]={png:data.png,svg:data.svg}; markReady();
     if(background || ink!==state.ink) return;
-    if(animate && !REDUCED){
+    if(animate && !REDUCED && state.style!=="story"){
       let svgText=""; try{ svgText=await (await fetch(data.svg)).text(); }catch(e){}
       if(svgText){ animateReveal(cache[ink], svgText); return; }
     }

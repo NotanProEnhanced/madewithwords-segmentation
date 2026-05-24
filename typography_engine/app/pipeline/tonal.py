@@ -68,6 +68,18 @@ def _hex_to_rgb(h: str) -> Tuple[int, int, int]:
     h = h.lstrip("#")
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
+# Calligram looks, keyed by the same swatch names as the mosaic inks:
+# (ink/full-darkness colour, background). gold_noir is light ink on a dark page.
+_CALLIGRAM = {
+    "navy":      ("#0d1b3a", "#ffffff"),
+    "sepia":     ("#2a1808", "#fbf6ea"),
+    "burgundy":  ("#3f0d16", "#ffffff"),
+    "forest":    ("#0d2418", "#ffffff"),
+    "gold_noir": ("#e8c66a", "#101216"),
+    "mono":      ("#141414", "#ffffff"),
+    "photo":     ("#15202b", "#ffffff"),
+}
+
 # MediaPipe 478-point mesh index groups for the recognition features we deepen.
 _EYE_L = (33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246)
 _EYE_R = (362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398)
@@ -265,11 +277,11 @@ def build_calligram(
     warns: WarningCollector,
     render_w: int = 2600,
     font_px: float = 22.0,
-    contrast: float = 2.2,
-    pivot: float = 0.45,
+    contrast: float = 2.3,
+    pivot: float = 0.5,
     power: float = 1.0,
-    light: int = 224,
-    ink_hex: str = "#111111",
+    ink_hex: str = "#15202b",
+    bg_hex: str = "#ffffff",
 ) -> Tuple[str, List[TextRun]]:
     """Story calligram: lay the user's own passage as continuous, ordered,
     readable prose in lines across the subject, shading each glyph by the photo's
@@ -308,9 +320,10 @@ def build_calligram(
     cols = max(1, int(W / cell_w))
     rows = max(1, int(H / row_h))
     ir, ig, ib = _hex_to_rgb(ink_hex)
+    br, bgc, bb = _hex_to_rgb(bg_hex)
     family = "'Courier New', 'DejaVu Sans Mono', 'Liberation Mono', monospace"
 
-    doc = SvgDoc(width=W, height=H, background="#ffffff")
+    doc = SvgDoc(width=W, height=H, background=bg_hex)
     runs: List[TextRun] = []
     wi = 0
     for r in range(rows):
@@ -326,6 +339,7 @@ def build_calligram(
                 word = word[:cols]; wl = cols
             if c + wl > cols:
                 break
+            drew = False
             for k, ch in enumerate(word):
                 col = c + k
                 xi = min(W - 1, max(0, int(col * cell_w + cell_w * 0.5)))
@@ -334,17 +348,17 @@ def build_calligram(
                 tone = float(tone_s[yi, xi])
                 norm = (tone - pivot) * contrast + pivot
                 norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
-                t = norm ** power
-                f = 1.0 - t                       # 1 = faint(light), 0 = full ink
-                cr = int(round(ir + (light - ir) * f))
-                cg = int(round(ig + (light - ig) * f))
-                cb = int(round(ib + (light - ib) * f))
+                f = 1.0 - norm ** power           # 1 = melt into background, 0 = full ink
+                cr = int(round(ir + (br - ir) * f))
+                cg = int(round(ig + (bgc - ig) * f))
+                cb = int(round(ib + (bb - ib) * f))
                 spans.append(
                     f'<tspan x="{col * cell_w:.1f}" fill="#{cr:02x}{cg:02x}{cb:02x}">{esc(ch)}</tspan>'
                 )
-                line_chars.append(ch)
+                line_chars.append(ch); drew = True
             c += wl + 1
-            wi += 1
+            if drew:                              # only consume a word when it's actually shown
+                wi += 1
         if not spans:
             continue
         doc.add(

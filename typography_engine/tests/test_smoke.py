@@ -89,6 +89,23 @@ def test_render_color_ink():
     assert "rgb(" not in svg_text and "hsl(" not in svg_text
 
 
+def test_render_story_calligram():
+    """Story style renders the passage as a valid calligram SVG."""
+    r = client.post(
+        "/render",
+        files={"image": ("face.jpg", _sample_face_bytes(), "image/jpeg")},
+        data={"words": "GRACE,KIND", "style": "story", "ink": "navy",
+              "message": "You are the kindest soul I know and I love you always and forever. " * 4},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True and body["style"] == "story"
+    assert len(body["text_runs"]) >= 1
+    svg_text = (OUTPUTS_DIR / Path(body["svg"]).name).read_text()
+    ET.fromstring(svg_text)
+    assert "rgb(" not in svg_text and "hsl(" not in svg_text
+
+
 def test_render_poster_composition():
     """Opt-in poster wraps the portrait with a title/caption and stays valid SVG."""
     r = client.post(
