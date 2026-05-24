@@ -56,10 +56,10 @@ _SHADE_DARK = 0
 # source image's own colour. Background pairs with the chosen ink.
 _PALETTES = {
     "mono":     ("#bebebe", "#000000", "#ffffff"),   # reference grayscale
-    "navy":     ("#eef2f7", "#0d1b3a", "#ffffff"),
-    "sepia":    ("#f4ecd8", "#2e1c0a", "#fbf7ee"),
-    "burgundy": ("#f6ecec", "#4a0d18", "#ffffff"),
-    "forest":   ("#eef3ee", "#0f2e1e", "#ffffff"),
+    "navy":     ("#c2cde1", "#0a1530", "#ffffff"),
+    "sepia":    ("#e3d4b3", "#2a1808", "#fbf7ee"),
+    "burgundy": ("#e7cdce", "#42101a", "#ffffff"),
+    "forest":   ("#cfe0d4", "#0c2618", "#ffffff"),
     "gold_noir": ("#15171c", "#e8c66a", "#101216"),  # bright ink on dark ground
 }
 
@@ -257,7 +257,7 @@ def build_tonal_portrait(
     render_w: int = 2600,
     gamma: float = 1.0,
     floor: float = 0.0,
-    level: float = 0.02,
+    level: float = 0.015,
     power: float = 1.0,
     auto_tone: bool = True,
     target_tone: float = 0.50,
