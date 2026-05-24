@@ -13,8 +13,13 @@ from xml.etree import ElementTree as ET
 import pytest
 from starlette.testclient import TestClient
 
-from app.config import OUTPUTS_DIR
+from app.config import OUTPUTS_DIR, PRIVATE_DIR
 from app.main import app
+
+
+def _clean_svg(body) -> str:
+    """The clean SVG lives privately (paywalled); read it by job id."""
+    return (PRIVATE_DIR / f"{body['job']}.svg").read_text()
 
 
 def _sample_face_bytes() -> bytes:
@@ -63,15 +68,29 @@ def test_render_produces_valid_svg_and_png():
     assert body["ok"] is True
     assert len(body["text_runs"]) >= 1
 
-    svg_file = OUTPUTS_DIR / Path(body["svg"]).name
-    assert svg_file.exists() and svg_file.stat().st_size > 0
-    svg_text = svg_file.read_text()
-    ET.fromstring(svg_text)  # well-formed XML
+    # Public output is the watermarked preview only.
+    assert body["preview"]
+    prev = OUTPUTS_DIR / Path(body["preview"]).name
+    assert prev.exists() and prev.stat().st_size > 0
+    # Clean SVG is private (paywalled) and well-formed.
+    svg_text = _clean_svg(body)
+    ET.fromstring(svg_text)
     assert "rgba(" not in svg_text and "rgb(" not in svg_text and "hsl(" not in svg_text
+    # The clean art must NOT be publicly served.
+    assert not (OUTPUTS_DIR / f"{body['job']}.svg").exists()
 
-    if body["png"]:
-        png_file = OUTPUTS_DIR / Path(body["png"]).name
-        assert png_file.exists() and png_file.stat().st_size > 0
+
+def test_checkout_requires_stripe_key():
+    """Without a Stripe key configured, checkout is gracefully unavailable."""
+    r = client.post(
+        "/render",
+        files={"image": ("face.jpg", _sample_face_bytes(), "image/jpeg")},
+        data={"words": "CODE,DREAM"},
+    )
+    job = r.json()["job"]
+    c = client.post("/checkout", data={"job": job, "fmt": "png"})
+    # 503 when unconfigured (test env), or a Stripe URL when a key is present.
+    assert c.status_code in (503, 200)
 
 
 def test_render_color_ink():
@@ -84,7 +103,7 @@ def test_render_color_ink():
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["ok"] is True and body["ink"] == "navy"
-    svg_text = (OUTPUTS_DIR / Path(body["svg"]).name).read_text()
+    svg_text = _clean_svg(body)
     ET.fromstring(svg_text)
     assert "rgb(" not in svg_text and "hsl(" not in svg_text
 
@@ -101,7 +120,7 @@ def test_render_story_calligram():
     body = r.json()
     assert body["ok"] is True and body["style"] == "story"
     assert len(body["text_runs"]) >= 1
-    svg_text = (OUTPUTS_DIR / Path(body["svg"]).name).read_text()
+    svg_text = _clean_svg(body)
     ET.fromstring(svg_text)
     assert "rgb(" not in svg_text and "hsl(" not in svg_text
 
@@ -117,7 +136,7 @@ def test_render_poster_composition():
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["ok"] is True and body["composed"] is True
-    svg_text = (OUTPUTS_DIR / Path(body["svg"]).name).read_text()
+    svg_text = _clean_svg(body)
     ET.fromstring(svg_text)
     assert "GRACE HOPPER" in svg_text  # title is upcased into the poster
     assert "rgb(" not in svg_text and "hsl(" not in svg_text

@@ -11,11 +11,21 @@ import uuid
 from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, UploadFile
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
-from .config import OUTPUTS_DIR, STATIC_DIR, RenderConfig
+from .config import (
+    CURRENCY,
+    DOWNLOAD_PRICE_CENTS,
+    OUTPUTS_DIR,
+    PRIVATE_DIR,
+    PUBLIC_BASE_URL,
+    STATIC_DIR,
+    STRIPE_SECRET_KEY,
+    WATERMARK_URL,
+    RenderConfig,
+)
 from .pipeline.analyze import analyze_image
 from .pipeline.capabilities import probe
 from .pipeline.debugviz import render_debug_set
@@ -275,18 +285,23 @@ async def render(
             svg_out = result.svg
 
     job_id = uuid.uuid4().hex[:12]
-    svg_path = OUTPUTS_DIR / f"{job_id}.svg"
-    svg_path.write_text(svg_out, encoding="utf-8")
-    png_path = OUTPUTS_DIR / f"{job_id}.png"
+    # Clean (paid) files go to the PRIVATE dir; only a watermarked preview is
+    # served publicly. The clean art is never web-reachable without payment.
+    (PRIVATE_DIR / f"{job_id}.svg").write_text(svg_out, encoding="utf-8")
+    clean_png = PRIVATE_DIR / f"{job_id}.png"
+    preview_path = OUTPUTS_DIR / f"{job_id}_preview.png"
     try:
-        write_png(svg_out, png_path, output_width=max(cfg.canvas_w, int(png_width)))
+        write_png(svg_out, clean_png, output_width=max(cfg.canvas_w, int(png_width)))
+        from .pipeline.watermark import add_watermark
+        preview_path.write_bytes(add_watermark(clean_png.read_bytes(), url=WATERMARK_URL))
     except Exception as e:  # noqa: BLE001
-        warns.warn("render", "png_export_failed", f"PNG export failed: {e}")
+        warns.warn("render", "preview_failed", f"Preview export failed: {e}")
 
     return JSONResponse(
         {
             "ok": True,
             "job_id": job_id,
+            "job": job_id,
             "working_size": {"w": an.img.w, "h": an.img.h},
             "face_source": an.face_source,
             "faces": len(an.faces),
@@ -298,8 +313,60 @@ async def render(
                 {"region": r.region, "font_size": r.font_size, "kind": r.kind, "chars": len(r.text)}
                 for r in result.runs
             ],
-            "svg": f"/outputs/{svg_path.name}",
-            "png": f"/outputs/{png_path.name}" if png_path.exists() else None,
+            "preview": f"/outputs/{preview_path.name}" if preview_path.exists() else None,
+            "price_cents": DOWNLOAD_PRICE_CENTS,
+            "currency": CURRENCY,
             "warnings": warns.as_list(),
         }
     )
+
+
+@app.post("/checkout")
+def checkout(job: str = Form(...), fmt: str = Form("png")) -> JSONResponse:
+    """Create a Stripe Checkout session to unlock the clean download of `job`."""
+    if not STRIPE_SECRET_KEY:
+        return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
+    ext = "svg" if fmt == "svg" else "png"
+    if not (PRIVATE_DIR / f"{job}.{ext}").exists():
+        return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    import stripe
+    stripe.api_key = STRIPE_SECRET_KEY
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[{
+                "quantity": 1,
+                "price_data": {
+                    "currency": CURRENCY,
+                    "unit_amount": DOWNLOAD_PRICE_CENTS,
+                    "product_data": {"name": "Typortrait — high-resolution download"},
+                },
+            }],
+            metadata={"job": job, "fmt": ext},
+            success_url=f"{PUBLIC_BASE_URL}/download?job={job}&fmt={ext}&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{PUBLIC_BASE_URL}/static/index.html?canceled=1",
+        )
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
+    return JSONResponse({"ok": True, "url": session.url})
+
+
+@app.get("/download")
+def download(job: str, session_id: str, fmt: str = "png"):
+    """Serve the clean file only after verifying the Stripe payment for `job`."""
+    if not STRIPE_SECRET_KEY:
+        return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
+    import stripe
+    stripe.api_key = STRIPE_SECRET_KEY
+    try:
+        sess = stripe.checkout.Session.retrieve(session_id)
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "bad_session"}, status_code=400)
+    if sess.get("payment_status") != "paid" or (sess.get("metadata") or {}).get("job") != job:
+        return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
+    ext = "svg" if fmt == "svg" else "png"
+    path = PRIVATE_DIR / f"{job}.{ext}"
+    if not path.exists():
+        return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    media = "image/svg+xml" if ext == "svg" else "image/png"
+    return FileResponse(str(path), media_type=media, filename=f"typortrait-{job}.{ext}")

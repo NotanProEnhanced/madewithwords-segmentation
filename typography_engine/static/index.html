@@ -117,7 +117,8 @@
         <label class="field"><span class="lbl">Caption <span style="color:var(--muted);font-weight:400">(optional)</span></span><input id="caption" type="text" placeholder="1906 – 1992 · Forever curious" /></label>
       </div>
     </div>
-    <div class="actions"><a id="dlPng" class="btn" download>Download</a><a id="dlSvg" class="btn secondary" download>Print quality</a></div>
+    <div class="actions"><button id="buy" class="btn">Download</button></div>
+    <p class="note" id="buynote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Free preview · pay to download without the watermark</p>
     <button id="restart" class="btn ghost">Start a new portrait</button>
     <div id="errResult" class="err"></div>
   </section>
@@ -188,7 +189,21 @@ let tmr; [title,caption].forEach(inp=>inp.addEventListener("input",()=>{clearTim
 
 /* ---------- views ---------- */
 const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy");
-const canvas=$("#assembly"), dlPng=$("#dlPng"), dlSvg=$("#dlSvg"), errResult=$("#errResult"), errInput=$("#errInput");
+const canvas=$("#assembly"), buy=$("#buy"), buynote=$("#buynote"), errResult=$("#errResult"), errInput=$("#errInput");
+let currentJob=null, priceLabel="";
+function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
+buy.addEventListener("click", async ()=>{
+  if(!currentJob) return;
+  buy.disabled=true; const old=buy.textContent; buy.textContent="Opening secure checkout…";
+  try{
+    const fd=new FormData(); fd.append("job",currentJob); fd.append("fmt","png");
+    const r=await fetch("/checkout",{method:"POST",body:fd}); const d=await r.json();
+    if(d.ok && d.url){ window.location.href=d.url; return; }
+    buynote.textContent = d.error==="payments_unconfigured"
+      ? "Checkout isn’t set up yet (add your Stripe key)." : "Couldn’t start checkout — please try again.";
+  }catch(e){ buynote.textContent="Network error — please try again."; }
+  buy.disabled=false; buy.textContent=old;
+});
 createBtn.addEventListener("click", ()=>{ errInput.style.display="none";
   inputView.style.display="none"; resultView.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
   invalidate(); render(state.ink,{animate:true}).then(prewarm); });
@@ -202,71 +217,17 @@ function selectInk(id){
   else render(id,{animate:false});
 }
 
-/* ---------- final image (no animation) ---------- */
+/* ---------- show the watermarked preview ---------- */
 function showImage(entry){
-  dlPng.href=entry.png||entry.svg; dlSvg.href=entry.svg;
+  currentJob = entry.job || null;
+  priceLabel = money(entry.price, entry.currency);
+  buy.textContent = "Download — " + priceLabel;
   canvas.style.display="none";
   portrait.classList.remove("shown");
   portrait.onload=()=>{ portrait.classList.add("shown"); busy.classList.add("hide"); };
-  portrait.src=(entry.png||entry.svg)+"?t="+Date.now();
+  portrait.src=entry.preview+"?t="+Date.now();
 }
 
-/* ---------- per-glyph assembly ---------- */
-let SW=1000, SH=1250;
-function parseGlyphs(svgText){
-  const d=new DOMParser().parseFromString(svgText,"image/svg+xml");
-  const root=d.documentElement;
-  const vb=(root.getAttribute("viewBox")||"0 0 1000 1250").split(/\s+/); SW=+vb[2]; SH=+vb[3];
-  let arr=[];
-  root.querySelectorAll("text").forEach(t=>{
-    const fs=parseFloat(t.getAttribute("font-size")||"20");
-    t.querySelectorAll("tspan").forEach(s=>{
-      const x=parseFloat(s.getAttribute("x")), y=parseFloat(s.getAttribute("y"));
-      if(isNaN(x)||isNaN(y)) return;
-      arr.push({x,y,fs,col:s.getAttribute("fill")||"#0d1b3a",ch:s.textContent||""});
-    });
-  });
-  if(arr.length>ANIM_CAP){ const st=Math.ceil(arr.length/ANIM_CAP); arr=arr.filter((_,i)=>i%st===0); }
-  arr.forEach(g=>{ const a=Math.random()*6.283, rad=(0.18+Math.random()*0.82)*SW;
-    g.sx=g.x+Math.cos(a)*rad; g.sy=g.y+Math.sin(a)*rad; g.dl=Math.random()*0.45;
-    g.font=`bold ${g.fs}px 'DejaVu Sans Mono','Liberation Mono',monospace`; });
-  return arr;
-}
-function runAssembly(glyphs, onDone){
-  const ctx=canvas.getContext("2d");
-  const cssW=portrait.clientWidth, cssH=portrait.clientHeight||(cssW*SH/SW);
-  const dpr=Math.min(2, window.devicePixelRatio||1);
-  canvas.width=Math.round(cssW*dpr); canvas.height=Math.round(cssH*dpr);
-  canvas.style.display="block";
-  const k=(cssW*dpr)/SW;
-  ctx.textBaseline="alphabetic"; ctx.textAlign="left";
-  const DUR=1700, REL=0.45, t0=performance.now();
-  function step(now){
-    const t=Math.min(1,(now-t0)/DUR);
-    ctx.setTransform(1,0,0,1,0,0); ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.setTransform(k,0,0,k,0,0);
-    for(const g of glyphs){
-      let p=(t-g.dl)/(1-REL); p=p<=0?0:(p>=1?1:1-Math.pow(1-p,3));
-      ctx.globalAlpha=0.80+0.20*p; ctx.fillStyle=g.col; ctx.font=g.font;
-      ctx.fillText(g.ch, g.sx+(g.x-g.sx)*p, g.sy+(g.y-g.sy)*p);
-    }
-    if(t<1) requestAnimationFrame(step); else onDone();
-  }
-  requestAnimationFrame(step);
-}
-function animateReveal(entry, svgText){
-  const glyphs=parseGlyphs(svgText);
-  dlPng.href=entry.png||entry.svg; dlSvg.href=entry.svg;
-  portrait.classList.remove("shown");
-  portrait.onload=()=>{                       // sized (still invisible); play, then cross-fade in
-    busy.classList.add("hide");
-    runAssembly(glyphs, ()=>{
-      portrait.classList.add("shown");
-      setTimeout(()=>{ canvas.style.display="none"; }, 480);
-    });
-  };
-  portrait.src=(entry.png||entry.svg)+"?t="+Date.now();
-}
 
 /* ---------- render ---------- */
 function showBusy(){ busy.classList.remove("hide"); $(".msg").textContent="Composing from your words…"; errResult.style.display="none"; }
@@ -287,13 +248,9 @@ async function render(ink,{animate=false,background=false}={}){
       else { errResult.textContent=msg; errResult.style.display="block"; }
       busy.classList.add("hide"); return;
     }
-    cache[ink]={png:data.png,svg:data.svg}; markReady();
+    cache[ink]={preview:data.preview, job:data.job, price:data.price_cents, currency:data.currency}; markReady();
     if(background || ink!==state.ink) return;
-    if(animate && !REDUCED && state.style!=="story"){
-      let svgText=""; try{ svgText=await (await fetch(data.svg)).text(); }catch(e){}
-      if(svgText){ animateReveal(cache[ink], svgText); return; }
-    }
-    showImage(cache[ink]);
+    showImage(cache[ink]);   // watermarked preview (clean art is unlocked via Stripe)
   }catch(e){ if(!background){ errResult.textContent="Network error — please try again."; errResult.style.display="block"; busy.classList.add("hide"); } }
 }
 async function prewarm(){ for(const [id] of INKS){ if(id===state.ink||cache[id]) continue; await render(id,{background:true}); } }

@@ -74,3 +74,16 @@ def env_int(key: str, default: int) -> int:
 
 
 PORT = env_int("TYPO_PORT", 8077)
+
+# --- Freemium / payments ---------------------------------------------------
+# Clean (unwatermarked) renders are stored here and only served after payment;
+# this directory is NOT mounted as static.
+PRIVATE_DIR = BASE_DIR / "private"
+PRIVATE_DIR.mkdir(exist_ok=True)
+
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+DOWNLOAD_PRICE_CENTS = env_int("TYPO_PRICE_CENTS", 900)      # e.g. 900 = $9.00
+CURRENCY = os.environ.get("TYPO_CURRENCY", "usd")
+# Public base URL of the app, used to build Stripe success/cancel redirects.
+PUBLIC_BASE_URL = os.environ.get("TYPO_PUBLIC_URL", f"http://127.0.0.1:{PORT}")
+WATERMARK_URL = os.environ.get("TYPO_WATERMARK_URL", "https://typortrait.com")

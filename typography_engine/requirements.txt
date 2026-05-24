@@ -7,3 +7,5 @@ opencv-contrib-python==4.13.0.92
 cairosvg==2.9.0
 svgwrite==1.4.3
 mediapipe==0.10.35
+qrcode==8.2
+stripe==15.1.0

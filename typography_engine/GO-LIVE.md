@@ -66,12 +66,38 @@ sudo apt-get install -y docker.io docker-compose-plugin nginx certbot python3-ce
 sudo systemctl enable --now docker
 ```
 
-### 2d. Get the code and start the app
+### 2d. Get the code
 Replace the URL/branch with yours:
 ```bash
 git clone -b claude/typography-portrait-engine-NBy2u https://github.com/notanproenhanced/madewithwords-segmentation.git typortrait
 cd typortrait/typography_engine
-sudo docker compose up -d --build
+```
+
+### 2d-i. Add your Stripe keys (so people can pay to download)
+1. Create a free account at **stripe.com**. In the Stripe Dashboard go to
+   **Developers → API keys** and copy your **Secret key** (starts with `sk_test_`
+   while testing, `sk_live_` when you go live).
+2. On the VPS, create a `.env` file next to docker-compose (paste this block,
+   editing the values):
+   ```bash
+   cat > .env <<'EOF'
+   STRIPE_SECRET_KEY=PASTE_YOUR_STRIPE_SECRET_KEY_HERE
+   TYPO_PRICE_CENTS=900
+   TYPO_CURRENCY=usd
+   TYPO_PUBLIC_URL=https://app.typortrait.com
+   EOF
+   ```
+   - Replace `PASTE_YOUR_STRIPE_SECRET_KEY_HERE` with the key from Stripe
+     (it begins with `sk_` — keep it secret).
+   - `TYPO_PRICE_CENTS=900` means **$9.00** per download. Change it to your price.
+   - Keep `.env` private (never commit it).
+   - No Stripe key yet? You can still launch — people will see the free
+     watermarked preview; the Download button just says checkout isn't set up.
+
+### 2d-ii. Build and start the app
+```bash
+sudo docker compose up -d --build      # first build ~5-10 min (models baked in)
+curl -s http://127.0.0.1:8077/health   # -> {"ok": true, ...}
 ```
 The first build downloads everything and takes ~5–10 minutes. When it finishes, test it's alive:
 ```bash
@@ -121,6 +147,16 @@ sudo certbot --nginx -d app.typortrait.com
 Answer the prompts (enter your email, agree). When it finishes, open **https://app.typortrait.com** on your phone and desktop — the real app with upload + words + styles + download. 🎉
 
 ---
+
+## How payments work (and testing)
+- Anyone can create and view a portrait for free — it shows with a
+  **"Typortrait.com" watermark + a QR code**.
+- **Download** opens **Stripe Checkout**; after a successful payment the
+  **clean, watermark-free file downloads automatically**.
+- **Test it** (while using your `sk_test_` key) with Stripe's test card
+  `4242 4242 4242 4242`, any future expiry, any CVC/ZIP — no real charge.
+- **Go live:** in Stripe switch to **live mode**, copy the `sk_live_` key into
+  `.env`, then `sudo docker compose up -d` to apply. Real cards now work.
 
 ## Updating the app later (after I push changes)
 ```bash
