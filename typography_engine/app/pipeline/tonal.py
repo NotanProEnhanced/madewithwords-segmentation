@@ -165,6 +165,22 @@ def _balance_faces(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.n
     return np.clip(out, 0.0, 1.0)
 
 
+def _eye_ellipses(an, scale: float) -> List[Tuple[float, float, float, float]]:
+    """Per-eye (cx, cy, rx, ry) ellipses in render coords -- the regions the main
+    grid skips and the finer eye pass fills, so eyes resolve their structure."""
+    out: List[Tuple[float, float, float, float]] = []
+    for face in _faces_of(an):
+        pts = face.points * scale
+        for grp in (_EYE_L, _EYE_R):
+            ep = pts[list(grp)]
+            cx, cy = float(ep[:, 0].mean()), float(ep[:, 1].mean())
+            rx = (float(ep[:, 0].max() - ep[:, 0].min()) / 2.0) * 1.30
+            ry = (float(ep[:, 1].max() - ep[:, 1].min()) / 2.0) * 1.55
+            if rx >= 2.0 and ry >= 2.0:
+                out.append((cx, cy, rx, ry))
+    return out
+
+
 def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.ndarray:
     """Deepen the brows, lips and nostrils of every face so the likeness anchors
     there. Eyes are handled separately (_sharpen_eyes) -- they need local
@@ -297,13 +313,44 @@ def build_tonal_portrait(
         cv2.resize(an.img.bgr, (cols, rows), interpolation=cv2.INTER_AREA)
         if photo_ink else None
     )
-    if duo is not None:
-        lo_rgb, hi_rgb = _hex_to_rgb(duo[0]), _hex_to_rgb(duo[1])
+    lo_rgb, hi_rgb = (_hex_to_rgb(duo[0]), _hex_to_rgb(duo[1])) if duo is not None else (None, None)
+
+    span = max(1, _SHADE_LIGHT - _SHADE_DARK)
+    inv_level = max(1e-3, 1.0 - level)
+
+    def tdark_of(tone: float) -> float:
+        n = (tone - level) / inv_level
+        n = (n - pivot) * contrast + pivot
+        n = 1.0 if n > 1.0 else (0.0 if n < 0.0 else n)
+        return n ** power
+
+    def fill_for(t_dark: float, src=None) -> str:
+        g = _SHADE_LIGHT - int(round(span * t_dark))
+        g = 0 if g < 0 else (255 if g > 255 else g)
+        if photo_ink and src is not None:
+            b0, g0, r0 = int(src[0]), int(src[1]), int(src[2])  # BGR
+            luma = 0.299 * r0 + 0.587 * g0 + 0.114 * b0
+            s = g / max(luma, 1.0)  # tint source colour to our tonal lightness
+            return f"#{min(255,int(r0*s)):02x}{min(255,int(g0*s)):02x}{min(255,int(b0*s)):02x}"
+        if duo is not None:
+            cr = int(round(lo_rgb[0] + (hi_rgb[0] - lo_rgb[0]) * t_dark))
+            cg = int(round(lo_rgb[1] + (hi_rgb[1] - lo_rgb[1]) * t_dark))
+            cb = int(round(lo_rgb[2] + (hi_rgb[2] - lo_rgb[2]) * t_dark))
+            return f"#{cr:02x}{cg:02x}{cb:02x}"
+        return f"#{g:02x}{g:02x}{g:02x}"
+
+    # Eyes get a finer pass (below) for crisp iris/lid/catchlight; the main grid
+    # skips these regions so the two don't overprint.
+    eyes = _eye_ellipses(an, scale)
+
+    def in_eyes(px: float, py: float) -> bool:
+        for ex, ey, rx, ry in eyes:
+            if ((px - ex) / rx) ** 2 + ((py - ey) / ry) ** 2 <= 1.0:
+                return True
+        return False
 
     doc = SvgDoc(width=W, height=H, background=bg)
     runs: List[TextRun] = []
-    span = max(1, _SHADE_LIGHT - _SHADE_DARK)
-    inv_level = max(1e-3, 1.0 - level)
     # Seeded (reproducible) per-row jitter offsets break up the rigid column grid
     # so words don't form vertical "rivers" or horizontal banding.
     rng = np.random.default_rng(seed)
@@ -314,6 +361,11 @@ def build_tonal_portrait(
         baseline = (r + 0.5) * row_h + font * 0.34 + oy
         row = grid[r]
         ink = row > level
+        if eyes:
+            cy_nom = (r + 0.5) * row_h
+            for c in range(cols):
+                if ink[c] and in_eyes((c + 0.5) * cell_w, cy_nom):
+                    ink[c] = False
         c = 0
         while c < cols:
             if not ink[c]:
@@ -354,26 +406,8 @@ def build_tonal_portrait(
                 if ch == " ":
                     continue
                 cell = start + k
-                norm = (row[cell] - level) / inv_level
-                # Contrast S-curve: push darks toward black, lights toward light.
-                norm = (norm - pivot) * contrast + pivot
-                norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
-                t_dark = norm ** power
-                g = _SHADE_LIGHT - int(round(span * t_dark))
-                g = 0 if g < 0 else (255 if g > 255 else g)
-                if photo_ink:
-                    b0, g0, r0 = (int(v) for v in color_grid[r, cell])  # BGR
-                    luma = 0.299 * r0 + 0.587 * g0 + 0.114 * b0
-                    s = g / max(luma, 1.0)  # tint source colour to our tonal lightness
-                    cr = min(255, int(r0 * s)); cg = min(255, int(g0 * s)); cb = min(255, int(b0 * s))
-                    fill = f"#{cr:02x}{cg:02x}{cb:02x}"
-                elif duo is not None:
-                    cr = int(round(lo_rgb[0] + (hi_rgb[0] - lo_rgb[0]) * t_dark))
-                    cg = int(round(lo_rgb[1] + (hi_rgb[1] - lo_rgb[1]) * t_dark))
-                    cb = int(round(lo_rgb[2] + (hi_rgb[2] - lo_rgb[2]) * t_dark))
-                    fill = f"#{cr:02x}{cg:02x}{cb:02x}"
-                else:
-                    fill = f"#{g:02x}{g:02x}{g:02x}"
+                t_dark = tdark_of(row[cell])
+                fill = fill_for(t_dark, color_grid[r, cell] if photo_ink else None)
                 # Per-glyph jitter so baselines and columns aren't dead straight;
                 # breaks the rigid grid into organic texture (kills the residual
                 # horizontal-row / vertical-column banding) while each letter
@@ -401,6 +435,81 @@ def build_tonal_portrait(
                     kind="primary",
                 )
             )
+
+    # ---- Finer eye pass: resolve iris / lid / catchlight inside the eye
+    # ellipses (which the main grid skipped). Half-size glyphs, marked "detail"
+    # so they're exempt from the readable min-font floor that governs the body.
+    if eyes:
+        fe = max(6.0, font * 0.5)
+        ecw, erh = fe * _MONO_ADVANCE, fe * 0.80
+        ex0 = max(0, int(min(e[0] - e[2] for e in eyes)))
+        ey0 = max(0, int(min(e[1] - e[3] for e in eyes)))
+        ex1 = min(W, int(max(e[0] + e[2] for e in eyes)) + 1)
+        ey1 = min(H, int(max(e[1] + e[3] for e in eyes)) + 1)
+        if ex1 > ex0 + 2 and ey1 > ey0 + 2:
+            cols_f = max(1, int((ex1 - ex0) / ecw))
+            rows_f = max(1, int((ey1 - ey0) / erh))
+            sub = cv2.resize(dark[ey0:ey1, ex0:ex1], (cols_f, rows_f), interpolation=cv2.INTER_AREA)
+            msub = cv2.resize(mset.astype(np.uint8)[ey0:ey1, ex0:ex1], (cols_f, rows_f),
+                              interpolation=cv2.INTER_NEAREST) > 0
+            csub = (cv2.resize(an.img.bgr[ey0:ey1, ex0:ex1], (cols_f, rows_f),
+                               interpolation=cv2.INTER_AREA) if photo_ink else None)
+            for rf in range(rows_f):
+                cyf = ey0 + (rf + 0.5) * erh
+                baseline = cyf + fe * 0.34
+                rowf = sub[rf]
+                inkf = (rowf > level) & msub[rf]
+                for cf in range(cols_f):
+                    if inkf[cf] and not in_eyes(ex0 + (cf + 0.5) * ecw, cyf):
+                        inkf[cf] = False
+                c = 0
+                while c < cols_f:
+                    if not inkf[c]:
+                        c += 1
+                        continue
+                    start = c
+                    while c < cols_f and inkf[c]:
+                        c += 1
+                    end = c
+                    pos, glyphs, first = start, [], True
+                    while True:
+                        avail = end - pos - (0 if first else 1)
+                        if avail < shortest:
+                            break
+                        chosen = None
+                        for j in rng.permutation(ntok):
+                            if len(tokens[j]) <= avail:
+                                chosen = tokens[j]
+                                break
+                        if chosen is None:
+                            break
+                        if not first:
+                            glyphs.append(" ")
+                            pos += 1
+                        glyphs.extend(chosen)
+                        pos += len(chosen)
+                        first = False
+                    if not glyphs:
+                        continue
+                    spans = []
+                    for k, ch in enumerate(glyphs):
+                        if ch == " ":
+                            continue
+                        cellf = start + k
+                        fill = fill_for(tdark_of(rowf[cellf]), csub[rf, cellf] if photo_ink else None)
+                        gx = ex0 + cellf * ecw + (rng.random() - 0.5) * ecw * 0.22
+                        gy = baseline + (rng.random() - 0.5) * erh * 0.24
+                        spans.append(f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="{fill}">{esc(ch)}</tspan>')
+                    if not spans:
+                        continue
+                    doc.add(
+                        f'<text xml:space="preserve" font-family="{esc(_MONO_FAMILY)}" '
+                        f'font-size="{fe:.2f}" font-weight="{esc(cfg.font_weight)}">'
+                        + "".join(spans) + "</text>"
+                    )
+                    runs.append(TextRun(region="eye", path_id=f"eye{rf}_{start}",
+                                        path_d="", text="".join(glyphs),
+                                        font_size=round(fe, 2), kind="detail"))
 
     if not runs:
         warns.error("text", "no_runs", "Tonal fill produced no text (subject too bright or mask empty).")
