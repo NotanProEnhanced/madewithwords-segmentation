@@ -101,8 +101,7 @@ def _faces_of(an):
     return [lm] if lm is not None else []
 
 
-def _balance_faces(dark: np.ndarray, an, scale: float, mset: np.ndarray,
-                   target_mean: float = 0.46) -> np.ndarray:
+def _balance_faces(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.ndarray:
     """Per-face local-contrast normalization so a pale, low-contrast face renders
     with the same ink depth as a high-contrast one.
 
@@ -132,15 +131,21 @@ def _balance_faces(dark: np.ndarray, an, scale: float, mset: np.ndarray,
         if int(core.sum()) < 50:
             continue
         vals = dark[core]
-        lo, hi = np.percentile(vals, [8, 92])
+        lo, hi = np.percentile(vals, [10, 90])
         if hi - lo < 0.04:
             hi = lo + 0.04
-        stretched = np.clip((dark - lo) / (hi - lo), 0.0, 1.0)
-        cur = float(stretched[core].mean())
-        if 0.02 < cur < 0.98:
-            g = float(np.clip(np.log(target_mean) / np.log(cur), 0.5, 1.7))
-            stretched = stretched ** g
-        out = out * (1.0 - wm) + stretched * wm
+        # Gentle linear remap into a moderate band (not full black->white) so a
+        # washed-out pale face gains presence and contrast without over-
+        # amplifying its faint cell-level variation. Mapping to [0.10,0.84]
+        # rather than [0,1] and blending with the original keeps the smooth
+        # gradients that read as detail -- a hard full-range stretch (or a gamma
+        # lift) compounds with the sharpen + shade S-curve and turns subtle
+        # modeling into blotches.
+        t_lo, t_hi = 0.10, 0.84
+        remap = np.clip((dark - lo) / (hi - lo), 0.0, 1.0) * (t_hi - t_lo) + t_lo
+        alpha = 0.6
+        balanced = dark * (1.0 - alpha) + remap * alpha
+        out = out * (1.0 - wm) + balanced * wm
     return np.clip(out, 0.0, 1.0)
 
 
