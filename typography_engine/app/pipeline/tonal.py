@@ -19,6 +19,7 @@ is ever cut and no stranded single letters appear.
 """
 from __future__ import annotations
 
+import math
 import re
 from typing import List, Optional, Sequence, Tuple
 
@@ -42,6 +43,7 @@ _MONO_ADVANCE = 0.6  # glyph advance as a fraction of em for monospace fonts
 _JITTER_X = 0.16
 _JITTER_Y = 0.10
 _WORD_GAP = 2
+_ORIENT_CAP = 18.0   # max degrees a word tilts to follow the local contour
 
 # Per-glyph gray ramp (0-255): lightest inked cells near this gray, darkest
 # features near-black, so tone gradients carry the likeness. Kept just below
@@ -173,6 +175,32 @@ def _balance_faces(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.n
         balanced = dark * (1.0 - alpha) + remap * alpha
         out = out * (1.0 - wm) + balanced * wm
     return np.clip(out, 0.0, 1.0)
+
+
+def _orientation_grid(gray: np.ndarray, mset: np.ndarray, cols: int, rows: int,
+                      cap_deg: float = 18.0) -> np.ndarray:
+    """Per-cell word tilt (degrees) following the face's local contour.
+
+    The tilt is the tangent to the smoothed image gradient (i.e. along edges:
+    jaw, cheek, nose, brow, hairline), weighted by gradient strength so flat
+    regions stay at 0 (horizontal), and capped so words never lean too far. This
+    is the "lite" contour effect -- words orient to the form without re-flowing
+    the rows along streamlines."""
+    g = cv2.GaussianBlur(gray.astype(np.float32), (0, 0), max(2.0, gray.shape[0] / max(rows, 1)))
+    gx = cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3)
+    tx, ty = -gy, gx                       # tangent to the gradient = along the contour
+    mag = np.sqrt(gx * gx + gy * gy)
+    inside = mset
+    mref = float(np.percentile(mag[inside], 80)) if int(inside.sum()) > 50 else float(mag.max() or 1.0)
+    txg = cv2.resize(tx, (cols, rows), interpolation=cv2.INTER_AREA)
+    tyg = cv2.resize(ty, (cols, rows), interpolation=cv2.INTER_AREA)
+    magg = cv2.resize(mag, (cols, rows), interpolation=cv2.INTER_AREA)
+    ang = np.arctan2(tyg, txg)
+    ang = ((ang + np.pi / 2) % np.pi) - np.pi / 2   # fold direction -> orientation in (-90,90]
+    wgt = np.clip(magg / max(mref, 1e-6), 0.0, 1.0)
+    theta = np.degrees(wgt * ang)
+    return np.clip(theta, -cap_deg, cap_deg).astype(np.float32)
 
 
 def _eye_ellipses(an, scale: float) -> List[Tuple[float, float, float, float]]:
@@ -313,6 +341,7 @@ def build_tonal_portrait(
     # Area-average the tone into the glyph grid so each letter reflects the mean
     # darkness of its whole cell -> smooth, faithful gradients (not point noise).
     grid = cv2.resize(dark, (cols, rows), interpolation=cv2.INTER_AREA)
+    otheta = _orientation_grid(gray, mset, cols, rows, _ORIENT_CAP)
 
     # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
     # the source photo. Mono keeps the existing gray ramp untouched.
@@ -412,28 +441,32 @@ def build_tonal_portrait(
             if not glyphs:
                 continue
             spans = []
-            # Per-WORD jitter (not per-glyph): every letter in a word shares one
-            # offset, so within a word letters stay aligned and evenly spaced
-            # (legible), while whole words scatter enough to break the rigid grid
-            # / banding. Each new word (after a space) gets a fresh offset.
-            wx = (rng.random() - 0.5) * cell_w * _JITTER_X
-            wy = (rng.random() - 0.5) * row_h * _JITTER_Y
-            prev_space = False
+            # Per-WORD jitter + contour tilt: every letter in a word shares one
+            # offset and one tilt angle, so the word stays legible (aligned,
+            # evenly spaced) while it scatters (anti-banding) and leans along the
+            # local contour. Flat areas tilt ~0, so reading is preserved.
+            need_new = True
+            wx = wy = 0.0; wstart = start; wdeg = 0.0; wrad = 0.0
             for k, ch in enumerate(glyphs):
                 if ch == " ":
-                    if not prev_space:
-                        wx = (rng.random() - 0.5) * cell_w * _JITTER_X
-                        wy = (rng.random() - 0.5) * row_h * _JITTER_Y
-                    prev_space = True
+                    need_new = True
                     continue
-                prev_space = False
+                if need_new:
+                    wx = (rng.random() - 0.5) * cell_w * _JITTER_X
+                    wy = (rng.random() - 0.5) * row_h * _JITTER_Y
+                    wstart = start + k
+                    wdeg = float(otheta[r, wstart]) if wstart < otheta.shape[1] else 0.0
+                    wrad = math.radians(wdeg)
+                    need_new = False
                 cell = start + k
                 t_dark = tdark_of(row[cell])
                 fill = fill_for(t_dark, color_grid[r, cell] if photo_ink else None)
-                gx = cell * cell_w + ox + wx
-                gy = baseline + wy
+                d = (cell - wstart) * cell_w
+                gx = wstart * cell_w + ox + wx + d * math.cos(wrad)
+                gy = baseline + wy + d * math.sin(wrad)
+                rot = f' rotate="{wdeg:.1f}"' if abs(wdeg) > 0.2 else ""
                 spans.append(
-                    f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="{fill}">'
+                    f'<tspan x="{gx:.1f}" y="{gy:.1f}"{rot} fill="{fill}">'
                     f"{esc(ch)}</tspan>"
                 )
             if not spans:
