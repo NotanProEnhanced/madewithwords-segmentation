@@ -290,14 +290,20 @@ def build_tonal_portrait(
                 norm = (norm - pivot) * contrast + pivot
                 norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
                 g = _SHADE_LIGHT - int(round(span * (norm ** power)))
+                # Per-glyph jitter so baselines and columns aren't dead straight;
+                # breaks the rigid grid into organic texture (kills the residual
+                # horizontal-row / vertical-column banding) while each letter
+                # stays within its own tonal cell, so the likeness is preserved.
+                gx = cell * cell_w + ox + (rng.random() - 0.5) * cell_w * 0.22
+                gy = baseline + (rng.random() - 0.5) * row_h * 0.24
                 spans.append(
-                    f'<tspan x="{cell * cell_w + ox:.1f}" fill="#{g:02x}{g:02x}{g:02x}">'
+                    f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="#{g:02x}{g:02x}{g:02x}">'
                     f"{esc(ch)}</tspan>"
                 )
             if not spans:
                 continue
             doc.add(
-                f'<text y="{baseline:.1f}" xml:space="preserve" '
+                f'<text xml:space="preserve" '
                 f'font-family="{esc(_MONO_FAMILY)}" font-size="{font:.2f}" '
                 f'font-weight="{esc(cfg.font_weight)}">' + "".join(spans) + "</text>"
             )
