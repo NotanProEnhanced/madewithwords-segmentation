@@ -33,6 +33,16 @@ from .warnings import WarningCollector
 _MONO_FAMILY = "'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', monospace"
 _MONO_ADVANCE = 0.6  # glyph advance as a fraction of em for monospace fonts
 
+# Legibility/texture controls. Per-word jitter (fraction of cell/row) scatters
+# whole words to break the grid without wobbling letters within a word; word gap
+# is the blank cells between words (clearer separation reads better).
+# X jitter breaks vertical rivers without hurting reading; Y is kept low so rows
+# stay on clean baselines (most legible). Word gap separates words for clarity.
+# Banding is otherwise held off by the random word order.
+_JITTER_X = 0.16
+_JITTER_Y = 0.10
+_WORD_GAP = 2
+
 # Per-glyph gray ramp (0-255): lightest inked cells near this gray, darkest
 # features near-black, so tone gradients carry the likeness. Kept just below
 # white so the brightest skin/hair still render as very faint words (not blank)
@@ -379,7 +389,7 @@ def build_tonal_portrait(
             glyphs: List[str] = []
             first = True
             while True:
-                need = 0 if first else 1  # one blank cell between words
+                need = 0 if first else _WORD_GAP  # blank cells between words
                 avail = end - pos - need
                 if avail < shortest:
                     break
@@ -394,8 +404,8 @@ def build_tonal_portrait(
                 if chosen is None:
                     break
                 if not first:
-                    glyphs.append(" ")
-                    pos += 1
+                    glyphs.extend([" "] * _WORD_GAP)
+                    pos += _WORD_GAP
                 glyphs.extend(chosen)
                 pos += len(chosen)
                 first = False
@@ -406,13 +416,17 @@ def build_tonal_portrait(
             # offset, so within a word letters stay aligned and evenly spaced
             # (legible), while whole words scatter enough to break the rigid grid
             # / banding. Each new word (after a space) gets a fresh offset.
-            wx = (rng.random() - 0.5) * cell_w * 0.30
-            wy = (rng.random() - 0.5) * row_h * 0.28
+            wx = (rng.random() - 0.5) * cell_w * _JITTER_X
+            wy = (rng.random() - 0.5) * row_h * _JITTER_Y
+            prev_space = False
             for k, ch in enumerate(glyphs):
                 if ch == " ":
-                    wx = (rng.random() - 0.5) * cell_w * 0.30
-                    wy = (rng.random() - 0.5) * row_h * 0.28
+                    if not prev_space:
+                        wx = (rng.random() - 0.5) * cell_w * _JITTER_X
+                        wy = (rng.random() - 0.5) * row_h * _JITTER_Y
+                    prev_space = True
                     continue
+                prev_space = False
                 cell = start + k
                 t_dark = tdark_of(row[cell])
                 fill = fill_for(t_dark, color_grid[r, cell] if photo_ink else None)
@@ -477,7 +491,7 @@ def build_tonal_portrait(
                     end = c
                     pos, glyphs, first = start, [], True
                     while True:
-                        avail = end - pos - (0 if first else 1)
+                        avail = end - pos - (0 if first else _WORD_GAP)
                         if avail < shortest:
                             break
                         chosen = None
@@ -488,21 +502,25 @@ def build_tonal_portrait(
                         if chosen is None:
                             break
                         if not first:
-                            glyphs.append(" ")
-                            pos += 1
+                            glyphs.extend([" "] * _WORD_GAP)
+                            pos += _WORD_GAP
                         glyphs.extend(chosen)
                         pos += len(chosen)
                         first = False
                     if not glyphs:
                         continue
                     spans = []
-                    wx = (rng.random() - 0.5) * ecw * 0.30
-                    wy = (rng.random() - 0.5) * erh * 0.28
+                    wx = (rng.random() - 0.5) * ecw * _JITTER_X
+                    wy = (rng.random() - 0.5) * erh * _JITTER_Y
+                    prev_space = False
                     for k, ch in enumerate(glyphs):
                         if ch == " ":
-                            wx = (rng.random() - 0.5) * ecw * 0.30
-                            wy = (rng.random() - 0.5) * erh * 0.28
+                            if not prev_space:
+                                wx = (rng.random() - 0.5) * ecw * _JITTER_X
+                                wy = (rng.random() - 0.5) * erh * _JITTER_Y
+                            prev_space = True
                             continue
+                        prev_space = False
                         cellf = start + k
                         fill = fill_for(tdark_of(rowf[cellf]), csub[rf, cellf] if photo_ink else None)
                         gx = ex0 + cellf * ecw + wx
