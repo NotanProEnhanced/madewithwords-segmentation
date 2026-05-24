@@ -33,11 +33,11 @@ from .warnings import WarningCollector
 _MONO_FAMILY = "'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', monospace"
 _MONO_ADVANCE = 0.6  # glyph advance as a fraction of em for monospace fonts
 
-# Per-glyph gray ramp (0-255): the lightest inked cells render near this light
-# gray, the darkest features near-black, so tone gradients carry the likeness.
-# The light end is clamped well below white so bright skin and white hair still
-# render as faint words instead of dropping out to blank.
-_SHADE_LIGHT = 194
+# Per-glyph gray ramp (0-255): lightest inked cells near this gray, darkest
+# features near-black, so tone gradients carry the likeness. Kept just below
+# white so the brightest skin/hair still render as very faint words (not blank)
+# while highlights read light enough to give the portrait real contrast.
+_SHADE_LIGHT = 214
 _SHADE_DARK = 0
 
 # MediaPipe 478-point mesh index groups for the recognition features we deepen.
@@ -134,16 +134,14 @@ def _balance_faces(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.n
         lo, hi = np.percentile(vals, [10, 90])
         if hi - lo < 0.04:
             hi = lo + 0.04
-        # Gentle linear remap into a moderate band (not full black->white) so a
-        # washed-out pale face gains presence and contrast without over-
-        # amplifying its faint cell-level variation. Mapping to [0.10,0.84]
-        # rather than [0,1] and blending with the original keeps the smooth
-        # gradients that read as detail -- a hard full-range stretch (or a gamma
-        # lift) compounds with the sharpen + shade S-curve and turns subtle
-        # modeling into blotches.
-        t_lo, t_hi = 0.10, 0.84
+        # Linear remap into a wide band (near full range) so each face uses most
+        # of the ink scale -- light skin reads light, shadows read dark -- then
+        # blend with the original to keep the smooth gradients that read as
+        # detail. (A hard 0->1 stretch plus a gamma lift instead compounds with
+        # the sharpen + shade S-curve and turns subtle modeling into blotches.)
+        t_lo, t_hi = 0.05, 0.92
         remap = np.clip((dark - lo) / (hi - lo), 0.0, 1.0) * (t_hi - t_lo) + t_lo
-        alpha = 0.6
+        alpha = 0.65
         balanced = dark * (1.0 - alpha) + remap * alpha
         out = out * (1.0 - wm) + balanced * wm
     return np.clip(out, 0.0, 1.0)
@@ -182,7 +180,7 @@ def build_tonal_portrait(
     target_tone: float = 0.50,
     jitter: float = 0.7,
     seed: int = 1234,
-    contrast: float = 2.2,
+    contrast: float = 2.4,
     pivot: float = 0.42,
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
