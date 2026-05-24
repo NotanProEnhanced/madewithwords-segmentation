@@ -56,10 +56,10 @@ _SHADE_DARK = 0
 # source image's own colour. Background pairs with the chosen ink.
 _PALETTES = {
     "mono":     ("#bebebe", "#000000", "#ffffff"),   # reference grayscale
-    "navy":     ("#c2cde1", "#0a1530", "#ffffff"),
-    "sepia":    ("#e3d4b3", "#2a1808", "#fbf7ee"),
-    "burgundy": ("#e7cdce", "#42101a", "#ffffff"),
-    "forest":   ("#cfe0d4", "#0c2618", "#ffffff"),
+    "navy":     ("#b6c3d9", "#08111f", "#ffffff"),
+    "sepia":    ("#d9c8a2", "#2a1808", "#fbf7ee"),
+    "burgundy": ("#dfc1c2", "#42101a", "#ffffff"),
+    "forest":   ("#c2d6c8", "#0c2618", "#ffffff"),
     "gold_noir": ("#15171c", "#e8c66a", "#101216"),  # bright ink on dark ground
 }
 
@@ -388,8 +388,8 @@ def build_tonal_portrait(
     target_tone: float = 0.50,
     jitter: float = 0.7,
     seed: int = 1234,
-    contrast: float = 2.4,
-    pivot: float = 0.42,
+    contrast: float = 3.0,
+    pivot: float = 0.38,
     ink: str = "mono",
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
