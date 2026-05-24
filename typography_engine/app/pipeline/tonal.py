@@ -94,16 +94,21 @@ def _auto_tone(dark: np.ndarray, mset: np.ndarray, target: float, max_shift: flo
 
 
 def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.ndarray:
-    """Deepen the eyes, brows, lips and nostrils so the likeness anchors there."""
-    lm = getattr(an, "landmarks", None)
-    if lm is None:
+    """Deepen the eyes, brows, lips and nostrils of every face so each person's
+    likeness anchors there (supports group portraits, not just one subject)."""
+    faces = getattr(an, "faces", None)
+    if not faces:
+        lm = getattr(an, "landmarks", None)
+        faces = [lm] if lm is not None else []
+    if not faces:
         return dark
     H, W = dark.shape[:2]
     fm = np.zeros((H, W), np.uint8)
-    pts = lm.points * scale
-    for grp in _FEATURE_GROUPS:
-        hull = cv2.convexHull(np.array([pts[i] for i in grp], np.int32))
-        cv2.fillConvexPoly(fm, hull, 255)
+    for face in faces:
+        pts = face.points * scale
+        for grp in _FEATURE_GROUPS:
+            hull = cv2.convexHull(np.array([pts[i] for i in grp], np.int32))
+            cv2.fillConvexPoly(fm, hull, 255)
     fm = cv2.dilate(fm, np.ones((5, 5), np.uint8), 1)
     w = (cv2.GaussianBlur(fm, (0, 0), 3.0).astype(np.float32) / 255.0) * mset
     return dark * (1.0 - w) + np.clip(dark ** 0.55, 0.0, 1.0) * w

@@ -254,6 +254,7 @@ async def render(
             "job_id": job_id,
             "working_size": {"w": an.img.w, "h": an.img.h},
             "face_source": an.face_source,
+            "faces": len(an.faces),
             "words_used": word_list,
             "text_runs": [
                 {"region": r.region, "font_size": r.font_size, "kind": r.kind, "chars": len(r.text)}

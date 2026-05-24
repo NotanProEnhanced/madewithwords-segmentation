@@ -1,12 +1,12 @@
 """Shared analysis orchestration used by debug and render endpoints."""
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 from ..config import RenderConfig
 from .edges import EdgeResult, detect_edges
-from .landmarks import FaceLandmarks, detect_landmarks, haar_face_bbox
+from .landmarks import FaceLandmarks, detect_faces, haar_face_bbox
 from .preprocess import LoadedImage, load_and_normalize
 from .regions import RegionSet, build_regions
 from .silhouette import Silhouette, extract_silhouette
@@ -16,18 +16,20 @@ from .warnings import WarningCollector
 @dataclass
 class Analysis:
     img: LoadedImage
-    landmarks: Optional[FaceLandmarks]
+    landmarks: Optional[FaceLandmarks]      # primary (largest) face
     face_bbox: Optional[tuple]
     face_source: str
     silhouette: Silhouette
     edges: EdgeResult
     regions: RegionSet
+    faces: List[FaceLandmarks] = field(default_factory=list)  # all faces, largest first
 
 
 def analyze_image(img_bytes: bytes, cfg: RenderConfig, warns: WarningCollector) -> Analysis:
     img = load_and_normalize(img_bytes, cfg.work_max_dim, warns)
 
-    landmarks = detect_landmarks(img, warns)
+    faces = detect_faces(img, warns)
+    landmarks = faces[0] if faces else None
     if landmarks is not None:
         face_bbox = landmarks.bbox
         face_source = "mediapipe"
@@ -47,4 +49,5 @@ def analyze_image(img_bytes: bytes, cfg: RenderConfig, warns: WarningCollector) 
         silhouette=sil,
         edges=edges,
         regions=regions,
+        faces=faces,
     )

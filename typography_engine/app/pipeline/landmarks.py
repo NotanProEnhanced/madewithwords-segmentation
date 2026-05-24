@@ -68,7 +68,7 @@ def _get_landmarker(warns: WarningCollector):
             opts = FaceLandmarkerOptions(
                 base_options=BaseOptions(model_asset_path=str(FACE_LANDMARKER_MODEL)),
                 running_mode=RunningMode.IMAGE,
-                num_faces=1,
+                num_faces=5,
                 output_face_blendshapes=False,
                 output_facial_transformation_matrixes=False,
             )
@@ -80,10 +80,12 @@ def _get_landmarker(warns: WarningCollector):
             return None
 
 
-def detect_landmarks(img: LoadedImage, warns: WarningCollector) -> Optional[FaceLandmarks]:
+def detect_faces(img: LoadedImage, warns: WarningCollector) -> List[FaceLandmarks]:
+    """All faces found, largest first. Empty if MediaPipe is unavailable or finds
+    no face."""
     landmarker = _get_landmarker(warns)
     if landmarker is None:
-        return None
+        return []
     try:
         import mediapipe as mp
         import cv2
@@ -93,19 +95,28 @@ def detect_landmarks(img: LoadedImage, warns: WarningCollector) -> Optional[Face
         result = landmarker.detect(mp_img)
     except Exception as e:
         warns.warn("landmarks", "detect_failed", f"Landmark detection error: {e}")
-        return None
+        return []
 
     if not result.face_landmarks:
         warns.warn("landmarks", "no_face", "No face detected by MediaPipe.")
-        return None
+        return []
 
     h, w = img.bgr.shape[:2]
-    lms = result.face_landmarks[0]
-    pts = np.array([[lm.x * w, lm.y * h] for lm in lms], dtype=np.float32)
-    x0, y0 = pts[:, 0].min(), pts[:, 1].min()
-    x1, y1 = pts[:, 0].max(), pts[:, 1].max()
-    bbox = (float(x0), float(y0), float(x1 - x0), float(y1 - y0))
-    return FaceLandmarks(points=pts, image_w=w, image_h=h, bbox=bbox)
+    faces: List[FaceLandmarks] = []
+    for lms in result.face_landmarks:
+        pts = np.array([[lm.x * w, lm.y * h] for lm in lms], dtype=np.float32)
+        x0, y0 = pts[:, 0].min(), pts[:, 1].min()
+        x1, y1 = pts[:, 0].max(), pts[:, 1].max()
+        bbox = (float(x0), float(y0), float(x1 - x0), float(y1 - y0))
+        faces.append(FaceLandmarks(points=pts, image_w=w, image_h=h, bbox=bbox))
+    faces.sort(key=lambda f: f.bbox[2] * f.bbox[3], reverse=True)
+    return faces
+
+
+def detect_landmarks(img: LoadedImage, warns: WarningCollector) -> Optional[FaceLandmarks]:
+    """Primary (largest) face, for single-subject callers."""
+    faces = detect_faces(img, warns)
+    return faces[0] if faces else None
 
 
 def haar_face_bbox(img: LoadedImage, warns: WarningCollector) -> Optional[tuple]:

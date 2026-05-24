@@ -69,14 +69,19 @@ def _get_segmenter(warns: WarningCollector):
 
 
 def _clean_mask(fg: np.ndarray) -> np.ndarray:
-    """Keep the largest connected component, fill holes, smooth the edge."""
+    """Keep every significant person blob (so groups survive), fill holes, smooth.
+
+    Retains components down to 15% of the largest (or 2% of the frame) so a
+    second person standing apart isn't dropped, while specks are removed."""
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, kernel, iterations=1)
     fg = cv2.morphologyEx(fg, cv2.MORPH_CLOSE, kernel, iterations=2)
     num, labels, stats, _ = cv2.connectedComponentsWithStats(fg, connectivity=8)
     if num > 1:
-        largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
-        fg = np.where(labels == largest, 255, 0).astype(np.uint8)
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        thresh = max(0.15 * float(areas.max()), 0.02 * fg.shape[0] * fg.shape[1])
+        keep = [i + 1 for i, a in enumerate(areas) if a >= thresh]
+        fg = np.where(np.isin(labels, keep), 255, 0).astype(np.uint8)
     return fg
 
 
