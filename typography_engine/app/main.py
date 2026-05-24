@@ -24,6 +24,7 @@ from .pipeline.landmarks import detect_landmarks, haar_face_bbox
 from .pipeline.pathgen import catmull_rom_to_bezier_d
 from .pipeline.portrait import build_portrait
 from .pipeline.preprocess import load_and_normalize
+from .pipeline.quality import assess_portrait_input
 from .pipeline.raster import write_png
 from .pipeline.silhouette import extract_silhouette
 from .pipeline.svgbuild import SvgDoc, validate_svg
@@ -211,6 +212,23 @@ async def render(
 
     try:
         an = analyze_image(img_bytes, cfg, warns)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
+
+    # Input-quality gate: give actionable feedback instead of a silently bad
+    # portrait when the photo isn't a usable single head-and-shoulders shot.
+    gate = assess_portrait_input(an)
+    for issue in gate:
+        (warns.error if issue.severity == "error" else warns.warn)("input", issue.code, issue.message)
+    blocking = [i for i in gate if i.severity == "error"]
+    if blocking:
+        return JSONResponse(
+            {"ok": False, "error": "unsuitable_image", "detail": blocking[0].message,
+             "warnings": warns.as_list()},
+            status_code=422,
+        )
+
+    try:
         result = build_portrait(an, word_list, cfg, warns, uppercase=uppercase)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)

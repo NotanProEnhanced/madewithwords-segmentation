@@ -83,6 +83,31 @@ def test_render_rejects_empty_words():
     assert r.status_code == 400
 
 
+def test_render_rejects_non_portrait_image():
+    """A non-portrait image (no detectable face) is gated with a 422 and an
+    actionable message rather than silently producing a bad portrait."""
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    rng = np.random.default_rng(0)
+    noise = rng.integers(0, 256, size=(400, 400, 3), dtype=np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(noise).save(buf, format="PNG")
+
+    r = client.post(
+        "/render",
+        files={"image": ("noise.png", buf.getvalue(), "image/png")},
+        data={"words": "CODE,DREAM"},
+    )
+    assert r.status_code == 422, r.text
+    body = r.json()
+    assert body["ok"] is False
+    assert body["error"] == "unsuitable_image"
+    assert body["detail"]
+
+
 def test_min_font_never_violated():
     """No emitted run may fall below the configured minimum font size."""
     min_font = 16.0
