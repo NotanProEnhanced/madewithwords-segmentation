@@ -40,6 +40,24 @@ _MONO_ADVANCE = 0.6  # glyph advance as a fraction of em for monospace fonts
 _SHADE_LIGHT = 214
 _SHADE_DARK = 0
 
+# Named ink treatments. Each duotone is (light_end, dark_end): the colour at the
+# brightest tone and at the darkest. Light end is near the background so
+# highlights melt into it; dark end carries the features. "photo" samples the
+# source image's own colour. Background pairs with the chosen ink.
+_PALETTES = {
+    "mono":     ("#bebebe", "#000000", "#ffffff"),   # reference grayscale
+    "navy":     ("#eef2f7", "#0d1b3a", "#ffffff"),
+    "sepia":    ("#f4ecd8", "#2e1c0a", "#fbf7ee"),
+    "burgundy": ("#f6ecec", "#4a0d18", "#ffffff"),
+    "forest":   ("#eef3ee", "#0f2e1e", "#ffffff"),
+    "gold_noir": ("#15171c", "#e8c66a", "#101216"),  # bright ink on dark ground
+}
+
+
+def _hex_to_rgb(h: str) -> Tuple[int, int, int]:
+    h = h.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
 # MediaPipe 478-point mesh index groups for the recognition features we deepen.
 _EYE_L = (33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246)
 _EYE_R = (362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398)
@@ -182,6 +200,7 @@ def build_tonal_portrait(
     seed: int = 1234,
     contrast: float = 2.4,
     pivot: float = 0.42,
+    ink: str = "mono",
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
     if not approved:
@@ -229,7 +248,19 @@ def build_tonal_portrait(
     # darkness of its whole cell -> smooth, faithful gradients (not point noise).
     grid = cv2.resize(dark, (cols, rows), interpolation=cv2.INTER_AREA)
 
-    doc = SvgDoc(width=W, height=H, background=cfg.background_hex)
+    # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
+    # the source photo. Mono keeps the existing gray ramp untouched.
+    photo_ink = ink == "photo"
+    duo = _PALETTES[ink][:2] if (ink in _PALETTES and ink != "mono") else None
+    bg = _PALETTES[ink][2] if (ink in _PALETTES and ink != "mono") else cfg.background_hex
+    color_grid = (
+        cv2.resize(an.img.bgr, (cols, rows), interpolation=cv2.INTER_AREA)
+        if photo_ink else None
+    )
+    if duo is not None:
+        lo_rgb, hi_rgb = _hex_to_rgb(duo[0]), _hex_to_rgb(duo[1])
+
+    doc = SvgDoc(width=W, height=H, background=bg)
     runs: List[TextRun] = []
     span = max(1, _SHADE_LIGHT - _SHADE_DARK)
     inv_level = max(1e-3, 1.0 - level)
@@ -287,7 +318,22 @@ def build_tonal_portrait(
                 # Contrast S-curve: push darks toward black, lights toward light.
                 norm = (norm - pivot) * contrast + pivot
                 norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
-                g = _SHADE_LIGHT - int(round(span * (norm ** power)))
+                t_dark = norm ** power
+                g = _SHADE_LIGHT - int(round(span * t_dark))
+                g = 0 if g < 0 else (255 if g > 255 else g)
+                if photo_ink:
+                    b0, g0, r0 = (int(v) for v in color_grid[r, cell])  # BGR
+                    luma = 0.299 * r0 + 0.587 * g0 + 0.114 * b0
+                    s = g / max(luma, 1.0)  # tint source colour to our tonal lightness
+                    cr = min(255, int(r0 * s)); cg = min(255, int(g0 * s)); cb = min(255, int(b0 * s))
+                    fill = f"#{cr:02x}{cg:02x}{cb:02x}"
+                elif duo is not None:
+                    cr = int(round(lo_rgb[0] + (hi_rgb[0] - lo_rgb[0]) * t_dark))
+                    cg = int(round(lo_rgb[1] + (hi_rgb[1] - lo_rgb[1]) * t_dark))
+                    cb = int(round(lo_rgb[2] + (hi_rgb[2] - lo_rgb[2]) * t_dark))
+                    fill = f"#{cr:02x}{cg:02x}{cb:02x}"
+                else:
+                    fill = f"#{g:02x}{g:02x}{g:02x}"
                 # Per-glyph jitter so baselines and columns aren't dead straight;
                 # breaks the rigid grid into organic texture (kills the residual
                 # horizontal-row / vertical-column banding) while each letter
@@ -295,7 +341,7 @@ def build_tonal_portrait(
                 gx = cell * cell_w + ox + (rng.random() - 0.5) * cell_w * 0.22
                 gy = baseline + (rng.random() - 0.5) * row_h * 0.24
                 spans.append(
-                    f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="#{g:02x}{g:02x}{g:02x}">'
+                    f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="{fill}">'
                     f"{esc(ch)}</tspan>"
                 )
             if not spans:

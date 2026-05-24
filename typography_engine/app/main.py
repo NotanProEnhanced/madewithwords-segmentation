@@ -186,6 +186,7 @@ async def render(
     uppercase: bool = Form(True),
     background_hex: Optional[str] = Form(None),
     foreground_hex: Optional[str] = Form(None),
+    ink: str = Form("mono"),
     png_width: int = Form(2000),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
@@ -228,8 +229,11 @@ async def render(
             status_code=422,
         )
 
+    from .pipeline.tonal import _PALETTES
+    ink_choice = ink if ink in _PALETTES or ink == "photo" else "mono"
+
     try:
-        result = build_portrait(an, word_list, cfg, warns, uppercase=uppercase)
+        result = build_portrait(an, word_list, cfg, warns, uppercase=uppercase, ink=ink_choice)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
     except Exception as e:  # noqa: BLE001
@@ -255,6 +259,7 @@ async def render(
             "working_size": {"w": an.img.w, "h": an.img.h},
             "face_source": an.face_source,
             "faces": len(an.faces),
+            "ink": ink_choice,
             "words_used": word_list,
             "text_runs": [
                 {"region": r.region, "font_size": r.font_size, "kind": r.kind, "chars": len(r.text)}

@@ -74,6 +74,21 @@ def test_render_produces_valid_svg_and_png():
         assert png_file.exists() and png_file.stat().st_size > 0
 
 
+def test_render_color_ink():
+    """A non-mono ink renders a valid SVG and reports the chosen treatment."""
+    r = client.post(
+        "/render",
+        files={"image": ("face.jpg", _sample_face_bytes(), "image/jpeg")},
+        data={"words": "CODE,DREAM", "ink": "navy"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True and body["ink"] == "navy"
+    svg_text = (OUTPUTS_DIR / Path(body["svg"]).name).read_text()
+    ET.fromstring(svg_text)
+    assert "rgb(" not in svg_text and "hsl(" not in svg_text
+
+
 def test_render_rejects_empty_words():
     r = client.post(
         "/render",
