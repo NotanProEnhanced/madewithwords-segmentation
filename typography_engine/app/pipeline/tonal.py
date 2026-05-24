@@ -402,18 +402,22 @@ def build_tonal_portrait(
             if not glyphs:
                 continue
             spans = []
+            # Per-WORD jitter (not per-glyph): every letter in a word shares one
+            # offset, so within a word letters stay aligned and evenly spaced
+            # (legible), while whole words scatter enough to break the rigid grid
+            # / banding. Each new word (after a space) gets a fresh offset.
+            wx = (rng.random() - 0.5) * cell_w * 0.30
+            wy = (rng.random() - 0.5) * row_h * 0.28
             for k, ch in enumerate(glyphs):
                 if ch == " ":
+                    wx = (rng.random() - 0.5) * cell_w * 0.30
+                    wy = (rng.random() - 0.5) * row_h * 0.28
                     continue
                 cell = start + k
                 t_dark = tdark_of(row[cell])
                 fill = fill_for(t_dark, color_grid[r, cell] if photo_ink else None)
-                # Per-glyph jitter so baselines and columns aren't dead straight;
-                # breaks the rigid grid into organic texture (kills the residual
-                # horizontal-row / vertical-column banding) while each letter
-                # stays within its own tonal cell, so the likeness is preserved.
-                gx = cell * cell_w + ox + (rng.random() - 0.5) * cell_w * 0.22
-                gy = baseline + (rng.random() - 0.5) * row_h * 0.24
+                gx = cell * cell_w + ox + wx
+                gy = baseline + wy
                 spans.append(
                     f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="{fill}">'
                     f"{esc(ch)}</tspan>"
@@ -492,13 +496,17 @@ def build_tonal_portrait(
                     if not glyphs:
                         continue
                     spans = []
+                    wx = (rng.random() - 0.5) * ecw * 0.30
+                    wy = (rng.random() - 0.5) * erh * 0.28
                     for k, ch in enumerate(glyphs):
                         if ch == " ":
+                            wx = (rng.random() - 0.5) * ecw * 0.30
+                            wy = (rng.random() - 0.5) * erh * 0.28
                             continue
                         cellf = start + k
                         fill = fill_for(tdark_of(rowf[cellf]), csub[rf, cellf] if photo_ink else None)
-                        gx = ex0 + cellf * ecw + (rng.random() - 0.5) * ecw * 0.22
-                        gy = baseline + (rng.random() - 0.5) * erh * 0.24
+                        gx = ex0 + cellf * ecw + wx
+                        gy = baseline + wy
                         spans.append(f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="{fill}">{esc(ch)}</tspan>')
                     if not spans:
                         continue
