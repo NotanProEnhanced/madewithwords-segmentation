@@ -258,6 +258,107 @@ def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.nd
     return np.clip(out, 0.0, 1.0)
 
 
+def build_calligram(
+    an,
+    text: str,
+    cfg: RenderConfig,
+    warns: WarningCollector,
+    render_w: int = 2600,
+    font_px: float = 22.0,
+    contrast: float = 2.2,
+    pivot: float = 0.45,
+    power: float = 1.0,
+    light: int = 224,
+    ink_hex: str = "#111111",
+) -> Tuple[str, List[TextRun]]:
+    """Story calligram: lay the user's own passage as continuous, ordered,
+    readable prose in lines across the subject, shading each glyph by the photo's
+    tone so the face emerges from the text's density. Unlike the word-mosaic this
+    keeps the words in order and unbroken (you can read it), fills the whole
+    masked region (faint in highlights, dark in shadows), and runs in straight
+    lines like a page. Ink colour is derived from `ink_hex` (the dark end)."""
+    words = [w for w in str(text).split() if w]
+    if not words:
+        warns.error("text", "no_words", "No passage supplied for the calligram.")
+        return "", []
+
+    gray = an.img.gray
+    mask = an.silhouette.mask
+    h0, w0 = gray.shape[:2]
+    if mask.shape[:2] != (h0, w0):
+        mask = cv2.resize(mask, (w0, h0), interpolation=cv2.INTER_NEAREST)
+    if w0 < render_w:
+        scale = render_w / float(w0)
+        W, H = int(round(w0 * scale)), int(round(h0 * scale))
+        gray = cv2.resize(gray, (W, H), interpolation=cv2.INTER_CUBIC)
+        mask = cv2.resize(mask, (W, H), interpolation=cv2.INTER_NEAREST)
+    else:
+        scale, W, H = 1.0, w0, h0
+
+    mset = mask > 127
+    dark = _tone_field(_sharpen(gray), mask, gamma=1.0, floor=0.0)
+    dark = _auto_tone(dark, mset, 0.50, max_shift=0.18)
+    dark = _balance_faces(dark, an, scale, mset)
+    dark = _emphasize_features(dark, an, scale, mset)
+    dark = _sharpen_eyes(dark, an, scale, mset)
+    tone_s = cv2.GaussianBlur(dark, (0, 0), max(1.0, font_px * 0.5))
+
+    cell_w = font_px * _MONO_ADVANCE
+    row_h = font_px * 1.05
+    cols = max(1, int(W / cell_w))
+    rows = max(1, int(H / row_h))
+    ir, ig, ib = _hex_to_rgb(ink_hex)
+    family = "'Courier New', 'DejaVu Sans Mono', 'Liberation Mono', monospace"
+
+    doc = SvgDoc(width=W, height=H, background="#ffffff")
+    runs: List[TextRun] = []
+    wi = 0
+    for r in range(rows):
+        baseline = (r + 1) * row_h
+        yi = min(H - 1, max(0, int(baseline - 0.32 * font_px)))
+        spans = []
+        line_chars = []
+        c = 0
+        while c < cols:
+            word = words[wi % len(words)]
+            wl = len(word)
+            if wl > cols:
+                word = word[:cols]; wl = cols
+            if c + wl > cols:
+                break
+            for k, ch in enumerate(word):
+                col = c + k
+                xi = min(W - 1, max(0, int(col * cell_w + cell_w * 0.5)))
+                if not mset[yi, xi]:
+                    continue
+                tone = float(tone_s[yi, xi])
+                norm = (tone - pivot) * contrast + pivot
+                norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
+                t = norm ** power
+                f = 1.0 - t                       # 1 = faint(light), 0 = full ink
+                cr = int(round(ir + (light - ir) * f))
+                cg = int(round(ig + (light - ig) * f))
+                cb = int(round(ib + (light - ib) * f))
+                spans.append(
+                    f'<tspan x="{col * cell_w:.1f}" fill="#{cr:02x}{cg:02x}{cb:02x}">{esc(ch)}</tspan>'
+                )
+                line_chars.append(ch)
+            c += wl + 1
+            wi += 1
+        if not spans:
+            continue
+        doc.add(
+            f'<text y="{baseline:.1f}" xml:space="preserve" font-family="{esc(family)}" '
+            f'font-size="{font_px:.1f}">' + "".join(spans) + "</text>"
+        )
+        runs.append(TextRun(region="calligram", path_id=f"row{r}", path_d="",
+                            text="".join(line_chars), font_size=round(font_px, 1), kind="primary"))
+
+    if not runs:
+        warns.error("text", "no_runs", "Calligram produced no text (mask empty?).")
+    return doc.to_svg(), runs
+
+
 def build_tonal_portrait(
     an,
     words: Sequence[str],
