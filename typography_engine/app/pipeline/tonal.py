@@ -211,10 +211,10 @@ def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) ->
 
 
 def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.ndarray:
-    """Maximize local contrast in each eye so the iris/lash read dark and the
-    sclera/catchlight read light -- the structures the eye locks onto. Unlike the
-    whole-face balance (kept gentle to avoid muddiness), strong contrast is
-    *desirable* here, so we stretch hard and unsharp within a feathered eye box."""
+    """Make each eye read as a *live* eye: strong local contrast so iris/lash go
+    dark and sclera goes light, crisp lid edges (unsharp), and a preserved
+    catchlight -- the small bright glint that makes a portrait look back at you.
+    Strong contrast is desirable here (unlike the gentle whole-face balance)."""
     faces = _faces_of(an)
     if not faces:
         return dark
@@ -234,17 +234,27 @@ def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.nd
             if bx1 - bx0 < 6 or by1 - by0 < 6:
                 continue
             patch = out[by0:by1, bx0:bx1]
-            lo, hi = np.percentile(patch, [5, 95])
+            lo, hi = np.percentile(patch, [4, 96])
             if hi - lo < 0.05:
                 continue
             st = np.clip((patch - lo) / (hi - lo), 0.0, 1.0)
-            blur = cv2.GaussianBlur(st, (0, 0), max(1.0, ew * 0.05))
-            sharp = np.clip(st + (st - blur) * 0.9, 0.0, 1.0)
+            blur = cv2.GaussianBlur(st, (0, 0), max(1.0, ew * 0.04))
+            sharp = np.clip(st + (st - blur) * 1.1, 0.0, 1.0)   # crisper iris/lid
             ph, pw = patch.shape[:2]
             fm = np.zeros((ph, pw), np.float32)
             cv2.ellipse(fm, (pw // 2, ph // 2), (pw // 2, ph // 2), 0, 0, 360, 1.0, -1)
             fm = cv2.GaussianBlur(fm, (0, 0), max(1.0, ew * 0.12)) * mset[by0:by1, bx0:bx1]
             out[by0:by1, bx0:bx1] = patch * (1.0 - fm) + sharp * fm
+
+            # Catchlight: keep the brightest spot inside the eye a crisp light
+            # glint (only if a real highlight exists), so eyes don't read dead.
+            ix0, iy0 = int(max(0, x0)), int(max(0, y0))
+            ix1, iy1 = int(min(W, x1)), int(min(H, y1))
+            eye_in = out[iy0:iy1, ix0:ix1]
+            if eye_in.size and float(eye_in.min()) < 0.30:
+                cyl, cxl = np.unravel_index(int(np.argmin(eye_in)), eye_in.shape)
+                r = max(3, int(round(eh * 0.09)))
+                cv2.circle(out, (ix0 + cxl, iy0 + cyl), r, 0.0, -1)
     return np.clip(out, 0.0, 1.0)
 
 
