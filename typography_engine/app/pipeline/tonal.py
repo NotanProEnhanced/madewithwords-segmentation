@@ -233,7 +233,6 @@ def build_tonal_portrait(
 
     doc = SvgDoc(width=W, height=H, background=cfg.background_hex)
     runs: List[TextRun] = []
-    cursor = 0
     span = max(1, _SHADE_LIGHT - _SHADE_DARK)
     inv_level = max(1e-3, 1.0 - level)
     # Seeded (reproducible) per-row jitter offsets break up the rigid column grid
@@ -263,12 +262,13 @@ def build_tonal_portrait(
                 avail = end - pos - need
                 if avail < shortest:
                     break
+                # Random word order (seeded) so word-boundary spaces fall at
+                # different x on each row instead of stacking into vertical
+                # "rivers"; pick the first that fits the remaining run.
                 chosen = None
-                for i in range(ntok):
-                    t = tokens[(cursor + i) % ntok]
-                    if len(t) <= avail:
-                        chosen = t
-                        cursor = (cursor + i + 1) % ntok
+                for j in rng.permutation(ntok):
+                    if len(tokens[j]) <= avail:
+                        chosen = tokens[j]
                         break
                 if chosen is None:
                     break
