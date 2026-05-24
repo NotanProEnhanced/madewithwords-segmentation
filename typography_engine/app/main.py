@@ -321,6 +321,16 @@ async def render(
     )
 
 
+@app.get("/pricing")
+def pricing() -> JSONResponse:
+    """So the page can show the price up front (single source of truth = env)."""
+    return JSONResponse({
+        "price_cents": DOWNLOAD_PRICE_CENTS,
+        "currency": CURRENCY,
+        "configured": bool(STRIPE_SECRET_KEY),
+    })
+
+
 @app.post("/checkout")
 def checkout(job: str = Form(...), fmt: str = Form("png")) -> JSONResponse:
     """Create a Stripe Checkout session to unlock the clean download of `job`."""

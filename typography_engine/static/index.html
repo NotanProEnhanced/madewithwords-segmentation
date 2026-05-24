@@ -97,6 +97,7 @@
       <textarea id="words" rows="3" placeholder="GRACE, KIND, BRILLIANT, MOM, ALWAYS"></textarea>
     </label>
     <button id="create" class="btn" disabled>Create portrait</button>
+    <p id="freenote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Free to create &amp; preview — keep yours anytime.</p>
     <div id="errInput" class="err"></div>
   </section>
 
@@ -118,7 +119,7 @@
       </div>
     </div>
     <div class="actions"><button id="buy" class="btn">Download</button></div>
-    <p class="note" id="buynote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Free preview · pay to download without the watermark</p>
+    <p class="note" id="buynote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Preview is free · download removes the watermark, full resolution</p>
     <button id="restart" class="btn ghost">Start a new portrait</button>
     <div id="errResult" class="err"></div>
   </section>
@@ -133,6 +134,12 @@ const ANIM_CAP = 2600;                 // max glyphs animated (perf); image show
 const INKS = [["navy","#0d1b3a","Navy"],["photo","conic","Photo"],["sepia","#5a3a1a","Sepia"],
   ["burgundy","#4a0d18","Burgundy"],["forest","#0f2e1e","Forest"],["gold_noir","gold","Gold noir"],["mono","#555555","Mono"]];
 const state = { file:null, ink:"navy", poster:false, style:"mosaic" };
+function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
+// Show the price up front so it's never a surprise (single source: /pricing).
+fetch("/pricing").then(r=>r.json()).then(p=>{
+  const fn=document.getElementById("freenote");
+  if(fn) fn.textContent = "Free to create & preview — keep yours for " + money(p.price_cents,p.currency) + " (full resolution, no watermark).";
+}).catch(()=>{});
 let cache = {};
 
 /* ---------- input ---------- */
@@ -191,7 +198,6 @@ let tmr; [title,caption].forEach(inp=>inp.addEventListener("input",()=>{clearTim
 const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy");
 const canvas=$("#assembly"), buy=$("#buy"), buynote=$("#buynote"), errResult=$("#errResult"), errInput=$("#errInput");
 let currentJob=null, priceLabel="";
-function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
 buy.addEventListener("click", async ()=>{
   if(!currentJob) return;
   buy.disabled=true; const old=buy.textContent; buy.textContent="Opening secure checkout…";
