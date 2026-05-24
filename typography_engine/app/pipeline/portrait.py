@@ -29,7 +29,7 @@ def build_portrait(
     cfg: RenderConfig,
     warns: WarningCollector,
     uppercase: bool = True,
-    ink: str = "mono",
+    ink: str = "navy",
 ) -> PortraitResult:
     cfg.validate()
     svg, runs = build_tonal_portrait(an, words, cfg, warns, uppercase=uppercase, ink=ink)

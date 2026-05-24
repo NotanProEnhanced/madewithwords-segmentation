@@ -186,7 +186,7 @@ async def render(
     uppercase: bool = Form(True),
     background_hex: Optional[str] = Form(None),
     foreground_hex: Optional[str] = Form(None),
-    ink: str = Form("mono"),
+    ink: str = Form("navy"),
     png_width: int = Form(2000),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
