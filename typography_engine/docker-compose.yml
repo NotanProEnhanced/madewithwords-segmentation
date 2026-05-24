@@ -1,0 +1,9 @@
+# Typortrait — runs the engine on 127.0.0.1:8077 (nginx terminates TLS in front).
+services:
+  typortrait:
+    build: .
+    image: typortrait:latest
+    container_name: typortrait
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8077:8077"

@@ -1,0 +1,11 @@
+outputs/*
+!outputs/.gitkeep
+models/*
+tests
+**/__pycache__
+*.pyc
+.pytest_cache
+run.sh
+README.md
+DEPLOY.md
+deploy
