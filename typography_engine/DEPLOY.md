@@ -77,7 +77,7 @@ certbot (steps 3–4 above) are identical.
 sudo apt-get update
 sudo apt-get install -y python3-venv python3-pip nginx certbot python3-certbot-nginx git \
   libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi8 \
-  libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 fonts-dejavu-core fonts-liberation
+  libgl1 libgles2 libegl1 libglib2.0-0 libsm6 libxext6 libxrender1 fonts-dejavu-core fonts-liberation
 
 # 2. Code + virtualenv
 sudo git clone <YOUR_REPO_URL> /opt/typortrait
