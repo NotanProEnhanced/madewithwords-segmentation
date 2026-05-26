@@ -1,14 +1,30 @@
 # Deploying Typortrait to an Ubuntu VPS (typortrait.com)
 
+> **Beginner?** Use **GO-LIVE.md** — it's the full click-by-click walkthrough
+> (Windows/PowerShell) and is the source of truth, including the Stripe setup.
+> This file is the condensed technical reference.
+
 The engine is a Python/FastAPI server with native deps (Cairo, OpenCV,
 MediaPipe). It needs the **VPS**, not shared hosting. Below is a Docker-based
 deploy with nginx + Let's Encrypt TLS. Run everything as a sudo user.
 
-## 0. DNS (do this first so TLS can verify)
-At your DNS provider, point the domain at the VPS public IP:
+**Payments:** before `docker compose up`, create a `.env` next to
+`docker-compose.yml` so the freemium download flow works:
 ```
-A   typortrait.com       -> <VPS_IP>
-A   www.typortrait.com   -> <VPS_IP>
+STRIPE_SECRET_KEY=your_stripe_secret_key
+TYPO_PRICE_CENTS=1499
+TYPO_CURRENCY=usd
+TYPO_PUBLIC_URL=https://app.typortrait.com
+```
+Compose reads it automatically and persists previews + paid files via the
+`./data` volumes. Without a key, the app still runs (free watermarked previews;
+the Download button reports that checkout isn't configured).
+
+## 0. DNS (do this first so TLS can verify)
+At your DNS provider, point the domain at the VPS public IP. With a separate
+marketing page on the root, use a subdomain for the app:
+```
+A   app.typortrait.com   -> <VPS_IP>
 ```
 Wait for it to resolve (`dig +short typortrait.com`).
 
