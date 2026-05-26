@@ -42,17 +42,20 @@ from .pipeline.warnings import WarningCollector
 
 
 def _parse_words(words: Optional[str], words_json: Optional[str]) -> List[str]:
-    """Accept words as JSON array string or as a comma/newline separated string."""
+    """Accept words as a JSON array string, or split on commas, newlines AND
+    spaces. Splitting on whitespace matters: a space-separated list like
+    "grace brilliant mom" must become separate words, not one glued-together
+    token that only fits the widest part of the silhouette."""
     if words_json:
         try:
             data = json.loads(words_json)
             if isinstance(data, list):
-                return [str(x) for x in data]
+                return [str(x).strip() for x in data if str(x).strip()]
         except json.JSONDecodeError:
             pass
     if words:
-        raw = words.replace("\n", ",")
-        return [w for w in (s.strip() for s in raw.split(",")) if w]
+        raw = words.replace(",", " ").replace("\n", " ")
+        return [w for w in raw.split() if w]
     return []
 
 # Stroke styling for region debug output (hex only).
