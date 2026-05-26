@@ -11,7 +11,7 @@ import uuid
 from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -370,7 +370,7 @@ def checkout(job: str = Form(...), fmt: str = Form("png")) -> JSONResponse:
                 },
             }],
             metadata={"job": job, "fmt": ext},
-            success_url=f"{PUBLIC_BASE_URL}/download?job={job}&fmt={ext}&session_id={{CHECKOUT_SESSION_ID}}",
+            success_url=f"{PUBLIC_BASE_URL}/success?job={job}&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{PUBLIC_BASE_URL}/static/index.html?canceled=1",
         )
     except Exception as e:  # noqa: BLE001
@@ -409,3 +409,71 @@ def download(job: str, session_id: str, fmt: str = "png"):
             return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
     media = "image/svg+xml" if ext == "svg" else "image/png"
     return FileResponse(str(path), media_type=media, filename=f"typortrait-{job}.{ext}")
+
+
+def _session_paid(session_id: str, job: str) -> bool:
+    """True if `session_id` is a paid Stripe session for `job`."""
+    if not STRIPE_SECRET_KEY:
+        return False
+    import stripe
+    stripe.api_key = STRIPE_SECRET_KEY
+    try:
+        sess = stripe.checkout.Session.retrieve(session_id)
+    except Exception:  # noqa: BLE001
+        return False
+    meta = getattr(sess, "metadata", None)
+    return (getattr(sess, "payment_status", None) == "paid"
+            and (getattr(meta, "job", None) if meta is not None else None) == job)
+
+
+@app.get("/success", response_class=HTMLResponse)
+def success(job: str, session_id: str):
+    """Post-payment page: confirms the purchase and offers both the high-res PNG
+    and the vector SVG (one purchase unlocks the job)."""
+    import html
+    from urllib.parse import quote
+    paid = _session_paid(session_id, job) and (PRIVATE_DIR / f"{job}.svg").exists()
+    jq, sq = quote(job, safe=""), quote(session_id, safe="")
+    png_url = f"/download?job={jq}&fmt=png&session_id={sq}"
+    svg_url = f"/download?job={jq}&fmt=svg&session_id={sq}"
+    if paid:
+        inner = (
+            '<div class="check">&#10003;</div>'
+            '<h1>Your Typortrait is ready</h1>'
+            '<p class="sub">Thank you. Your download is watermark-free and yours to keep — '
+            'in both formats below.</p>'
+            f'<a class="btn" href="{html.escape(png_url)}">Download image &middot; PNG</a>'
+            f'<a class="btn ghost" href="{html.escape(svg_url)}">Download vector &middot; SVG</a>'
+            '<p class="note"><b>About the vector (SVG):</b> it&rsquo;s made of shapes, not pixels, '
+            'so it never blurs. Print it the size of a stamp or a six-foot canvas — every letter '
+            'stays perfectly sharp.</p>'
+            '<a class="link" href="/static/index.html">Create another portrait</a>'
+        )
+    else:
+        inner = (
+            '<h1>Finishing up&hellip;</h1>'
+            '<p class="sub">If your payment just completed, your download will be ready in a moment. '
+            'Refresh this page; if it doesn&rsquo;t appear, your card may not have been charged.</p>'
+            f'<a class="btn" href="/success?job={html.escape(jq)}&amp;session_id={html.escape(sq)}">Refresh</a>'
+            '<a class="link" href="/static/index.html">Back to Typortrait</a>'
+        )
+    page = (
+        "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Typortrait — your download</title><style>"
+        ":root{--navy:#0d1b3a;--muted:#6b7280;--line:#ece9e3}"
+        "*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;"
+        "background:#faf9f7;color:#16203a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:24px}"
+        ".card{background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:0 10px 40px rgba(20,30,60,.10);"
+        "max-width:440px;width:100%;padding:34px 28px;text-align:center}"
+        ".check{width:54px;height:54px;border-radius:50%;background:#0d1b3a;color:#fff;font-size:28px;line-height:54px;margin:0 auto 14px}"
+        "h1{font-family:Georgia,'Times New Roman',serif;color:var(--navy);font-size:26px;margin:6px 0 8px}"
+        ".sub{color:var(--muted);font-size:15px;line-height:1.5;margin:0 0 22px}"
+        ".btn{display:block;border-radius:999px;background:var(--navy);color:#fff;font-size:16px;font-weight:600;"
+        "padding:14px;margin:10px 0;text-decoration:none}"
+        ".btn.ghost{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}"
+        ".note{color:var(--muted);font-size:13px;line-height:1.55;margin:18px 2px 0;text-align:left}"
+        ".link{display:inline-block;margin-top:18px;color:var(--muted);font-size:14px;text-decoration:none}"
+        "</style></head><body><div class='card'>" + inner + "</div></body></html>"
+    )
+    return HTMLResponse(page)
