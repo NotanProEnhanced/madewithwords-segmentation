@@ -189,6 +189,7 @@ fetch("/pricing").then(r=>r.json()).then(p=>{
   if(fn) fn.textContent = "Free to create & preview — keep yours for " + money(p.price_cents,p.currency) + " (full resolution, no watermark).";
 }).catch(()=>{});
 let cache = {};
+let thumbCache = {};  // coarse, fast renders just for the 74px swatch chips
 let gen = 0;          // bumped whenever photo/words/poster change, to drop stale renders
 
 /* ---------- input ---------- */
@@ -237,9 +238,8 @@ function markSel(){
 }
 function updateThumb(ink){
   const pic=swatchEl.querySelector(`.pic[data-ink="${ink}"]`);
-  if(pic && cache[ink] && cache[ink].preview){
-    pic.style.backgroundImage=`url(${cache[ink].preview})`; pic.classList.remove("loading");
-  }
+  const src=(cache[ink] && cache[ink].preview) || thumbCache[ink];   // full preview wins over coarse
+  if(pic && src){ pic.style.backgroundImage=`url(${src})`; pic.classList.remove("loading"); }
 }
 function resetThumbs(){ swatchEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.remove("loading"); }); }
 
@@ -272,7 +272,7 @@ createBtn.addEventListener("click", ()=>{ errInput.style.display="none";
   invalidate(); render(state.ink,{animate:true}); });
 $("#restart").addEventListener("click", ()=>{ resultView.style.display="none"; inputView.style.display="block";
   invalidate(); portrait.src=""; portrait.className=""; canvas.style.display="none"; });
-function invalidate(){ gen++; cache={}; resetThumbs(); }
+function invalidate(){ gen++; cache={}; thumbCache={}; resetThumbs(); }
 
 function selectInk(id){
   if(id===state.ink) return; state.ink=id; markSel();
@@ -311,34 +311,42 @@ function showImage(entry, crossfade){
 
 /* ---------- render ---------- */
 function showBusy(){ busy.classList.remove("hide"); $(".msg").textContent="Composing from your words…"; errResult.style.display="none"; }
-async function render(ink,{animate=false,background=false}={}){
+async function render(ink,{animate=false,background=false,thumb=false}={}){
   if(!state.file) return;
   const myGen=gen;
-  if(!background) showBusy();
+  if(!background && !thumb) showBusy();
   const fd=new FormData();
   fd.append("image",state.file); fd.append("words",words.value.trim());
   fd.append("ink",ink); fd.append("style",state.style); fd.append("message",words.value.trim());
-  fd.append("poster",state.poster?"true":"false"); fd.append("png_width","1500");
-  if(state.poster){ fd.append("title",title.value.trim()); fd.append("caption",caption.value.trim()); }
+  if(thumb){
+    // A 74px chip needs only the colour and rough likeness. A small internal
+    // render_w makes the (pixel-bound) tone pipeline ~10x cheaper, so thumbnails
+    // render fast even on a slow single core.
+    fd.append("poster","false"); fd.append("png_width","380"); fd.append("render_w","760");
+  } else {
+    fd.append("poster",state.poster?"true":"false"); fd.append("png_width","1500");
+    if(state.poster){ fd.append("title",title.value.trim()); fd.append("caption",caption.value.trim()); }
+  }
   try{
     const r=await fetch("/render",{method:"POST",body:fd}); const data=await r.json();
     if(myGen!==gen) return;                 // photo/words/poster changed mid-render -> drop
     if(!r.ok||!data.ok){
-      if(background) return;
+      if(background || thumb) return;
       const msg=data.detail||friendly(data.error)||"Something went wrong. Try another photo.";
       if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; errInput.textContent=msg; errInput.style.display="block"; }
       else { errResult.textContent=msg; errResult.style.display="block"; }
       busy.classList.add("hide"); return;
     }
+    if(thumb){ thumbCache[ink]=data.preview; updateThumb(ink); return; }
     cache[ink]={preview:data.preview, job:data.job, price:data.price_cents, currency:data.currency}; updateThumb(ink);
     if(background || ink!==state.ink) return;
     showImage(cache[ink]);   // watermarked preview (clean art is unlocked via Stripe)
     prewarm();               // fill the other swatch thumbnails in the background
-  }catch(e){ if(!background){ errResult.textContent="Network error — please try again."; errResult.style.display="block"; busy.classList.add("hide"); } }
+  }catch(e){ if(!background && !thumb){ errResult.textContent="Network error — please try again."; errResult.style.display="block"; busy.classList.add("hide"); } }
 }
-/* Render the remaining inks one at a time so each swatch shows a live thumbnail
-   of THIS portrait, without blocking the selected view. A generation token drops
-   the queue the moment the photo/words/poster change. */
+/* Fill each swatch with a fast, coarse thumbnail of THIS portrait in that ink,
+   one at a time, without blocking the selected view. Tapping a swatch renders it
+   at full detail. A generation token drops the queue when the photo/words change. */
 let prewarming=false;
 async function prewarm(){
   if(prewarming) return;
@@ -346,10 +354,9 @@ async function prewarm(){
   const myGen=gen;
   for(const [id] of INKS){
     if(gen!==myGen) break;
-    if(id===state.ink){ continue; }
-    if(cache[id]){ updateThumb(id); continue; }
+    if(id===state.ink || cache[id] || thumbCache[id]){ updateThumb(id); continue; }
     const pic=swatchEl.querySelector(`.pic[data-ink="${id}"]`); if(pic) pic.classList.add("loading");
-    await render(id,{background:true});
+    await render(id,{thumb:true});
   }
   prewarming=false;
 }
