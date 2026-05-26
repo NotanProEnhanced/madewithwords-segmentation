@@ -352,7 +352,9 @@ def checkout(job: str = Form(...), fmt: str = Form("png")) -> JSONResponse:
     if not STRIPE_SECRET_KEY:
         return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
     ext = "svg" if fmt == "svg" else "png"
-    if not (PRIVATE_DIR / f"{job}.{ext}").exists():
+    # The SVG master is written at render time; the PNG is derived from it at
+    # download, so validate the job against the SVG (not the per-format file).
+    if not (PRIVATE_DIR / f"{job}.svg").exists():
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
