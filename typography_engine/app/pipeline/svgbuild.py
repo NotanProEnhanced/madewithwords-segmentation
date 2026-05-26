@@ -94,12 +94,21 @@ class SvgDoc:
             tx = m * self.width
             ty = m * self.height
             body = f'<g transform="translate({tx},{ty}) scale({s})">\n{body}\n</g>'
+        # Cap the *displayed* size so the standalone file opens at a sensible
+        # size in a browser/viewer; the viewBox keeps the full coordinate space,
+        # so it still scales to any print size with no quality loss. Rasterizers
+        # pass output_width, which overrides this for previews/downloads.
+        _disp_max = 1000.0
+        mx = max(self.width, self.height) or 1.0
+        sc = _disp_max / mx if mx > _disp_max else 1.0
+        dw, dh = self.width * sc, self.height * sc
         return (
             '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n'
             f'<svg xmlns="http://www.w3.org/2000/svg" '
             f'xmlns:xlink="http://www.w3.org/1999/xlink" '
-            f'width="{self.width}" height="{self.height}" '
-            f'viewBox="0 0 {self.width} {self.height}">\n'
+            f'width="{dw:.0f}" height="{dh:.0f}" '
+            f'viewBox="0 0 {self.width} {self.height}" '
+            f'preserveAspectRatio="xMidYMid meet">\n'
             f'  <rect x="0" y="0" width="{self.width}" height="{self.height}" fill="{self.background}" />\n'
             f"  <defs>\n{defs}\n  </defs>\n"
             f"{body}\n"
