@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Typortrait — someone you love, made from your words</title>
+<style>
+  :root{
+    --navy:#0d1b3a; --ink:#16203a; --paper:#faf9f7; --card:#ffffff;
+    --muted:#6b7280; --line:#ece9e3; --radius:20px;
+    --shadow:0 10px 40px rgba(20,30,60,.10);
+    --serif:"Georgia","Times New Roman",serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+  body{min-height:100dvh;display:flex;flex-direction:column;align-items:center}
+  .wrap{width:100%;max-width:560px;padding:24px 20px 64px;flex:1;display:flex;flex-direction:column}
+  header{text-align:center;padding:18px 0 8px}
+  .brand{font-family:var(--serif);font-size:30px;letter-spacing:.5px;color:var(--navy);font-weight:700}
+  .tag{color:var(--muted);font-size:15px;margin-top:6px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-top:22px}
+
+  .drop{border:2px dashed #d8d3c8;border-radius:16px;padding:34px 18px;text-align:center;cursor:pointer;transition:.18s;background:#fcfbf9}
+  .drop.drag{border-color:var(--navy);background:#f3f5fa}
+  .drop .ico{font-size:13px;letter-spacing:.18em;color:var(--muted);text-transform:uppercase}
+  .drop .big{font-weight:600;margin-top:8px;font-size:17px}
+  .drop .small{color:var(--muted);font-size:13px;margin-top:4px}
+  .preview{position:relative;border-radius:16px;overflow:hidden;display:none}
+  .preview img{width:100%;display:block}
+  .preview .change{position:absolute;right:10px;bottom:10px;background:rgba(255,255,255,.92);border:none;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.15)}
+
+  label.field{display:block;margin-top:18px}
+  .field .lbl{font-weight:600;font-size:15px}
+  .field .hint{color:var(--muted);font-size:13px;margin:2px 0 8px}
+  textarea,input[type=text]{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:16px;font-family:var(--sans);resize:none;background:#fff;color:var(--ink)}
+  textarea:focus,input:focus{outline:none;border-color:var(--navy)}
+
+  .btn{display:block;width:100%;border:none;border-radius:999px;background:var(--navy);color:#fff;font-size:17px;font-weight:600;padding:15px;margin-top:22px;cursor:pointer;transition:.15s;text-align:center;text-decoration:none}
+  .btn:disabled{opacity:.4;cursor:default}
+  .btn.secondary{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}
+  .btn.ghost{background:none;color:var(--muted);box-shadow:none;font-weight:500;font-size:15px;margin-top:14px}
+
+  #result{display:none}
+  .stage{position:relative;border-radius:18px;overflow:hidden;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);min-height:280px}
+  #portrait{width:100%;display:block;opacity:0;transition:opacity .45s ease}
+  #portrait.shown{opacity:1}
+  #overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .3s ease;pointer-events:none}
+  #assembly{position:absolute;inset:0;width:100%;height:100%;display:none}
+  .busy{position:absolute;inset:0;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+  .busy.hide{opacity:0;pointer-events:none;transition:opacity .5s ease}
+  .spin{width:30px;height:30px;border-radius:50%;border:3px solid #d9d6cf;border-top-color:var(--navy);animation:spin .9s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .msg{font-family:var(--serif);color:var(--navy);font-size:16px}
+
+  /* iOS-style filter carousel: each swatch is a live thumbnail of THIS portrait */
+  .swatches{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;
+    padding:18px 6px 6px;margin:6px -6px 0;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .swatches::-webkit-scrollbar{display:none}
+  .thumb{flex:0 0 auto;width:74px;border:none;background:none;padding:0;cursor:pointer;
+    scroll-snap-align:center;display:flex;flex-direction:column;align-items:center;gap:7px}
+  .thumb .pic{width:74px;height:74px;border-radius:16px;background-size:cover;background-position:center;
+    box-shadow:0 0 0 1.5px var(--line);transition:transform .2s ease, box-shadow .2s ease;background-color:#fff}
+  .thumb.sel .pic{box-shadow:0 0 0 3px var(--navy);transform:scale(1.07)}
+  .thumb .pic.loading{position:relative;overflow:hidden}
+  .thumb .pic.loading::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(110deg,rgba(255,255,255,0) 30%,rgba(255,255,255,.55) 50%,rgba(255,255,255,0) 70%);
+    transform:translateX(-100%);animation:shimmer 1.2s infinite}
+  @keyframes shimmer{to{transform:translateX(100%)}}
+  .thumb .nm{font-size:11px;color:var(--muted)}
+  .thumb.sel .nm{color:var(--navy);font-weight:700}
+
+  .keepsake{margin-top:18px}
+  .toggle{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:14px}
+  .toggle .t-lbl{font-weight:600}.toggle .t-sub{color:var(--muted);font-size:13px}
+  .sw-switch{width:48px;height:28px;border-radius:999px;background:#d8d3c8;position:relative;transition:.18s;flex:0 0 auto}
+  .sw-switch::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:.18s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .sw-switch.on{background:var(--navy)}.sw-switch.on::after{transform:translateX(20px)}
+  .keepfields{display:none;margin-top:6px}.keepfields.show{display:block}
+
+  .seg{display:flex;gap:6px;background:#f1efe9;border-radius:999px;padding:4px;margin-top:4px}
+  .seg button{flex:1;border:none;background:none;border-radius:999px;padding:9px;font-size:14px;font-weight:600;color:var(--muted);font-family:var(--sans);cursor:pointer}
+  .seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  .actions{display:flex;gap:12px;margin-top:22px}.actions .btn{margin-top:0}
+  .err{display:none;background:#fff;border:1px solid #f0d9d9;border-left:4px solid #c0392b;border-radius:12px;padding:14px 16px;margin-top:18px;color:#7a2e2e;font-size:15px}
+  footer{color:var(--muted);font-size:12px;text-align:center;margin-top:30px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><div class="brand">Typortrait</div><div class="tag">Someone you love, made from your words.</div></header>
+
+  <section id="input" class="card">
+    <div id="drop" class="drop">
+      <div class="ico">Photo</div><div class="big">Add a photo</div>
+      <div class="small">A clear head-and-shoulders shot works best. Tap to choose or take one.</div>
+    </div>
+    <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
+    <input id="file" type="file" accept="image/*" hidden />
+    <div class="seg" id="styleSeg">
+      <button type="button" data-style="mosaic" class="on">Word mosaic</button>
+      <button type="button" data-style="story">Story</button>
+    </div>
+    <label class="field">
+      <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
+      <span class="hint" id="wordsHint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
+      <textarea id="words" rows="3" placeholder="GRACE, KIND, BRILLIANT, MOM, ALWAYS"></textarea>
+    </label>
+    <button id="create" class="btn" disabled>Create portrait</button>
+    <p id="freenote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Free to create &amp; preview — keep yours anytime.</p>
+    <div id="errInput" class="err"></div>
+  </section>
+
+  <section id="result">
+    <div class="stage">
+      <img id="portrait" alt="your typortrait" />
+      <img id="overlay" alt="" />
+      <canvas id="assembly"></canvas>
+      <div id="busy" class="busy"><div class="spin"></div><div class="msg">Composing from your words…</div></div>
+    </div>
+    <div id="swatches" class="swatches"></div>
+    <div class="card keepsake">
+      <div class="toggle" id="keepToggle">
+        <div><div class="t-lbl">Make it a keepsake</div><div class="t-sub">Add a name and caption, framed as a poster.</div></div>
+        <div id="keepSwitch" class="sw-switch"></div>
+      </div>
+      <div id="keepFields" class="keepfields">
+        <label class="field"><span class="lbl">Name</span><input id="title" type="text" placeholder="Grace Hopper" /></label>
+        <label class="field"><span class="lbl">Caption <span style="color:var(--muted);font-weight:400">(optional)</span></span><input id="caption" type="text" placeholder="1906 – 1992 · Forever curious" /></label>
+      </div>
+    </div>
+    <div class="actions"><button id="buy" class="btn">Download</button></div>
+    <p class="note" id="buynote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Preview is free · download removes the watermark, full resolution</p>
+    <button id="restart" class="btn ghost">Start a new portrait</button>
+    <div id="errResult" class="err"></div>
+  </section>
+
+  <footer>Typortrait · typortrait.com</footer>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+const ANIM_CAP = 2600;                 // max glyphs animated (perf); image shows all
+const INKS = [["navy","#0d1b3a","Navy"],["photo","conic","Photo"],["sepia","#5a3a1a","Sepia"],
+  ["burgundy","#4a0d18","Burgundy"],["forest","#0f2e1e","Forest"],["gold_noir","gold","Gold noir"],
+  ["spectrum","spectrum","Spectrum"],["aurora","aurora","Aurora"],["mono","#555555","Mono"]];
+function placeholderBg(col){
+  if(col==="conic") return "conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)";
+  if(col==="gold") return "radial-gradient(circle at 50% 42%, #e8c66a 0 40%, #0d0f13 44%)";
+  if(col==="spectrum") return "linear-gradient(180deg,#f2b705,#f25c05,#e6002e,#b5179e,#6a1fb5,#1f3fb5)";
+  if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
+  return col;
+}
+const state = { file:null, ink:"navy", poster:false, style:"mosaic" };
+function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
+// Show the price up front so it's never a surprise (single source: /pricing).
+fetch("/pricing").then(r=>r.json()).then(p=>{
+  const fn=document.getElementById("freenote");
+  if(fn) fn.textContent = "Free to create & preview — keep yours for " + money(p.price_cents,p.currency) + " (full resolution, no watermark).";
+}).catch(()=>{});
+let cache = {};
+
+/* ---------- input ---------- */
+const drop=$("#drop"), fileInput=$("#file"), preview=$("#preview"), previewImg=$("#previewImg"), words=$("#words"), createBtn=$("#create");
+function refreshCreate(){ createBtn.disabled = !(state.file && words.value.trim()); }
+words.addEventListener("input", refreshCreate);
+// Style toggle: word mosaic vs continuous-prose story.
+const wordsLbl=$("#wordsLbl"), wordsHint=$("#wordsHint");
+$("#styleSeg").addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  state.style=b.dataset.style;
+  [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
+  const story=state.style==="story";
+  wordsLbl.innerHTML = story ? "Their message, in your words" : "The words that make them <em>them</em>";
+  wordsHint.textContent = story
+    ? "Paste a letter, lyrics, a story, a tribute — it becomes the portrait."
+    : "Their name, what you love, a date, an inside joke. Separate with commas.";
+  words.rows = story ? 5 : 3;
+  words.placeholder = story
+    ? "You are the kindest soul I know. From the day you were born…"
+    : "GRACE, KIND, BRILLIANT, MOM, ALWAYS";
+});
+drop.addEventListener("click", ()=>fileInput.click());
+$("#changePhoto").addEventListener("click", e=>{e.stopPropagation();fileInput.click();});
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));
+drop.addEventListener("drop", e=>{ if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener("change", e=>{ if(e.target.files[0]) setFile(e.target.files[0]); });
+function setFile(f){ if(!f.type.startsWith("image/"))return; state.file=f; previewImg.src=URL.createObjectURL(f);
+  preview.style.display="block"; drop.style.display="none"; refreshCreate(); }
+
+/* ---------- swatch filmstrip (live thumbnails of THIS portrait per ink) ----- */
+const swatchEl=$("#swatches");
+INKS.forEach(([id,col,label])=>{
+  const el=document.createElement("button"); el.type="button";
+  el.className="thumb"+(id==="navy"?" sel":""); el.dataset.ink=id;
+  const pic=document.createElement("div"); pic.className="pic loading"; pic.dataset.ink=id;
+  pic.style.background=placeholderBg(col);
+  const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
+  el.append(pic,nm); el.addEventListener("click", ()=>selectInk(id)); swatchEl.append(el);
+});
+function markSel(){
+  [...swatchEl.children].forEach(c=>c.classList.toggle("sel",c.dataset.ink===state.ink));
+  const sel=swatchEl.querySelector(".thumb.sel");
+  if(sel && sel.scrollIntoView) sel.scrollIntoView({behavior:"smooth",inline:"center",block:"nearest"});
+}
+function updateThumb(ink){
+  const pic=swatchEl.querySelector(`.pic[data-ink="${ink}"]`);
+  if(pic && cache[ink] && cache[ink].preview){
+    pic.style.backgroundImage=`url(${cache[ink].preview})`; pic.classList.remove("loading");
+  }
+}
+function resetThumbs(){ swatchEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.add("loading"); }); }
+
+/* ---------- keepsake ---------- */
+const keepSwitch=$("#keepSwitch"), keepFields=$("#keepFields"), title=$("#title"), caption=$("#caption");
+$("#keepToggle").addEventListener("click", ()=>{ state.poster=!state.poster;
+  keepSwitch.classList.toggle("on",state.poster); keepFields.classList.toggle("show",state.poster);
+  invalidate(); render(state.ink,{animate:false}).then(prewarm); });
+let tmr; [title,caption].forEach(inp=>inp.addEventListener("input",()=>{clearTimeout(tmr);
+  tmr=setTimeout(()=>{ invalidate(); render(state.ink,{animate:false}).then(prewarm); },650);}));
+
+/* ---------- views ---------- */
+const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy");
+const canvas=$("#assembly"), buy=$("#buy"), buynote=$("#buynote"), errResult=$("#errResult"), errInput=$("#errInput");
+let currentJob=null, priceLabel="";
+buy.addEventListener("click", async ()=>{
+  if(!currentJob) return;
+  buy.disabled=true; const old=buy.textContent; buy.textContent="Opening secure checkout…";
+  try{
+    const fd=new FormData(); fd.append("job",currentJob); fd.append("fmt","png");
+    const r=await fetch("/checkout",{method:"POST",body:fd}); const d=await r.json();
+    if(d.ok && d.url){ window.location.href=d.url; return; }
+    buynote.textContent = d.error==="payments_unconfigured"
+      ? "Checkout isn’t set up yet (add your Stripe key)." : "Couldn’t start checkout — please try again.";
+  }catch(e){ buynote.textContent="Network error — please try again."; }
+  buy.disabled=false; buy.textContent=old;
+});
+createBtn.addEventListener("click", ()=>{ errInput.style.display="none";
+  inputView.style.display="none"; resultView.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
+  invalidate(); render(state.ink,{animate:true}).then(prewarm); });
+$("#restart").addEventListener("click", ()=>{ resultView.style.display="none"; inputView.style.display="block";
+  invalidate(); portrait.src=""; portrait.className=""; canvas.style.display="none"; });
+function invalidate(){ cache={}; resetThumbs(); }
+
+function selectInk(id){
+  if(id===state.ink) return; state.ink=id; markSel();
+  if(cache[id]) showImage(cache[id], true);    // instant crossfade
+  else render(id,{animate:false});
+}
+
+const overlay=$("#overlay");
+function setBuy(entry){
+  currentJob = entry.job || null;
+  buy.textContent = "Download — " + money(entry.price, entry.currency);
+}
+/* Show the watermarked preview. crossfade=true does an iOS-style dissolve
+   between the current image and the newly-selected ink. */
+function showImage(entry, crossfade){
+  setBuy(entry);
+  canvas.style.display="none";
+  const url = entry.preview + "?t=" + Date.now();
+  if(crossfade && portrait.getAttribute("src")){
+    overlay.onload=()=>{
+      overlay.style.opacity=1;
+      setTimeout(()=>{ portrait.src=overlay.src; overlay.style.opacity=0; }, 300);
+    };
+    overlay.src=url; busy.classList.add("hide");
+  } else {
+    portrait.classList.remove("shown");
+    portrait.onload=()=>{ portrait.classList.add("shown"); busy.classList.add("hide"); };
+    portrait.src=url;
+  }
+}
+
+
+/* ---------- render ---------- */
+function showBusy(){ busy.classList.remove("hide"); $(".msg").textContent="Composing from your words…"; errResult.style.display="none"; }
+async function render(ink,{animate=false,background=false}={}){
+  if(!state.file) return;
+  if(!background) showBusy();
+  const fd=new FormData();
+  fd.append("image",state.file); fd.append("words",words.value.trim());
+  fd.append("ink",ink); fd.append("style",state.style); fd.append("message",words.value.trim());
+  fd.append("poster",state.poster?"true":"false"); fd.append("png_width","1500");
+  if(state.poster){ fd.append("title",title.value.trim()); fd.append("caption",caption.value.trim()); }
+  try{
+    const r=await fetch("/render",{method:"POST",body:fd}); const data=await r.json();
+    if(!r.ok||!data.ok){
+      if(background) return;
+      const msg=data.detail||friendly(data.error)||"Something went wrong. Try another photo.";
+      if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; errInput.textContent=msg; errInput.style.display="block"; }
+      else { errResult.textContent=msg; errResult.style.display="block"; }
+      busy.classList.add("hide"); return;
+    }
+    cache[ink]={preview:data.preview, job:data.job, price:data.price_cents, currency:data.currency}; updateThumb(ink);
+    if(background || ink!==state.ink) return;
+    showImage(cache[ink]);   // watermarked preview (clean art is unlocked via Stripe)
+  }catch(e){ if(!background){ errResult.textContent="Network error — please try again."; errResult.style.display="block"; busy.classList.add("hide"); } }
+}
+async function prewarm(){ for(const [id] of INKS){ if(id===state.ink||cache[id]) continue; await render(id,{background:true}); } }
+function friendly(code){ return ({no_words:"Add a few words first.",
+  unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",
+  empty_upload:"Please add a photo."})[code]; }
+</script>
+</body>
+</html>

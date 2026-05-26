@@ -1,0 +1,11 @@
+fastapi==0.136.1
+uvicorn==0.47.0
+python-multipart==0.0.29
+numpy==2.4.6
+pillow==12.2.0
+opencv-contrib-python==4.13.0.92
+cairosvg==2.9.0
+svgwrite==1.4.3
+mediapipe==0.10.35
+qrcode==8.2
+stripe==15.1.0

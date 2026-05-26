@@ -1,0 +1,13 @@
+{
+  "_comment": "Diverse portrait fixtures for regression testing. Third-party sample images are NOT committed (licensing); they are downloaded on demand into ./cache/ (gitignored). Drop your own images into ./cache/ to include them. Covers: ethnicity, age, gender, glasses, hats, multi-face, and non-portrait/no-face edge cases.",
+  "images": {
+    "obama_blackmale": "https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/obama.jpg",
+    "obama2": "https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/obama2.jpg",
+    "biden_oldwhitemale": "https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/biden.jpg",
+    "two_people_group": "https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/two_people.jpg",
+    "linmanuel": "https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/lin-manuel-miranda.png",
+    "alex": "https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/alex-lacamoire.png",
+    "lena_hat": "https://raw.githubusercontent.com/opencv/opencv/master/samples/data/lena.jpg",
+    "messi_scene": "https://raw.githubusercontent.com/opencv/opencv/master/samples/data/messi5.jpg"
+  }
+}

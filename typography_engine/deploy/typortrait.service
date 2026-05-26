@@ -1,0 +1,18 @@
+# Native (no-Docker) systemd unit.
+# Install to /etc/systemd/system/typortrait.service, then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now typortrait
+[Unit]
+Description=Typortrait engine (uvicorn)
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/typortrait/typography_engine
+Environment=TYPO_PORT=8077
+ExecStart=/opt/typortrait/typography_engine/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8077 --workers 1
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

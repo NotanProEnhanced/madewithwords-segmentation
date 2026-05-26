@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+
+# Typortrait deploy secrets & runtime data
+typography_engine/.env
+typography_engine/data/
+typography_engine/private/
