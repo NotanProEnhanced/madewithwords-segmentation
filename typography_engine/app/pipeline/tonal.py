@@ -246,9 +246,11 @@ def _face_ovals(an, scale: float) -> List[Tuple[float, float, float, float]]:
 
 
 def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.ndarray:
-    """Deepen the brows, lips and nostrils of every face so the likeness anchors
-    there. Eyes are handled separately (_sharpen_eyes) -- they need local
-    contrast, not the uniform darkening that flattens iris/sclera/catchlight."""
+    """Deepen the brows and lips of every face so the likeness anchors there.
+    The nose is intentionally NOT uniformly darkened -- filling its whole hull
+    turns it into a dark blob ("muddled nose"); its shape reads from natural
+    shading plus the edge-separation pass (nostril/side shadows). Eyes are
+    handled separately (_sharpen_eyes)."""
     faces = _faces_of(an)
     if not faces:
         return dark
@@ -256,12 +258,12 @@ def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) ->
     fm = np.zeros((H, W), np.uint8)
     for face in faces:
         pts = face.points * scale
-        for grp in (_BROW_L, _BROW_R, _LIPS, _NOSE):
+        for grp in (_BROW_L, _BROW_R, _LIPS):
             hull = cv2.convexHull(np.array([pts[i] for i in grp], np.int32))
             cv2.fillConvexPoly(fm, hull, 255)
-    fm = cv2.dilate(fm, np.ones((5, 5), np.uint8), 1)
-    w = (cv2.GaussianBlur(fm, (0, 0), 3.0).astype(np.float32) / 255.0) * mset
-    return dark * (1.0 - w) + np.clip(dark ** 0.55, 0.0, 1.0) * w
+    fm = cv2.dilate(fm, np.ones((3, 3), np.uint8), 1)
+    w = (cv2.GaussianBlur(fm, (0, 0), 2.2).astype(np.float32) / 255.0) * mset
+    return dark * (1.0 - w) + np.clip(dark ** 0.48, 0.0, 1.0) * w
 
 
 def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.ndarray:
@@ -505,8 +507,8 @@ def build_tonal_portrait(
     # holds where detail matters.
     body_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 2.6)))
     mid_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 1.7)))
-    face_font = float(max(cfg.min_font_px, cfg.min_font_px))
-    eye_font = float(max(6.0, face_font * 0.5))
+    face_font = float(max(8.0, cfg.min_font_px * 0.72))
+    eye_font = float(max(6.0, face_font * 0.62))
 
     # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
     # the source photo. Mono keeps the existing gray ramp untouched.
@@ -695,13 +697,14 @@ def build_tonal_portrait(
         mx1 = max(cx + rx for cx, cy, rx, ry in mid_ov)
         my1 = max(cy + ry for cx, cy, rx, ry in mid_ov)
         emit(mid_font, mx0, my0, mx1, my1, "mid", "primary")
-    # Face: smaller words to carry the likeness, skipping the eyes.
+    # Face: finer words to resolve nose/lips/features (exempt from the readable
+    # min-font floor that governs the body, like the eye pass).
     if face_ov:
         fx0 = min(cx - rx for cx, cy, rx, ry in face_ov)
         fy0 = min(cy - ry for cx, cy, rx, ry in face_ov)
         fx1 = max(cx + rx for cx, cy, rx, ry in face_ov)
         fy1 = max(cy + ry for cx, cy, rx, ry in face_ov)
-        emit(face_font, fx0, fy0, fx1, fy1, "face", "primary")
+        emit(face_font, fx0, fy0, fx1, fy1, "face", "detail")
 
     # ---- Finer eye pass: resolve iris / lid / catchlight inside the eye
     # ellipses (which the main grid skipped). Half-size glyphs, marked "detail"
