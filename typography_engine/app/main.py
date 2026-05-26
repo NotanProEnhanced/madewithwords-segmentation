@@ -389,7 +389,12 @@ def download(job: str, session_id: str, fmt: str = "png"):
         sess = stripe.checkout.Session.retrieve(session_id)
     except Exception:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "bad_session"}, status_code=400)
-    if sess.get("payment_status") != "paid" or (sess.get("metadata") or {}).get("job") != job:
+    # Stripe's Session object routes attribute access through __getattr__ and has
+    # no dict .get(), so read fields via getattr (with safe defaults).
+    paid = getattr(sess, "payment_status", None) == "paid"
+    meta = getattr(sess, "metadata", None)
+    meta_job = getattr(meta, "job", None) if meta is not None else None
+    if not paid or meta_job != job:
         return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
     ext = "svg" if fmt == "svg" else "png"
     svg_path = PRIVATE_DIR / f"{job}.svg"
