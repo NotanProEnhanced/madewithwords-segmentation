@@ -195,7 +195,7 @@ const swatchEl=$("#swatches");
 INKS.forEach(([id,col,label])=>{
   const el=document.createElement("button"); el.type="button";
   el.className="thumb"+(id==="navy"?" sel":""); el.dataset.ink=id;
-  const pic=document.createElement("div"); pic.className="pic loading"; pic.dataset.ink=id;
+  const pic=document.createElement("div"); pic.className="pic"; pic.dataset.ink=id;
   pic.style.background=placeholderBg(col);
   const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
   el.append(pic,nm); el.addEventListener("click", ()=>selectInk(id)); swatchEl.append(el);
@@ -211,15 +211,15 @@ function updateThumb(ink){
     pic.style.backgroundImage=`url(${cache[ink].preview})`; pic.classList.remove("loading");
   }
 }
-function resetThumbs(){ swatchEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.add("loading"); }); }
+function resetThumbs(){ swatchEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.remove("loading"); }); }
 
 /* ---------- keepsake ---------- */
 const keepSwitch=$("#keepSwitch"), keepFields=$("#keepFields"), title=$("#title"), caption=$("#caption");
 $("#keepToggle").addEventListener("click", ()=>{ state.poster=!state.poster;
   keepSwitch.classList.toggle("on",state.poster); keepFields.classList.toggle("show",state.poster);
-  invalidate(); render(state.ink,{animate:false}).then(prewarm); });
+  invalidate(); render(state.ink,{animate:false}); });
 let tmr; [title,caption].forEach(inp=>inp.addEventListener("input",()=>{clearTimeout(tmr);
-  tmr=setTimeout(()=>{ invalidate(); render(state.ink,{animate:false}).then(prewarm); },650);}));
+  tmr=setTimeout(()=>{ invalidate(); render(state.ink,{animate:false}); },650);}));
 
 /* ---------- views ---------- */
 const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy");
@@ -239,7 +239,7 @@ buy.addEventListener("click", async ()=>{
 });
 createBtn.addEventListener("click", ()=>{ errInput.style.display="none";
   inputView.style.display="none"; resultView.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
-  invalidate(); render(state.ink,{animate:true}).then(prewarm); });
+  invalidate(); render(state.ink,{animate:true}); });
 $("#restart").addEventListener("click", ()=>{ resultView.style.display="none"; inputView.style.display="block";
   invalidate(); portrait.src=""; portrait.className=""; canvas.style.display="none"; });
 function invalidate(){ cache={}; resetThumbs(); }
@@ -247,7 +247,7 @@ function invalidate(){ cache={}; resetThumbs(); }
 function selectInk(id){
   if(id===state.ink) return; state.ink=id; markSel();
   if(cache[id]) showImage(cache[id], true);    // instant crossfade
-  else render(id,{animate:false});
+  else { const pic=swatchEl.querySelector(`.pic[data-ink="${id}"]`); if(pic) pic.classList.add("loading"); render(id,{animate:false}); }
 }
 
 const overlay=$("#overlay");
@@ -299,7 +299,6 @@ async function render(ink,{animate=false,background=false}={}){
     showImage(cache[ink]);   // watermarked preview (clean art is unlocked via Stripe)
   }catch(e){ if(!background){ errResult.textContent="Network error — please try again."; errResult.style.display="block"; busy.classList.add("hide"); } }
 }
-async function prewarm(){ for(const [id] of INKS){ if(id===state.ink||cache[id]) continue; await render(id,{background:true}); } }
 function friendly(code){ return ({no_words:"Add a few words first.",
   unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",
   empty_upload:"Please add a photo."})[code]; }
