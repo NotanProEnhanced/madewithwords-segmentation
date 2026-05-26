@@ -43,9 +43,22 @@
 
   #result{display:none}
   .stage{position:relative;border-radius:18px;overflow:hidden;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);min-height:280px}
+  .compare{position:relative;width:100%;line-height:0}
   #portrait{width:100%;display:block;opacity:0;transition:opacity .45s ease}
   #portrait.shown{opacity:1}
-  #overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .3s ease;pointer-events:none}
+  /* Before/after reveal: the uploaded photo clipped over the typographic art. */
+  .before-wrap{position:absolute;inset:0;clip-path:inset(0 50% 0 0);pointer-events:none}
+  #beforeImg{width:100%;height:100%;display:block;object-fit:fill}
+  .cmp-handle{position:absolute;top:0;bottom:0;left:50%;width:2px;background:rgba(255,255,255,.92);
+    box-shadow:0 0 0 1px rgba(0,0,0,.18);transform:translateX(-1px);cursor:ew-resize;touch-action:none;z-index:3}
+  .cmp-grip{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;
+    background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;
+    color:var(--navy);font-size:16px;font-weight:700;line-height:1}
+  .cmp-tag{position:absolute;top:10px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    padding:3px 9px;border-radius:999px;background:rgba(13,27,58,.74);color:#fff;z-index:2;pointer-events:none}
+  .cmp-tag-l{left:10px}.cmp-tag-r{right:10px}
+  .compare.hide-cmp .before-wrap,.compare.hide-cmp .cmp-handle,.compare.hide-cmp .cmp-tag{display:none}
+  #overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .3s ease;pointer-events:none;z-index:4}
   #assembly{position:absolute;inset:0;width:100%;height:100%;display:none}
   .busy{position:absolute;inset:0;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
   .busy.hide{opacity:0;pointer-events:none;transition:opacity .5s ease}
@@ -69,6 +82,12 @@
   @keyframes shimmer{to{transform:translateX(100%)}}
   .thumb .nm{font-size:11px;color:var(--muted)}
   .thumb.sel .nm{color:var(--navy);font-weight:700}
+  .carousel{position:relative}
+  .arrow{position:absolute;top:42px;width:32px;height:32px;border-radius:50%;border:1px solid var(--line);
+    background:rgba(255,255,255,.96);box-shadow:0 2px 8px rgba(0,0,0,.14);cursor:pointer;z-index:2;
+    display:flex;align-items:center;justify-content:center;color:var(--navy);font-size:18px;font-weight:700;padding:0}
+  .arrow.left{left:-6px}.arrow.right{right:-6px}
+  @media(hover:none){.arrow{display:none}}
 
   .keepsake{margin-top:18px}
   .toggle{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:14px}
@@ -112,13 +131,23 @@
   </section>
 
   <section id="result">
-    <div class="stage">
-      <img id="portrait" alt="your typortrait" />
+    <div class="stage" id="stage">
+      <div id="compare" class="compare">
+        <img id="portrait" alt="your typortrait" />
+        <div class="before-wrap" id="beforeWrap"><img id="beforeImg" alt="your photo" /></div>
+        <div class="cmp-tag cmp-tag-l">Photo</div>
+        <div class="cmp-tag cmp-tag-r">Typortrait</div>
+        <div class="cmp-handle" id="cmpHandle"><div class="cmp-grip">&#8596;</div></div>
+      </div>
       <img id="overlay" alt="" />
       <canvas id="assembly"></canvas>
       <div id="busy" class="busy"><div class="spin"></div><div class="msg">Composing from your words…</div></div>
     </div>
-    <div id="swatches" class="swatches"></div>
+    <div class="carousel">
+      <button type="button" class="arrow left" id="arrowL" aria-label="Previous colours">&#8249;</button>
+      <div id="swatches" class="swatches"></div>
+      <button type="button" class="arrow right" id="arrowR" aria-label="More colours">&#8250;</button>
+    </div>
     <div class="card keepsake">
       <div class="toggle" id="keepToggle">
         <div><div class="t-lbl">Make it a keepsake</div><div class="t-sub">Add a name and caption, framed as a poster.</div></div>
@@ -160,6 +189,7 @@ fetch("/pricing").then(r=>r.json()).then(p=>{
   if(fn) fn.textContent = "Free to create & preview — keep yours for " + money(p.price_cents,p.currency) + " (full resolution, no watermark).";
 }).catch(()=>{});
 let cache = {};
+let gen = 0;          // bumped whenever photo/words/poster change, to drop stale renders
 
 /* ---------- input ---------- */
 const drop=$("#drop"), fileInput=$("#file"), preview=$("#preview"), previewImg=$("#previewImg"), words=$("#words"), createBtn=$("#create");
@@ -242,7 +272,7 @@ createBtn.addEventListener("click", ()=>{ errInput.style.display="none";
   invalidate(); render(state.ink,{animate:true}); });
 $("#restart").addEventListener("click", ()=>{ resultView.style.display="none"; inputView.style.display="block";
   invalidate(); portrait.src=""; portrait.className=""; canvas.style.display="none"; });
-function invalidate(){ cache={}; resetThumbs(); }
+function invalidate(){ gen++; cache={}; resetThumbs(); }
 
 function selectInk(id){
   if(id===state.ink) return; state.ink=id; markSel();
@@ -260,6 +290,10 @@ function setBuy(entry){
 function showImage(entry, crossfade){
   setBuy(entry);
   canvas.style.display="none";
+  // Before/after reveal: show the uploaded photo under the slider (hidden in
+  // poster mode, where the framed art no longer matches the photo's frame).
+  compareEl.classList.toggle("hide-cmp", state.poster);
+  if(!state.poster && previewImg.src){ beforeImg.src=previewImg.src; }
   const url = entry.preview + "?t=" + Date.now();
   if(crossfade && portrait.getAttribute("src")){
     overlay.onload=()=>{
@@ -279,6 +313,7 @@ function showImage(entry, crossfade){
 function showBusy(){ busy.classList.remove("hide"); $(".msg").textContent="Composing from your words…"; errResult.style.display="none"; }
 async function render(ink,{animate=false,background=false}={}){
   if(!state.file) return;
+  const myGen=gen;
   if(!background) showBusy();
   const fd=new FormData();
   fd.append("image",state.file); fd.append("words",words.value.trim());
@@ -287,6 +322,7 @@ async function render(ink,{animate=false,background=false}={}){
   if(state.poster){ fd.append("title",title.value.trim()); fd.append("caption",caption.value.trim()); }
   try{
     const r=await fetch("/render",{method:"POST",body:fd}); const data=await r.json();
+    if(myGen!==gen) return;                 // photo/words/poster changed mid-render -> drop
     if(!r.ok||!data.ok){
       if(background) return;
       const msg=data.detail||friendly(data.error)||"Something went wrong. Try another photo.";
@@ -297,8 +333,40 @@ async function render(ink,{animate=false,background=false}={}){
     cache[ink]={preview:data.preview, job:data.job, price:data.price_cents, currency:data.currency}; updateThumb(ink);
     if(background || ink!==state.ink) return;
     showImage(cache[ink]);   // watermarked preview (clean art is unlocked via Stripe)
+    prewarm();               // fill the other swatch thumbnails in the background
   }catch(e){ if(!background){ errResult.textContent="Network error — please try again."; errResult.style.display="block"; busy.classList.add("hide"); } }
 }
+/* Render the remaining inks one at a time so each swatch shows a live thumbnail
+   of THIS portrait, without blocking the selected view. A generation token drops
+   the queue the moment the photo/words/poster change. */
+let prewarming=false;
+async function prewarm(){
+  if(prewarming) return;
+  prewarming=true;
+  const myGen=gen;
+  for(const [id] of INKS){
+    if(gen!==myGen) break;
+    if(id===state.ink){ continue; }
+    if(cache[id]){ updateThumb(id); continue; }
+    const pic=swatchEl.querySelector(`.pic[data-ink="${id}"]`); if(pic) pic.classList.add("loading");
+    await render(id,{background:true});
+  }
+  prewarming=false;
+}
+
+/* ---------- before/after reveal slider ---------- */
+const compareEl=$("#compare"), cmpHandle=$("#cmpHandle"), beforeWrap=$("#beforeWrap"), beforeImg=$("#beforeImg");
+let cmpDragging=false;
+function setCmp(p){ p=Math.max(2,Math.min(98,p)); beforeWrap.style.clipPath=`inset(0 ${100-p}% 0 0)`; cmpHandle.style.left=p+"%"; }
+function cmpFromX(x){ const r=compareEl.getBoundingClientRect(); if(r.width) setCmp((x-r.left)/r.width*100); }
+cmpHandle.addEventListener("pointerdown", e=>{ cmpDragging=true; try{cmpHandle.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault(); });
+window.addEventListener("pointermove", e=>{ if(cmpDragging) cmpFromX(e.clientX); });
+window.addEventListener("pointerup", ()=>{ cmpDragging=false; });
+setCmp(50);
+
+/* ---------- swatch carousel arrows ---------- */
+$("#arrowL").addEventListener("click", ()=> swatchEl.scrollBy({left:-200,behavior:"smooth"}));
+$("#arrowR").addEventListener("click", ()=> swatchEl.scrollBy({left:200,behavior:"smooth"}));
 function friendly(code){ return ({no_words:"Add a few words first.",
   unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",
   empty_upload:"Please add a photo."})[code]; }
