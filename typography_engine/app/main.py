@@ -17,8 +17,10 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .config import (
     CURRENCY,
+    DOWNLOAD_PNG_WIDTH,
     DOWNLOAD_PRICE_CENTS,
     OUTPUTS_DIR,
+    PREVIEW_PNG_WIDTH,
     PRIVATE_DIR,
     PUBLIC_BASE_URL,
     STATIC_DIR,
@@ -293,15 +295,20 @@ async def render(
             svg_out = result.svg
 
     job_id = uuid.uuid4().hex[:12]
-    # Clean (paid) files go to the PRIVATE dir; only a watermarked preview is
-    # served publicly. The clean art is never web-reachable without payment.
+    # The clean SVG (vector, resolution-independent) is the master and the only
+    # thing persisted at render time. The on-screen preview is a web-light
+    # watermarked raster; the high-resolution clean PNG is rendered lazily at
+    # download time (after payment), so the one expensive big raster runs once
+    # per sale -- never on previews or swatch thumbnails. Clean files live in the
+    # PRIVATE dir and are never web-reachable without payment.
     (PRIVATE_DIR / f"{job_id}.svg").write_text(svg_out, encoding="utf-8")
-    clean_png = PRIVATE_DIR / f"{job_id}.png"
     preview_path = OUTPUTS_DIR / f"{job_id}_preview.png"
     try:
-        write_png(svg_out, clean_png, output_width=max(cfg.canvas_w, int(png_width)))
+        from .pipeline.raster import svg_to_png_bytes
         from .pipeline.watermark import add_watermark
-        preview_path.write_bytes(add_watermark(clean_png.read_bytes(), url=WATERMARK_URL))
+        preview_w = min(int(png_width), PREVIEW_PNG_WIDTH)
+        clean_bytes = svg_to_png_bytes(svg_out, output_width=max(cfg.canvas_w, preview_w))
+        preview_path.write_bytes(add_watermark(clean_bytes, url=WATERMARK_URL))
     except Exception as e:  # noqa: BLE001
         warns.warn("render", "preview_failed", f"Preview export failed: {e}")
 
@@ -383,8 +390,15 @@ def download(job: str, session_id: str, fmt: str = "png"):
     if sess.get("payment_status") != "paid" or (sess.get("metadata") or {}).get("job") != job:
         return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
     ext = "svg" if fmt == "svg" else "png"
-    path = PRIVATE_DIR / f"{job}.{ext}"
-    if not path.exists():
+    svg_path = PRIVATE_DIR / f"{job}.svg"
+    if not svg_path.exists():
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    path = PRIVATE_DIR / f"{job}.{ext}"
+    if ext == "png" and not path.exists():
+        # Print-resolution raster, produced once per paid job from the master SVG.
+        try:
+            write_png(svg_path.read_text(encoding="utf-8"), path, output_width=DOWNLOAD_PNG_WIDTH)
+        except Exception:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
     media = "image/svg+xml" if ext == "svg" else "image/png"
     return FileResponse(str(path), media_type=media, filename=f"typortrait-{job}.{ext}")

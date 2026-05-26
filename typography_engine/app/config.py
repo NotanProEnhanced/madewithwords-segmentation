@@ -87,3 +87,9 @@ CURRENCY = os.environ.get("TYPO_CURRENCY", "usd")
 # Public base URL of the app, used to build Stripe success/cancel redirects.
 PUBLIC_BASE_URL = os.environ.get("TYPO_PUBLIC_URL", f"http://127.0.0.1:{PORT}")
 WATERMARK_URL = os.environ.get("TYPO_WATERMARK_URL", "https://typortrait.com")
+
+# Rasterization sizes. The on-screen preview stays web-light; the paid PNG is
+# rendered at print resolution (lazily, at download time) so the one expensive
+# big raster runs once per sale, not on every preview/swatch.
+PREVIEW_PNG_WIDTH = env_int("TYPO_PREVIEW_PX", 1400)
+DOWNLOAD_PNG_WIDTH = env_int("TYPO_DOWNLOAD_PX", 3800)

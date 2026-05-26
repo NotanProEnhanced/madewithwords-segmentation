@@ -111,7 +111,14 @@
   .seg{display:flex;gap:6px;background:#f1efe9;border-radius:999px;padding:4px;margin-top:4px}
   .seg button{flex:1;border:none;background:none;border-radius:999px;padding:9px;font-size:14px;font-weight:600;color:var(--muted);font-family:var(--sans);cursor:pointer}
   .seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(0,0,0,.08)}
-  .actions{display:flex;gap:12px;margin-top:22px}.actions .btn{margin-top:0}
+  .actions{display:flex;gap:12px;margin-top:16px}.actions .btn{margin-top:0}
+  .fmt{display:flex;gap:10px;margin-top:20px}
+  .fmt-opt{flex:1;text-align:left;border:1.5px solid var(--line);border-radius:14px;background:#fff;
+    padding:12px 14px;cursor:pointer;transition:.15s;display:flex;flex-direction:column;gap:3px;font-family:var(--sans)}
+  .fmt-opt.on{border-color:var(--navy);box-shadow:0 0 0 3px rgba(13,27,58,.08)}
+  .fmt-t{font-weight:700;font-size:14px;color:var(--ink)}
+  .fmt-d{font-size:12px;color:var(--muted)}
+  .fmt-note{font-size:13px;color:var(--muted);margin:10px 2px 0;line-height:1.5;transition:opacity .2s}
   .err{display:none;background:#fff;border:1px solid #f0d9d9;border-left:4px solid #c0392b;border-radius:12px;padding:14px 16px;margin-top:18px;color:#7a2e2e;font-size:15px}
   footer{color:var(--muted);font-size:12px;text-align:center;margin-top:30px}
 </style>
@@ -174,8 +181,17 @@
         <label class="field"><span class="lbl">Caption <span style="color:var(--muted);font-weight:400">(optional)</span></span><input id="caption" type="text" placeholder="1906 – 1992 · Forever curious" /></label>
       </div>
     </div>
+    <div class="fmt" id="fmtSel">
+      <button type="button" data-fmt="png" class="fmt-opt on">
+        <span class="fmt-t">High-res image</span><span class="fmt-d">Ready to print or share · PNG</span>
+      </button>
+      <button type="button" data-fmt="svg" class="fmt-opt">
+        <span class="fmt-t">Vector · any size</span><span class="fmt-d">Always razor-sharp · SVG</span>
+      </button>
+    </div>
+    <p class="fmt-note" id="fmtNote">A high-resolution image — perfect for prints, posts, and gifts.</p>
     <div class="actions"><button id="buy" class="btn">Download</button></div>
-    <p class="note" id="buynote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Preview is free · download removes the watermark, full resolution</p>
+    <p class="note" id="buynote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Preview is free · your download is watermark-free and print-quality.</p>
     <button id="restart" class="btn ghost">Start a new portrait</button>
     <div id="errResult" class="err"></div>
   </section>
@@ -197,7 +213,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, ink:"navy", poster:false, style:"mosaic" };
+const state = { file:null, ink:"navy", poster:false, style:"mosaic", fmt:"png" };
 function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
 // Show the price up front so it's never a surprise (single source: /pricing).
 fetch("/pricing").then(r=>r.json()).then(p=>{
@@ -283,7 +299,7 @@ buy.addEventListener("click", async ()=>{
   if(!currentJob) return;
   buy.disabled=true; const old=buy.textContent; buy.textContent="Opening secure checkout…";
   try{
-    const fd=new FormData(); fd.append("job",currentJob); fd.append("fmt","png");
+    const fd=new FormData(); fd.append("job",currentJob); fd.append("fmt",state.fmt);
     const r=await fetch("/checkout",{method:"POST",body:fd}); const d=await r.json();
     if(d.ok && d.url){ window.location.href=d.url; return; }
     buynote.textContent = d.error==="payments_unconfigured"
@@ -428,6 +444,19 @@ setCmp(50);
 /* ---------- swatch carousel arrows ---------- */
 $("#arrowL").addEventListener("click", ()=> swatchEl.scrollBy({left:-200,behavior:"smooth"}));
 $("#arrowR").addEventListener("click", ()=> swatchEl.scrollBy({left:200,behavior:"smooth"}));
+
+/* ---------- download format (PNG vs vector SVG) ---------- */
+const fmtNote=$("#fmtNote");
+const FMT_NOTE={
+  png:"A high-resolution image — perfect for prints, posts, and gifts.",
+  svg:"Pure vector art — made of shapes, not pixels. Print it the size of a stamp or a six-foot canvas, and every letter stays perfectly sharp."
+};
+$("#fmtSel").addEventListener("click", e=>{
+  const b=e.target.closest("button[data-fmt]"); if(!b) return;
+  state.fmt=b.dataset.fmt;
+  [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
+  fmtNote.textContent=FMT_NOTE[state.fmt]||"";
+});
 function friendly(code){ return ({no_words:"Add a few words first.",
   unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",
   empty_upload:"Please add a photo."})[code]; }
