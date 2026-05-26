@@ -69,17 +69,18 @@ def _hex_to_rgb(h: str) -> Tuple[int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
-# "Spectrum" ink: hue runs top->bottom independent of the photo; tone still
-# drives density/darkness. Stops are (vertical_fraction, colour).
-_SPECTRUM_STOPS = [
-    (0.00, "#f2b705"), (0.18, "#f25c05"), (0.38, "#e6002e"),
-    (0.58, "#b5179e"), (0.78, "#6a1fb5"), (1.00, "#1f3fb5"),
-]
+# Positional-gradient inks: hue runs top->bottom independent of the photo; tone
+# still drives density. Stops are (vertical_fraction, colour).
+_GRADIENTS = {
+    "spectrum": [(0.00, "#f2b705"), (0.18, "#f25c05"), (0.38, "#e6002e"),
+                 (0.58, "#b5179e"), (0.78, "#6a1fb5"), (1.00, "#1f3fb5")],
+    "aurora":   [(0.00, "#10c8b8"), (0.30, "#19a6e8"), (0.55, "#3a6df0"),
+                 (0.80, "#7b3ff0"), (1.00, "#a62ee0")],
+}
 
 
-def _spectrum_rgb(v: float) -> Tuple[int, int, int]:
+def _grad_rgb(stops, v: float) -> Tuple[int, int, int]:
     v = 0.0 if v < 0 else (1.0 if v > 1 else v)
-    stops = _SPECTRUM_STOPS
     for i in range(len(stops) - 1):
         v0, c0 = stops[i]
         v1, c1 = stops[i + 1]
@@ -463,7 +464,7 @@ def build_tonal_portrait(
     # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
     # the source photo. Mono keeps the existing gray ramp untouched.
     photo_ink = ink == "photo"
-    spectrum = ink == "spectrum"
+    grad = _GRADIENTS.get(ink)
     duo = _PALETTES[ink][:2] if (ink in _PALETTES and ink != "mono") else None
     bg = _PALETTES[ink][2] if (ink in _PALETTES and ink != "mono") else cfg.background_hex
     color_grid = (
@@ -484,10 +485,10 @@ def build_tonal_portrait(
     def fill_for(t_dark: float, src=None, vfrac: float = 0.0) -> str:
         g = _SHADE_LIGHT - int(round(span * t_dark))
         g = 0 if g < 0 else (255 if g > 255 else g)
-        if spectrum:
+        if grad is not None:
             # Hue from vertical position; blend from white (faint highlight) to
             # the full hue (saturated shadow) by tone, so features read crisp.
-            hr, hg, hb = _spectrum_rgb(vfrac)
+            hr, hg, hb = _grad_rgb(grad, vfrac)
             cr = int(round(255 + (hr - 255) * t_dark))
             cg = int(round(255 + (hg - 255) * t_dark))
             cb = int(round(255 + (hb - 255) * t_dark))

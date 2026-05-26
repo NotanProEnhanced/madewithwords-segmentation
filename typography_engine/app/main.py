@@ -244,9 +244,9 @@ async def render(
             status_code=422,
         )
 
-    from .pipeline.tonal import _PALETTES, _CALLIGRAM, build_calligram
+    from .pipeline.tonal import _PALETTES, _CALLIGRAM, _GRADIENTS, build_calligram
     from .pipeline.svgbuild import validate_svg as _validate
-    ink_choice = ink if ink in _PALETTES or ink == "photo" else "navy"
+    ink_choice = ink if (ink in _PALETTES or ink in _GRADIENTS or ink == "photo") else "navy"
     style_choice = "story" if style == "story" else "mosaic"
 
     try:

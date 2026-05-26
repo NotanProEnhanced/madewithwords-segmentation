@@ -45,6 +45,7 @@
   .stage{position:relative;border-radius:18px;overflow:hidden;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);min-height:280px}
   #portrait{width:100%;display:block;opacity:0;transition:opacity .45s ease}
   #portrait.shown{opacity:1}
+  #overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .3s ease;pointer-events:none}
   #assembly{position:absolute;inset:0;width:100%;height:100%;display:none}
   .busy{position:absolute;inset:0;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
   .busy.hide{opacity:0;pointer-events:none;transition:opacity .5s ease}
@@ -52,13 +53,22 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   .msg{font-family:var(--serif);color:var(--navy);font-size:16px}
 
-  .swatches{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin:20px 0 4px}
-  .sw{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;width:56px}
-  .chip{width:42px;height:42px;border-radius:50%;box-shadow:0 0 0 1.5px var(--line);transition:.15s}
-  .sw.sel .chip{box-shadow:0 0 0 2.5px var(--navy)}
-  .sw .nm{font-size:11px;color:var(--muted)}
-  .sw.sel .nm{color:var(--navy);font-weight:600}
-  .sw .rdy{font-size:9px;color:#b8b3a8;height:10px}
+  /* iOS-style filter carousel: each swatch is a live thumbnail of THIS portrait */
+  .swatches{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;
+    padding:18px 6px 6px;margin:6px -6px 0;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .swatches::-webkit-scrollbar{display:none}
+  .thumb{flex:0 0 auto;width:74px;border:none;background:none;padding:0;cursor:pointer;
+    scroll-snap-align:center;display:flex;flex-direction:column;align-items:center;gap:7px}
+  .thumb .pic{width:74px;height:74px;border-radius:16px;background-size:cover;background-position:center;
+    box-shadow:0 0 0 1.5px var(--line);transition:transform .2s ease, box-shadow .2s ease;background-color:#fff}
+  .thumb.sel .pic{box-shadow:0 0 0 3px var(--navy);transform:scale(1.07)}
+  .thumb .pic.loading{position:relative;overflow:hidden}
+  .thumb .pic.loading::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(110deg,rgba(255,255,255,0) 30%,rgba(255,255,255,.55) 50%,rgba(255,255,255,0) 70%);
+    transform:translateX(-100%);animation:shimmer 1.2s infinite}
+  @keyframes shimmer{to{transform:translateX(100%)}}
+  .thumb .nm{font-size:11px;color:var(--muted)}
+  .thumb.sel .nm{color:var(--navy);font-weight:700}
 
   .keepsake{margin-top:18px}
   .toggle{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:14px}
@@ -104,6 +114,7 @@
   <section id="result">
     <div class="stage">
       <img id="portrait" alt="your typortrait" />
+      <img id="overlay" alt="" />
       <canvas id="assembly"></canvas>
       <div id="busy" class="busy"><div class="spin"></div><div class="msg">Composing from your words…</div></div>
     </div>
@@ -132,7 +143,15 @@ const $ = s => document.querySelector(s);
 const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const ANIM_CAP = 2600;                 // max glyphs animated (perf); image shows all
 const INKS = [["navy","#0d1b3a","Navy"],["photo","conic","Photo"],["sepia","#5a3a1a","Sepia"],
-  ["burgundy","#4a0d18","Burgundy"],["forest","#0f2e1e","Forest"],["gold_noir","gold","Gold noir"],["mono","#555555","Mono"]];
+  ["burgundy","#4a0d18","Burgundy"],["forest","#0f2e1e","Forest"],["gold_noir","gold","Gold noir"],
+  ["spectrum","spectrum","Spectrum"],["aurora","aurora","Aurora"],["mono","#555555","Mono"]];
+function placeholderBg(col){
+  if(col==="conic") return "conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)";
+  if(col==="gold") return "radial-gradient(circle at 50% 42%, #e8c66a 0 40%, #0d0f13 44%)";
+  if(col==="spectrum") return "linear-gradient(180deg,#f2b705,#f25c05,#e6002e,#b5179e,#6a1fb5,#1f3fb5)";
+  if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
+  return col;
+}
 const state = { file:null, ink:"navy", poster:false, style:"mosaic" };
 function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
 // Show the price up front so it's never a surprise (single source: /pricing).
@@ -171,20 +190,28 @@ fileInput.addEventListener("change", e=>{ if(e.target.files[0]) setFile(e.target
 function setFile(f){ if(!f.type.startsWith("image/"))return; state.file=f; previewImg.src=URL.createObjectURL(f);
   preview.style.display="block"; drop.style.display="none"; refreshCreate(); }
 
-/* ---------- swatches ---------- */
+/* ---------- swatch filmstrip (live thumbnails of THIS portrait per ink) ----- */
 const swatchEl=$("#swatches");
 INKS.forEach(([id,col,label])=>{
-  const el=document.createElement("div"); el.className="sw"+(id==="navy"?" sel":""); el.dataset.ink=id;
-  const chip=document.createElement("div"); chip.className="chip";
-  if(col==="conic") chip.style.background="conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)";
-  else if(col==="gold") chip.style.background="radial-gradient(circle at 50% 42%, #e8c66a 0 40%, #0d0f13 44%)";
-  else chip.style.background=col;
+  const el=document.createElement("button"); el.type="button";
+  el.className="thumb"+(id==="navy"?" sel":""); el.dataset.ink=id;
+  const pic=document.createElement("div"); pic.className="pic loading"; pic.dataset.ink=id;
+  pic.style.background=placeholderBg(col);
   const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
-  const rdy=document.createElement("div"); rdy.className="rdy"; rdy.dataset.ink=id;
-  el.append(chip,nm,rdy); el.addEventListener("click", ()=>selectInk(id)); swatchEl.append(el);
+  el.append(pic,nm); el.addEventListener("click", ()=>selectInk(id)); swatchEl.append(el);
 });
-function markSel(){ [...swatchEl.children].forEach(c=>c.classList.toggle("sel",c.dataset.ink===state.ink)); }
-function markReady(){ document.querySelectorAll(".rdy").forEach(r=>r.textContent = cache[r.dataset.ink]?"ready":""); }
+function markSel(){
+  [...swatchEl.children].forEach(c=>c.classList.toggle("sel",c.dataset.ink===state.ink));
+  const sel=swatchEl.querySelector(".thumb.sel");
+  if(sel && sel.scrollIntoView) sel.scrollIntoView({behavior:"smooth",inline:"center",block:"nearest"});
+}
+function updateThumb(ink){
+  const pic=swatchEl.querySelector(`.pic[data-ink="${ink}"]`);
+  if(pic && cache[ink] && cache[ink].preview){
+    pic.style.backgroundImage=`url(${cache[ink].preview})`; pic.classList.remove("loading");
+  }
+}
+function resetThumbs(){ swatchEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.add("loading"); }); }
 
 /* ---------- keepsake ---------- */
 const keepSwitch=$("#keepSwitch"), keepFields=$("#keepFields"), title=$("#title"), caption=$("#caption");
@@ -215,23 +242,36 @@ createBtn.addEventListener("click", ()=>{ errInput.style.display="none";
   invalidate(); render(state.ink,{animate:true}).then(prewarm); });
 $("#restart").addEventListener("click", ()=>{ resultView.style.display="none"; inputView.style.display="block";
   invalidate(); portrait.src=""; portrait.className=""; canvas.style.display="none"; });
-function invalidate(){ cache={}; markReady(); }
+function invalidate(){ cache={}; resetThumbs(); }
 
 function selectInk(id){
   if(id===state.ink) return; state.ink=id; markSel();
-  if(cache[id]) showImage(cache[id]);          // instant
+  if(cache[id]) showImage(cache[id], true);    // instant crossfade
   else render(id,{animate:false});
 }
 
-/* ---------- show the watermarked preview ---------- */
-function showImage(entry){
+const overlay=$("#overlay");
+function setBuy(entry){
   currentJob = entry.job || null;
-  priceLabel = money(entry.price, entry.currency);
-  buy.textContent = "Download — " + priceLabel;
+  buy.textContent = "Download — " + money(entry.price, entry.currency);
+}
+/* Show the watermarked preview. crossfade=true does an iOS-style dissolve
+   between the current image and the newly-selected ink. */
+function showImage(entry, crossfade){
+  setBuy(entry);
   canvas.style.display="none";
-  portrait.classList.remove("shown");
-  portrait.onload=()=>{ portrait.classList.add("shown"); busy.classList.add("hide"); };
-  portrait.src=entry.preview+"?t="+Date.now();
+  const url = entry.preview + "?t=" + Date.now();
+  if(crossfade && portrait.getAttribute("src")){
+    overlay.onload=()=>{
+      overlay.style.opacity=1;
+      setTimeout(()=>{ portrait.src=overlay.src; overlay.style.opacity=0; }, 300);
+    };
+    overlay.src=url; busy.classList.add("hide");
+  } else {
+    portrait.classList.remove("shown");
+    portrait.onload=()=>{ portrait.classList.add("shown"); busy.classList.add("hide"); };
+    portrait.src=url;
+  }
 }
 
 
@@ -254,7 +294,7 @@ async function render(ink,{animate=false,background=false}={}){
       else { errResult.textContent=msg; errResult.style.display="block"; }
       busy.classList.add("hide"); return;
     }
-    cache[ink]={preview:data.preview, job:data.job, price:data.price_cents, currency:data.currency}; markReady();
+    cache[ink]={preview:data.preview, job:data.job, price:data.price_cents, currency:data.currency}; updateThumb(ink);
     if(background || ink!==state.ink) return;
     showImage(cache[ink]);   // watermarked preview (clean art is unlocked via Stripe)
   }catch(e){ if(!background){ errResult.textContent="Network error — please try again."; errResult.style.display="block"; busy.classList.add("hide"); } }
