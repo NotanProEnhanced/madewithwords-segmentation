@@ -47,7 +47,7 @@ _WORD_GAP = 2
 # features near-black, so tone gradients carry the likeness. Kept just below
 # white so the brightest skin/hair still render as very faint words (not blank)
 # while highlights read light enough to give the portrait real contrast.
-_SHADE_LIGHT = 214
+_SHADE_LIGHT = 172
 _SHADE_DARK = 0
 
 # Named ink treatments. Each duotone is (light_end, dark_end): the colour at the
@@ -222,6 +222,22 @@ def _eye_ellipses(an, scale: float) -> List[Tuple[float, float, float, float]]:
             ry = (float(ep[:, 1].max() - ep[:, 1].min()) / 2.0) * 1.55
             if rx >= 2.0 and ry >= 2.0:
                 out.append((cx, cy, rx, ry))
+    return out
+
+
+def _face_ovals(an, scale: float) -> List[Tuple[float, float, float, float]]:
+    """Per-face (cx, cy, rx, ry) ellipses (render coords) marking the area that
+    gets the finer 'face' word tier, so the likeness keeps its detail while the
+    body is rendered with larger, more legible words."""
+    out: List[Tuple[float, float, float, float]] = []
+    for face in _faces_of(an):
+        pts = face.points * scale
+        cx, cy = float(pts[:, 0].mean()), float(pts[:, 1].mean())
+        fw = float(pts[:, 0].max() - pts[:, 0].min())
+        fh = float(pts[:, 1].max() - pts[:, 1].min())
+        if fw < 4 or fh < 4:
+            continue
+        out.append((cx, cy, fw * 0.60, fh * 0.72))
     return out
 
 
@@ -407,11 +423,11 @@ def build_tonal_portrait(
     level: float = 0.015,
     power: float = 1.0,
     auto_tone: bool = True,
-    target_tone: float = 0.50,
+    target_tone: float = 0.55,
     jitter: float = 0.7,
     seed: int = 1234,
-    contrast: float = 2.4,
-    pivot: float = 0.46,
+    contrast: float = 2.8,
+    pivot: float = 0.34,
     ink: str = "mono",
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
@@ -451,15 +467,15 @@ def build_tonal_portrait(
     dark = _emphasize_features(dark, an, scale, mset)
     dark = _sharpen_eyes(dark, an, scale, mset)
 
-    font = min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px))
-    cell_w = font * _MONO_ADVANCE
-    row_h = font * 0.80
-    cols = max(1, int(W / cell_w))
-    rows = max(1, int(H / row_h))
-
-    # Area-average the tone into the glyph grid so each letter reflects the mean
-    # darkness of its whole cell -> smooth, faithful gradients (not point noise).
-    grid = cv2.resize(dark, (cols, rows), interpolation=cv2.INTER_AREA)
+    # ---- Size tiers ---------------------------------------------------------
+    # BIG words across the body and open areas read clearly; the face is filled
+    # with SMALLER words and the eyes with the finest glyphs, so the likeness
+    # holds where detail matters. Uniform small words read as illegible noise;
+    # uniform big words lose the face -- the two requirements the tiers reconcile
+    # (legible typography AND a recognizable subject).
+    body_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 2.4)))
+    face_font = float(max(cfg.min_font_px, body_font * 0.40))
+    eye_font = float(max(6.0, face_font * 0.5))
 
     # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
     # the source photo. Mono keeps the existing gray ramp untouched.
@@ -467,10 +483,6 @@ def build_tonal_portrait(
     grad = _GRADIENTS.get(ink)
     duo = _PALETTES[ink][:2] if (ink in _PALETTES and ink != "mono") else None
     bg = _PALETTES[ink][2] if (ink in _PALETTES and ink != "mono") else cfg.background_hex
-    color_grid = (
-        cv2.resize(an.img.bgr, (cols, rows), interpolation=cv2.INTER_AREA)
-        if photo_ink else None
-    )
     lo_rgb, hi_rgb = (_hex_to_rgb(duo[0]), _hex_to_rgb(duo[1])) if duo is not None else (None, None)
 
     span = max(1, _SHADE_LIGHT - _SHADE_DARK)
@@ -505,13 +517,21 @@ def build_tonal_portrait(
             return f"#{cr:02x}{cg:02x}{cb:02x}"
         return f"#{g:02x}{g:02x}{g:02x}"
 
-    # Eyes get a finer pass (below) for crisp iris/lid/catchlight; the main grid
-    # skips these regions so the two don't overprint.
+    # The face gets a smaller-word tier and the eyes the finest one; the larger
+    # tiers skip those regions so the passes don't overprint.
     eyes = _eye_ellipses(an, scale)
 
     def in_eyes(px: float, py: float) -> bool:
         for ex, ey, rx, ry in eyes:
             if ((px - ex) / rx) ** 2 + ((py - ey) / ry) ** 2 <= 1.0:
+                return True
+        return False
+
+    face_ov = _face_ovals(an, scale)
+
+    def in_face(px: float, py: float) -> bool:
+        for cx, cy, rx, ry in face_ov:
+            if ((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2 <= 1.0:
                 return True
         return False
 
@@ -521,100 +541,123 @@ def build_tonal_portrait(
     # so words don't form vertical "rivers" or horizontal banding.
     rng = np.random.default_rng(seed)
 
-    for r in range(rows):
-        ox = (rng.random() - 0.5) * cell_w * jitter
-        oy = (rng.random() - 0.5) * row_h * jitter * 0.5
-        baseline = (r + 0.5) * row_h + font * 0.34 + oy
-        row = grid[r]
-        ink = row > level
-        if eyes:
-            cy_nom = (r + 0.5) * row_h
+    def emit(font: float, bx0: int, by0: int, bx1: int, by1: int, region: str, kind: str) -> None:
+        """Lay one size tier of words over [bx0:bx1, by0:by1]. Every cell inside
+        the silhouette is inked (highlights -> faint glyphs, so the form stays
+        continuous); the body tier skips the face, the face tier skips the eyes."""
+        cw = font * _MONO_ADVANCE
+        rh = font * 0.80
+        bx0 = int(max(0, bx0)); by0 = int(max(0, by0))
+        bx1 = int(min(W, bx1)); by1 = int(min(H, by1))
+        cols = int((bx1 - bx0) / cw)
+        rows = int((by1 - by0) / rh)
+        if cols < 1 or rows < 1:
+            return
+        # Area-average the tone into this tier's grid so each letter reflects the
+        # mean darkness of its whole cell (smooth gradients, not point noise).
+        sub = cv2.resize(dark[by0:by1, bx0:bx1], (cols, rows), interpolation=cv2.INTER_AREA)
+        mg = cv2.resize(mask[by0:by1, bx0:bx1], (cols, rows), interpolation=cv2.INTER_AREA)
+        csub = (cv2.resize(an.img.bgr[by0:by1, bx0:bx1], (cols, rows),
+                           interpolation=cv2.INTER_AREA) if photo_ink else None)
+        for r in range(rows):
+            ox = (rng.random() - 0.5) * cw * jitter
+            oy = (rng.random() - 0.5) * rh * jitter * 0.5
+            baseline = by0 + (r + 0.5) * rh + font * 0.34 + oy
+            cy_nom = by0 + (r + 0.5) * rh
+            row = sub[r]
+            ink = mg[r] > 110
             for c in range(cols):
-                if ink[c] and in_eyes((c + 0.5) * cell_w, cy_nom):
-                    ink[c] = False
-        c = 0
-        while c < cols:
-            if not ink[c]:
-                c += 1
-                continue
-            start = c
-            while c < cols and ink[c]:
-                c += 1
-            end = c
-            pos = start
-            glyphs: List[str] = []
-            first = True
-            while True:
-                need = 0 if first else _WORD_GAP  # blank cells between words
-                avail = end - pos - need
-                if avail < shortest:
-                    break
-                # Random word order (seeded) so word-boundary spaces fall at
-                # different x on each row instead of stacking into vertical
-                # "rivers"; pick the first that fits the remaining run.
-                chosen = None
-                for j in rng.permutation(ntok):
-                    if len(tokens[j]) <= avail:
-                        chosen = tokens[j]
-                        break
-                if chosen is None:
-                    break
-                if not first:
-                    glyphs.extend([" "] * _WORD_GAP)
-                    pos += _WORD_GAP
-                glyphs.extend(chosen)
-                pos += len(chosen)
-                first = False
-            if not glyphs:
-                continue
-            spans = []
-            # Per-WORD jitter (not per-glyph): every letter in a word shares one
-            # offset, so within a word letters stay aligned and evenly spaced
-            # (legible), while whole words scatter enough to break the rigid grid
-            # / banding. Each new word (after a space) gets a fresh offset.
-            wx = (rng.random() - 0.5) * cell_w * _JITTER_X
-            wy = (rng.random() - 0.5) * row_h * _JITTER_Y
-            prev_space = False
-            for k, ch in enumerate(glyphs):
-                if ch == " ":
-                    if not prev_space:
-                        wx = (rng.random() - 0.5) * cell_w * _JITTER_X
-                        wy = (rng.random() - 0.5) * row_h * _JITTER_Y
-                    prev_space = True
+                if not ink[c]:
                     continue
+                px = bx0 + (c + 0.5) * cw
+                if in_eyes(px, cy_nom):
+                    ink[c] = False
+                elif region == "body" and in_face(px, cy_nom):
+                    ink[c] = False
+                elif region == "face" and not in_face(px, cy_nom):
+                    ink[c] = False
+            c = 0
+            while c < cols:
+                if not ink[c]:
+                    c += 1
+                    continue
+                start = c
+                while c < cols and ink[c]:
+                    c += 1
+                end = c
+                pos = start
+                glyphs: List[str] = []
+                first = True
+                while True:
+                    need = 0 if first else _WORD_GAP  # blank cells between words
+                    avail = end - pos - need
+                    if avail < shortest:
+                        break
+                    # Random word order (seeded) so word-boundary spaces fall at
+                    # different x on each row instead of stacking into vertical
+                    # "rivers"; pick the first that fits the remaining run.
+                    chosen = None
+                    for j in rng.permutation(ntok):
+                        if len(tokens[j]) <= avail:
+                            chosen = tokens[j]
+                            break
+                    if chosen is None:
+                        break
+                    if not first:
+                        glyphs.extend([" "] * _WORD_GAP)
+                        pos += _WORD_GAP
+                    glyphs.extend(chosen)
+                    pos += len(chosen)
+                    first = False
+                if not glyphs:
+                    continue
+                spans = []
+                # Per-WORD jitter (not per-glyph): letters in a word share one
+                # offset (stay aligned/legible) while whole words scatter to break
+                # the rigid grid. Each new word (after a space) gets a fresh one.
+                wx = (rng.random() - 0.5) * cw * _JITTER_X
+                wy = (rng.random() - 0.5) * rh * _JITTER_Y
                 prev_space = False
-                cell = start + k
-                t_dark = tdark_of(row[cell])
-                gx = cell * cell_w + ox + wx
-                gy = baseline + wy
-                fill = fill_for(t_dark, color_grid[r, cell] if photo_ink else None, gy / H)
-                spans.append(
-                    f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="{fill}">'
-                    f"{esc(ch)}</tspan>"
+                for k, ch in enumerate(glyphs):
+                    if ch == " ":
+                        if not prev_space:
+                            wx = (rng.random() - 0.5) * cw * _JITTER_X
+                            wy = (rng.random() - 0.5) * rh * _JITTER_Y
+                        prev_space = True
+                        continue
+                    prev_space = False
+                    cell = start + k
+                    gx = bx0 + cell * cw + ox + wx
+                    gy = baseline + wy
+                    fill = fill_for(tdark_of(row[cell]), csub[r, cell] if photo_ink else None, gy / H)
+                    spans.append(f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="{fill}">{esc(ch)}</tspan>')
+                if not spans:
+                    continue
+                doc.add(
+                    f'<text xml:space="preserve" font-family="{esc(_MONO_FAMILY)}" '
+                    f'font-size="{font:.2f}" font-weight="{esc(cfg.font_weight)}">'
+                    + "".join(spans) + "</text>"
                 )
-            if not spans:
-                continue
-            doc.add(
-                f'<text xml:space="preserve" '
-                f'font-family="{esc(_MONO_FAMILY)}" font-size="{font:.2f}" '
-                f'font-weight="{esc(cfg.font_weight)}">' + "".join(spans) + "</text>"
-            )
-            runs.append(
-                TextRun(
-                    region="tonal",
-                    path_id=f"row{r}_{start}",
-                    path_d="",
-                    text="".join(glyphs),
-                    font_size=round(font, 2),
-                    kind="primary",
+                runs.append(
+                    TextRun(region=region, path_id=f"{region}{r}_{start}", path_d="",
+                            text="".join(glyphs), font_size=round(font, 2), kind=kind)
                 )
-            )
+
+    # Body: big, legible words across the silhouette, skipping the face and eyes.
+    emit(body_font, 0, 0, W, H, "body", "primary")
+    # Face: smaller words to carry the likeness, skipping the eyes.
+    if face_ov:
+        fx0 = min(cx - rx for cx, cy, rx, ry in face_ov)
+        fy0 = min(cy - ry for cx, cy, rx, ry in face_ov)
+        fx1 = max(cx + rx for cx, cy, rx, ry in face_ov)
+        fy1 = max(cy + ry for cx, cy, rx, ry in face_ov)
+        emit(face_font, fx0, fy0, fx1, fy1, "face", "primary")
 
     # ---- Finer eye pass: resolve iris / lid / catchlight inside the eye
     # ellipses (which the main grid skipped). Half-size glyphs, marked "detail"
     # so they're exempt from the readable min-font floor that governs the body.
     if eyes:
-        fe = max(6.0, font * 0.5)
+        fe = eye_font
         ecw, erh = fe * _MONO_ADVANCE, fe * 0.80
         ex0 = max(0, int(min(e[0] - e[2] for e in eyes)))
         ey0 = max(0, int(min(e[1] - e[3] for e in eyes)))
