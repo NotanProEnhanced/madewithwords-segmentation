@@ -417,6 +417,26 @@ def build_calligram(
     return doc.to_svg(), runs
 
 
+def _edge_separate(dark: np.ndarray, gray: np.ndarray, mset: np.ndarray, amount: float) -> np.ndarray:
+    """Darken local edges/texture so regions of similar brightness but different
+    texture separate -- fine gray hair vs smooth light skin is the classic case
+    (a pure tone map renders them identically because their luminance matches).
+    Gray hair carries dense fine edges, smooth skin almost none, so this pulls
+    them apart and sharpens feature boundaries (hairline, nose, jaw, lips)
+    without needing to segment hair."""
+    g = gray.astype(np.float32)
+    gx = cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3)
+    mag = cv2.magnitude(gx, gy)
+    vals = mag[mset] if int(mset.sum()) > 50 else mag.reshape(-1)
+    hi = float(np.percentile(vals, 95))
+    mag = np.clip(mag / max(hi, 1e-3), 0.0, 1.0)
+    mag = cv2.GaussianBlur(mag, (0, 0), 1.2)
+    out = dark + amount * mag
+    out[~mset] = dark[~mset]
+    return np.clip(out, 0.0, 1.0)
+
+
 def build_tonal_portrait(
     an,
     words: Sequence[str],
@@ -466,12 +486,16 @@ def build_tonal_portrait(
         W, H = w0, h0
 
     mset = mask > 127
-    dark = _tone_field(_sharpen(gray), mask, gamma=gamma, floor=floor)
+    sharp = _sharpen(gray)
+    dark = _tone_field(sharp, mask, gamma=gamma, floor=floor)
     if auto_tone:
         dark = _auto_tone(dark, mset, target_tone, max_shift=0.18)
     dark = _balance_faces(dark, an, scale, mset)
     dark = _emphasize_features(dark, an, scale, mset)
     dark = _sharpen_eyes(dark, an, scale, mset)
+    # Separate similar-brightness regions (gray hair vs light skin) and crisp up
+    # feature boundaries via local edge/texture darkening.
+    dark = _edge_separate(dark, sharp, mset, amount=0.40)
 
     # ---- Size tiers ---------------------------------------------------------
     # Words step DOWN in size toward the face: BIG across the outer body, MID in
