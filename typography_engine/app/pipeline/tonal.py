@@ -201,9 +201,13 @@ def _balance_faces(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.n
         # blend with the original to keep the smooth gradients that read as
         # detail. (A hard 0->1 stretch plus a gamma lift instead compounds with
         # the sharpen + shade S-curve and turns subtle modeling into blotches.)
-        t_lo, t_hi = 0.05, 0.92
+        # Lift the highlight floor (t_lo) so light skin carries visible ink and
+        # the face reads solid instead of washing to white, and extend the dark
+        # end so shadows go deep -- more presence and pop, kept linear so no S-
+        # curve brightens the highlights back out or blotches the modeling.
+        t_lo, t_hi = 0.12, 0.96
         remap = np.clip((dark - lo) / (hi - lo), 0.0, 1.0) * (t_hi - t_lo) + t_lo
-        alpha = 0.65
+        alpha = 0.72
         balanced = dark * (1.0 - alpha) + remap * alpha
         out = out * (1.0 - wm) + balanced * wm
     return np.clip(out, 0.0, 1.0)
@@ -288,8 +292,10 @@ def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.nd
             if hi - lo < 0.05:
                 continue
             st = np.clip((patch - lo) / (hi - lo), 0.0, 1.0)
+            # Push iris/lash darker and sclera lighter so the eye reads alive.
+            st = np.clip(0.5 + (st - 0.5) * 1.32, 0.0, 1.0)
             blur = cv2.GaussianBlur(st, (0, 0), max(1.0, ew * 0.04))
-            sharp = np.clip(st + (st - blur) * 1.1, 0.0, 1.0)   # crisper iris/lid
+            sharp = np.clip(st + (st - blur) * 1.45, 0.0, 1.0)   # crisper iris/lid
             ph, pw = patch.shape[:2]
             fm = np.zeros((ph, pw), np.float32)
             cv2.ellipse(fm, (pw // 2, ph // 2), (pw // 2, ph // 2), 0, 0, 360, 1.0, -1)
@@ -303,7 +309,7 @@ def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.nd
             eye_in = out[iy0:iy1, ix0:ix1]
             if eye_in.size and float(eye_in.min()) < 0.30:
                 cyl, cxl = np.unravel_index(int(np.argmin(eye_in)), eye_in.shape)
-                r = max(3, int(round(eh * 0.09)))
+                r = max(3, int(round(eh * 0.11)))
                 cv2.circle(out, (ix0 + cxl, iy0 + cyl), r, 0.0, -1)
     return np.clip(out, 0.0, 1.0)
 
