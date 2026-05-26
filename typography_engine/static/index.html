@@ -88,6 +88,10 @@
     display:flex;align-items:center;justify-content:center;color:var(--navy);font-size:18px;font-weight:700;padding:0}
   .arrow.left{left:-6px}.arrow.right{right:-6px}
   @media(hover:none){.arrow{display:none}}
+  .thumb-status{display:flex;align-items:center;justify-content:center;gap:8px;min-height:18px;
+    text-align:center;color:var(--muted);font-size:13px;margin-top:10px;opacity:0;transition:opacity .2s}
+  .thumb-status.on{opacity:1}
+  .thumb-status .dot{width:12px;height:12px;border-radius:50%;border:2px solid #d9d6cf;border-top-color:var(--navy);animation:spin .9s linear infinite;flex:0 0 auto}
 
   .keepsake{margin-top:18px}
   .toggle{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:14px}
@@ -148,6 +152,7 @@
       <div id="swatches" class="swatches"></div>
       <button type="button" class="arrow right" id="arrowR" aria-label="More colours">&#8250;</button>
     </div>
+    <div id="thumbStatus" class="thumb-status" aria-live="polite"></div>
     <div class="card keepsake">
       <div class="toggle" id="keepToggle">
         <div><div class="t-lbl">Make it a keepsake</div><div class="t-sub">Add a name and caption, framed as a poster.</div></div>
@@ -355,17 +360,25 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
 /* Fill each swatch with a fast, coarse thumbnail of THIS portrait in that ink,
    one at a time, without blocking the selected view. Tapping a swatch renders it
    at full detail. A generation token drops the queue when the photo/words change. */
+const thumbStatus=$("#thumbStatus");
+function setThumbStatus(label){
+  if(!thumbStatus) return;
+  if(label){ thumbStatus.innerHTML=`<span class="dot"></span><span>Typortrait is rendering your <b>${label}</b> portrait — a second or two…</span>`; thumbStatus.classList.add("on"); }
+  else { thumbStatus.classList.remove("on"); thumbStatus.textContent=""; }
+}
 let prewarming=false;
 async function prewarm(){
   if(prewarming) return;
   prewarming=true;
   const myGen=gen;
-  for(const [id] of INKS){
+  for(const [id, , label] of INKS){
     if(gen!==myGen) break;
     if(id===state.ink || cache[id] || thumbCache[id]){ updateThumb(id); continue; }
     const pic=swatchEl.querySelector(`.pic[data-ink="${id}"]`); if(pic) pic.classList.add("loading");
+    setThumbStatus(label);
     await render(id,{thumb:true});
   }
+  setThumbStatus("");
   prewarming=false;
 }
 
