@@ -468,13 +468,14 @@ def build_tonal_portrait(
     dark = _sharpen_eyes(dark, an, scale, mset)
 
     # ---- Size tiers ---------------------------------------------------------
-    # BIG words across the body and open areas read clearly; the face is filled
-    # with SMALLER words and the eyes with the finest glyphs, so the likeness
-    # holds where detail matters. Uniform small words read as illegible noise;
-    # uniform big words lose the face -- the two requirements the tiers reconcile
-    # (legible typography AND a recognizable subject).
-    body_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 2.4)))
-    face_font = float(max(cfg.min_font_px, body_font * 0.40))
+    # Words step DOWN in size toward the face: BIG across the outer body, MID in
+    # a ring around the head/shoulders, SMALL on the face, and the FINEST glyphs
+    # in the eyes. The gentle steps read as a smooth large->mid->small gradient
+    # (not a hard two-size seam), so the typography is legible AND the likeness
+    # holds where detail matters.
+    body_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 2.6)))
+    mid_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 1.7)))
+    face_font = float(max(cfg.min_font_px, cfg.min_font_px))
     eye_font = float(max(6.0, face_font * 0.5))
 
     # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
@@ -535,6 +536,16 @@ def build_tonal_portrait(
                 return True
         return False
 
+    # A larger ring around the face takes the mid size, so words step down
+    # large -> mid -> small toward the face instead of jumping at one hard edge.
+    mid_ov = [(cx, cy, rx * 1.95, ry * 1.85) for cx, cy, rx, ry in face_ov]
+
+    def in_mid(px: float, py: float) -> bool:
+        for cx, cy, rx, ry in mid_ov:
+            if ((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2 <= 1.0:
+                return True
+        return False
+
     doc = SvgDoc(width=W, height=H, background=bg)
     runs: List[TextRun] = []
     # Seeded (reproducible) per-row jitter offsets break up the rigid column grid
@@ -572,7 +583,9 @@ def build_tonal_portrait(
                 px = bx0 + (c + 0.5) * cw
                 if in_eyes(px, cy_nom):
                     ink[c] = False
-                elif region == "body" and in_face(px, cy_nom):
+                elif region == "body" and in_mid(px, cy_nom):
+                    ink[c] = False
+                elif region == "mid" and (in_face(px, cy_nom) or not in_mid(px, cy_nom)):
                     ink[c] = False
                 elif region == "face" and not in_face(px, cy_nom):
                     ink[c] = False
@@ -643,8 +656,15 @@ def build_tonal_portrait(
                             text="".join(glyphs), font_size=round(font, 2), kind=kind)
                 )
 
-    # Body: big, legible words across the silhouette, skipping the face and eyes.
+    # Body: big, legible words across the silhouette, outside the head region.
     emit(body_font, 0, 0, W, H, "body", "primary")
+    # Mid: medium words in the ring around the face (the large->small step-down).
+    if mid_ov:
+        mx0 = min(cx - rx for cx, cy, rx, ry in mid_ov)
+        my0 = min(cy - ry for cx, cy, rx, ry in mid_ov)
+        mx1 = max(cx + rx for cx, cy, rx, ry in mid_ov)
+        my1 = max(cy + ry for cx, cy, rx, ry in mid_ov)
+        emit(mid_font, mx0, my0, mx1, my1, "mid", "primary")
     # Face: smaller words to carry the likeness, skipping the eyes.
     if face_ov:
         fx0 = min(cx - rx for cx, cy, rx, ry in face_ov)
