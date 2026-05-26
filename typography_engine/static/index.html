@@ -227,7 +227,11 @@ INKS.forEach(([id,col,label])=>{
   const el=document.createElement("button"); el.type="button";
   el.className="thumb"+(id==="navy"?" sel":""); el.dataset.ink=id;
   const pic=document.createElement("div"); pic.className="pic"; pic.dataset.ink=id;
-  pic.style.background=placeholderBg(col);
+  // Set the colour/gradient placeholder on its own longhand -- the `background`
+  // shorthand would reset background-size to auto and break the cover crop when
+  // the thumbnail image is applied later.
+  const ph=placeholderBg(col);
+  if(ph.indexOf("gradient")>=0) pic.style.backgroundImage=ph; else pic.style.backgroundColor=ph;
   const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
   el.append(pic,nm); el.addEventListener("click", ()=>selectInk(id)); swatchEl.append(el);
 });
@@ -239,7 +243,11 @@ function markSel(){
 function updateThumb(ink){
   const pic=swatchEl.querySelector(`.pic[data-ink="${ink}"]`);
   const src=(cache[ink] && cache[ink].preview) || thumbCache[ink];   // full preview wins over coarse
-  if(pic && src){ pic.style.backgroundImage=`url(${src})`; pic.classList.remove("loading"); }
+  if(pic && src){
+    pic.style.backgroundImage=`url(${src})`;
+    pic.style.backgroundSize="cover"; pic.style.backgroundPosition="center";
+    pic.classList.remove("loading");
+  }
 }
 function resetThumbs(){ swatchEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.remove("loading"); }); }
 
