@@ -67,9 +67,8 @@ sudo systemctl enable --now docker
 ```
 
 ### 2d. Get the code
-Replace the URL/branch with yours:
 ```bash
-git clone -b claude/typography-portrait-engine-NBy2u https://github.com/notanproenhanced/madewithwords-segmentation.git typortrait
+git clone https://github.com/notanproenhanced/madewithwords-segmentation.git typortrait
 cd typortrait/typography_engine
 ```
 
