@@ -68,6 +68,27 @@ def _hex_to_rgb(h: str) -> Tuple[int, int, int]:
     h = h.lstrip("#")
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
+
+# "Spectrum" ink: hue runs top->bottom independent of the photo; tone still
+# drives density/darkness. Stops are (vertical_fraction, colour).
+_SPECTRUM_STOPS = [
+    (0.00, "#f2b705"), (0.18, "#f25c05"), (0.38, "#e6002e"),
+    (0.58, "#b5179e"), (0.78, "#6a1fb5"), (1.00, "#1f3fb5"),
+]
+
+
+def _spectrum_rgb(v: float) -> Tuple[int, int, int]:
+    v = 0.0 if v < 0 else (1.0 if v > 1 else v)
+    stops = _SPECTRUM_STOPS
+    for i in range(len(stops) - 1):
+        v0, c0 = stops[i]
+        v1, c1 = stops[i + 1]
+        if v <= v1:
+            t = 0.0 if v1 == v0 else (v - v0) / (v1 - v0)
+            a, b = _hex_to_rgb(c0), _hex_to_rgb(c1)
+            return tuple(int(round(a[k] + (b[k] - a[k]) * t)) for k in range(3))
+    return _hex_to_rgb(stops[-1][1])
+
 # Calligram looks, keyed by the same swatch names as the mosaic inks:
 # (ink/full-darkness colour, background). gold_noir is light ink on a dark page.
 _CALLIGRAM = {
@@ -442,6 +463,7 @@ def build_tonal_portrait(
     # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
     # the source photo. Mono keeps the existing gray ramp untouched.
     photo_ink = ink == "photo"
+    spectrum = ink == "spectrum"
     duo = _PALETTES[ink][:2] if (ink in _PALETTES and ink != "mono") else None
     bg = _PALETTES[ink][2] if (ink in _PALETTES and ink != "mono") else cfg.background_hex
     color_grid = (
@@ -459,9 +481,17 @@ def build_tonal_portrait(
         n = 1.0 if n > 1.0 else (0.0 if n < 0.0 else n)
         return n ** power
 
-    def fill_for(t_dark: float, src=None) -> str:
+    def fill_for(t_dark: float, src=None, vfrac: float = 0.0) -> str:
         g = _SHADE_LIGHT - int(round(span * t_dark))
         g = 0 if g < 0 else (255 if g > 255 else g)
+        if spectrum:
+            # Hue from vertical position; blend from white (faint highlight) to
+            # the full hue (saturated shadow) by tone, so features read crisp.
+            hr, hg, hb = _spectrum_rgb(vfrac)
+            cr = int(round(255 + (hr - 255) * t_dark))
+            cg = int(round(255 + (hg - 255) * t_dark))
+            cb = int(round(255 + (hb - 255) * t_dark))
+            return f"#{cr:02x}{cg:02x}{cb:02x}"
         if photo_ink and src is not None:
             b0, g0, r0 = int(src[0]), int(src[1]), int(src[2])  # BGR
             luma = 0.299 * r0 + 0.587 * g0 + 0.114 * b0
@@ -554,9 +584,9 @@ def build_tonal_portrait(
                 prev_space = False
                 cell = start + k
                 t_dark = tdark_of(row[cell])
-                fill = fill_for(t_dark, color_grid[r, cell] if photo_ink else None)
                 gx = cell * cell_w + ox + wx
                 gy = baseline + wy
+                fill = fill_for(t_dark, color_grid[r, cell] if photo_ink else None, gy / H)
                 spans.append(
                     f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="{fill}">'
                     f"{esc(ch)}</tspan>"
@@ -647,9 +677,9 @@ def build_tonal_portrait(
                             continue
                         prev_space = False
                         cellf = start + k
-                        fill = fill_for(tdark_of(rowf[cellf]), csub[rf, cellf] if photo_ink else None)
                         gx = ex0 + cellf * ecw + wx
                         gy = baseline + wy
+                        fill = fill_for(tdark_of(rowf[cellf]), csub[rf, cellf] if photo_ink else None, gy / H)
                         spans.append(f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="{fill}">{esc(ch)}</tspan>')
                     if not spans:
                         continue
