@@ -102,6 +102,19 @@ _CALLIGRAM = {
     "photo":     ("#15202b", "#ffffff"),
 }
 
+# Poster looks: a near-black ground and a bright ink, keyed by swatch. The
+# poster renders brightness-positive (lit face = brightest text), so the photo
+# is faithfully evident -- the gallery/tribute "type-poster" style.
+_POSTER = {
+    "navy":      ("#090d18", "#dbe4f1"),
+    "sepia":     ("#0c0a06", "#ecdab4"),
+    "burgundy":  ("#120709", "#edc6ca"),
+    "forest":    ("#06110b", "#cfe6d6"),
+    "gold_noir": ("#0b0a06", "#e8c66a"),
+    "mono":      ("#0a0a0a", "#f2ece0"),
+    "photo":     ("#0a0a0c", None),       # tint from the source colour
+}
+
 # MediaPipe 478-point mesh index groups for the recognition features we deepen.
 _EYE_L = (33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246)
 _EYE_R = (362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398)
@@ -857,13 +870,12 @@ def build_poster(
     if remove_bg:
         combined[~mset] = 0.0
 
+    ground_hex, ink_hex = _POSTER.get(ink, ("#0a0a0c", "#f2ece0"))
+    ground = _hex_to_rgb(ground_hex)
     photo_ink = ink == "photo"
     grad = _GRADIENTS.get(ink)
-    duo = _PALETTES[ink][:2] if (ink in _PALETTES and ink != "mono") else None
-    bg = _PALETTES[ink][2] if (ink in _PALETTES and ink != "mono") else cfg.background_hex
+    ink_rgb = _hex_to_rgb(ink_hex) if (ink_hex and grad is None and not photo_ink) else None
     color_grid = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA) if photo_ink else None
-    lo_rgb, hi_rgb = (_hex_to_rgb(duo[0]), _hex_to_rgb(duo[1])) if duo is not None else (None, None)
-    span = max(1, _SHADE_LIGHT - _SHADE_DARK)
     inv_level = max(1e-3, 1.0 - level)
 
     def tdark_of(tone: float) -> float:
@@ -873,24 +885,22 @@ def build_poster(
         return n ** power
 
     def fill_for(t_dark: float, src, vfrac: float) -> str:
-        g = _SHADE_LIGHT - int(round(span * t_dark))
-        g = 0 if g < 0 else (255 if g > 255 else g)
+        # Brightness-positive on a dark ground: lit (t_dark->0) = bright ink,
+        # shadow (t_dark->1) fades to the ground, so the lit face is the
+        # brightest type and the photo reads faithfully.
+        v = 1.0 - t_dark
         if grad is not None:
-            hr, hg, hb = _grad_rgb(grad, vfrac)
-            return f"#{int(round(255+(hr-255)*t_dark)):02x}{int(round(255+(hg-255)*t_dark)):02x}{int(round(255+(hb-255)*t_dark)):02x}"
-        if photo_ink and src is not None:
-            b0, g0, r0 = int(src[0]), int(src[1]), int(src[2])
-            luma = 0.299 * r0 + 0.587 * g0 + 0.114 * b0
-            s = g / max(luma, 1.0)
-            return f"#{min(255,int(r0*s)):02x}{min(255,int(g0*s)):02x}{min(255,int(b0*s)):02x}"
-        if duo is not None:
-            cr = int(round(lo_rgb[0] + (hi_rgb[0] - lo_rgb[0]) * t_dark))
-            cg = int(round(lo_rgb[1] + (hi_rgb[1] - lo_rgb[1]) * t_dark))
-            cb = int(round(lo_rgb[2] + (hi_rgb[2] - lo_rgb[2]) * t_dark))
-            return f"#{cr:02x}{cg:02x}{cb:02x}"
-        return f"#{g:02x}{g:02x}{g:02x}"
+            tip = _grad_rgb(grad, vfrac)
+        elif photo_ink and src is not None:
+            tip = (int(src[2]), int(src[1]), int(src[0]))   # BGR -> RGB
+        else:
+            tip = ink_rgb
+        cr = int(round(ground[0] + (tip[0] - ground[0]) * v))
+        cg = int(round(ground[1] + (tip[1] - ground[1]) * v))
+        cb = int(round(ground[2] + (tip[2] - ground[2]) * v))
+        return f"#{cr:02x}{cg:02x}{cb:02x}"
 
-    doc = SvgDoc(width=W, height=H, background=bg)
+    doc = SvgDoc(width=W, height=H, background=ground_hex)
     runs: List[TextRun] = []
     cw = font_px * _MONO_ADVANCE
     rh = font_px * 1.16
