@@ -175,16 +175,6 @@
       <button type="button" class="arrow right" id="arrowR" aria-label="More colours">&#8250;</button>
     </div>
     <div id="thumbStatus" class="thumb-status" aria-live="polite"></div>
-    <div class="card keepsake">
-      <div class="toggle" id="keepToggle">
-        <div><div class="t-lbl">Make it a keepsake</div><div class="t-sub">Add a name and caption, framed as a poster.</div></div>
-        <div id="keepSwitch" class="sw-switch"></div>
-      </div>
-      <div id="keepFields" class="keepfields">
-        <label class="field"><span class="lbl">Name</span><input id="title" type="text" placeholder="Grace Hopper" /></label>
-        <label class="field"><span class="lbl">Caption <span style="color:var(--muted);font-weight:400">(optional)</span></span><input id="caption" type="text" placeholder="1906 – 1992 · Forever curious" /></label>
-      </div>
-    </div>
     <div class="actions"><button id="buy" class="btn">Download</button></div>
     <p class="note" id="buynote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Preview is free · your download is watermark-free and print-quality.</p>
     <button id="restart" class="btn ghost">Start a new portrait</button>
@@ -198,9 +188,9 @@
 const $ = s => document.querySelector(s);
 const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const ANIM_CAP = 2600;                 // max glyphs animated (perf); image shows all
-const INKS = [["navy","#0d1b3a","Navy"],["photo","conic","Photo"],["sepia","#5a3a1a","Sepia"],
-  ["burgundy","#4a0d18","Burgundy"],["forest","#0f2e1e","Forest"],["gold_noir","gold","Gold noir"],
-  ["spectrum","spectrum","Spectrum"],["aurora","aurora","Aurora"],["mono","#555555","Mono"]];
+const INKS = [["mono","#555555","Noir"],["gold_noir","gold","Ember"],["navy","#0d1b3a","Navy"],
+  ["sepia","#5a3a1a","Sepia"],["burgundy","#4a0d18","Rose"],["forest","#0f2e1e","Sage"],
+  ["spectrum","spectrum","Spectrum"],["aurora","aurora","Aurora"],["photo","conic","Photo"]];
 function placeholderBg(col){
   if(col==="conic") return "conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)";
   if(col==="gold") return "radial-gradient(circle at 50% 42%, #e8c66a 0 40%, #0d0f13 44%)";
@@ -208,7 +198,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, ink:"navy", poster:false, style:"words", fmt:"png", removeBg:true };
+const state = { file:null, ink:"mono", style:"words", fmt:"png", removeBg:true };
 function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
 // Show the price up front so it's never a surprise (single source: /pricing).
 fetch("/pricing").then(r=>r.json()).then(p=>{
@@ -255,7 +245,7 @@ function setFile(f){ if(!f.type.startsWith("image/"))return; state.file=f; previ
 const swatchEl=$("#swatches");
 INKS.forEach(([id,col,label])=>{
   const el=document.createElement("button"); el.type="button";
-  el.className="thumb"+(id==="navy"?" sel":""); el.dataset.ink=id;
+  el.className="thumb"+(id===state.ink?" sel":""); el.dataset.ink=id;
   const pic=document.createElement("div"); pic.className="pic"; pic.dataset.ink=id;
   // Set the colour/gradient placeholder on its own longhand -- the `background`
   // shorthand would reset background-size to auto and break the cover crop when
@@ -281,13 +271,7 @@ function updateThumb(ink){
 }
 function resetThumbs(){ swatchEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.remove("loading"); }); }
 
-/* ---------- keepsake ---------- */
-const keepSwitch=$("#keepSwitch"), keepFields=$("#keepFields"), title=$("#title"), caption=$("#caption");
-$("#keepToggle").addEventListener("click", ()=>{ state.poster=!state.poster;
-  keepSwitch.classList.toggle("on",state.poster); keepFields.classList.toggle("show",state.poster);
-  invalidate(); render(state.ink,{animate:false}); });
-let tmr; [title,caption].forEach(inp=>inp.addEventListener("input",()=>{clearTimeout(tmr);
-  tmr=setTimeout(()=>{ invalidate(); render(state.ink,{animate:false}); },650);}));
+
 
 /* ---------- views ---------- */
 const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy");
@@ -350,10 +334,9 @@ function showImage(entry, crossfade){
   setBuy(entry);
   applyFrame(state.ink);
   canvas.style.display="none";
-  // Before/after reveal: show the uploaded photo under the slider (hidden in
-  // poster mode, where the framed art no longer matches the photo's frame).
-  compareEl.classList.toggle("hide-cmp", state.poster);
-  if(!state.poster && previewImg.src){ beforeImg.src=previewImg.src; }
+  // Before/after reveal: show the uploaded photo under the slider.
+  compareEl.classList.remove("hide-cmp");
+  if(previewImg.src){ beforeImg.src=previewImg.src; }
   const url = entry.preview + "?t=" + Date.now();
   if(crossfade && portrait.getAttribute("src")){
     overlay.onload=()=>{
@@ -380,13 +363,11 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   fd.append("ink",ink); fd.append("style",state.style); fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false");
   if(thumb){
-    // A 74px chip needs only the colour and rough likeness. A small internal
-    // render_w makes the (pixel-bound) tone pipeline ~10x cheaper, so thumbnails
-    // render fast even on a slow single core.
-    fd.append("poster","false"); fd.append("png_width","380"); fd.append("render_w","760");
+    // A 74px chip needs only the colour and rough likeness; a small canvas
+    // renders fast even on a slow single core.
+    fd.append("png_width","380"); fd.append("render_w","760");
   } else {
-    fd.append("poster",state.poster?"true":"false"); fd.append("png_width","1500");
-    if(state.poster){ fd.append("title",title.value.trim()); fd.append("caption",caption.value.trim()); }
+    fd.append("png_width","1500");
   }
   try{
     const r=await fetch("/render",{method:"POST",body:fd}); const data=await r.json();

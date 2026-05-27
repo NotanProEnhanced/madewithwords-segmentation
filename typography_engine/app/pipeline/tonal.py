@@ -971,6 +971,7 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool) -> np.ndarray:
     grad = _GRADIENTS.get(ink)
     if grad is not None:
         col = np.array([_grad_rgb(grad, float(y)) for y in np.linspace(0, 1, H)], dtype=np.float32)
+        col = col + (255.0 - col) * 0.22        # lift toward white so hues stay luminous on the dark ground
         tip = col[:, None, :]
     elif ink == "photo":
         bgr = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
