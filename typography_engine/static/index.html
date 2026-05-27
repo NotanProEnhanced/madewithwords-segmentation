@@ -76,7 +76,12 @@
      photo on the #assembly canvas, instead of a generic spinner. */
   .busy.anim{background:transparent}
   .busy.anim .spin{display:none}
-  .busy.anim .msg{position:absolute;left:0;right:0;bottom:16px;text-align:center;text-shadow:0 1px 10px rgba(250,249,247,.95)}
+  .busy.anim .msg{display:none}   /* status text moves out of the canvas -> .compose-status below the frame */
+  .compose-status{display:none;align-items:center;justify-content:center;gap:10px;margin-top:16px;
+    font-family:var(--serif);color:var(--navy);font-size:16px}
+  .compose-status.on{display:flex}
+  .compose-status .dot{width:9px;height:9px;border-radius:50%;background:var(--navy);animation:cpulse 1s ease-in-out infinite}
+  @keyframes cpulse{0%,100%{opacity:.25;transform:scale(.65)}50%{opacity:1;transform:scale(1)}}
   .opts{margin-top:10px;border-top:1px solid var(--line);padding-top:4px}
 
   /* iOS-style filter carousel: each swatch is a live thumbnail of THIS portrait */
@@ -191,6 +196,7 @@
         </div>
       </div>
     </div>
+    <div id="composeStatus" class="compose-status" aria-live="polite"><span class="dot"></span><span>Composing from your words&hellip;</span></div>
     <button type="button" id="zoomBtn" class="zoomlink">&#128269; View up close</button>
     <div class="carousel">
       <button type="button" class="arrow left" id="arrowL" aria-label="Previous colours">&#8249;</button>
@@ -430,7 +436,7 @@ function revealFromAssembly(entry){
   im.onload=()=>{
     portrait.onload=null; portrait.src=url; portrait.classList.add("shown");
     canvas.style.transition="opacity .5s ease"; canvas.style.opacity="0";
-    busy.classList.add("hide");
+    busy.classList.add("hide"); $("#composeStatus").classList.remove("on");
     setTimeout(()=>{ stopAssembly(); canvas.style.opacity=""; canvas.style.transition=""; }, 540);
   };
   im.onerror=im.onload;   // fall back to revealing even if the preview fails to load
@@ -506,13 +512,13 @@ function startAssembly(){
     animRAF=requestAnimationFrame(frame);
   })(t0);
 }
-function stopAssembly(){ if(animRAF){ cancelAnimationFrame(animRAF); animRAF=0; } canvas.style.display="none"; busy.classList.remove("anim"); }
+function stopAssembly(){ if(animRAF){ cancelAnimationFrame(animRAF); animRAF=0; } canvas.style.display="none"; busy.classList.remove("anim"); const cs=document.getElementById("composeStatus"); if(cs) cs.classList.remove("on"); }
 function showBusy(animate){
   errResult.style.display="none"; $(".msg").textContent="Composing from your words…";
   busy.classList.remove("hide");
   // Show the word-assembly for the first Create — meaningful progress feedback,
   // played for everyone (it's brief and on-brand, not gratuitous motion).
-  if(animate){ busy.classList.add("anim"); compareEl.classList.add("hide-cmp"); startAssembly(); }
+  if(animate){ busy.classList.add("anim"); compareEl.classList.add("hide-cmp"); $("#composeStatus").classList.add("on"); startAssembly(); }
   else { stopAssembly(); }
 }
 async function render(ink,{animate=false,background=false,thumb=false}={}){
