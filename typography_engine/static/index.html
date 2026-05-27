@@ -431,9 +431,18 @@ function startAssembly(){
   const img=new Image(); if(previewImg.src) img.src=previewImg.src;
   let toks=words.value.split(/[\s,]+/).filter(Boolean); if(!toks.length) toks=["love"];
   const N=Math.min(120, Math.max(36, Math.round(W*H/22000))), parts=[];
-  for(let i=0;i<N;i++){ const a=Math.random()*Math.PI*2, d=(50+Math.random()*90)*dpr;
-    parts.push({ x:Math.random()*W, y:Math.random()*H, word:toks[i%toks.length].toUpperCase(),
-      size:(10+Math.random()*16)*dpr, delay:Math.random()*0.7, ox:Math.cos(a)*d, oy:Math.sin(a)*d }); }
+  const M=30*dpr, clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  for(let i=0;i<N;i++){
+    let sx,sy; const edge=Math.floor(Math.random()*4);      // start just off one of the four edges
+    if(edge===0){ sx=Math.random()*W; sy=-M; }
+    else if(edge===1){ sx=W+M; sy=Math.random()*H; }
+    else if(edge===2){ sx=Math.random()*W; sy=H+M; }
+    else { sx=-M; sy=Math.random()*H; }
+    const gx=Math.random()+Math.random()+Math.random()-1.5, gy=Math.random()+Math.random()+Math.random()-1.5;
+    parts.push({ word:toks[i%toks.length].toUpperCase(), sx, sy, delay:Math.random()*0.7,
+      fx:clamp(W*0.5+gx*W*0.20, W*0.12, W*0.88),          // settle clustered over the subject
+      fy:clamp(H*0.46+gy*H*0.26, H*0.10, H*0.90),
+      big:(26+Math.random()*22)*dpr, small:(9+Math.random()*12)*dpr }); }   // shrink as they arrive
   const t0=performance.now(); assemblyStart=t0;
   (function frame(now){
     const el=(now-t0)/1000; ctx.clearRect(0,0,W,H);
@@ -444,9 +453,10 @@ function startAssembly(){
     } else { ctx.fillStyle="#faf9f7"; ctx.fillRect(0,0,W,H); }
     ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillStyle="#0d1b3a";
     for(const p of parts){
-      const t=Math.max(0,Math.min(1,(el-p.delay)/0.8)), e=1-Math.pow(1-t,3);   // easeOutCubic fly-in
-      ctx.globalAlpha=0.9*e; ctx.font="600 "+p.size+"px Georgia, serif";
-      ctx.fillText(p.word, p.x + p.ox*(1-e) + Math.sin(el*1.1+p.x*0.01)*2*dpr*e, p.y + p.oy*(1-e)); }
+      const t=Math.max(0,Math.min(1,(el-p.delay)/0.9)), e=1-Math.pow(1-t,3);   // easeOutCubic fly-in
+      const size=p.big+(p.small-p.big)*e;                                       // large -> small
+      ctx.globalAlpha=0.35+0.55*e; ctx.font="600 "+size+"px Georgia, serif";
+      ctx.fillText(p.word, p.sx+(p.fx-p.sx)*e + Math.sin(el+p.fx*0.01)*1.5*dpr*e, p.sy+(p.fy-p.sy)*e); }
     ctx.globalAlpha=1; animRAF=requestAnimationFrame(frame);
   })(t0);
 }
