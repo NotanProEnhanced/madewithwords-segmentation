@@ -323,8 +323,8 @@ def build_calligram(
     warns: WarningCollector,
     render_w: int = 2600,
     font_px: float = 22.0,
-    contrast: float = 2.3,
-    pivot: float = 0.5,
+    contrast: float = 2.8,
+    pivot: float = 0.34,
     power: float = 1.0,
     ink_hex: str = "#15202b",
     bg_hex: str = "#ffffff",
@@ -354,12 +354,14 @@ def build_calligram(
         scale, W, H = 1.0, w0, h0
 
     mset = mask > 127
-    dark = _tone_field(_sharpen(gray), mask, gamma=1.0, floor=0.0)
-    dark = _auto_tone(dark, mset, 0.50, max_shift=0.18)
+    sharp = _sharpen(gray)
+    dark = _tone_field(sharp, mask, gamma=1.0, floor=0.0)
+    dark = _auto_tone(dark, mset, 0.55, max_shift=0.18)
     dark = _balance_faces(dark, an, scale, mset)
     dark = _emphasize_features(dark, an, scale, mset)
     dark = _sharpen_eyes(dark, an, scale, mset)
-    tone_s = cv2.GaussianBlur(dark, (0, 0), max(1.0, font_px * 0.5))
+    dark = _edge_separate(dark, sharp, mset, amount=0.40)
+    tone_s = cv2.GaussianBlur(dark, (0, 0), max(1.0, font_px * 0.32))
 
     cell_w = font_px * _MONO_ADVANCE
     row_h = font_px * 1.05
@@ -395,6 +397,8 @@ def build_calligram(
                 norm = (tone - pivot) * contrast + pivot
                 norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
                 f = 1.0 - norm ** power           # 1 = melt into background, 0 = full ink
+                if f > 0.9:                        # keep faint ink in highlights so the
+                    f = 0.9                        # form stays solid (matches the mosaic)
                 cr = int(round(ir + (br - ir) * f))
                 cg = int(round(ig + (bgc - ig) * f))
                 cb = int(round(ib + (bb - ib) * f))
