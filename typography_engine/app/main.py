@@ -251,87 +251,63 @@ async def render(
             status_code=422,
         )
 
-    from .pipeline.tonal import _PALETTES, _CALLIGRAM, _GRADIENTS, build_calligram, build_poster
-    from .pipeline.svgbuild import validate_svg as _validate
+    from .pipeline.tonal import _PALETTES, _GRADIENTS, render_layered_png
     ink_choice = ink if (ink in _PALETTES or ink in _GRADIENTS or ink == "photo") else "navy"
-    style_choice = style if style in ("story", "poster") else "mosaic"
-    # Internal working resolution. Smaller = faster (the tone pipeline scales with
-    # pixel count): the front-end requests a low render_w for fast swatch
-    # thumbnails. Clamped so it can't be abused or degrade the paid art.
+    # Two user-facing styles: "message" = poster rows; anything else = "words"
+    # (the scattered mosaic). Both use the layered photo-through-text renderer.
+    style_choice = "message" if style in ("message", "poster", "story") else "words"
     render_w_eff = max(700, min(3000, int(render_w)))
+    is_thumb = int(png_width) < 600         # small png_width => a swatch chip render
+    if style_choice == "words":
+        text = " ".join(word_list) or (message or "").strip()
+    else:
+        text = (message or "").strip() or " ".join(word_list)
 
     try:
-        if style_choice in ("story", "poster"):
-            # Continuous-prose styles from the user's message (fall back to the
-            # approved words if no passage was supplied).
-            passage = (message or "").strip() or " ".join(word_list)
-            from .pipeline.portrait import PortraitResult
-            if style_choice == "poster":
-                svg, runs = build_poster(an, passage, cfg, warns, render_w=render_w_eff,
-                                         ink=ink_choice, remove_bg=remove_bg)
-            else:
-                ink_hex, bg_hex = _CALLIGRAM.get(ink_choice, _CALLIGRAM["navy"])
-                svg, runs = build_calligram(an, passage, cfg, warns, render_w=render_w_eff, ink_hex=ink_hex, bg_hex=bg_hex)
-            if svg:
-                _validate(svg)
-            result = PortraitResult(svg=svg, runs=runs)
-        else:
-            result = build_portrait(an, word_list, cfg, warns, uppercase=uppercase, ink=ink_choice, render_w=render_w_eff)
+        preview_w = min(int(png_width), PREVIEW_PNG_WIDTH)
+        png_bytes, runs, ground_hex = render_layered_png(
+            an, text, style_choice, cfg, warns,
+            ink=ink_choice, remove_bg=remove_bg,
+            out_width=max(320, preview_w), render_w=render_w_eff)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
     except Exception as e:  # noqa: BLE001
         warns.error("render", "render_failed", str(e))
         return JSONResponse({"ok": False, "error": "render_failed", "detail": str(e), "warnings": warns.as_list()}, status_code=500)
 
-    if warns.has_errors():
+    if warns.has_errors() or not png_bytes:
         return JSONResponse({"ok": False, "error": "render_incomplete", "warnings": warns.as_list()}, status_code=422)
 
-    # Opt-in designed-composition layer: wrap the bare portrait into a titled poster.
-    svg_out = result.svg
-    composed = False
-    if poster:
-        from .pipeline.compose import compose_poster
-        svg_out = compose_poster(result.svg, ink_choice, title=title, caption=caption)
-        try:
-            validate_svg(svg_out)
-            composed = True
-        except Exception as e:  # noqa: BLE001
-            warns.warn("compose", "poster_failed", f"Poster composition failed: {e}")
-            svg_out = result.svg
-
     job_id = uuid.uuid4().hex[:12]
-    # The clean SVG (vector, resolution-independent) is the master and the only
-    # thing persisted at render time. The on-screen preview is a web-light
-    # watermarked raster; the high-resolution clean PNG is rendered lazily at
-    # download time (after payment), so the one expensive big raster runs once
-    # per sale -- never on previews or swatch thumbnails. Clean files live in the
-    # PRIVATE dir and are never web-reachable without payment.
-    (PRIVATE_DIR / f"{job_id}.svg").write_text(svg_out, encoding="utf-8")
     preview_path = OUTPUTS_DIR / f"{job_id}_preview.png"
     try:
-        from .pipeline.raster import svg_to_png_bytes
         from .pipeline.watermark import add_watermark
-        preview_w = min(int(png_width), PREVIEW_PNG_WIDTH)
-        clean_bytes = svg_to_png_bytes(svg_out, output_width=max(cfg.canvas_w, preview_w))
-        preview_path.write_bytes(add_watermark(clean_bytes, url=WATERMARK_URL))
+        preview_path.write_bytes(add_watermark(png_bytes, url=WATERMARK_URL))
     except Exception as e:  # noqa: BLE001
-        warns.warn("render", "preview_failed", f"Preview export failed: {e}")
+        warns.warn("render", "preview_failed", f"Watermark failed: {e}")
+        preview_path.write_bytes(png_bytes)
+
+    # Persist the inputs so the paid, high-res PNG can be recomposed once at
+    # download (after payment). Skip for throwaway swatch-thumbnail renders.
+    if not is_thumb:
+        (PRIVATE_DIR / f"{job_id}.src").write_bytes(img_bytes)
+        (PRIVATE_DIR / f"{job_id}.json").write_text(json.dumps({
+            "style": style_choice, "ink": ink_choice, "remove_bg": bool(remove_bg),
+            "text": text, "uppercase": bool(uppercase),
+        }), encoding="utf-8")
 
     return JSONResponse(
         {
             "ok": True,
             "job_id": job_id,
             "job": job_id,
-            "working_size": {"w": an.img.w, "h": an.img.h},
-            "face_source": an.face_source,
             "faces": len(an.faces),
             "ink": ink_choice,
             "style": style_choice,
-            "composed": composed,
             "words_used": word_list,
             "text_runs": [
                 {"region": r.region, "font_size": r.font_size, "kind": r.kind, "chars": len(r.text)}
-                for r in result.runs
+                for r in runs
             ],
             "preview": f"/outputs/{preview_path.name}" if preview_path.exists() else None,
             "price_cents": DOWNLOAD_PRICE_CENTS,
@@ -356,10 +332,9 @@ def checkout(job: str = Form(...), fmt: str = Form("png")) -> JSONResponse:
     """Create a Stripe Checkout session to unlock the clean download of `job`."""
     if not STRIPE_SECRET_KEY:
         return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
-    ext = "svg" if fmt == "svg" else "png"
-    # The SVG master is written at render time; the PNG is derived from it at
-    # download, so validate the job against the SVG (not the per-format file).
-    if not (PRIVATE_DIR / f"{job}.svg").exists():
+    # The job's inputs (recipe) are persisted at render time; the high-res PNG is
+    # composed from them at download.
+    if not (PRIVATE_DIR / f"{job}.json").exists():
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
@@ -374,7 +349,7 @@ def checkout(job: str = Form(...), fmt: str = Form("png")) -> JSONResponse:
                     "product_data": {"name": "Typortrait — high-resolution download"},
                 },
             }],
-            metadata={"job": job, "fmt": ext},
+            metadata={"job": job},
             success_url=f"{PUBLIC_BASE_URL}/success?job={job}&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{PUBLIC_BASE_URL}/static/index.html?canceled=1",
         )
@@ -401,19 +376,29 @@ def download(job: str, session_id: str, fmt: str = "png"):
     meta_job = getattr(meta, "job", None) if meta is not None else None
     if not paid or meta_job != job:
         return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
-    ext = "svg" if fmt == "svg" else "png"
-    svg_path = PRIVATE_DIR / f"{job}.svg"
-    if not svg_path.exists():
+    recipe_path = PRIVATE_DIR / f"{job}.json"
+    src_path = PRIVATE_DIR / f"{job}.src"
+    if not recipe_path.exists() or not src_path.exists():
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
-    path = PRIVATE_DIR / f"{job}.{ext}"
-    if ext == "png" and not path.exists():
-        # Print-resolution raster, produced once per paid job from the master SVG.
+    path = PRIVATE_DIR / f"{job}.png"
+    if not path.exists():
+        # Compose the print-resolution layered PNG once, from the stored inputs.
         try:
-            write_png(svg_path.read_text(encoding="utf-8"), path, output_width=DOWNLOAD_PNG_WIDTH)
+            import json as _json
+            from .pipeline.tonal import render_layered_png
+            r = _json.loads(recipe_path.read_text(encoding="utf-8"))
+            warns2 = WarningCollector()
+            an = analyze_image(src_path.read_bytes(), RenderConfig(), warns2)
+            png_bytes, _, _ = render_layered_png(
+                an, r["text"], r.get("style", "words"), RenderConfig(), warns2,
+                ink=r.get("ink", "navy"), remove_bg=bool(r.get("remove_bg", True)),
+                out_width=DOWNLOAD_PNG_WIDTH, render_w=2600)
+            if not png_bytes:
+                return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
+            path.write_bytes(png_bytes)
         except Exception:  # noqa: BLE001
             return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
-    media = "image/svg+xml" if ext == "svg" else "image/png"
-    return FileResponse(str(path), media_type=media, filename=f"typortrait-{job}.{ext}")
+    return FileResponse(str(path), media_type="image/png", filename=f"typortrait-{job}.png")
 
 
 def _session_paid(session_id: str, job: str) -> bool:
@@ -437,21 +422,17 @@ def success(job: str, session_id: str):
     and the vector SVG (one purchase unlocks the job)."""
     import html
     from urllib.parse import quote
-    paid = _session_paid(session_id, job) and (PRIVATE_DIR / f"{job}.svg").exists()
+    paid = _session_paid(session_id, job) and (PRIVATE_DIR / f"{job}.json").exists()
     jq, sq = quote(job, safe=""), quote(session_id, safe="")
     png_url = f"/download?job={jq}&fmt=png&session_id={sq}"
-    svg_url = f"/download?job={jq}&fmt=svg&session_id={sq}"
     if paid:
         inner = (
             '<div class="check">&#10003;</div>'
             '<h1>Your Typortrait is ready</h1>'
-            '<p class="sub">Thank you. Your download is watermark-free and yours to keep — '
-            'in both formats below.</p>'
-            f'<a class="btn" href="{html.escape(png_url)}">Download image &middot; PNG</a>'
-            f'<a class="btn ghost" href="{html.escape(svg_url)}">Download vector &middot; SVG</a>'
-            '<p class="note"><b>About the vector (SVG):</b> it&rsquo;s made of shapes, not pixels, '
-            'so it never blurs. Print it the size of a stamp or a six-foot canvas — every letter '
-            'stays perfectly sharp.</p>'
+            '<p class="sub">Thank you. Your download is watermark-free, print-quality, and '
+            'yours to keep.</p>'
+            f'<a class="btn" href="{html.escape(png_url)}">Download your portrait</a>'
+            '<p class="note">High-resolution image, ready to print or share.</p>'
             '<a class="link" href="/static/index.html">Create another portrait</a>'
         )
     else:

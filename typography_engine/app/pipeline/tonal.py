@@ -19,6 +19,8 @@ is ever cut and no stranded single letters appear.
 """
 from __future__ import annotations
 
+import base64
+import io
 import re
 from typing import List, Optional, Sequence, Tuple
 
@@ -946,3 +948,75 @@ def build_poster(
     if not runs:
         warns.error("text", "no_runs", "Poster produced no text (mask empty or message too short).")
     return doc.to_svg(), runs
+
+
+# ---------------------------------------------------------------------------
+# Layered renderer: the photo shows THROUGH the typography (text used as a
+# mask), giving real photographic richness inside each letter. Shared by both
+# user-facing styles -- "Words" (the mosaic layout) and "Message" (poster rows).
+# Output is a raster (the richness is photographic), composited in code because
+# CairoSVG does not honour SVG masks.
+# ---------------------------------------------------------------------------
+
+def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool) -> np.ndarray:
+    """Processed, ink-tinted photo on a dark ground (brightness-positive): lit
+    areas read as the bright ink, shadows fall to the ground. This shows through
+    the text mask."""
+    gray = _sharpen(cv2.resize(an.img.gray, (W, H), interpolation=cv2.INTER_CUBIC)).astype(np.float32) / 255.0
+    lo, hi = np.percentile(gray, [2, 99])
+    lum = np.clip((gray - lo) / max(1e-3, hi - lo), 0.0, 1.0)
+    lum = np.clip((lum - 0.5) * 1.5 + 0.5, 0.0, 1.0)
+    ground_hex, ink_hex = _POSTER.get(ink, ("#0a0a0c", "#f2ece0"))
+    ground = np.array(_hex_to_rgb(ground_hex), dtype=np.float32)
+    grad = _GRADIENTS.get(ink)
+    if grad is not None:
+        col = np.array([_grad_rgb(grad, float(y)) for y in np.linspace(0, 1, H)], dtype=np.float32)
+        tip = col[:, None, :]
+    elif ink == "photo":
+        bgr = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+        tip = bgr[..., ::-1]
+    else:
+        tip = np.array(_hex_to_rgb(ink_hex), dtype=np.float32)
+    out = ground + (tip - ground) * lum[..., None]
+    if remove_bg:
+        m = an.silhouette.mask
+        if m.shape[:2] != (H, W):
+            m = cv2.resize(m, (W, H), interpolation=cv2.INTER_NEAREST)
+        out[m <= 127] = ground
+    return out.clip(0, 255).astype(np.uint8)
+
+
+def _mask_svg(colored_svg: str) -> str:
+    """Coloured layout SVG -> white-on-black text mask for clean CairoSVG text."""
+    s = re.sub(r'fill="#[0-9a-fA-F]{6}"', 'fill="#ffffff"', colored_svg)
+    s = re.sub(r'(<rect x="0" y="0"[^>]*?)fill="#ffffff"', r'\1fill="#000000"', s, count=1)
+    return s
+
+
+def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: WarningCollector,
+                       ink: str = "mono", remove_bg: bool = True,
+                       out_width: int = 1400, render_w: int = 2200):
+    """Layered portrait -> PNG bytes. style='message' = poster rows; else Words
+    (mosaic) layout. Returns (png_bytes, runs, ground_hex)."""
+    from PIL import Image
+    from .raster import svg_to_png_bytes
+    if style == "message":
+        colored, runs = build_poster(an, text, cfg, warns, render_w=render_w, ink=ink, remove_bg=remove_bg)
+    else:
+        from .portrait import build_portrait
+        words = [w for w in re.split(r"[\s,]+", text) if w]
+        res = build_portrait(an, words, cfg, warns, uppercase=True, ink=ink, render_w=render_w)
+        colored, runs = res.svg, res.runs
+    ground_hex = _POSTER.get(ink, ("#0a0a0c", None))[0]
+    if not colored:
+        return b"", runs, ground_hex
+    mpng = svg_to_png_bytes(_mask_svg(colored), output_width=out_width)
+    mask = np.asarray(Image.open(io.BytesIO(mpng)).convert("L"))
+    H, W = mask.shape[:2]
+    photo = _tint_photo(an, W, H, ink, remove_bg).astype(np.float32)
+    ground = np.array(_hex_to_rgb(ground_hex), dtype=np.float32)
+    m = (mask.astype(np.float32) / 255.0)[..., None]
+    out = (ground + (photo - ground) * m).clip(0, 255).astype(np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(out).save(buf, format="PNG")
+    return buf.getvalue(), runs, ground_hex

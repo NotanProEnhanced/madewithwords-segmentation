@@ -17,9 +17,9 @@ from app.config import OUTPUTS_DIR, PRIVATE_DIR
 from app.main import app
 
 
-def _clean_svg(body) -> str:
-    """The clean SVG lives privately (paywalled); read it by job id."""
-    return (PRIVATE_DIR / f"{body['job']}.svg").read_text()
+def _has_private_recipe(body) -> bool:
+    """The paid render's inputs (recipe + source) live privately (paywalled)."""
+    return (PRIVATE_DIR / f"{body['job']}.json").exists() and (PRIVATE_DIR / f"{body['job']}.src").exists()
 
 
 def _sample_face_bytes() -> bytes:
@@ -57,7 +57,7 @@ def test_debug_preprocess():
     assert "silhouette" in body["debug_images"]
 
 
-def test_render_produces_valid_svg_and_png():
+def test_render_produces_preview_and_private_recipe():
     r = client.post(
         "/render",
         files={"image": ("face.jpg", _sample_face_bytes(), "image/jpeg")},
@@ -68,16 +68,15 @@ def test_render_produces_valid_svg_and_png():
     assert body["ok"] is True
     assert len(body["text_runs"]) >= 1
 
-    # Public output is the watermarked preview only.
+    # Public output is the watermarked preview PNG only.
     assert body["preview"]
     prev = OUTPUTS_DIR / Path(body["preview"]).name
     assert prev.exists() and prev.stat().st_size > 0
-    # Clean SVG is private (paywalled) and well-formed.
-    svg_text = _clean_svg(body)
-    ET.fromstring(svg_text)
-    assert "rgba(" not in svg_text and "rgb(" not in svg_text and "hsl(" not in svg_text
-    # The clean art must NOT be publicly served.
-    assert not (OUTPUTS_DIR / f"{body['job']}.svg").exists()
+    assert prev.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    # The paid inputs live privately (paywalled) and are NOT publicly served.
+    assert _has_private_recipe(body)
+    assert not (OUTPUTS_DIR / f"{body['job']}.src").exists()
+    assert not (OUTPUTS_DIR / f"{body['job']}.json").exists()
 
 
 def test_checkout_requires_stripe_key():
@@ -94,7 +93,7 @@ def test_checkout_requires_stripe_key():
 
 
 def test_render_color_ink():
-    """A non-mono ink renders a valid SVG and reports the chosen treatment."""
+    """A non-mono ink renders and reports the chosen treatment + a preview."""
     r = client.post(
         "/render",
         files={"image": ("face.jpg", _sample_face_bytes(), "image/jpeg")},
@@ -103,43 +102,22 @@ def test_render_color_ink():
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["ok"] is True and body["ink"] == "navy"
-    svg_text = _clean_svg(body)
-    ET.fromstring(svg_text)
-    assert "rgb(" not in svg_text and "hsl(" not in svg_text
+    assert body["preview"] and _has_private_recipe(body)
 
 
-def test_render_story_calligram():
-    """Story style renders the passage as a valid calligram SVG."""
+def test_render_message_style():
+    """Message style lays the passage as a layered type-poster render."""
     r = client.post(
         "/render",
         files={"image": ("face.jpg", _sample_face_bytes(), "image/jpeg")},
-        data={"words": "GRACE,KIND", "style": "story", "ink": "navy",
+        data={"words": "GRACE,KIND", "style": "message", "ink": "navy",
               "message": "You are the kindest soul I know and I love you always and forever. " * 4},
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["ok"] is True and body["style"] == "story"
+    assert body["ok"] is True and body["style"] == "message"
     assert len(body["text_runs"]) >= 1
-    svg_text = _clean_svg(body)
-    ET.fromstring(svg_text)
-    assert "rgb(" not in svg_text and "hsl(" not in svg_text
-
-
-def test_render_poster_composition():
-    """Opt-in poster wraps the portrait with a title/caption and stays valid SVG."""
-    r = client.post(
-        "/render",
-        files={"image": ("face.jpg", _sample_face_bytes(), "image/jpeg")},
-        data={"words": "CODE,DREAM", "poster": "true",
-              "title": "Grace Hopper", "caption": "1906 - 1992"},
-    )
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["ok"] is True and body["composed"] is True
-    svg_text = _clean_svg(body)
-    ET.fromstring(svg_text)
-    assert "GRACE HOPPER" in svg_text  # title is upcased into the poster
-    assert "rgb(" not in svg_text and "hsl(" not in svg_text
+    assert body["preview"]
 
 
 def test_render_rejects_empty_words():
