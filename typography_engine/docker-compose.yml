@@ -17,3 +17,7 @@ services:
       # Persist previews + paid clean files across restarts/rebuilds.
       - ./data/outputs:/app/outputs
       - ./data/private:/app/private
+      # Serve the front-end straight from the working tree so static tweaks go
+      # live on `git pull` (no image rebuild needed). Read-only: the app only
+      # reads these files.
+      - ./static:/app/static:ro
