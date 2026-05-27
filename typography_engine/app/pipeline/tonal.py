@@ -908,8 +908,12 @@ def build_poster(
     rh = font_px * 1.16
     cols = max(1, int(W / cw))
     rows = max(1, int(H / rh))
+    rng = np.random.default_rng(7)
     wi = 0
     for r in range(rows):
+        # Per-row horizontal stagger so adjacent rows' letters don't align into
+        # vertical "rivers"; the message still flows continuously (readable).
+        ox = float(rng.random()) * cw * 0.85
         y = (r + 0.9) * rh
         yi = min(H - 1, max(0, int(y - rh * 0.34)))
         spans: List[str] = []
@@ -925,12 +929,13 @@ def build_poster(
             drew = False
             for k, ch in enumerate(word):
                 col = c + k
-                xi = min(W - 1, max(0, int((col + 0.5) * cw)))
+                gx = col * cw + ox
+                xi = min(W - 1, max(0, int(gx + cw * 0.5)))
                 if remove_bg and not mset[yi, xi]:
                     continue
                 t_dark = tdark_of(float(combined[yi, xi]))
                 fill = fill_for(t_dark, color_grid[yi, xi] if photo_ink else None, y / float(H))
-                spans.append(f'<tspan x="{col * cw:.1f}" fill="{fill}">{esc(ch)}</tspan>')
+                spans.append(f'<tspan x="{gx:.1f}" fill="{fill}">{esc(ch)}</tspan>')
                 line.append(ch)
                 drew = True
             c += wl + 1
