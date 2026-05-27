@@ -446,17 +446,28 @@ def success(job: str, session_id: str):
             '<h1>Your Typortrait is ready</h1>'
             '<p class="sub" id="sub">Preparing your high-resolution file — this can take a few seconds…</p>'
             '<button class="btn" id="dl" disabled><span class="spin"></span>Preparing…</button>'
+            '<button class="btn ghost" id="sh">Share</button>'
             '<p class="note">Watermark-free, print-quality — ready to print or share.</p>'
             '<a class="link" href="/static/index.html">Create another portrait</a>'
             '<script>(function(){var url=' + _json.dumps(png_url) + ';'
-            'var btn=document.getElementById("dl"),sub=document.getElementById("sub");'
+            'var job=' + _json.dumps(job) + ',o=location.origin;'
+            'var shareUrl=o+"/p/"+job,prevUrl=o+"/outputs/"+job+"_preview.png";'
+            'var btn=document.getElementById("dl"),sub=document.getElementById("sub"),sh=document.getElementById("sh");'
             'function save(b){var a=document.createElement("a");a.href=URL.createObjectURL(b);'
             'a.download="typortrait.png";document.body.appendChild(a);a.click();a.remove();}'
             'fetch(url).then(function(r){if(!r.ok)throw 0;return r.blob();}).then(function(b){'
             'btn.disabled=false;btn.innerHTML="Download your portrait";btn.onclick=function(){save(b);};'
             'sub.textContent="Done! Tap below to save it.";}).catch(function(){'
             'btn.disabled=false;btn.innerHTML="Download your portrait";btn.onclick=function(){location.href=url;};'
-            'sub.textContent="Your portrait is ready.";});})();</script>'
+            'sub.textContent="Your portrait is ready.";});'
+            'sh.onclick=function(){var t="Someone I love, made from our words — with Typortrait.";'
+            '(navigator.canShare?fetch(prevUrl).then(function(r){return r.blob();}).then(function(bl){'
+            'var f=new File([bl],"typortrait.png",{type:"image/png"});'
+            'if(navigator.canShare({files:[f]}))return navigator.share({title:"Typortrait",text:t,url:shareUrl,files:[f]});'
+            'return navigator.share({title:"Typortrait",text:t,url:shareUrl});}):'
+            '(navigator.share?navigator.share({title:"Typortrait",text:t,url:shareUrl}):Promise.reject()))'
+            '.catch(function(){navigator.clipboard&&navigator.clipboard.writeText(shareUrl);sh.textContent="Link copied";});};'
+            '})();</script>'
         )
     else:
         inner = (
@@ -488,5 +499,47 @@ def success(job: str, session_id: str):
         "border:2px solid rgba(255,255,255,.4);border-top-color:#fff;vertical-align:-2px;animation:sp .8s linear infinite}"
         "@keyframes sp{to{transform:rotate(360deg)}}"
         "</style></head><body><div class='card'>" + inner + "</div></body></html>"
+    )
+    return HTMLResponse(page)
+
+
+@app.get("/p/{job}", response_class=HTMLResponse)
+def share_page(job: str):
+    """Public per-portrait page so a pasted/shared link unfurls with the portrait
+    (og:image) and offers a 'make your own' CTA."""
+    import html, re as _re
+    job = _re.sub(r"[^a-zA-Z0-9]", "", job)[:40]
+    prev = OUTPUTS_DIR / f"{job}_preview.png"
+    img = (f"{PUBLIC_BASE_URL}/outputs/{job}_preview.png" if prev.exists()
+           else "https://typortrait.com/og.png")
+    title = "Someone you love, made from your words — Typortrait"
+    desc = "A portrait made entirely of words. Create your own at Typortrait.com."
+    page = (
+        "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        f"<title>{html.escape(title)}</title>"
+        f"<meta property='og:type' content='website'>"
+        f"<meta property='og:title' content=\"{html.escape(title)}\">"
+        f"<meta property='og:description' content=\"{html.escape(desc)}\">"
+        f"<meta property='og:image' content=\"{html.escape(img)}\">"
+        "<meta property='og:image:width' content='1200'>"
+        "<meta property='og:image:height' content='1500'>"
+        "<meta name='twitter:card' content='summary_large_image'>"
+        f"<meta name='twitter:title' content=\"{html.escape(title)}\">"
+        f"<meta name='twitter:description' content=\"{html.escape(desc)}\">"
+        f"<meta name='twitter:image' content=\"{html.escape(img)}\">"
+        "<style>*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;"
+        "justify-content:center;background:#0a0a0c;color:#f5f3ec;font-family:-apple-system,BlinkMacSystemFont,"
+        "'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:24px;text-align:center}"
+        ".w{max-width:520px;width:100%}img{width:100%;border-radius:14px;box-shadow:0 16px 50px rgba(0,0,0,.5)}"
+        "h1{font-family:Georgia,'Times New Roman',serif;font-size:24px;margin:22px 0 6px}"
+        "p{color:#b9b6ae;font-size:15px;margin:0 0 20px}"
+        "a{display:inline-block;background:#f5f3ec;color:#0a0a0c;font-weight:700;text-decoration:none;"
+        "padding:14px 28px;border-radius:999px;font-size:16px}</style></head><body><div class='w'>"
+        f"<img src=\"{html.escape(img)}\" alt=\"A Typortrait\"/>"
+        "<h1>Someone you love, made from your words.</h1>"
+        "<p>A portrait composed entirely of the words that matter.</p>"
+        "<a href='https://typortrait.com'>Make your own &rarr;</a>"
+        "</div></body></html>"
     )
     return HTMLResponse(page)
