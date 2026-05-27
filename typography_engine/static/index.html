@@ -195,12 +195,15 @@
     <div class="actions"><button id="buy" class="btn">Download</button></div>
     <button id="shareBtn" class="btn secondary" type="button">Share</button>
     <div id="sharePanel" class="sharepanel">
-      <button type="button" data-share="email">Email</button>
-      <button type="button" data-share="copy">Copy link</button>
       <button type="button" data-share="x">X</button>
       <button type="button" data-share="facebook">Facebook</button>
       <button type="button" data-share="pinterest">Pinterest</button>
+      <button type="button" data-share="email">Email</button>
+      <button type="button" data-share="copy">Copy link</button>
+      <button type="button" data-share="save">Save image</button>
+      <button type="button" data-share="native" id="shareNative" style="display:none">More apps…</button>
     </div>
+    <p class="note" id="shareHint" style="display:none;text-align:center;color:var(--muted);font-size:12px;margin-top:8px">For Instagram or TikTok, tap <b>Save image</b> and post it from the app.</p>
     <p class="note" id="buynote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Preview is free · your download is watermark-free and print-quality.</p>
     <button id="restart" class="btn ghost">Start a new portrait</button>
     <div id="errResult" class="err"></div>
@@ -472,37 +475,51 @@ zoomView.addEventListener("click", e=>{ if(e.target===zoomView) closeZoom(); });
 window.addEventListener("keydown", e=>{ if(e.key==="Escape") closeZoom(); });
 
 /* ---------- share ---------- */
-const sharePanel=$("#sharePanel");
+const sharePanel=$("#sharePanel"), shareHint=$("#shareHint");
 const SHARE_TEXT="Someone I love, made from our words — with Typortrait.";
 function shareUrl(){ return location.origin + "/p/" + (currentJob||""); }
 function previewAbs(){ const p=cache[state.ink] && cache[state.ink].preview; return p ? (location.origin+p) : ""; }
+async function nativeShareImage(){
+  const prev=cache[state.ink] && cache[state.ink].preview; if(!prev || !navigator.canShare) return false;
+  try{
+    const blob=await (await fetch(prev)).blob();
+    const file=new File([blob],"typortrait.png",{type:"image/png"});
+    if(navigator.canShare({files:[file]})){ await navigator.share({title:"Typortrait",text:SHARE_TEXT,url:shareUrl(),files:[file]}); return true; }
+  }catch(e){ if(e && e.name==="AbortError") return true; }
+  return false;
+}
 $("#shareBtn").addEventListener("click", async ()=>{
   if(!currentJob) return;
-  const url=shareUrl(), prev=cache[state.ink] && cache[state.ink].preview;
-  try{
-    if(navigator.canShare && prev){
-      const blob=await (await fetch(prev)).blob();
-      const file=new File([blob],"typortrait.png",{type:"image/png"});
-      if(navigator.canShare({files:[file]})){ await navigator.share({title:"Typortrait",text:SHARE_TEXT,url,files:[file]}); return; }
-    }
-    if(navigator.share){ await navigator.share({title:"Typortrait",text:SHARE_TEXT,url}); return; }
-  }catch(e){ if(e && e.name==="AbortError") return; }
-  sharePanel.classList.toggle("on");          // desktop fallback
+  // Mobile: native sheet (shares the image to Instagram/TikTok/Messages/etc.).
+  if(await nativeShareImage()) return;
+  // Desktop / no file-share: show explicit social buttons (the native dialog
+  // there only offers Mail, not the social platforms).
+  const open=!sharePanel.classList.contains("on");
+  sharePanel.classList.toggle("on", open);
+  shareHint.style.display = open ? "block" : "none";
+  $("#shareNative").style.display = (open && navigator.canShare) ? "inline-block" : "none";
 });
 sharePanel.addEventListener("click", async e=>{
   const b=e.target.closest("button[data-share]"); if(!b) return;
   const url=shareUrl(), t=encodeURIComponent(SHARE_TEXT), u=encodeURIComponent(url);
+  const kind=b.dataset.share;
+  if(kind==="copy"){
+    try{ await navigator.clipboard.writeText(url); b.textContent="Copied!"; setTimeout(()=>b.textContent="Copy link",1500);}catch(_){ prompt("Copy this link:", url); }
+    return;
+  }
+  if(kind==="save"){
+    const p=cache[state.ink] && cache[state.ink].preview;
+    if(p){ const a=document.createElement("a"); a.href=p+"?dl=1"; a.download="typortrait.png"; document.body.appendChild(a); a.click(); a.remove(); }
+    return;
+  }
+  if(kind==="native"){ await nativeShareImage(); return; }
   const map={
     email:"mailto:?subject="+encodeURIComponent("A Typortrait for you")+"&body="+t+"%20"+u,
     x:"https://twitter.com/intent/tweet?text="+t+"&url="+u,
     facebook:"https://www.facebook.com/sharer/sharer.php?u="+u,
     pinterest:"https://pinterest.com/pin/create/button/?url="+u+"&media="+encodeURIComponent(previewAbs())+"&description="+t
   };
-  if(b.dataset.share==="copy"){
-    try{ await navigator.clipboard.writeText(url); b.textContent="Copied!"; setTimeout(()=>b.textContent="Copy link",1500);}catch(_){ prompt("Copy this link:", url); }
-    return;
-  }
-  window.open(map[b.dataset.share], "_blank", "noopener,width=600,height=560");
+  window.open(map[kind], "_blank", "noopener,width=600,height=560");
 });
 
 function friendly(code){ return ({no_words:"Add a few words first.",

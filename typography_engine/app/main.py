@@ -464,9 +464,8 @@ def success(job: str, session_id: str):
             '(navigator.canShare?fetch(prevUrl).then(function(r){return r.blob();}).then(function(bl){'
             'var f=new File([bl],"typortrait.png",{type:"image/png"});'
             'if(navigator.canShare({files:[f]}))return navigator.share({title:"Typortrait",text:t,url:shareUrl,files:[f]});'
-            'return navigator.share({title:"Typortrait",text:t,url:shareUrl});}):'
-            '(navigator.share?navigator.share({title:"Typortrait",text:t,url:shareUrl}):Promise.reject()))'
-            '.catch(function(){navigator.clipboard&&navigator.clipboard.writeText(shareUrl);sh.textContent="Link copied";});};'
+            'throw 0;}):Promise.reject())'
+            '.catch(function(){if(navigator.clipboard){navigator.clipboard.writeText(shareUrl);sh.textContent="Link copied — paste anywhere";}else{prompt("Copy this link:",shareUrl);}});};'
             '})();</script>'
         )
     else:
