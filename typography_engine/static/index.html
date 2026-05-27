@@ -423,7 +423,7 @@ function showImage(entry, crossfade){
    demo. Only used for the first Create (animate:true); swatch/option re-renders
    use the plain spinner. Skipped entirely for prefers-reduced-motion. */
 let animRAF=0, assemblyStart=0;
-function startAssembly(){
+function startAssembly(calm){
   const stage=$("#stage"), ctx=canvas.getContext && canvas.getContext("2d"); if(!stage||!ctx) return;
   const dpr=Math.min(2, window.devicePixelRatio||1), r=stage.getBoundingClientRect();
   const W=Math.max(1,Math.round(r.width*dpr)), H=Math.max(1,Math.round((r.height||240)*dpr));
@@ -445,7 +445,7 @@ function startAssembly(){
     ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillStyle="#0d1b3a";
     for(const p of parts){ const ap=Math.max(0,Math.min(1,(el-p.delay)*1.4));
       ctx.globalAlpha=0.12+0.7*ap; ctx.font="600 "+p.size+"px Georgia, serif";
-      ctx.fillText(p.word, p.x + Math.sin(el*1.2+p.y)*p.drift, p.y); }
+      ctx.fillText(p.word, p.x + (calm?0:Math.sin(el*1.2+p.y)*p.drift), p.y); }
     ctx.globalAlpha=1; animRAF=requestAnimationFrame(frame);
   })(t0);
 }
@@ -453,7 +453,10 @@ function stopAssembly(){ if(animRAF){ cancelAnimationFrame(animRAF); animRAF=0; 
 function showBusy(animate){
   errResult.style.display="none"; $(".msg").textContent="Composing from your words…";
   busy.classList.remove("hide");
-  if(animate && !REDUCED){ busy.classList.add("anim"); compareEl.classList.add("hide-cmp"); startAssembly(); }
+  // Always show the word-assembly for the first Create — it's meaningful
+  // progress feedback, not decoration. Under reduced-motion it runs calm:
+  // words fade in without the drifting movement.
+  if(animate){ busy.classList.add("anim"); compareEl.classList.add("hide-cmp"); startAssembly(REDUCED); }
   else { stopAssembly(); }
 }
 async function render(ink,{animate=false,background=false,thumb=false}={}){
