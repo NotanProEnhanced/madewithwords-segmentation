@@ -210,6 +210,7 @@ async def render(
     png_width: int = Form(2000),
     render_w: int = Form(2600),
     remove_bg: bool = Form(True),
+    light: bool = Form(False),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
@@ -267,7 +268,7 @@ async def render(
         preview_w = min(int(png_width), PREVIEW_PNG_WIDTH)
         png_bytes, runs, ground_hex, mask_svg = render_layered_png(
             an, text, style_choice, cfg, warns,
-            ink=ink_choice, remove_bg=remove_bg,
+            ink=ink_choice, remove_bg=remove_bg, light=light,
             out_width=max(320, preview_w), render_w=render_w_eff)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
@@ -295,7 +296,7 @@ async def render(
             (PRIVATE_DIR / f"{job_id}.mask.svg").write_text(mask_svg, encoding="utf-8")
         (PRIVATE_DIR / f"{job_id}.json").write_text(json.dumps({
             "style": style_choice, "ink": ink_choice, "remove_bg": bool(remove_bg),
-            "text": text, "uppercase": bool(uppercase),
+            "light": bool(light), "text": text, "uppercase": bool(uppercase),
         }), encoding="utf-8")
 
     return JSONResponse(
@@ -397,12 +398,13 @@ def download(job: str, session_id: str, fmt: str = "png"):
             if mask_path.exists():
                 png_bytes = compose_layered(
                     mask_path.read_text(encoding="utf-8"), an,
-                    r.get("ink", "navy"), bool(r.get("remove_bg", True)), DOWNLOAD_PNG_WIDTH)
+                    r.get("ink", "navy"), bool(r.get("remove_bg", True)), DOWNLOAD_PNG_WIDTH,
+                    light=bool(r.get("light", False)))
             else:  # older jobs without a stored mask: full recompose
                 png_bytes, _, _, _ = render_layered_png(
                     an, r["text"], r.get("style", "words"), RenderConfig(), warns2,
                     ink=r.get("ink", "navy"), remove_bg=bool(r.get("remove_bg", True)),
-                    out_width=DOWNLOAD_PNG_WIDTH, render_w=2600)
+                    light=bool(r.get("light", False)), out_width=DOWNLOAD_PNG_WIDTH, render_w=2600)
             if not png_bytes:
                 return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
             path.write_bytes(png_bytes)
@@ -476,8 +478,8 @@ def success(job: str, session_id: str):
         ".check{width:54px;height:54px;border-radius:50%;background:#0d1b3a;color:#fff;font-size:28px;line-height:54px;margin:0 auto 14px}"
         "h1{font-family:Georgia,'Times New Roman',serif;color:var(--navy);font-size:26px;margin:6px 0 8px}"
         ".sub{color:var(--muted);font-size:15px;line-height:1.5;margin:0 0 22px}"
-        ".btn{display:block;border-radius:999px;background:var(--navy);color:#fff;font-size:16px;font-weight:600;"
-        "padding:14px;margin:10px 0;text-decoration:none}"
+        ".btn{display:inline-block;min-width:240px;border-radius:999px;background:var(--navy);color:#fff;font-size:16px;font-weight:600;"
+        "padding:14px 28px;margin:10px auto;text-decoration:none;border:none;cursor:pointer}"
         ".btn.ghost{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}"
         ".note{color:var(--muted);font-size:13px;line-height:1.55;margin:18px 2px 0;text-align:left}"
         ".link{display:inline-block;margin-top:18px;color:var(--muted);font-size:14px;text-decoration:none}"

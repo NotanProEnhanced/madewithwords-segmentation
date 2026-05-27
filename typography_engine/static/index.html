@@ -142,6 +142,10 @@
       <div><div class="t-lbl">Remove background</div><div class="t-sub">Keep the words on the subject only, clean ground.</div></div>
       <div id="bgSwitch" class="sw-switch on"></div>
     </div>
+    <div id="lightRow" class="toggle" style="margin-top:14px">
+      <div><div class="t-lbl">Light background</div><div class="t-sub">Dark ink on paper, instead of bright type on black. Softer, more muted colour.</div></div>
+      <div id="lightSwitch" class="sw-switch"></div>
+    </div>
     <label class="field">
       <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
       <span class="hint" id="wordsHint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
@@ -198,7 +202,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, ink:"mono", style:"words", fmt:"png", removeBg:true };
+const state = { file:null, ink:"mono", style:"words", fmt:"png", removeBg:true, light:false };
 function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
 // Show the price up front so it's never a surprise (single source: /pricing).
 fetch("/pricing").then(r=>r.json()).then(p=>{
@@ -232,6 +236,8 @@ $("#styleSeg").addEventListener("click", e=>{
   bgRow.style.display = prose ? "flex" : "none";   // background toggle = Message only
 });
 bgSwitch.addEventListener("click", ()=>{ state.removeBg=!state.removeBg; bgSwitch.classList.toggle("on",state.removeBg); });
+const lightSwitch=$("#lightSwitch");
+lightSwitch.addEventListener("click", ()=>{ state.light=!state.light; lightSwitch.classList.toggle("on",state.light); });
 drop.addEventListener("click", ()=>fileInput.click());
 $("#changePhoto").addEventListener("click", e=>{e.stopPropagation();fileInput.click();});
 ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
@@ -362,6 +368,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   fd.append("image",state.file); fd.append("words",words.value.trim());
   fd.append("ink",ink); fd.append("style",state.style); fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false");
+  fd.append("light", state.light?"true":"false");
   if(thumb){
     // A 74px chip needs only the colour and rough likeness; a small canvas
     // renders fast even on a slow single core.

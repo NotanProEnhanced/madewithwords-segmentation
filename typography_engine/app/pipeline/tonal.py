@@ -958,29 +958,39 @@ def build_poster(
 # CairoSVG does not honour SVG masks.
 # ---------------------------------------------------------------------------
 
-def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool) -> np.ndarray:
-    """Processed, ink-tinted photo on a dark ground (brightness-positive): lit
-    areas read as the bright ink, shadows fall to the ground. This shows through
-    the text mask."""
+def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = False) -> np.ndarray:
+    """Processed, ink-tinted photo that shows through the text mask.
+
+    Dark ground (default): brightness-positive -- lit areas are the bright ink,
+    shadows fall to the dark ground. Light ground: dark ink on a light paper --
+    shadows/features are the dark ink, highlights melt into the paper (an
+    engraving look). Colours are more muted/inky on light paper than on dark."""
     gray = _sharpen(cv2.resize(an.img.gray, (W, H), interpolation=cv2.INTER_CUBIC)).astype(np.float32) / 255.0
     lo, hi = np.percentile(gray, [2, 99])
     lum = np.clip((gray - lo) / max(1e-3, hi - lo), 0.0, 1.0)
     lum = np.clip((lum - 0.5) * 1.5 + 0.5, 0.0, 1.0)
-    ground_hex, ink_hex = _POSTER.get(ink, ("#0a0a0c", "#f2ece0"))
+    if light:
+        ck = _CALLIGRAM.get(ink, ("#15202b", "#ffffff"))   # (dark ink, light paper)
+        ground_hex, ink_hex = ck[1], ck[0]
+    else:
+        ground_hex, ink_hex = _POSTER.get(ink, ("#0a0a0c", "#f2ece0"))
     ground = np.array(_hex_to_rgb(ground_hex), dtype=np.float32)
     grad = _GRADIENTS.get(ink)
     if grad is not None:
         col = np.array([_grad_rgb(grad, float(y)) for y in np.linspace(0, 1, H)], dtype=np.float32)
-        col = col + (255.0 - col) * 0.22        # lift toward white so hues stay luminous on the dark ground
+        if not light:
+            col = col + (255.0 - col) * 0.22    # lift toward white so hues stay luminous on the dark ground
         tip = col[:, None, :]
     elif ink == "photo":
         bgr = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
         rgb = bgr[..., ::-1]
         g = rgb.mean(axis=2, keepdims=True)
-        tip = np.clip(g + (rgb - g) * 1.5, 0.0, 255.0)      # +50% saturation so colour pops on the dark ground
+        tip = np.clip(g + (rgb - g) * 1.5, 0.0, 255.0)      # +50% saturation
     else:
         tip = np.array(_hex_to_rgb(ink_hex), dtype=np.float32)
-    out = ground + (tip - ground) * lum[..., None]
+    # Dark ground: brightness drives ink. Light paper: darkness drives ink.
+    v = lum if not light else (1.0 - lum)
+    out = ground + (tip - ground) * v[..., None]
     if remove_bg:
         m = an.silhouette.mask
         if m.shape[:2] != (H, W):
@@ -996,11 +1006,17 @@ def _mask_svg(colored_svg: str) -> str:
     return s
 
 
+def _ground_hex(ink: str, light: bool) -> str:
+    if light:
+        return _CALLIGRAM.get(ink, ("#15202b", "#ffffff"))[1]
+    return _POSTER.get(ink, ("#0a0a0c", None))[0]
+
+
 def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: WarningCollector,
-                       ink: str = "mono", remove_bg: bool = True,
+                       ink: str = "mono", remove_bg: bool = True, light: bool = False,
                        out_width: int = 1400, render_w: int = 2200):
     """Layered portrait -> PNG bytes. style='message' = poster rows; else Words
-    (mosaic) layout. Returns (png_bytes, runs, ground_hex)."""
+    (mosaic) layout. Returns (png_bytes, runs, ground_hex, mask_svg)."""
     # The layout only needs glyph POSITIONS (we whiten them into a mask); the
     # colour/ink is applied separately by _tint_photo. Build the layout with a
     # neutral ink so the ink choice never touches the layout (and we avoid the
@@ -1012,15 +1028,15 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         words = [w for w in re.split(r"[\s,]+", text) if w]
         res = build_portrait(an, words, cfg, warns, uppercase=True, ink="mono", render_w=render_w)
         colored, runs = res.svg, res.runs
-    ground_hex = _POSTER.get(ink, ("#0a0a0c", None))[0]
+    ground_hex = _ground_hex(ink, light)
     if not colored:
         return b"", runs, ground_hex, ""
     mask_svg = _mask_svg(colored)
-    png = compose_layered(mask_svg, an, ink, remove_bg, out_width)
+    png = compose_layered(mask_svg, an, ink, remove_bg, out_width, light=light)
     return png, runs, ground_hex, mask_svg
 
 
-def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int) -> bytes:
+def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int, light: bool = False) -> bytes:
     """Composite the tinted photo through a prebuilt white-text mask SVG. Reused
     at download from the stored mask, so the costly layout build runs only once
     (at render), not again per sale."""
@@ -1031,8 +1047,8 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     mpng = svg_to_png_bytes(mask_svg, output_width=out_width)
     mask = np.asarray(Image.open(io.BytesIO(mpng)).convert("L"))
     H, W = mask.shape[:2]
-    photo = _tint_photo(an, W, H, ink, remove_bg).astype(np.float32)
-    ground = np.array(_hex_to_rgb(_POSTER.get(ink, ("#0a0a0c", None))[0]), dtype=np.float32)
+    photo = _tint_photo(an, W, H, ink, remove_bg, light=light).astype(np.float32)
+    ground = np.array(_hex_to_rgb(_ground_hex(ink, light)), dtype=np.float32)
     m = (mask.astype(np.float32) / 255.0)[..., None]
     out = (ground + (photo - ground) * m).clip(0, 255).astype(np.uint8)
     buf = io.BytesIO()
