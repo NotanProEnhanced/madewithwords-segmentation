@@ -975,7 +975,9 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool) -> np.ndarray:
         tip = col[:, None, :]
     elif ink == "photo":
         bgr = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
-        tip = bgr[..., ::-1]
+        rgb = bgr[..., ::-1]
+        g = rgb.mean(axis=2, keepdims=True)
+        tip = np.clip(g + (rgb - g) * 1.5, 0.0, 255.0)      # +50% saturation so colour pops on the dark ground
     else:
         tip = np.array(_hex_to_rgb(ink_hex), dtype=np.float32)
     out = ground + (tip - ground) * lum[..., None]
@@ -1001,12 +1003,16 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
     (mosaic) layout. Returns (png_bytes, runs, ground_hex)."""
     from PIL import Image
     from .raster import svg_to_png_bytes
+    # The layout only needs glyph POSITIONS (we whiten them into a mask); the
+    # colour/ink is applied separately by _tint_photo. Build the layout with a
+    # neutral ink so the ink choice never touches the layout (and we avoid the
+    # mosaic's photo-ink colour path, which isn't needed here).
     if style == "message":
-        colored, runs = build_poster(an, text, cfg, warns, render_w=render_w, ink=ink, remove_bg=remove_bg)
+        colored, runs = build_poster(an, text, cfg, warns, render_w=render_w, ink="mono", remove_bg=remove_bg)
     else:
         from .portrait import build_portrait
         words = [w for w in re.split(r"[\s,]+", text) if w]
-        res = build_portrait(an, words, cfg, warns, uppercase=True, ink=ink, render_w=render_w)
+        res = build_portrait(an, words, cfg, warns, uppercase=True, ink="mono", render_w=render_w)
         colored, runs = res.svg, res.runs
     ground_hex = _POSTER.get(ink, ("#0a0a0c", None))[0]
     if not colored:
