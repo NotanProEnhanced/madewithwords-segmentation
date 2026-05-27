@@ -543,3 +543,72 @@ def share_page(job: str):
         "</div></body></html>"
     )
     return HTMLResponse(page)
+
+
+_POLICY_CONTACT = "support@typortrait.com"
+_POLICY_UPDATED = "May 2026"
+
+
+def _policy_page(title: str, blocks) -> HTMLResponse:
+    body = "".join(f"<h2>{h}</h2>{p}" for h, p in blocks)
+    page = (
+        "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        f"<title>{title} — Typortrait</title><style>"
+        "body{margin:0;background:#faf9f7;color:#16203a;font-family:-apple-system,BlinkMacSystemFont,"
+        "'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.6}"
+        ".wrap{max-width:760px;margin:0 auto;padding:40px 22px 80px}"
+        "h1{font-family:Georgia,'Times New Roman',serif;color:#0d1b3a;font-size:30px;margin:0 0 4px}"
+        "h2{font-size:18px;color:#0d1b3a;margin:28px 0 6px}.upd{color:#6b7280;font-size:14px;margin:0 0 8px}"
+        "p,li{font-size:15px;color:#2b3550}ul{margin:6px 0 0;padding-left:20px}"
+        "a{color:#0d1b3a}.back{display:inline-block;margin-bottom:18px;color:#6b7280;text-decoration:none;font-size:14px}"
+        ".note{background:#fff;border:1px solid #ece9e3;border-left:4px solid #c9a24a;border-radius:10px;padding:12px 14px;font-size:13px;color:#6b5a2a}"
+        "</style></head><body><div class='wrap'>"
+        "<a class='back' href='/static/index.html'>&larr; Back to Typortrait</a>"
+        f"<h1>{title}</h1><p class='upd'>Last updated {_POLICY_UPDATED}</p>"
+        + body +
+        f"<h2>Contact</h2><p>Questions? Email <a href='mailto:{_POLICY_CONTACT}'>{_POLICY_CONTACT}</a>.</p>"
+        "</div></body></html>"
+    )
+    return HTMLResponse(page)
+
+
+@app.get("/terms", response_class=HTMLResponse)
+def terms():
+    blocks = [
+        ("1. Acceptance", "<p>By using Typortrait (the &ldquo;Service&rdquo;) you agree to these Terms of Use. If you do not agree, please do not use the Service. You must be at least 18 years old, or have the consent of a parent or legal guardian.</p>"),
+        ("2. The Service", "<p>Typortrait turns a photo and words you provide into a typographic portrait, offered as a free watermarked preview and a paid, watermark-free digital download.</p>"),
+        ("3. Your content and rights", "<p>For any image you upload, you confirm that:</p><ul>"
+            "<li>you own it or have all rights and permissions necessary to use it;</li>"
+            "<li>it does not depict copyrighted characters, brand logos, or celebrities/public figures without authorization;</li>"
+            "<li>it contains no explicit, unlawful, hateful, defamatory, or infringing material;</li>"
+            "<li>it does not depict a minor without the consent of their parent or guardian.</li></ul>"
+            "<p>You are solely responsible for the images and words you submit. You grant Typortrait a limited license to process your image and text only to create and deliver your portrait.</p>"),
+        ("4. Prohibited uses", "<p>Do not use the Service for unlawful, infringing, deceptive, or harmful purposes; do not upload other people&rsquo;s images without permission; do not resell or redistribute the Service itself.</p>"),
+        ("5. Purchases and downloads", "<p>Prices are shown at checkout and processed securely by Stripe. The preview is free and watermarked; payment unlocks a watermark-free, high-resolution download for your personal and gift use. Because files are delivered immediately, sales are final once the file is delivered &mdash; but if anything is wrong with your file, contact us and we&rsquo;ll make it right.</p>"),
+        ("6. Intellectual property", "<p>You receive a license to use your generated portrait for personal, non-commercial purposes, including printing and gifting. Typortrait retains all rights in the Service, software, and brand.</p>"),
+        ("7. Disclaimer", "<p>The Service is provided &ldquo;as is&rdquo; without warranties of any kind. Results depend on the photo you provide.</p>"),
+        ("8. Limitation of liability", "<p>To the maximum extent permitted by law, Typortrait is not liable for indirect or consequential damages, and total liability will not exceed the amount you paid.</p>"),
+        ("9. Indemnification", "<p>You agree to indemnify Typortrait against claims arising from your content or your breach of these Terms.</p>"),
+        ("10. Changes and governing law", "<p>We may update these Terms; continued use means you accept the changes. These Terms are governed by the laws of <b>[your state/country &mdash; update before launch]</b>.</p>"),
+    ]
+    return _policy_page("Terms of Use", blocks)
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy():
+    blocks = [
+        ("Overview", "<p>This Privacy Policy explains what information Typortrait handles and how. We aim to collect only what we need to create your portrait and process your order.</p>"),
+        ("What we collect", "<ul>"
+            "<li><b>Images you upload</b> and the <b>words/message</b> you enter.</li>"
+            "<li><b>Payment information</b>, processed by Stripe. We do not see or store your full card details.</li>"
+            "<li><b>Basic technical data</b> (e.g., server logs) needed to operate the Service.</li></ul>"),
+        ("How we use it", "<p>To generate and deliver your portrait, process your payment, and operate and improve the Service.</p>"),
+        ("Storage and retention", "<p>Your uploaded photo and generated files are stored only as long as needed to provide your preview and download, and are removed periodically thereafter. Email us to request earlier deletion.</p>"),
+        ("Sharing", "<p>We share data only with the service providers needed to run Typortrait (for example, Stripe for payments and our hosting provider). We do not sell your data. We may disclose information if required by law.</p>"),
+        ("Your choices", "<p>You may request access to or deletion of your data by contacting us.</p>"),
+        ("Children", "<p>The Service is not directed to children under 13, and you should not upload a minor&rsquo;s photo without parental consent.</p>"),
+        ("Security", "<p>We use reasonable measures to protect your data, but no method of transmission or storage is completely secure.</p>"),
+        ("Changes", "<p>We may update this policy; the &ldquo;last updated&rdquo; date above will change accordingly.</p>"),
+    ]
+    return _policy_page("Privacy Policy", blocks)

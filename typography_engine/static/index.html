@@ -125,7 +125,11 @@
   .fmt-d{font-size:12px;color:var(--muted)}
   .fmt-note{font-size:13px;color:var(--muted);margin:10px 2px 0;line-height:1.5;transition:opacity .2s}
   .err{display:none;background:#fff;border:1px solid #f0d9d9;border-left:4px solid #c0392b;border-radius:12px;padding:14px 16px;margin-top:18px;color:#7a2e2e;font-size:15px}
+  .consent{display:flex;gap:10px;align-items:flex-start;margin-top:16px;font-size:13px;color:var(--muted);line-height:1.45;cursor:pointer}
+  .consent input{margin-top:2px;width:18px;height:18px;flex:0 0 auto;accent-color:var(--navy)}
+  .consent a{color:var(--navy);font-weight:600}
   footer{color:var(--muted);font-size:12px;text-align:center;margin-top:30px}
+  footer a{color:var(--muted)}
   .zoomlink{display:block;margin:12px auto 0;background:none;border:none;color:var(--navy);font-size:14px;
     font-weight:600;cursor:pointer;font-family:var(--sans)}
   .zoomview{position:fixed;inset:0;background:rgba(8,8,10,.95);z-index:50;display:none;overflow:auto;-webkit-overflow-scrolling:touch}
@@ -162,6 +166,10 @@
       <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
       <span class="hint" id="wordsHint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
       <textarea id="words" rows="3" placeholder="GRACE, KIND, BRILLIANT, MOM, ALWAYS"></textarea>
+    </label>
+    <label class="consent" id="consentRow">
+      <input type="checkbox" id="consent" />
+      <span>I confirm I own or have rights to this image, it contains no copyrighted characters, celebrities or explicit material. I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Use</a>.</span>
     </label>
     <button id="create" class="btn" disabled>Create portrait</button>
     <p id="freenote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Free to create &amp; preview — keep yours anytime.</p>
@@ -209,7 +217,7 @@
     <div id="errResult" class="err"></div>
   </section>
 
-  <footer>Typortrait · typortrait.com</footer>
+  <footer>Typortrait · typortrait.com<br><a href="/terms" target="_blank" rel="noopener">Terms of Use</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a></footer>
 </div>
 
 <div id="zoomView" class="zoomview">
@@ -243,9 +251,10 @@ let thumbCache = {};  // coarse, fast renders just for the 74px swatch chips
 let gen = 0;          // bumped whenever photo/words/poster change, to drop stale renders
 
 /* ---------- input ---------- */
-const drop=$("#drop"), fileInput=$("#file"), preview=$("#preview"), previewImg=$("#previewImg"), words=$("#words"), createBtn=$("#create");
-function refreshCreate(){ createBtn.disabled = !(state.file && words.value.trim()); }
+const drop=$("#drop"), fileInput=$("#file"), preview=$("#preview"), previewImg=$("#previewImg"), words=$("#words"), createBtn=$("#create"), consent=$("#consent");
+function refreshCreate(){ createBtn.disabled = !(state.file && words.value.trim() && consent.checked); }
 words.addEventListener("input", refreshCreate);
+consent.addEventListener("change", refreshCreate);
 // Style toggle: word mosaic vs continuous-prose story.
 const wordsLbl=$("#wordsLbl"), wordsHint=$("#wordsHint");
 const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch");
