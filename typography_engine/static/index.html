@@ -393,9 +393,12 @@ function applyFrame(ink){
 }
 applyFrame("navy");
 function showImage(entry, crossfade){
-  // If the word-assembly loader is mid-flight, let it play a beat so a fast
-  // render doesn't tear it down before it's perceptible.
-  if(animRAF){ const waitMs=1500-(performance.now()-assemblyStart); if(waitMs>0){ setTimeout(()=>showImage(entry,crossfade), waitMs); return; } }
+  // First render with the assembly running: finish it in sync with the render
+  // landing, then dissolve the words into the portrait. Otherwise reveal plainly.
+  if(animRAF && !asmFinishing){ finishAssembly(()=>revealFromAssembly(entry)); return; }
+  revealPlain(entry, crossfade);
+}
+function revealPlain(entry, crossfade){
   setBuy(entry);
   applyFrame(state.ink);
   stopAssembly();
@@ -415,19 +418,37 @@ function showImage(entry, crossfade){
     portrait.src=url;
   }
 }
+function revealFromAssembly(entry){
+  // Words have just landed; preload the portrait so the swap is instant, then
+  // crossfade: portrait fades up beneath while the word-canvas dissolves away.
+  setBuy(entry);
+  applyFrame(state.ink);
+  compareEl.classList.remove("hide-cmp");
+  if(previewImg.src){ beforeImg.src=previewImg.src; }
+  const url = entry.preview + "?t=" + Date.now();
+  const im=new Image();
+  im.onload=()=>{
+    portrait.onload=null; portrait.src=url; portrait.classList.add("shown");
+    canvas.style.transition="opacity .5s ease"; canvas.style.opacity="0";
+    busy.classList.add("hide");
+    setTimeout(()=>{ stopAssembly(); canvas.style.opacity=""; canvas.style.transition=""; }, 540);
+  };
+  im.src=url;
+}
 
 
 /* ---------- render ---------- */
-/* "Composing from your words" loader: the typed words drift in over a dimmed
-   version of the uploaded photo on the #assembly canvas — the wait becomes the
-   demo. Only used for the first Create (animate:true); swatch/option re-renders
-   use the plain spinner. Skipped entirely for prefers-reduced-motion. */
-let animRAF=0, assemblyStart=0;
+/* "Composing from your words" loader, synced to the render. While the render is
+   pending, progress eases toward CAP (never reaching 1) so the words keep
+   flying in and never freeze-and-wait. When the render returns, finishAssembly()
+   ramps progress to 1 and the result crossfades in — the animation ends exactly
+   when the portrait is ready. */
+let animRAF=0, asmProg=0, asmFinishing=false, asmFinishStart=0, asmFinishFrom=0, asmDone=null;
 function startAssembly(){
   const stage=$("#stage"), ctx=canvas.getContext && canvas.getContext("2d"); if(!stage||!ctx) return;
   const dpr=Math.min(2, window.devicePixelRatio||1), r=stage.getBoundingClientRect();
   const W=Math.max(1,Math.round(r.width*dpr)), H=Math.max(1,Math.round((r.height||240)*dpr));
-  canvas.width=W; canvas.height=H; canvas.style.display="block";
+  canvas.width=W; canvas.height=H; canvas.style.display="block"; canvas.style.opacity="";
   const img=new Image(); if(previewImg.src) img.src=previewImg.src;
   let toks=words.value.split(/[\s,]+/).filter(Boolean); if(!toks.length) toks=["love"];
   const N=Math.min(120, Math.max(36, Math.round(W*H/22000))), parts=[];
@@ -439,13 +460,17 @@ function startAssembly(){
     else if(edge===2){ sx=Math.random()*W; sy=H+M; }
     else { sx=-M; sy=Math.random()*H; }
     const gx=Math.random()+Math.random()+Math.random()-1.5, gy=Math.random()+Math.random()+Math.random()-1.5;
-    parts.push({ word:toks[i%toks.length].toUpperCase(), sx, sy, delay:Math.random()*0.7,
+    parts.push({ word:toks[i%toks.length].toUpperCase(), sx, sy, d:Math.random()*0.35,
       fx:clamp(W*0.5+gx*W*0.20, W*0.12, W*0.88),          // settle clustered over the subject
       fy:clamp(H*0.46+gy*H*0.26, H*0.10, H*0.90),
       big:(26+Math.random()*22)*dpr, small:(9+Math.random()*12)*dpr }); }   // shrink as they arrive
-  const t0=performance.now(); assemblyStart=t0;
+  asmProg=0; asmFinishing=false; asmDone=null;
+  const t0=performance.now(), CAP=0.9, TAU=0.7, FIN=320;
   (function frame(now){
-    const el=(now-t0)/1000; ctx.clearRect(0,0,W,H);
+    const el=(now-t0)/1000;
+    if(asmFinishing){ const ft=Math.min(1,(now-asmFinishStart)/FIN); asmProg=asmFinishFrom+(1-asmFinishFrom)*(1-Math.pow(1-ft,3)); }
+    else { asmProg=CAP*(1-Math.exp(-el/TAU)); }            // asymptotic while the render is pending
+    ctx.clearRect(0,0,W,H);
     if(img.complete && img.naturalWidth){
       const s=Math.max(W/img.naturalWidth, H/img.naturalHeight), dw=img.naturalWidth*s, dh=img.naturalHeight*s;
       ctx.drawImage(img,(W-dw)/2,(H-dh)/2,dw,dh);
@@ -453,14 +478,17 @@ function startAssembly(){
     } else { ctx.fillStyle="#faf9f7"; ctx.fillRect(0,0,W,H); }
     ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillStyle="#0d1b3a";
     for(const p of parts){
-      const t=Math.max(0,Math.min(1,(el-p.delay)/0.9)), e=1-Math.pow(1-t,3);   // easeOutCubic fly-in
+      const lp=clamp((asmProg-p.d)/(1-p.d),0,1), e=1-Math.pow(1-lp,3);          // per-word easeOutCubic
       const size=p.big+(p.small-p.big)*e;                                       // large -> small
       ctx.globalAlpha=0.35+0.55*e; ctx.font="600 "+size+"px Georgia, serif";
       ctx.fillText(p.word, p.sx+(p.fx-p.sx)*e + Math.sin(el+p.fx*0.01)*1.5*dpr*e, p.sy+(p.fy-p.sy)*e); }
-    ctx.globalAlpha=1; animRAF=requestAnimationFrame(frame);
+    ctx.globalAlpha=1;
+    if(asmFinishing && asmProg>=1){ const cb=asmDone; asmDone=null; if(cb) cb(); return; }
+    animRAF=requestAnimationFrame(frame);
   })(t0);
 }
-function stopAssembly(){ if(animRAF){ cancelAnimationFrame(animRAF); animRAF=0; } canvas.style.display="none"; busy.classList.remove("anim"); }
+function finishAssembly(cb){ if(!animRAF){ if(cb) cb(); return; } asmFinishing=true; asmFinishStart=performance.now(); asmFinishFrom=asmProg; asmDone=cb; }
+function stopAssembly(){ if(animRAF){ cancelAnimationFrame(animRAF); animRAF=0; } asmFinishing=false; asmDone=null; canvas.style.display="none"; busy.classList.remove("anim"); }
 function showBusy(animate){
   errResult.style.display="none"; $(".msg").textContent="Composing from your words…";
   busy.classList.remove("hide");
