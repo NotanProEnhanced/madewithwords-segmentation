@@ -477,6 +477,11 @@ window.addEventListener("keydown", e=>{ if(e.key==="Escape") closeZoom(); });
 /* ---------- share ---------- */
 const sharePanel=$("#sharePanel"), shareHint=$("#shareHint");
 const SHARE_TEXT="Someone I love, made from our words — with Typortrait.";
+// Use the native OS share sheet only on touch/mobile (where it surfaces real
+// apps like Instagram/TikTok). On desktop the OS sheet has no social targets,
+// so we show explicit web buttons instead.
+const IS_MOBILE = (window.matchMedia && matchMedia("(pointer:coarse)").matches)
+  || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");
 function shareUrl(){ return location.origin + "/p/" + (currentJob||""); }
 function previewAbs(){ const p=cache[state.ink] && cache[state.ink].preview; return p ? (location.origin+p) : ""; }
 async function nativeShareImage(){
@@ -490,11 +495,8 @@ async function nativeShareImage(){
 }
 $("#shareBtn").addEventListener("click", async ()=>{
   if(!currentJob) return;
-  // Mobile: native sheet (shares the image to Instagram/TikTok/Messages/etc.).
-  if(await nativeShareImage()) return;
-  // Desktop / no file-share: show explicit social buttons (the native dialog
-  // there only offers Mail, not the social platforms).
-  const open=!sharePanel.classList.contains("on");
+  if(IS_MOBILE && await nativeShareImage()) return;        // mobile: native app sheet
+  const open=!sharePanel.classList.contains("on");          // desktop: explicit social buttons
   sharePanel.classList.toggle("on", open);
   shareHint.style.display = open ? "block" : "none";
   $("#shareNative").style.display = (open && navigator.canShare) ? "inline-block" : "none";
