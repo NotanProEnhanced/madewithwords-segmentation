@@ -85,6 +85,8 @@ footer{border-top:1px solid var(--line);padding:30px 0;color:var(--muted);font-s
 .ba-zoom:hover{background:rgba(11,16,32,.88)}
 .ba-cap{font-size:14px;color:var(--muted);margin-top:12px;text-align:center}
 .ba-cap b{color:var(--ink)}.ba-cap .w{color:var(--navy);font-weight:600}
+.cta-note{font-size:14px;color:var(--muted);margin-top:10px}
+.gallery .shot{margin:0}.gallery .shot img{width:100%;height:auto;display:block;border-radius:14px;box-shadow:0 10px 30px rgba(20,30,60,.12)}.gallery figcaption{font-size:13px;color:var(--muted);margin-top:9px;text-align:center}
 .ba-lb{position:fixed;inset:0;background:rgba(8,11,20,.93);display:none;align-items:center;justify-content:center;z-index:90;padding:20px;cursor:zoom-out}
 .ba-lb.open{display:flex}
 .ba-lb img{max-width:96vw;max-height:92vh;border-radius:10px;box-shadow:0 20px 70px rgba(0,0,0,.5)}
@@ -96,16 +98,17 @@ footer{border-top:1px solid var(--line);padding:30px 0;color:var(--muted);font-s
   <nav>
     <a class="brand" href="/">Typortrait</a>
     <span class="navlinks"><a href="#how">How it works</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a></span>
-    <a class="btn" href="https://app.typortrait.com">Create yours</a>
+    <a class="btn" href="https://app.typortrait.com">Create yours free</a>
   </nav>
   <header class="hero">
     <div>
       <h1>Someone you love, made from your words.</h1>
       <p class="lead">Typortrait turns a photo and the words that matter — a name, the traits you love, a date, even a whole letter — into a striking portrait composed entirely of text.</p>
       <div class="cta-row">
-        <a class="btn" href="https://app.typortrait.com">Create your portrait</a>
+        <a class="btn" href="https://app.typortrait.com">Create yours free &rarr;</a>
         <a class="btn alt" href="#how">See how it works</a>
       </div>
+      <p class="cta-note">Free to create &amp; preview &middot; $14.99 only if you download &middot; No design skills needed</p>
     </div>
     <figure class="hero-ba">
       <div class="ba-frame" id="baFrame">
@@ -156,15 +159,15 @@ footer{border-top:1px solid var(--line);padding:30px 0;color:var(--muted);font-s
     </div>
   </section>
 
-  <section id="love">
-    <h2>Loved by gift-givers</h2>
-    <p class="sub">A keepsake built from someone’s own words.</p>
-    <!-- EDIT: replace these with REAL customer quotes before launch. Do not keep placeholders live. -->
-    <div class="cards">
-      <div class="card quote"><p>“I gave it to my mom for her 70th and she cried — it’s her, in all the words we’d use to describe her.”</p><cite>— Placeholder, replace me</cite></div>
-      <div class="card quote"><p>“We turned our wedding vows into a portrait. It hangs in our hallway and everyone asks about it.”</p><cite>— Placeholder, replace me</cite></div>
-      <div class="card quote"><p>“Made one of our dog from the words the kids use for him. Absolutely perfect.”</p><cite>— Placeholder, replace me</cite></div>
+  <section id="examples">
+    <h2>One photo, every style</h2>
+    <p class="sub">The same face, a few different looks — for anniversaries, memorials, weddings, birthdays and more.</p>
+    <div class="cards gallery">
+      <figure class="shot"><img src="/sample-1.jpg" width="720" height="720" loading="lazy" alt="Typortrait sample — sepia, Words style" /><figcaption>Sepia &middot; Words</figcaption></figure>
+      <figure class="shot"><img src="/sample-2.jpg" width="720" height="720" loading="lazy" alt="Typortrait sample — burgundy, Words style" /><figcaption>Burgundy &middot; Words</figcaption></figure>
+      <figure class="shot"><img src="/sample-3.jpg" width="720" height="720" loading="lazy" alt="Typortrait sample — navy, Message style" /><figcaption>Navy &middot; Message</figcaption></figure>
     </div>
+    <div style="text-align:center;margin-top:24px"><a class="btn" href="https://app.typortrait.com">Make one like this &rarr;</a></div>
   </section>
   <div class="band">
     <h2>Make one in minutes</h2>
@@ -194,16 +197,22 @@ footer{border-top:1px solid var(--line);padding:30px 0;color:var(--muted);font-s
       bimg=document.getElementById('baBefore'),
       div=document.getElementById('baDivider'),
       after=document.getElementById('baAfter');
-  var drag=false;
+  var drag=false, interacted=false, nudged=false;
   function size(){ bimg.style.width=frame.clientWidth+'px'; }
   function setPos(p){ p=Math.max(0,Math.min(100,p)); wrap.style.width=p+'%'; div.style.left=p+'%'; }
   function move(e){ var r=frame.getBoundingClientRect(); var cx=e.touches?e.touches[0].clientX:e.clientX; setPos((cx-r.left)/r.width*100); }
-  frame.addEventListener('pointerdown',function(e){drag=true;move(e);});
+  function tween(to,ms){ var from=parseFloat(wrap.style.width)||50, st=performance.now();
+    (function f(now){ if(drag)return; var k=Math.min(1,(now-st)/ms); var e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2; setPos(from+(to-from)*e); if(k<1)requestAnimationFrame(f); })(st); }
+  function nudge(){ if(nudged)return; nudged=true;
+    if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+    setTimeout(function(){ if(!interacted)tween(64,600); },700);
+    setTimeout(function(){ if(!interacted)tween(50,600); },1500); }
+  frame.addEventListener('pointerdown',function(e){drag=true;interacted=true;move(e);});
   window.addEventListener('pointermove',function(e){if(drag)move(e);});
   window.addEventListener('pointerup',function(){drag=false;});
   window.addEventListener('resize',size);
   if(after.complete){size();} else {after.addEventListener('load',size);}
-  size(); setPos(50);
+  size(); setPos(50); nudge();
   var lb=document.getElementById('baLb'), lbImg=document.getElementById('baLbImg'), zb=document.getElementById('baZoom');
   zb.addEventListener('pointerdown',function(e){e.stopPropagation();});
   zb.addEventListener('click',function(e){e.stopPropagation(); lbImg.src=after.getAttribute('src'); lb.classList.add('open');});
