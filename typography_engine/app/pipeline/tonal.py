@@ -909,11 +909,13 @@ def build_poster(
     cols = max(1, int(W / cw))
     rows = max(1, int(H / rh))
     rng = np.random.default_rng(7)
-    wi = 0
+    nwords = max(1, len(words))
     for r in range(rows):
-        # Per-row horizontal stagger so adjacent rows' letters don't align into
-        # vertical "rivers"; the message still flows continuously (readable).
-        ox = float(rng.random()) * cw * 0.85
+        # Start each row at a different point in the message AND a different
+        # horizontal offset, so the repeating phrase doesn't stack into vertical
+        # "rivers." (A sub-cell shift isn't enough -- the word boundaries realign.)
+        wi = int(rng.integers(0, nwords))
+        ox = float(rng.random()) * cw * 3.0
         y = (r + 0.9) * rh
         yi = min(H - 1, max(0, int(y - rh * 0.34)))
         spans: List[str] = []
