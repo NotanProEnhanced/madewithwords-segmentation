@@ -135,8 +135,13 @@
     <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
     <input id="file" type="file" accept="image/*" hidden />
     <div class="seg" id="styleSeg">
-      <button type="button" data-style="mosaic" class="on">Word mosaic</button>
+      <button type="button" data-style="mosaic" class="on">Mosaic</button>
       <button type="button" data-style="story">Story</button>
+      <button type="button" data-style="poster">Poster</button>
+    </div>
+    <div id="bgRow" class="toggle" style="margin-top:14px;display:none">
+      <div><div class="t-lbl">Remove background</div><div class="t-sub">Keep the words on the subject only, clean ground.</div></div>
+      <div id="bgSwitch" class="sw-switch on"></div>
     </div>
     <label class="field">
       <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
@@ -213,7 +218,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, ink:"navy", poster:false, style:"mosaic", fmt:"png" };
+const state = { file:null, ink:"navy", poster:false, style:"mosaic", fmt:"png", removeBg:true };
 function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
 // Show the price up front so it's never a surprise (single source: /pricing).
 fetch("/pricing").then(r=>r.json()).then(p=>{
@@ -230,20 +235,23 @@ function refreshCreate(){ createBtn.disabled = !(state.file && words.value.trim(
 words.addEventListener("input", refreshCreate);
 // Style toggle: word mosaic vs continuous-prose story.
 const wordsLbl=$("#wordsLbl"), wordsHint=$("#wordsHint");
+const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch");
 $("#styleSeg").addEventListener("click", e=>{
   const b=e.target.closest("button"); if(!b) return;
   state.style=b.dataset.style;
   [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
-  const story=state.style==="story";
-  wordsLbl.innerHTML = story ? "Their message, in your words" : "The words that make them <em>them</em>";
-  wordsHint.textContent = story
+  const prose = state.style==="story" || state.style==="poster";
+  wordsLbl.innerHTML = prose ? "Their message, in your words" : "The words that make them <em>them</em>";
+  wordsHint.textContent = prose
     ? "Paste a letter, lyrics, a story, a tribute — it becomes the portrait."
     : "Their name, what you love, a date, an inside joke. Separate with commas.";
-  words.rows = story ? 5 : 3;
-  words.placeholder = story
+  words.rows = prose ? 5 : 3;
+  words.placeholder = prose
     ? "You are the kindest soul I know. From the day you were born…"
     : "GRACE, KIND, BRILLIANT, MOM, ALWAYS";
+  bgRow.style.display = state.style==="poster" ? "flex" : "none";   // bg toggle = poster only
 });
+bgSwitch.addEventListener("click", ()=>{ state.removeBg=!state.removeBg; bgSwitch.classList.toggle("on",state.removeBg); });
 drop.addEventListener("click", ()=>fileInput.click());
 $("#changePhoto").addEventListener("click", e=>{e.stopPropagation();fileInput.click();});
 ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
@@ -380,6 +388,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   const fd=new FormData();
   fd.append("image",state.file); fd.append("words",words.value.trim());
   fd.append("ink",ink); fd.append("style",state.style); fd.append("message",words.value.trim());
+  fd.append("remove_bg", state.removeBg?"true":"false");
   if(thumb){
     // A 74px chip needs only the colour and rough likeness. A small internal
     // render_w makes the (pixel-bound) tone pipeline ~10x cheaper, so thumbnails

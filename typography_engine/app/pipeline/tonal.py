@@ -800,3 +800,139 @@ def build_tonal_portrait(
     if not runs:
         warns.error("text", "no_runs", "Tonal fill produced no text (subject too bright or mask empty).")
     return doc.to_svg(), runs
+
+
+def build_poster(
+    an,
+    text: str,
+    cfg: RenderConfig,
+    warns: WarningCollector,
+    render_w: int = 2200,
+    font_px: float = 20.0,
+    ink: str = "gold_noir",
+    remove_bg: bool = True,
+    contrast: float = 2.8,
+    pivot: float = 0.34,
+    power: float = 1.0,
+    level: float = 0.015,
+) -> Tuple[str, List[TextRun]]:
+    """Type-poster: the message in clean, fully-readable straight rows, with the
+    portrait formed by per-letter brightness (tone), like a printed letter that
+    *is* the face. Reuses the same tone pipeline and ink palettes as the mosaic.
+    remove_bg keeps text only on the subject (clean ground); otherwise the whole
+    frame is type and the surroundings fade into the ground."""
+    words = [w for w in str(text).split() if w]
+    if not words:
+        warns.error("text", "no_words", "No message supplied for the poster.")
+        return "", []
+
+    gray = an.img.gray
+    mask = an.silhouette.mask
+    h0, w0 = gray.shape[:2]
+    if mask.shape[:2] != (h0, w0):
+        mask = cv2.resize(mask, (w0, h0), interpolation=cv2.INTER_NEAREST)
+    if w0 < render_w:
+        scale = render_w / float(w0)
+        W, H = int(round(w0 * scale)), int(round(h0 * scale))
+        gray = cv2.resize(gray, (W, H), interpolation=cv2.INTER_CUBIC)
+        mask = cv2.resize(mask, (W, H), interpolation=cv2.INTER_NEAREST)
+    else:
+        scale, W, H = 1.0, w0, h0
+
+    mset = mask > 127
+    sharp = _sharpen(gray)
+    dark = _tone_field(sharp, mask, gamma=1.0, floor=0.0)
+    dark = _auto_tone(dark, mset, 0.55, max_shift=0.18)
+    dark = _balance_faces(dark, an, scale, mset)
+    dark = _emphasize_features(dark, an, scale, mset)
+    dark = _sharpen_eyes(dark, an, scale, mset)
+    dark = _edge_separate(dark, sharp, mset, amount=0.40)
+    # Full-frame background darkness (raw luminance) for the keep-background mode;
+    # the enhanced subject tone overrides it inside the silhouette.
+    lf = sharp.astype(np.float32) / 255.0
+    lo, hi = np.percentile(lf, [2, 98])
+    lf = np.clip((lf - lo) / max(1e-3, hi - lo), 0.0, 1.0)
+    combined = (1.0 - lf) * 0.85  # background a touch lighter-toned so it recedes
+    combined[mset] = dark[mset]
+    if remove_bg:
+        combined[~mset] = 0.0
+
+    photo_ink = ink == "photo"
+    grad = _GRADIENTS.get(ink)
+    duo = _PALETTES[ink][:2] if (ink in _PALETTES and ink != "mono") else None
+    bg = _PALETTES[ink][2] if (ink in _PALETTES and ink != "mono") else cfg.background_hex
+    color_grid = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA) if photo_ink else None
+    lo_rgb, hi_rgb = (_hex_to_rgb(duo[0]), _hex_to_rgb(duo[1])) if duo is not None else (None, None)
+    span = max(1, _SHADE_LIGHT - _SHADE_DARK)
+    inv_level = max(1e-3, 1.0 - level)
+
+    def tdark_of(tone: float) -> float:
+        n = (tone - level) / inv_level
+        n = (n - pivot) * contrast + pivot
+        n = 1.0 if n > 1.0 else (0.0 if n < 0.0 else n)
+        return n ** power
+
+    def fill_for(t_dark: float, src, vfrac: float) -> str:
+        g = _SHADE_LIGHT - int(round(span * t_dark))
+        g = 0 if g < 0 else (255 if g > 255 else g)
+        if grad is not None:
+            hr, hg, hb = _grad_rgb(grad, vfrac)
+            return f"#{int(round(255+(hr-255)*t_dark)):02x}{int(round(255+(hg-255)*t_dark)):02x}{int(round(255+(hb-255)*t_dark)):02x}"
+        if photo_ink and src is not None:
+            b0, g0, r0 = int(src[0]), int(src[1]), int(src[2])
+            luma = 0.299 * r0 + 0.587 * g0 + 0.114 * b0
+            s = g / max(luma, 1.0)
+            return f"#{min(255,int(r0*s)):02x}{min(255,int(g0*s)):02x}{min(255,int(b0*s)):02x}"
+        if duo is not None:
+            cr = int(round(lo_rgb[0] + (hi_rgb[0] - lo_rgb[0]) * t_dark))
+            cg = int(round(lo_rgb[1] + (hi_rgb[1] - lo_rgb[1]) * t_dark))
+            cb = int(round(lo_rgb[2] + (hi_rgb[2] - lo_rgb[2]) * t_dark))
+            return f"#{cr:02x}{cg:02x}{cb:02x}"
+        return f"#{g:02x}{g:02x}{g:02x}"
+
+    doc = SvgDoc(width=W, height=H, background=bg)
+    runs: List[TextRun] = []
+    cw = font_px * _MONO_ADVANCE
+    rh = font_px * 1.16
+    cols = max(1, int(W / cw))
+    rows = max(1, int(H / rh))
+    wi = 0
+    for r in range(rows):
+        y = (r + 0.9) * rh
+        yi = min(H - 1, max(0, int(y - rh * 0.34)))
+        spans: List[str] = []
+        line: List[str] = []
+        c = 0
+        while c < cols:
+            word = words[wi % len(words)]
+            wl = len(word)
+            if wl > cols:
+                word, wl = word[:cols], cols
+            if c + wl > cols:
+                break
+            drew = False
+            for k, ch in enumerate(word):
+                col = c + k
+                xi = min(W - 1, max(0, int((col + 0.5) * cw)))
+                if remove_bg and not mset[yi, xi]:
+                    continue
+                t_dark = tdark_of(float(combined[yi, xi]))
+                fill = fill_for(t_dark, color_grid[yi, xi] if photo_ink else None, y / float(H))
+                spans.append(f'<tspan x="{col * cw:.1f}" fill="{fill}">{esc(ch)}</tspan>')
+                line.append(ch)
+                drew = True
+            c += wl + 1
+            if drew:
+                line.append(" ")
+                wi += 1
+        if spans:
+            doc.add(
+                f'<text xml:space="preserve" font-family="{esc(_MONO_FAMILY)}" '
+                f'font-size="{font_px:.1f}" font-weight="{esc(cfg.font_weight)}" y="{y:.1f}">'
+                + "".join(spans) + "</text>"
+            )
+            runs.append(TextRun(region="poster", path_id=f"poster{r}", path_d="",
+                                text="".join(line).strip(), font_size=round(font_px, 2), kind="primary"))
+    if not runs:
+        warns.error("text", "no_runs", "Poster produced no text (mask empty or message too short).")
+    return doc.to_svg(), runs

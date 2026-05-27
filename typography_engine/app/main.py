@@ -209,6 +209,7 @@ async def render(
     caption: Optional[str] = Form(None),
     png_width: int = Form(2000),
     render_w: int = Form(2600),
+    remove_bg: bool = Form(True),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
@@ -250,25 +251,29 @@ async def render(
             status_code=422,
         )
 
-    from .pipeline.tonal import _PALETTES, _CALLIGRAM, _GRADIENTS, build_calligram
+    from .pipeline.tonal import _PALETTES, _CALLIGRAM, _GRADIENTS, build_calligram, build_poster
     from .pipeline.svgbuild import validate_svg as _validate
     ink_choice = ink if (ink in _PALETTES or ink in _GRADIENTS or ink == "photo") else "navy"
-    style_choice = "story" if style == "story" else "mosaic"
+    style_choice = style if style in ("story", "poster") else "mosaic"
     # Internal working resolution. Smaller = faster (the tone pipeline scales with
     # pixel count): the front-end requests a low render_w for fast swatch
     # thumbnails. Clamped so it can't be abused or degrade the paid art.
     render_w_eff = max(700, min(3000, int(render_w)))
 
     try:
-        if style_choice == "story":
-            # Continuous-prose calligram from the user's message (falls back to
-            # the approved words if no passage was supplied).
+        if style_choice in ("story", "poster"):
+            # Continuous-prose styles from the user's message (fall back to the
+            # approved words if no passage was supplied).
             passage = (message or "").strip() or " ".join(word_list)
-            ink_hex, bg_hex = _CALLIGRAM.get(ink_choice, _CALLIGRAM["navy"])
-            svg, runs = build_calligram(an, passage, cfg, warns, render_w=render_w_eff, ink_hex=ink_hex, bg_hex=bg_hex)
+            from .pipeline.portrait import PortraitResult
+            if style_choice == "poster":
+                svg, runs = build_poster(an, passage, cfg, warns, render_w=render_w_eff,
+                                         ink=ink_choice, remove_bg=remove_bg)
+            else:
+                ink_hex, bg_hex = _CALLIGRAM.get(ink_choice, _CALLIGRAM["navy"])
+                svg, runs = build_calligram(an, passage, cfg, warns, render_w=render_w_eff, ink_hex=ink_hex, bg_hex=bg_hex)
             if svg:
                 _validate(svg)
-            from .pipeline.portrait import PortraitResult
             result = PortraitResult(svg=svg, runs=runs)
         else:
             result = build_portrait(an, word_list, cfg, warns, uppercase=uppercase, ink=ink_choice, render_w=render_w_eff)
