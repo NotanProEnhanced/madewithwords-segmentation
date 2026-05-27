@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Generate the Typortrait promo reel (animated GIF) from the marketing assets.
 
-~16s vertical (9:16) reel, built for Reels/Stories best practice:
+~18s vertical (9:16) reel, built for Reels/Stories best practice:
   HOOK (first frame = thumbnail)  ->  "Start with a photo."  ->
   "Then, add the words that matter." (words dissolve in)  ->  portrait resolves  ->
-  before/after slider sweep  ->  "Made from your words." + CTA (held ~3s).
+  before/after DRAG slider (slow, with a touch handle)  ->
+  "Made from your words." + CTA (held ~3s).
 
 Usage:
     python3 tools/make_reel.py                 # writes marketing/reel.gif
@@ -12,7 +13,7 @@ Usage:
 
 Needs: Python 3 + Pillow  (pip install Pillow). Serif + sans fonts are located
 automatically (Windows Georgia/Arial, or Linux Liberation/DejaVu/FreeSerif).
-To post it as a real video, convert the GIF to MP4 with ffmpeg (see footer note).
+See tools/README.md for the posting kit and an ffmpeg MP4 export command.
 """
 import os, sys, math, random
 from PIL import Image, ImageDraw, ImageFont
@@ -71,24 +72,27 @@ def words_layer(scale):
 
 # ---- timeline (seconds) ----
 HOOK_END=2.4; P1_END=4.4; WORDS_IN=4.9; WORDS_DUR=1.7
-REVEAL0=7.3; REVEAL1=8.1; SLIDER_END=11.0; DUR=13.8; HOLD=3.0
+REVEAL0=7.3; REVEAL1=8.1; SLIDER_END=12.9; DUR=15.4; HOLD=3.0
 
 def tagpill(d,txt,x,y,anchor_left):
     b=d.textbbox((0,0),txt,font=f_tagpill); w=b[2]-b[0]; pad=6
     x0 = x if anchor_left else x-(w+2*pad)
-    d.rounded_rectangle([x0,y,x0+w+2*pad,y+22], radius=8, fill=(13,27,58))
-    d.text((x0+pad,y+3), txt, font=f_tagpill, fill=(250,249,247))
+    d.rounded_rectangle([x0,y,x0+w+2*pad,y+22], radius=8, fill=(13,27,58,235))
+    d.text((x0+pad,y+3), txt, font=f_tagpill, fill=(250,249,247,255))
 
-def slider_img(frac):
-    x=int(max(0.06,min(0.94,frac))*SQ)
-    base=portrait.copy()
-    if x>0: base.paste(photo.crop((0,0,x,SQ)),(0,0))
-    d=ImageDraw.Draw(base)
-    d.line([(x,0),(x,SQ)], fill=(255,255,255), width=3)
-    d.ellipse([x-15,SQ//2-15,x+15,SQ//2+15], fill=(255,255,255))
-    d.line([(x-6,SQ//2),(x+6,SQ//2)], fill=(13,27,58), width=2)
+def slider_img(frac, pulse):
+    x=int(max(0.07,min(0.93,frac))*SQ); cy=SQ//2
+    base=portrait.convert("RGBA")
+    if x>0: base.paste(photo.crop((0,0,x,SQ)).convert("RGBA"),(0,0))
+    d=ImageDraw.Draw(base,"RGBA")
+    d.line([(x,0),(x,SQ)], fill=(255,255,255,255), width=3)
+    rr=20+int(9*pulse)
+    d.ellipse([x-rr,cy-rr,x+rr,cy+rr], outline=(13,27,58,110), width=3)   # pulsing "touch" ring
+    d.ellipse([x-17,cy-17,x+17,cy+17], fill=(255,255,255,255))            # draggable handle
+    d.line([(x-4,cy-7),(x-10,cy),(x-4,cy+7)], fill=(13,27,58,255), width=2)   # ‹
+    d.line([(x+4,cy-7),(x+10,cy),(x+4,cy+7)], fill=(13,27,58,255), width=2)   # ›
     tagpill(d,"PHOTO",10,10,True); tagpill(d,"TYPORTRAIT",SQ-10,10,False)
-    return base
+    return base.convert("RGB")
 
 def img_for(t):
     if t < P1_END:
@@ -107,7 +111,9 @@ def img_for(t):
         return Image.blend(base,portrait,k)
     if t < SLIDER_END:
         u=(t-REVEAL1)/(SLIDER_END-REVEAL1)
-        return slider_img(0.6+0.4*math.cos(2*math.pi*u))   # there-and-back sweep
+        frac=0.5+0.38*math.sin(2*math.pi*u)             # slow, smooth there-and-back drag
+        pulse=0.5+0.5*math.sin(u*2*math.pi*3)
+        return slider_img(frac, pulse)
     return portrait
 
 def frame(t):
@@ -126,7 +132,7 @@ def frame(t):
     elif t < REVEAL1:
         pass
     elif t < SLIDER_END:
-        ctext(d,W/2,cy,"Your photo, made of those words.",f_tag,MUTED)
+        ctext(d,W/2,cy,"Drag to compare  ↔",f_tag,MUTED)
     else:
         ctext(d,W/2,cy,"Made from your words.",f_cap,MUTED)
         ctext(d,W/2,cy+52,"cherished · kind · radiant · timeless · beloved",f_small,MUTED)
