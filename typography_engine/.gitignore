@@ -5,3 +5,5 @@ __pycache__/
 *.pyc
 .venv/
 tests/fixtures/cache/
+reels_out/
+marketing/reel.gif

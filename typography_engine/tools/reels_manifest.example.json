@@ -1,0 +1,26 @@
+[
+  {
+    "id": "demo-gold",
+    "photo": "marketing/hero-before.jpg",
+    "words": ["cherished","kind","radiant","timeless","beloved","gentle","brave","1962","forever","laughter","grace","always our light"],
+    "ink": "gold_noir",
+    "style": "words",
+    "caption": "A 70th-birthday keepsake."
+  },
+  {
+    "id": "demo-sepia",
+    "photo": "marketing/hero-before.jpg",
+    "words": ["mother","patient","warm","sunday mornings","home","our rock","1958","always"],
+    "ink": "sepia",
+    "style": "words",
+    "light": true,
+    "caption": "For Mother's Day."
+  },
+  {
+    "id": "demo-prebuilt",
+    "before": "marketing/hero-before.jpg",
+    "after": "marketing/hero-after.png",
+    "words": ["cherished","kind","radiant","timeless","beloved"],
+    "caption": "Uses an already-rendered pair (no photo render step)."
+  }
+]

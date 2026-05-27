@@ -39,6 +39,44 @@ ffmpeg -i marketing/reel.gif -movflags +faststart -pix_fmt yuv420p \
   -vf "scale=1080:-2:flags=lanczos,pad=1080:1920:0:(1920-ih)/2:color=0xFAF9F7" reel.mp4
 ```
 
+## Batch — hundreds of reels (the content factory)
+
+`batch_reels.py` reads a JSON manifest and produces one folder per item under
+`reels_out/<id>/` with the rendered **before/after pair**, the **reel GIF** (and
+**MP4** if `ffmpeg` is installed), and a paste-ready **caption + hashtags**.
+
+```
+python3 tools/batch_reels.py                      # uses tools/reels_manifest.example.json
+python3 tools/batch_reels.py my_manifest.json     # your own list
+```
+
+Manifest item keys: `id`, `words` (required); `photo` (rendered via the engine)
+**or** a prebuilt `before`+`after` pair; plus `ink`, `style`, `light`, `caption`.
+See `reels_manifest.example.json`. (Engine rendering needs the app deps + `models/`,
+so run it on the server or inside the container; the prebuilt-pair path only needs
+Pillow.) Output under `reels_out/` is git-ignored.
+
+The pieces are shared: `reel_template.build_reel(cfg)` is the single drawing
+routine used by both `make_reel.py` and `batch_reels.py`, and it's the same code
+you'd call server-side for a per-user **"Share as a reel"** button.
+
+## Flywheel
+
+```
+Create a portrait  ->  auto-package as a reel (this template)  ->  post to
+Reels/Stories/TikTok/Pinterest  ->  reach  ->  new users create  ->  (repeat)
+```
+
+- **Seed fuel:** batch-generate demo reels (faces × occasions × colours) to keep
+  the channels full — that's what the manifest + `batch_reels.py` are for.
+- **Compounding fuel:** wire `build_reel()` into the app so every render offers a
+  one-tap **"Share as a reel."** User-made reels are authentic, free distribution
+  that grows with usage.
+- **Attribution:** give each reel a UTM link (e.g. `typortrait.com/?utm_source=ig&utm_campaign=mothersday`),
+  watch which occasions/styles convert, and weight the next batch toward winners.
+- **Cadence:** batch builds a backlog; schedule a steady drip rather than dumping
+  all at once.
+
 ## Customising
 
 All near the top of `make_reel.py`, clearly labelled:
