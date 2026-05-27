@@ -439,11 +439,11 @@ function revealFromAssembly(entry){
 
 
 /* ---------- render ---------- */
-/* "Composing from your words" loader. Words fly in from the edges, shrink, and
-   settle over the subject, then keep a gentle continuous float so the loader is
-   never frozen while the render is pending. showImage() dissolves it straight
-   into the rendered portrait the instant that image is ready, so the motion runs
-   right up to the reveal with no settle-and-wait gap. */
+/* "Composing from your words" loader: the uploaded photo perpetually resolves
+   into a shimmering grid of the user's own letters and back. It LOOPS — no
+   beginning or end — so it can run for any render duration without ever looking
+   like it finished and is waiting. showImage() dissolves it into the rendered
+   portrait the instant that image is ready. */
 let animRAF=0;
 function startAssembly(){
   const stage=$("#stage"), ctx=canvas.getContext && canvas.getContext("2d"); if(!stage||!ctx) return;
@@ -451,39 +451,43 @@ function startAssembly(){
   const W=Math.max(1,Math.round(r.width*dpr)), H=Math.max(1,Math.round((r.height||240)*dpr));
   canvas.width=W; canvas.height=H; canvas.style.display="block"; canvas.style.opacity="";
   const img=new Image(); if(previewImg.src) img.src=previewImg.src;
-  let toks=words.value.split(/[\s,]+/).filter(Boolean); if(!toks.length) toks=["love"];
-  const N=Math.min(120, Math.max(36, Math.round(W*H/22000))), parts=[];
-  const M=30*dpr, clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-  for(let i=0;i<N;i++){
-    let sx,sy; const edge=Math.floor(Math.random()*4);      // start just off one of the four edges
-    if(edge===0){ sx=Math.random()*W; sy=-M; }
-    else if(edge===1){ sx=W+M; sy=Math.random()*H; }
-    else if(edge===2){ sx=Math.random()*W; sy=H+M; }
-    else { sx=-M; sy=Math.random()*H; }
-    const gx=Math.random()+Math.random()+Math.random()-1.5, gy=Math.random()+Math.random()+Math.random()-1.5;
-    parts.push({ word:toks[i%toks.length].toUpperCase(), sx, sy,
-      delay:Math.random()*0.6, ph:Math.random()*6.28, fr:(3+Math.random()*4)*dpr,   // float phase + radius
-      fx:clamp(W*0.5+gx*W*0.20, W*0.12, W*0.88),          // settle clustered over the subject
-      fy:clamp(H*0.46+gy*H*0.26, H*0.10, H*0.90),
-      big:(26+Math.random()*22)*dpr, small:(9+Math.random()*12)*dpr }); }   // shrink as they arrive
-  const t0=performance.now(), DUR=1.0;
+  const letters=(words.value.toUpperCase().match(/[A-Z0-9]/g)||["L","O","V","E"]);
+  const cell=Math.max(13, Math.round(Math.min(W,H)/24)), cols=Math.ceil(W/cell), rows=Math.ceil(H/cell);
+  let lum=null;                                            // per-cell photo luminance (0 dark .. 1 light)
+  function sample(){
+    try{
+      const oc=document.createElement("canvas"); oc.width=cols; oc.height=rows;
+      const octx=oc.getContext("2d"), s=Math.max(cols/img.naturalWidth, rows/img.naturalHeight);
+      octx.drawImage(img,(cols-img.naturalWidth*s)/2,(rows-img.naturalHeight*s)/2,img.naturalWidth*s,img.naturalHeight*s);
+      const d=octx.getImageData(0,0,cols,rows).data; lum=new Float32Array(cols*rows);
+      for(let i=0;i<lum.length;i++) lum[i]=(0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2])/255;
+    }catch(_){ lum=null; }
+  }
+  if(img.complete && img.naturalWidth) sample(); else img.onload=sample;
+  const fs=Math.round(cell*0.9), t0=performance.now();
   (function frame(now){
     const el=(now-t0)/1000;
     ctx.clearRect(0,0,W,H);
     if(img.complete && img.naturalWidth){
+      if(!lum) sample();
       const s=Math.max(W/img.naturalWidth, H/img.naturalHeight), dw=img.naturalWidth*s, dh=img.naturalHeight*s;
       ctx.drawImage(img,(W-dw)/2,(H-dh)/2,dw,dh);
-      ctx.fillStyle="rgba(250,249,247,.72)"; ctx.fillRect(0,0,W,H);
+      ctx.fillStyle="rgba(250,249,247,.55)"; ctx.fillRect(0,0,W,H);   // faint photo behind the type
     } else { ctx.fillStyle="#faf9f7"; ctx.fillRect(0,0,W,H); }
     ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillStyle="#0d1b3a";
-    for(const p of parts){
-      const lp=clamp((el-p.delay)/DUR,0,1), e=1-Math.pow(1-lp,3);               // per-word easeOutCubic fly-in
-      const size=p.big+(p.small-p.big)*e;                                       // large -> small
-      const x=p.sx+(p.fx-p.sx)*e + Math.sin(el*1.3+p.ph)*p.fr*e;                // gentle continuous float once arrived
-      const y=p.sy+(p.fy-p.sy)*e + Math.cos(el*1.1+p.ph)*p.fr*e;
-      ctx.globalAlpha=0.35+0.55*e; ctx.font="600 "+size+"px Georgia, serif";
-      ctx.fillText(p.word, x, y); }
-    ctx.globalAlpha=1;
+    ctx.font="700 "+fs+"px 'Courier New',monospace";
+    if(lum){
+      let li=0;
+      for(let ry=0;ry<rows;ry++) for(let cx=0;cx<cols;cx++){
+        const ink=1-lum[ry*cols+cx];                                 // dark photo area -> visible glyph
+        if(ink<0.20){ li++; continue; }                              // skip light background; glyphs cluster on the subject
+        const wv=0.5+0.5*Math.sin(el*2.4 + cx*0.6 + ry*0.45);        // traveling shimmer: type <-> photo, looping
+        ctx.globalAlpha=Math.min(1, ink*(0.30+0.85*wv));
+        ctx.fillText(letters[li%letters.length], cx*cell+cell/2, ry*cell+cell/2);
+        li++;
+      }
+      ctx.globalAlpha=1;
+    }
     animRAF=requestAnimationFrame(frame);
   })(t0);
 }
