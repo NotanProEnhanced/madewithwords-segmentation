@@ -438,7 +438,11 @@ def _edge_separate(dark: np.ndarray, gray: np.ndarray, mset: np.ndarray, amount:
     hi = float(np.percentile(vals, 95))
     mag = np.clip(mag / max(hi, 1e-3), 0.0, 1.0)
     mag = cv2.GaussianBlur(mag, (0, 0), 1.2)
-    out = dark + amount * mag
+    # Weight by how light the area is (1 - dark): edges in light/mid regions
+    # (gray hair, hairline against skin) darken for separation, while already-
+    # dark hair is barely touched -- otherwise dense dark hair saturates into a
+    # solid "helmet" with no internal variation.
+    out = dark + amount * mag * (1.0 - dark)
     out[~mset] = dark[~mset]
     return np.clip(out, 0.0, 1.0)
 
