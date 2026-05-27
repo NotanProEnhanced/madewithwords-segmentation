@@ -121,6 +121,13 @@
   .fmt-note{font-size:13px;color:var(--muted);margin:10px 2px 0;line-height:1.5;transition:opacity .2s}
   .err{display:none;background:#fff;border:1px solid #f0d9d9;border-left:4px solid #c0392b;border-radius:12px;padding:14px 16px;margin-top:18px;color:#7a2e2e;font-size:15px}
   footer{color:var(--muted);font-size:12px;text-align:center;margin-top:30px}
+  .zoomlink{display:block;margin:12px auto 0;background:none;border:none;color:var(--navy);font-size:14px;
+    font-weight:600;cursor:pointer;font-family:var(--sans)}
+  .zoomview{position:fixed;inset:0;background:rgba(8,8,10,.95);z-index:50;display:none;overflow:auto;-webkit-overflow-scrolling:touch}
+  .zoomview.on{display:block}
+  #zoomImg{display:block;margin:0 auto;width:100%;cursor:zoom-in}
+  .zoomclose{position:fixed;top:14px;right:16px;z-index:51;width:42px;height:42px;border-radius:50%;border:none;
+    background:rgba(255,255,255,.92);color:var(--navy);font-size:24px;line-height:1;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.3)}
 </style>
 </head>
 <body>
@@ -173,6 +180,7 @@
         </div>
       </div>
     </div>
+    <button type="button" id="zoomBtn" class="zoomlink">&#128269; View up close</button>
     <div class="carousel">
       <button type="button" class="arrow left" id="arrowL" aria-label="Previous colours">&#8249;</button>
       <div id="swatches" class="swatches"></div>
@@ -186,6 +194,11 @@
   </section>
 
   <footer>Typortrait · typortrait.com</footer>
+</div>
+
+<div id="zoomView" class="zoomview">
+  <button id="zoomClose" class="zoomclose" aria-label="Close">&times;</button>
+  <img id="zoomImg" alt="your typortrait, up close" />
 </div>
 
 <script>
@@ -431,6 +444,19 @@ setCmp(50);
 /* ---------- swatch carousel arrows ---------- */
 $("#arrowL").addEventListener("click", ()=> swatchEl.scrollBy({left:-200,behavior:"smooth"}));
 $("#arrowR").addEventListener("click", ()=> swatchEl.scrollBy({left:200,behavior:"smooth"}));
+
+/* ---------- zoom / view up close ---------- */
+const zoomView=$("#zoomView"), zoomImg=$("#zoomImg"); let zScale=1;
+function applyZoom(){ zoomImg.style.width=(zScale*100)+"%"; zoomImg.style.cursor = zScale>=3 ? "zoom-out" : "zoom-in"; }
+$("#zoomBtn").addEventListener("click", ()=>{
+  const src=portrait.getAttribute("src"); if(!src) return;
+  zoomImg.src=src; zScale=1; applyZoom(); zoomView.classList.add("on"); zoomView.scrollTop=0;
+});
+zoomImg.addEventListener("click", e=>{ e.stopPropagation(); zScale = zScale>=3 ? 1 : zScale+1; applyZoom(); });
+function closeZoom(){ zoomView.classList.remove("on"); }
+$("#zoomClose").addEventListener("click", closeZoom);
+zoomView.addEventListener("click", e=>{ if(e.target===zoomView) closeZoom(); });
+window.addEventListener("keydown", e=>{ if(e.key==="Escape") closeZoom(); });
 
 function friendly(code){ return ({no_words:"Add a few words first.",
   unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",

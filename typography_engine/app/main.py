@@ -454,7 +454,7 @@ def success(job: str, session_id: str):
             'a.download="typortrait.png";document.body.appendChild(a);a.click();a.remove();}'
             'fetch(url).then(function(r){if(!r.ok)throw 0;return r.blob();}).then(function(b){'
             'btn.disabled=false;btn.innerHTML="Download your portrait";btn.onclick=function(){save(b);};'
-            'sub.textContent="Done! Tap below to save it.";save(b);}).catch(function(){'
+            'sub.textContent="Done! Tap below to save it.";}).catch(function(){'
             'btn.disabled=false;btn.innerHTML="Download your portrait";btn.onclick=function(){location.href=url;};'
             'sub.textContent="Your portrait is ready.";});})();</script>'
         )
