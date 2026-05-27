@@ -93,3 +93,6 @@ WATERMARK_URL = os.environ.get("TYPO_WATERMARK_URL", "https://typortrait.com")
 # big raster runs once per sale, not on every preview/swatch.
 PREVIEW_PNG_WIDTH = env_int("TYPO_PREVIEW_PX", 1400)
 DOWNLOAD_PNG_WIDTH = env_int("TYPO_DOWNLOAD_PX", 2600)   # ~8.7in at 300dpi; fast to compose
+# Uploaded photos, previews and generated files are auto-deleted after this many
+# days so the Privacy Policy's retention statement stays accurate.
+RETENTION_DAYS = env_int("TYPO_RETENTION_DAYS", 30)

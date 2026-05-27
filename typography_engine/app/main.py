@@ -23,6 +23,7 @@ from .config import (
     PREVIEW_PNG_WIDTH,
     PRIVATE_DIR,
     PUBLIC_BASE_URL,
+    RETENTION_DAYS,
     STATIC_DIR,
     STRIPE_SECRET_KEY,
     WATERMARK_URL,
@@ -73,6 +74,42 @@ app = FastAPI(title="Typography Portrait Engine", version=__version__)
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+def _cleanup_old_files() -> int:
+    """Delete previews and stored job inputs older than the retention window so
+    the Privacy Policy's deletion statement stays accurate. Returns count removed."""
+    import time
+    cutoff = time.time() - RETENTION_DAYS * 86400
+    removed = 0
+    for d in (OUTPUTS_DIR, PRIVATE_DIR):
+        try:
+            for f in d.iterdir():
+                try:
+                    if f.is_file() and f.stat().st_mtime < cutoff:
+                        f.unlink()
+                        removed += 1
+                except OSError:
+                    pass
+        except OSError:
+            pass
+    return removed
+
+
+@app.on_event("startup")
+def _start_retention_sweeper() -> None:
+    """Run the cleanup at startup, then every 12 hours, in a daemon thread."""
+    import threading, time
+
+    def loop():
+        while True:
+            try:
+                _cleanup_old_files()
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(12 * 3600)
+
+    threading.Thread(target=loop, daemon=True).start()
 
 
 @app.get("/")
@@ -590,7 +627,7 @@ def terms():
         ("7. Disclaimer", "<p>The Service is provided &ldquo;as is&rdquo; without warranties of any kind. Results depend on the photo you provide.</p>"),
         ("8. Limitation of liability", "<p>To the maximum extent permitted by law, Typortrait is not liable for indirect or consequential damages, and total liability will not exceed the amount you paid.</p>"),
         ("9. Indemnification", "<p>You agree to indemnify Typortrait against claims arising from your content or your breach of these Terms.</p>"),
-        ("10. Changes and governing law", "<p>We may update these Terms; continued use means you accept the changes. These Terms are governed by the laws of <b>[your state/country &mdash; update before launch]</b>.</p>"),
+        ("10. Changes and governing law", "<p>We may update these Terms; continued use means you accept the changes. These Terms are governed by the laws of New York State, United States of America.</p>"),
     ]
     return _policy_page("Terms of Use", blocks)
 
@@ -604,7 +641,7 @@ def privacy():
             "<li><b>Payment information</b>, processed by Stripe. We do not see or store your full card details.</li>"
             "<li><b>Basic technical data</b> (e.g., server logs) needed to operate the Service.</li></ul>"),
         ("How we use it", "<p>To generate and deliver your portrait, process your payment, and operate and improve the Service.</p>"),
-        ("Storage and retention", "<p>Your uploaded photo and generated files are stored only as long as needed to provide your preview and download, and are removed periodically thereafter. Email us to request earlier deletion.</p>"),
+        ("Storage and retention", f"<p>Your uploaded photo and generated files are stored only to provide your preview and download, and are automatically deleted after about {RETENTION_DAYS} days. Email us to request earlier deletion.</p>"),
         ("Sharing", "<p>We share data only with the service providers needed to run Typortrait (for example, Stripe for payments and our hosting provider). We do not sell your data. We may disclose information if required by law.</p>"),
         ("Your choices", "<p>You may request access to or deletion of your data by contacting us.</p>"),
         ("Children", "<p>The Service is not directed to children under 13, and you should not upload a minor&rsquo;s photo without parental consent.</p>"),
