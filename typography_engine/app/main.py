@@ -265,7 +265,7 @@ async def render(
 
     try:
         preview_w = min(int(png_width), PREVIEW_PNG_WIDTH)
-        png_bytes, runs, ground_hex = render_layered_png(
+        png_bytes, runs, ground_hex, mask_svg = render_layered_png(
             an, text, style_choice, cfg, warns,
             ink=ink_choice, remove_bg=remove_bg,
             out_width=max(320, preview_w), render_w=render_w_eff)
@@ -291,6 +291,8 @@ async def render(
     # download (after payment). Skip for throwaway swatch-thumbnail renders.
     if not is_thumb:
         (PRIVATE_DIR / f"{job_id}.src").write_bytes(img_bytes)
+        if mask_svg:
+            (PRIVATE_DIR / f"{job_id}.mask.svg").write_text(mask_svg, encoding="utf-8")
         (PRIVATE_DIR / f"{job_id}.json").write_text(json.dumps({
             "style": style_choice, "ink": ink_choice, "remove_bg": bool(remove_bg),
             "text": text, "uppercase": bool(uppercase),
@@ -382,17 +384,25 @@ def download(job: str, session_id: str, fmt: str = "png"):
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
     path = PRIVATE_DIR / f"{job}.png"
     if not path.exists():
-        # Compose the print-resolution layered PNG once, from the stored inputs.
+        # Compose the print-resolution layered PNG once. The layout build (the
+        # costly part) is reused from the stored mask; only the photo is
+        # re-derived and composited at print resolution.
         try:
             import json as _json
-            from .pipeline.tonal import render_layered_png
+            from .pipeline.tonal import compose_layered, render_layered_png
             r = _json.loads(recipe_path.read_text(encoding="utf-8"))
             warns2 = WarningCollector()
             an = analyze_image(src_path.read_bytes(), RenderConfig(), warns2)
-            png_bytes, _, _ = render_layered_png(
-                an, r["text"], r.get("style", "words"), RenderConfig(), warns2,
-                ink=r.get("ink", "navy"), remove_bg=bool(r.get("remove_bg", True)),
-                out_width=DOWNLOAD_PNG_WIDTH, render_w=2600)
+            mask_path = PRIVATE_DIR / f"{job}.mask.svg"
+            if mask_path.exists():
+                png_bytes = compose_layered(
+                    mask_path.read_text(encoding="utf-8"), an,
+                    r.get("ink", "navy"), bool(r.get("remove_bg", True)), DOWNLOAD_PNG_WIDTH)
+            else:  # older jobs without a stored mask: full recompose
+                png_bytes, _, _, _ = render_layered_png(
+                    an, r["text"], r.get("style", "words"), RenderConfig(), warns2,
+                    ink=r.get("ink", "navy"), remove_bg=bool(r.get("remove_bg", True)),
+                    out_width=DOWNLOAD_PNG_WIDTH, render_w=2600)
             if not png_bytes:
                 return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
             path.write_bytes(png_bytes)
@@ -420,20 +430,31 @@ def _session_paid(session_id: str, job: str) -> bool:
 def success(job: str, session_id: str):
     """Post-payment page: confirms the purchase and offers both the high-res PNG
     and the vector SVG (one purchase unlocks the job)."""
-    import html
+    import html, json as _json
     from urllib.parse import quote
     paid = _session_paid(session_id, job) and (PRIVATE_DIR / f"{job}.json").exists()
     jq, sq = quote(job, safe=""), quote(session_id, safe="")
     png_url = f"/download?job={jq}&fmt=png&session_id={sq}"
     if paid:
+        # Fetch the high-res file in the background (it's composed on first
+        # request and can take a few seconds), showing a spinner, then hand the
+        # user a ready, instant download instead of a hung button.
         inner = (
             '<div class="check">&#10003;</div>'
             '<h1>Your Typortrait is ready</h1>'
-            '<p class="sub">Thank you. Your download is watermark-free, print-quality, and '
-            'yours to keep.</p>'
-            f'<a class="btn" href="{html.escape(png_url)}">Download your portrait</a>'
-            '<p class="note">High-resolution image, ready to print or share.</p>'
+            '<p class="sub" id="sub">Preparing your high-resolution file — this can take a few seconds…</p>'
+            '<button class="btn" id="dl" disabled><span class="spin"></span>Preparing…</button>'
+            '<p class="note">Watermark-free, print-quality — ready to print or share.</p>'
             '<a class="link" href="/static/index.html">Create another portrait</a>'
+            '<script>(function(){var url=' + _json.dumps(png_url) + ';'
+            'var btn=document.getElementById("dl"),sub=document.getElementById("sub");'
+            'function save(b){var a=document.createElement("a");a.href=URL.createObjectURL(b);'
+            'a.download="typortrait.png";document.body.appendChild(a);a.click();a.remove();}'
+            'fetch(url).then(function(r){if(!r.ok)throw 0;return r.blob();}).then(function(b){'
+            'btn.disabled=false;btn.innerHTML="Download your portrait";btn.onclick=function(){save(b);};'
+            'sub.textContent="Done! Tap below to save it.";save(b);}).catch(function(){'
+            'btn.disabled=false;btn.innerHTML="Download your portrait";btn.onclick=function(){location.href=url;};'
+            'sub.textContent="Your portrait is ready.";});})();</script>'
         )
     else:
         inner = (
@@ -460,6 +481,10 @@ def success(job: str, session_id: str):
         ".btn.ghost{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}"
         ".note{color:var(--muted);font-size:13px;line-height:1.55;margin:18px 2px 0;text-align:left}"
         ".link{display:inline-block;margin-top:18px;color:var(--muted);font-size:14px;text-decoration:none}"
+        ".btn:disabled{opacity:.75}"
+        ".spin{display:inline-block;width:14px;height:14px;margin-right:8px;border-radius:50%;"
+        "border:2px solid rgba(255,255,255,.4);border-top-color:#fff;vertical-align:-2px;animation:sp .8s linear infinite}"
+        "@keyframes sp{to{transform:rotate(360deg)}}"
         "</style></head><body><div class='card'>" + inner + "</div></body></html>"
     )
     return HTMLResponse(page)

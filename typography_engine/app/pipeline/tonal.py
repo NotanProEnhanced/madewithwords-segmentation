@@ -1001,8 +1001,6 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
                        out_width: int = 1400, render_w: int = 2200):
     """Layered portrait -> PNG bytes. style='message' = poster rows; else Words
     (mosaic) layout. Returns (png_bytes, runs, ground_hex)."""
-    from PIL import Image
-    from .raster import svg_to_png_bytes
     # The layout only needs glyph POSITIONS (we whiten them into a mask); the
     # colour/ink is applied separately by _tint_photo. Build the layout with a
     # neutral ink so the ink choice never touches the layout (and we avoid the
@@ -1016,14 +1014,27 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         colored, runs = res.svg, res.runs
     ground_hex = _POSTER.get(ink, ("#0a0a0c", None))[0]
     if not colored:
-        return b"", runs, ground_hex
-    mpng = svg_to_png_bytes(_mask_svg(colored), output_width=out_width)
+        return b"", runs, ground_hex, ""
+    mask_svg = _mask_svg(colored)
+    png = compose_layered(mask_svg, an, ink, remove_bg, out_width)
+    return png, runs, ground_hex, mask_svg
+
+
+def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int) -> bytes:
+    """Composite the tinted photo through a prebuilt white-text mask SVG. Reused
+    at download from the stored mask, so the costly layout build runs only once
+    (at render), not again per sale."""
+    from PIL import Image
+    from .raster import svg_to_png_bytes
+    if not mask_svg:
+        return b""
+    mpng = svg_to_png_bytes(mask_svg, output_width=out_width)
     mask = np.asarray(Image.open(io.BytesIO(mpng)).convert("L"))
     H, W = mask.shape[:2]
     photo = _tint_photo(an, W, H, ink, remove_bg).astype(np.float32)
-    ground = np.array(_hex_to_rgb(ground_hex), dtype=np.float32)
+    ground = np.array(_hex_to_rgb(_POSTER.get(ink, ("#0a0a0c", None))[0]), dtype=np.float32)
     m = (mask.astype(np.float32) / 255.0)[..., None]
     out = (ground + (photo - ground) * m).clip(0, 255).astype(np.uint8)
     buf = io.BytesIO()
     Image.fromarray(out).save(buf, format="PNG")
-    return buf.getvalue(), runs, ground_hex
+    return buf.getvalue()
