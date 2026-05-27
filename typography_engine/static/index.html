@@ -439,10 +439,11 @@ function revealFromAssembly(entry){
 
 
 /* ---------- render ---------- */
-/* "Composing from your words" loader: the uploaded photo perpetually resolves
-   into a shimmering grid of the user's own letters and back. It LOOPS — no
-   beginning or end — so it can run for any render duration without ever looking
-   like it finished and is waiting. showImage() dissolves it into the rendered
+/* "Composing from your words" loader: the photo resolves into the user's actual
+   words, laid out in readable rows and shimmering in and out. Each word's
+   visibility tracks the photo luminance beneath it, so the words cluster into the
+   subject and the face emerges from the text. It LOOPS (no beginning or end), so
+   it never finishes-and-waits; showImage() dissolves it into the rendered
    portrait the instant that image is ready. */
 let animRAF=0;
 function startAssembly(){
@@ -451,40 +452,54 @@ function startAssembly(){
   const W=Math.max(1,Math.round(r.width*dpr)), H=Math.max(1,Math.round((r.height||240)*dpr));
   canvas.width=W; canvas.height=H; canvas.style.display="block"; canvas.style.opacity="";
   const img=new Image(); if(previewImg.src) img.src=previewImg.src;
-  const letters=(words.value.toUpperCase().match(/[A-Z0-9]/g)||["L","O","V","E"]);
-  const cell=Math.max(16, Math.round(Math.min(W,H)/18)), cols=Math.ceil(W/cell), rows=Math.ceil(H/cell);
-  let lum=null;                                            // per-cell photo luminance (0 dark .. 1 light)
+  let vocab=words.value.toUpperCase().split(/[\s,]+/).filter(Boolean); if(!vocab.length) vocab=["LOVE"];
+  const fs=Math.max(15*dpr, Math.round(Math.min(W,H)/17)), lineH=Math.round(fs*1.25);
+  const FONT="600 "+fs+"px Georgia,'Times New Roman',serif";
+  const sw=Math.max(1,Math.round(W/8)), sh=Math.max(1,Math.round(H/8));
+  let lumData=null, layout=null;
   function sample(){
-    try{
-      const oc=document.createElement("canvas"); oc.width=cols; oc.height=rows;
-      const octx=oc.getContext("2d"), s=Math.max(cols/img.naturalWidth, rows/img.naturalHeight);
-      octx.drawImage(img,(cols-img.naturalWidth*s)/2,(rows-img.naturalHeight*s)/2,img.naturalWidth*s,img.naturalHeight*s);
-      const d=octx.getImageData(0,0,cols,rows).data; lum=new Float32Array(cols*rows);
-      for(let i=0;i<lum.length;i++) lum[i]=(0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2])/255;
-    }catch(_){ lum=null; }
+    try{ const oc=document.createElement("canvas"); oc.width=sw; oc.height=sh;
+      const octx=oc.getContext("2d"), s=Math.max(sw/img.naturalWidth, sh/img.naturalHeight);
+      octx.drawImage(img,(sw-img.naturalWidth*s)/2,(sh-img.naturalHeight*s)/2,img.naturalWidth*s,img.naturalHeight*s);
+      lumData=octx.getImageData(0,0,sw,sh).data;
+    }catch(_){ lumData=null; }
   }
-  if(img.complete && img.naturalWidth) sample(); else img.onload=sample;
-  const fs=Math.round(cell*0.78), t0=performance.now();
+  function inkAt(px,py){ if(!lumData) return 0.5;
+    const ix=Math.min(sw-1,Math.max(0,(px/W*sw)|0)), iy=Math.min(sh-1,Math.max(0,(py/H*sh)|0)), i=(iy*sw+ix)*4;
+    return 1-(0.299*lumData[i]+0.587*lumData[i+1]+0.114*lumData[i+2])/255; }   // 0 light .. 1 dark
+  function buildLayout(){               // lay whole words in rows, once, so they stay put and readable
+    ctx.font=FONT; const sp=ctx.measureText(" ").width||fs*0.3;
+    layout=[]; let wi=0;
+    for(let y=lineH*0.7; y<H; y+=lineH){
+      let x=lineH*0.3;
+      while(x<W){
+        const w=vocab[wi%vocab.length]; wi++;
+        const ww=ctx.measureText(w).width;
+        if(x+ww>W-lineH*0.2) break;
+        layout.push({ w, cx:x+ww/2, y, ink:inkAt(x+ww/2,y), ph:x*0.03+y*0.05 });
+        x+=ww+sp*2.2;                    // generous spacing between words
+      }
+    }
+  }
+  function prep(){ sample(); buildLayout(); }
+  if(img.complete && img.naturalWidth) prep(); else img.onload=prep;
+  const t0=performance.now();
   (function frame(now){
     const el=(now-t0)/1000;
     ctx.clearRect(0,0,W,H);
     if(img.complete && img.naturalWidth){
-      if(!lum) sample();
+      if(!layout) prep();
       const s=Math.max(W/img.naturalWidth, H/img.naturalHeight), dw=img.naturalWidth*s, dh=img.naturalHeight*s;
       ctx.drawImage(img,(W-dw)/2,(H-dh)/2,dw,dh);
-      ctx.fillStyle="rgba(250,249,247,.55)"; ctx.fillRect(0,0,W,H);   // faint photo behind the type
+      ctx.fillStyle="rgba(250,249,247,.58)"; ctx.fillRect(0,0,W,H);   // faint photo behind the words
     } else { ctx.fillStyle="#faf9f7"; ctx.fillRect(0,0,W,H); }
-    ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillStyle="#0d1b3a";
-    ctx.font="700 "+fs+"px Georgia,'Times New Roman',serif";
-    if(lum){
-      let li=0;
-      for(let ry=0;ry<rows;ry++) for(let cx=0;cx<cols;cx++){
-        const ink=1-lum[ry*cols+cx];                                 // dark photo area -> visible glyph
-        if(ink<0.32){ li++; continue; }                              // skip light background; glyphs cluster on the subject
-        const wv=0.5+0.5*Math.sin(el*4.0 + cx*0.6 + ry*0.45);        // traveling shimmer: type <-> photo, looping
-        ctx.globalAlpha=Math.min(1, ink*(0.30+0.85*wv));
-        ctx.fillText(letters[li%letters.length], cx*cell+cell/2, ry*cell+cell/2);
-        li++;
+    if(layout){
+      ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillStyle="#0d1b3a"; ctx.font=FONT;
+      for(const it of layout){
+        if(it.ink<0.32) continue;                                    // background stays blank; subject emerges
+        const wv=0.5+0.5*Math.sin(el*3.6 + it.ph);                   // shimmer: words resolve in and out, looping
+        ctx.globalAlpha=Math.min(1, it.ink*(0.55+0.6*wv));
+        ctx.fillText(it.w, it.cx, it.y);
       }
       ctx.globalAlpha=1;
     }
