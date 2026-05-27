@@ -393,6 +393,9 @@ function applyFrame(ink){
 }
 applyFrame("navy");
 function showImage(entry, crossfade){
+  // If the word-assembly loader is mid-flight, let it play a beat so a fast
+  // render doesn't tear it down before it's perceptible.
+  if(animRAF){ const waitMs=1100-(performance.now()-assemblyStart); if(waitMs>0){ setTimeout(()=>showImage(entry,crossfade), waitMs); return; } }
   setBuy(entry);
   applyFrame(state.ink);
   stopAssembly();
@@ -419,7 +422,7 @@ function showImage(entry, crossfade){
    version of the uploaded photo on the #assembly canvas — the wait becomes the
    demo. Only used for the first Create (animate:true); swatch/option re-renders
    use the plain spinner. Skipped entirely for prefers-reduced-motion. */
-let animRAF=0;
+let animRAF=0, assemblyStart=0;
 function startAssembly(){
   const stage=$("#stage"), ctx=canvas.getContext && canvas.getContext("2d"); if(!stage||!ctx) return;
   const dpr=Math.min(2, window.devicePixelRatio||1), r=stage.getBoundingClientRect();
@@ -431,7 +434,7 @@ function startAssembly(){
   for(let i=0;i<N;i++) parts.push({ x:Math.random()*W, y:Math.random()*H,
     word:toks[i%toks.length].toUpperCase(), size:(10+Math.random()*16)*dpr,
     delay:Math.random()*0.9, drift:(Math.random()*2-1)*4*dpr });
-  const t0=performance.now();
+  const t0=performance.now(); assemblyStart=t0;
   (function frame(now){
     const el=(now-t0)/1000; ctx.clearRect(0,0,W,H);
     if(img.complete && img.naturalWidth){
