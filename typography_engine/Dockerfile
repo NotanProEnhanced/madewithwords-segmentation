@@ -29,6 +29,9 @@ RUN mkdir -p models \
 
 COPY app ./app
 COPY static ./static
+# tools/reel_template.py is imported by app.main /reel endpoint to build the
+# shareable 9:16 reel from a paid job.
+COPY tools ./tools
 
 EXPOSE 8077
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8077", "--workers", "1"]
