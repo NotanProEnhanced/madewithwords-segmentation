@@ -84,6 +84,32 @@
   .actions{display:flex;gap:12px;margin-top:22px}.actions .btn{margin-top:0}
   .err{display:none;background:#fff;border:1px solid #f0d9d9;border-left:4px solid #c0392b;border-radius:12px;padding:14px 16px;margin-top:18px;color:#7a2e2e;font-size:15px}
   footer{color:var(--muted);font-size:12px;text-align:center;margin-top:30px}
+
+  /* Product picker (Phase E: physical prints + digital) */
+  .phead{font-family:var(--serif);font-size:18px;color:var(--navy);margin:0 0 12px;font-weight:700}
+  .prods{display:flex;flex-direction:column;gap:10px}
+  .prod{display:flex;align-items:center;gap:14px;border:1.5px solid var(--line);border-radius:14px;
+        padding:14px;cursor:pointer;background:#fff;position:relative;text-align:left;font-family:var(--sans);
+        width:100%;transition:.15s}
+  .prod:hover{border-color:#cdc7bb}
+  .prod.sel{border-color:var(--navy);background:#f3f5fa}
+  .prod .rad{width:20px;height:20px;border-radius:50%;border:2px solid #d8d3c8;flex:0 0 auto;position:relative}
+  .prod.sel .rad{border-color:var(--navy)}
+  .prod.sel .rad::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--navy)}
+  .prod .info{flex:1;min-width:0}
+  .prod .nm{font-weight:600;font-size:15px;color:var(--ink);display:block}
+  .prod .bl{color:var(--muted);font-size:13px;margin-top:2px;display:block;line-height:1.35}
+  .prod .pr{font-weight:700;font-size:16px;color:var(--navy);text-align:right;flex:0 0 auto}
+  .prod .pr small{color:var(--muted);font-weight:400;font-size:11px;display:block;margin-top:2px}
+  .prod .tg{position:absolute;top:-9px;right:14px;background:var(--navy);color:#fff;font-size:10px;
+            letter-spacing:.1em;text-transform:uppercase;padding:3px 10px;border-radius:99px;font-weight:700}
+  .sizes{display:none;align-items:center;gap:12px;margin-top:12px;padding:12px 14px;background:#f8f7f4;border-radius:12px;flex-wrap:wrap}
+  .sizes.show{display:flex}
+  .szlbl{color:var(--muted);font-size:13px;font-weight:600}
+  .szchoice{display:flex;gap:6px;flex-wrap:wrap}
+  .szchoice button{border:1.5px solid var(--line);background:#fff;padding:8px 12px;border-radius:10px;
+                   font-size:13px;font-weight:700;cursor:pointer;color:var(--ink);font-family:var(--sans)}
+  .szchoice button.on{border-color:var(--navy);background:var(--navy);color:#fff}
 </style>
 </head>
 <body>
@@ -129,8 +155,16 @@
         <label class="field"><span class="lbl">Caption <span style="color:var(--muted);font-weight:400">(optional)</span></span><input id="caption" type="text" placeholder="1906 – 1992 · Forever curious" /></label>
       </div>
     </div>
-    <div class="actions"><button id="buy" class="btn">Download</button></div>
-    <p class="note" id="buynote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Preview is free · download removes the watermark, full resolution</p>
+    <div class="card" id="productPicker" style="margin-top:18px">
+      <div class="phead">Make it yours</div>
+      <div class="prods" id="prods"></div>
+      <div class="sizes" id="sizeRow">
+        <span class="szlbl">Size</span>
+        <div class="szchoice" id="szchoice"></div>
+      </div>
+      <button id="buy" class="btn" disabled style="margin-top:18px">Choose an option above</button>
+      <p class="note" id="buynote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Preview is free · pick a product to continue.</p>
+    </div>
     <button id="restart" class="btn ghost">Start a new portrait</button>
     <div id="errResult" class="err"></div>
   </section>
@@ -152,12 +186,18 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, ink:"navy", poster:false, style:"mosaic" };
+const state = { file:null, ink:"navy", poster:false, style:"mosaic", sku:null, size:null };
 function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
-// Show the price up front so it's never a surprise (single source: /pricing).
-fetch("/pricing").then(r=>r.json()).then(p=>{
+let catalog = null;
+// Load the product catalog (digital + physical SKUs, prices, sizes). Single
+// source of truth lives server-side (/products); UI never hardcodes prices.
+fetch("/products").then(r=>r.json()).then(d=>{
+  catalog = d; renderProducts();
   const fn=document.getElementById("freenote");
-  if(fn) fn.textContent = "Free to create & preview — keep yours for " + money(p.price_cents,p.currency) + " (full resolution, no watermark).";
+  if(fn){
+    const dig = (d.products||[]).find(p=>p.sku==="digital");
+    if(dig) fn.textContent = "Free to create & preview — keep yours from " + money(dig.price_cents, d.currency) + ".";
+  }
 }).catch(()=>{});
 let cache = {};
 
@@ -224,16 +264,25 @@ let tmr; [title,caption].forEach(inp=>inp.addEventListener("input",()=>{clearTim
 /* ---------- views ---------- */
 const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy");
 const canvas=$("#assembly"), buy=$("#buy"), buynote=$("#buynote"), errResult=$("#errResult"), errInput=$("#errInput");
-let currentJob=null, priceLabel="";
+let currentJob=null;
 buy.addEventListener("click", async ()=>{
-  if(!currentJob) return;
+  if(!currentJob || !state.sku) return;
   buy.disabled=true; const old=buy.textContent; buy.textContent="Opening secure checkout…";
   try{
-    const fd=new FormData(); fd.append("job",currentJob); fd.append("fmt","png");
+    const fd=new FormData();
+    fd.append("job",currentJob);
+    fd.append("sku",state.sku);
+    if(state.size) fd.append("size",state.size);
+    fd.append("fmt","png");
     const r=await fetch("/checkout",{method:"POST",body:fd}); const d=await r.json();
     if(d.ok && d.url){ window.location.href=d.url; return; }
-    buynote.textContent = d.error==="payments_unconfigured"
-      ? "Checkout isn’t set up yet (add your Stripe key)." : "Couldn’t start checkout — please try again.";
+    const msgs={
+      payments_unconfigured:"Checkout isn't set up yet (add your Stripe key).",
+      fulfillment_unconfigured:"Physical prints aren't available yet — try the digital download.",
+      missing_or_invalid_size:"Please pick a size first.",
+      unknown_product:"That product isn't available.",
+      unknown_job:"Your portrait expired — please regenerate it."};
+    buynote.textContent = msgs[d.error] || "Couldn't start checkout — please try again.";
   }catch(e){ buynote.textContent="Network error — please try again."; }
   buy.disabled=false; buy.textContent=old;
 });
@@ -253,8 +302,60 @@ function selectInk(id){
 const overlay=$("#overlay");
 function setBuy(entry){
   currentJob = entry.job || null;
-  buy.textContent = "Download — " + money(entry.price, entry.currency);
+  refreshBuy();
 }
+/* ---------- product picker (Phase E) ---------- */
+function renderProducts(){
+  if(!catalog) return;
+  const list=document.getElementById("prods"); list.innerHTML="";
+  (catalog.products||[]).forEach(p=>{
+    const card=document.createElement("button");
+    card.type="button"; card.className="prod"; card.dataset.sku=p.sku;
+    const ship = p.shipping_cents>0
+      ? `<small>+${money(p.shipping_cents,catalog.currency)} ship</small>`
+      : (p.physical?`<small>free ship</small>`:`<small>instant</small>`);
+    card.innerHTML =
+      (p.tag?`<span class="tg">${p.tag}</span>`:"") +
+      `<span class="rad"></span>
+       <span class="info"><span class="nm">${p.name}</span><span class="bl">${p.blurb}</span></span>
+       <span class="pr">${money(p.price_cents,catalog.currency)}${ship}</span>`;
+    card.addEventListener("click", ()=>selectProduct(p.sku));
+    list.appendChild(card);
+  });
+  // Default-select the recommended gift option if present, else first item.
+  const rec = (catalog.products||[]).find(p=>p.tag) || (catalog.products||[])[0];
+  if(rec) selectProduct(rec.sku);
+}
+function selectProduct(sku){
+  state.sku = sku; state.size = null;
+  document.querySelectorAll(".prod").forEach(el=>el.classList.toggle("sel", el.dataset.sku===sku));
+  const p = (catalog.products||[]).find(x=>x.sku===sku);
+  const sizeRow = document.getElementById("sizeRow");
+  const szc = document.getElementById("szchoice");
+  if(p && p.sizes && p.sizes.length){
+    sizeRow.classList.add("show"); szc.innerHTML="";
+    p.sizes.forEach(sz=>{
+      const b=document.createElement("button"); b.type="button"; b.textContent=sz;
+      b.addEventListener("click", ()=>{ state.size=sz;
+        [...szc.children].forEach(c=>c.classList.toggle("on", c===b)); refreshBuy(); });
+      szc.appendChild(b);
+    });
+  } else { sizeRow.classList.remove("show"); szc.innerHTML=""; }
+  refreshBuy();
+}
+function refreshBuy(){
+  const p = (catalog && state.sku) ? (catalog.products||[]).find(x=>x.sku===state.sku) : null;
+  const needsSize = !!(p && p.sizes && p.sizes.length && !state.size);
+  buy.disabled = !(currentJob && state.sku && !needsSize);
+  if(!p){ buy.textContent = "Choose an option above"; return; }
+  if(!currentJob){ buy.textContent = "Composing your portrait…"; return; }
+  if(needsSize){ buy.textContent = "Pick a size"; return; }
+  const total = p.price_cents + (p.shipping_cents||0);
+  buy.textContent = p.physical
+    ? `Order — ${money(total, catalog.currency)}`
+    : `Download — ${money(p.price_cents, catalog.currency)}`;
+}
+
 /* Show the watermarked preview. crossfade=true does an iOS-style dissolve
    between the current image and the newly-selected ink. */
 function showImage(entry, crossfade){

@@ -1,5 +1,7 @@
 outputs/*
 !outputs/.gitkeep
+private/
+data/
 models/*
 tests
 **/__pycache__
@@ -9,3 +11,4 @@ run.sh
 README.md
 DEPLOY.md
 deploy
+.env

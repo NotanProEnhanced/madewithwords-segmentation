@@ -9,3 +9,4 @@ svgwrite==1.4.3
 mediapipe==0.10.35
 qrcode==8.2
 stripe==15.1.0
+httpx==0.27.2
