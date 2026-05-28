@@ -66,6 +66,59 @@ cd typortrait && git pull
 cd typography_engine && sudo docker compose up -d --build
 ```
 
+## 5. Admin review dashboard + email notifications (Phase C)
+
+When a buyer opts in to letting Typortrait feature their reel on social
+channels, the reel lands in a review queue. You manage it from two
+surfaces sharing the same state machine:
+
+- **Dashboard** at `https://app.typortrait.com/admin/reels`
+  (password-gated, lifecycle: queued → approved → posted, with reject /
+  revoke that purge the reel files while keeping the consent record).
+- **Email notifications** to `TYPO_ADMIN_EMAIL` with one-tap Approve /
+  Reject links (signed, 14-day TTL). Works from a phone; no login needed.
+
+Add these to `.env` next to `docker-compose.yml`:
+```
+TYPO_ADMIN_PASSWORD=pick-a-long-random-string
+TYPO_SECRET_KEY=another-long-random-string
+TYPO_ADMIN_EMAIL=you@example.com
+TYPO_SMTP_HOST=smtp.gmail.com
+TYPO_SMTP_PORT=587
+TYPO_SMTP_USER=you@gmail.com
+TYPO_SMTP_PASS=your-16-char-gmail-app-password
+```
+
+Generate two strong secrets:
+```bash
+openssl rand -hex 32   # use one value for TYPO_ADMIN_PASSWORD
+openssl rand -hex 32   # use the other for TYPO_SECRET_KEY
+```
+
+### Getting a Gmail App Password (one-time, 5 minutes)
+
+Gmail does not accept your normal account password over SMTP. You need a
+16-character "App Password" tied to your Google account.
+
+1. Sign in to the Gmail account you want to send from
+   (e.g., `jjtokarz57@gmail.com`).
+2. Go to **https://myaccount.google.com/security**.
+3. Under **"How you sign in to Google"**, make sure **2-Step
+   Verification** is **On**. App passwords are only available with 2FA on.
+4. Open **https://myaccount.google.com/apppasswords**.
+5. Name it something like `Typortrait SMTP` and click **Create**.
+6. Google shows a **16-character password** (with spaces) — copy it now,
+   you can't see it again.
+7. Paste it into `.env` as `TYPO_SMTP_PASS` **without the spaces**
+   (e.g. `abcdefghijklmnop`).
+8. Set `TYPO_SMTP_USER` to the same Gmail address.
+
+Apply with `sudo docker compose up -d --build`. The scanner runs every
+60 seconds; the next queued reel will trigger an email.
+
+If you skip the SMTP variables, the dashboard still works — you'll just
+need to check it manually instead of being notified.
+
 ---
 
 ## Alternative: native install (no Docker), behind nginx

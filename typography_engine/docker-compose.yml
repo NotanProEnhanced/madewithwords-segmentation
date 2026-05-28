@@ -13,6 +13,17 @@ services:
       - TYPO_PRICE_CENTS=${TYPO_PRICE_CENTS:-900}
       - TYPO_CURRENCY=${TYPO_CURRENCY:-usd}
       - TYPO_PUBLIC_URL=${TYPO_PUBLIC_URL:-https://app.typortrait.com}
+      # Phase C: admin review dashboard + email notifications. See DEPLOY.md
+      # for the Gmail app-password setup; SMTP creds are optional (the
+      # dashboard still works without them — you just won't get notification
+      # emails).
+      - TYPO_ADMIN_PASSWORD=${TYPO_ADMIN_PASSWORD:-}
+      - TYPO_ADMIN_EMAIL=${TYPO_ADMIN_EMAIL:-}
+      - TYPO_SECRET_KEY=${TYPO_SECRET_KEY:-}
+      - TYPO_SMTP_HOST=${TYPO_SMTP_HOST:-smtp.gmail.com}
+      - TYPO_SMTP_PORT=${TYPO_SMTP_PORT:-587}
+      - TYPO_SMTP_USER=${TYPO_SMTP_USER:-}
+      - TYPO_SMTP_PASS=${TYPO_SMTP_PASS:-}
     volumes:
       # Persist previews + paid clean files across restarts/rebuilds.
       - ./data/outputs:/app/outputs

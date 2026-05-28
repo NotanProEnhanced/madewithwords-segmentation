@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from . import admin as admin_mod
 from .config import (
     CURRENCY,
     DOWNLOAD_PNG_WIDTH,
@@ -75,6 +76,9 @@ app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# Phase C: admin review dashboard + email notifications for consented reels.
+app.include_router(admin_mod.router)
+
 
 def _cleanup_old_files() -> int:
     """Delete previews and stored job inputs older than the retention window so
@@ -110,6 +114,17 @@ def _start_retention_sweeper() -> None:
             time.sleep(12 * 3600)
 
     threading.Thread(target=loop, daemon=True).start()
+
+
+@app.on_event("startup")
+def _start_admin_services() -> None:
+    """Promote any legacy .queue markers to .review.json records, then start
+    the background email scanner that notifies the admin of new queued reels."""
+    try:
+        admin_mod.migrate_legacy_queue_markers()
+    except Exception:  # noqa: BLE001
+        pass
+    admin_mod.start_scanner()
 
 
 @app.get("/")
@@ -590,14 +605,14 @@ def make_reel(
     except OSError:
         pass
 
-    # When the user opts in to Typortrait sharing, drop a queue marker so the
-    # Phase-C review process (email preview + approve/reject) can pick it up.
+    # When the user opts in to Typortrait sharing, register the reel with the
+    # review pipeline. The background scanner in app.admin picks it up and
+    # emails the admin; the dashboard at /admin/reels surfaces it for the
+    # full lifecycle (approve, posted, revoke).
     if tp_consent:
         try:
-            (PRIVATE_DIR / f"{job}.queue").write_text(
-                json.dumps({"queued_ts": int(time.time())}), encoding="utf-8",
-            )
-        except OSError:
+            admin_mod.init_review(job)
+        except Exception:  # noqa: BLE001
             pass
 
     return JSONResponse({
