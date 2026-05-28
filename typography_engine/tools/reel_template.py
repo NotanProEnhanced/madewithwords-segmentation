@@ -132,3 +132,69 @@ def build_reel(cfg):
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     frames[0].save(out, save_all=True, append_images=frames[1:], duration=int(1000/fps), loop=0, optimize=True)
     return out
+
+
+def convert_gif_to_mp4(gif, mp4, audio_path=None):
+    """Convert the reel GIF to a 1080x1920 H.264 MP4 with optional music bed.
+
+    If audio_path is provided and the file exists, the audio is looped so it
+    always covers the video, mixed at a tasteful volume (0.45), and fades in
+    at the start and out before the end so silent-video downranking on
+    TikTok / IG Reels / YT Shorts isn't triggered.
+
+    Falls back to silent MP4 if ffmpeg isn't installed or audio_path is missing.
+    Returns True on success, False otherwise.
+    """
+    import shutil, subprocess, os
+    if not shutil.which("ffmpeg"):
+        return False
+    vf = "scale=1080:-2:flags=lanczos,pad=1080:1920:0:(1920-ih)/2:color=0xFAF9F7"
+    use_audio = bool(audio_path) and os.path.exists(audio_path)
+    if use_audio:
+        # Probe the GIF duration so the audio fade-out lines up with the
+        # actual end of the reel, rather than relying on the template's
+        # constants (DUR+HOLD) drifting later.
+        dur = float(DUR + HOLD)
+        if shutil.which("ffprobe"):
+            try:
+                out = subprocess.check_output(
+                    ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                     "-of", "default=noprint_wrappers=1:nokey=1", gif],
+                    stderr=subprocess.DEVNULL,
+                )
+                dur = float(out.strip())
+            except Exception:  # noqa: BLE001
+                pass
+        fade_out_start = max(0.0, dur - 1.2)
+        afilter = (
+            f"[0:a]volume=0.45,"
+            f"afade=t=in:st=0:d=0.6,"
+            f"afade=t=out:st={fade_out_start:.2f}:d=1.2[aud]"
+        )
+        cmd = [
+            "ffmpeg", "-y",
+            "-stream_loop", "-1", "-i", str(audio_path),
+            "-i", str(gif),
+            "-filter_complex", afilter,
+            "-map", "1:v", "-map", "[aud]",
+            "-shortest",
+            "-movflags", "+faststart",
+            "-pix_fmt", "yuv420p",
+            "-vf", vf,
+            "-c:a", "aac", "-b:a", "96k",
+            str(mp4),
+        ]
+    else:
+        cmd = [
+            "ffmpeg", "-y", "-i", str(gif),
+            "-movflags", "+faststart",
+            "-pix_fmt", "yuv420p",
+            "-vf", vf,
+            str(mp4),
+        ]
+    try:
+        subprocess.run(cmd, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except Exception:  # noqa: BLE001
+        return False

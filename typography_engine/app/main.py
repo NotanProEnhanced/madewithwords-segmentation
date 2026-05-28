@@ -462,6 +462,15 @@ def download(job: str, session_id: str, fmt: str = "png"):
             path.write_bytes(png_bytes)
         except Exception:  # noqa: BLE001
             return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
+    # Drop a .paid marker so admin stats can count paid orders accurately
+    # without re-querying Stripe per job. Idempotent.
+    paid_marker = PRIVATE_DIR / f"{job}.paid"
+    if not paid_marker.exists():
+        try:
+            import time as _time
+            paid_marker.write_text(str(int(_time.time())), encoding="utf-8")
+        except OSError:
+            pass
     return FileResponse(str(path), media_type="image/png", filename=f"typortrait-{job}.png")
 
 
@@ -518,7 +527,7 @@ def make_reel(
     - `typortrait_consent` (optional, off by default): grants Typortrait a
       revocable license to feature the reel on its own social channels.
     """
-    import sys, time
+    import os, sys, time
     if not _session_paid(session_id, job):
         return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
     if (personal_consent or "").lower() not in ("on", "true", "1", "yes"):
@@ -575,17 +584,20 @@ def make_reel(
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "reel_build_failed", "detail": str(e)}, status_code=500)
 
+    # Convert GIF -> MP4 via the shared helper (same encoder as batch_reels.py).
+    # If TYPO_REEL_AUDIO is set or tools/assets/reel_audio.mp3 exists, the MP4
+    # ships with a music bed mixed at 0.45 volume with fade in/out, so the
+    # silent-video downranking that TikTok / IG Reels apply isn't triggered.
     mp4_made = False
     try:
-        import shutil, subprocess
-        if shutil.which("ffmpeg"):
-            vf = "scale=1080:-2:flags=lanczos,pad=1080:1920:0:(1920-ih)/2:color=0xFAF9F7"
-            subprocess.run(
-                ["ffmpeg", "-y", "-i", str(gif_path), "-movflags", "+faststart",
-                 "-pix_fmt", "yuv420p", "-vf", vf, str(mp4_path)],
-                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-            mp4_made = mp4_path.exists()
+        from reel_template import convert_gif_to_mp4  # type: ignore
+        audio_env = os.environ.get("TYPO_REEL_AUDIO", "").strip()
+        if audio_env and Path(audio_env).exists():
+            audio_path = audio_env
+        else:
+            default_audio = tools_dir / "assets" / "reel_audio.mp3"
+            audio_path = str(default_audio) if default_audio.exists() else None
+        mp4_made = convert_gif_to_mp4(str(gif_path), str(mp4_path), audio_path=audio_path)
     except Exception:  # noqa: BLE001
         mp4_made = False
 

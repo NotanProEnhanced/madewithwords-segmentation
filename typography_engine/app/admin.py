@@ -32,7 +32,7 @@ from typing import Optional
 from fastapi import APIRouter, Cookie, Form, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .config import OUTPUTS_DIR, PRIVATE_DIR, PUBLIC_BASE_URL
+from .config import OUTPUTS_DIR, PRIVATE_DIR, PUBLIC_BASE_URL, RETENTION_DAYS
 
 
 # --- Configuration --------------------------------------------------------
@@ -205,6 +205,123 @@ def list_reviews():
     return out
 
 
+# --- Stats / analytics ----------------------------------------------------
+
+def compute_stats():
+    """Aggregate counts from PRIVATE_DIR sidecars. Bounded by RETENTION_DAYS
+    because the retention sweep removes older files; the UI surfaces that."""
+    now = int(time.time())
+    day_secs = 86400
+    by_day = {}
+    days_window = max(7, RETENTION_DAYS)
+    for i in range(days_window):
+        d = time.strftime("%Y-%m-%d", time.localtime(now - i * day_secs))
+        by_day[d] = {"renders": 0, "paid": 0, "reels": 0, "consents": 0}
+
+    stats = {
+        "total_renders": 0,
+        "paid_orders": 0,
+        "reels_created": 0,
+        "typortrait_consents": 0,
+        "states": {s: 0 for s in REEL_STATES},
+        "inks": {},
+        "styles": {},
+        "uppercase_count": 0,
+        "remove_bg_count": 0,
+        "light_count": 0,
+        "word_count_buckets": {"1": 0, "2-3": 0, "4-6": 0, "7-12": 0, "13+": 0},
+        "by_day": [],
+        "retention_days": RETENTION_DAYS,
+    }
+
+    # Recipes (renders). Excludes the .consent.json / .review.json sidecars
+    # by checking that the stem has no further dots.
+    try:
+        for p in PRIVATE_DIR.glob("*.json"):
+            if "." in p.stem:  # skip <job>.consent and <job>.review
+                continue
+            stats["total_renders"] += 1
+            try:
+                r = json.loads(p.read_text(encoding="utf-8"))
+                ink = (r.get("ink") or "?").strip() or "?"
+                style = (r.get("style") or "?").strip() or "?"
+                stats["inks"][ink] = stats["inks"].get(ink, 0) + 1
+                stats["styles"][style] = stats["styles"].get(style, 0) + 1
+                if r.get("uppercase"):
+                    stats["uppercase_count"] += 1
+                if r.get("remove_bg"):
+                    stats["remove_bg_count"] += 1
+                if r.get("light"):
+                    stats["light_count"] += 1
+                text = r.get("text") or ""
+                tokens = [w for w in text.replace(",", " ").replace("\n", " ").split() if w]
+                n = len(tokens)
+                if n == 1:
+                    stats["word_count_buckets"]["1"] += 1
+                elif n <= 3:
+                    stats["word_count_buckets"]["2-3"] += 1
+                elif n <= 6:
+                    stats["word_count_buckets"]["4-6"] += 1
+                elif n <= 12:
+                    stats["word_count_buckets"]["7-12"] += 1
+                else:
+                    stats["word_count_buckets"]["13+"] += 1
+            except Exception:  # noqa: BLE001
+                pass
+            d = time.strftime("%Y-%m-%d", time.localtime(p.stat().st_mtime))
+            if d in by_day:
+                by_day[d]["renders"] += 1
+    except OSError:
+        pass
+
+    # Paid orders (.paid markers, dropped on first verified paid /download).
+    try:
+        for p in PRIVATE_DIR.glob("*.paid"):
+            stats["paid_orders"] += 1
+            d = time.strftime("%Y-%m-%d", time.localtime(p.stat().st_mtime))
+            if d in by_day:
+                by_day[d]["paid"] += 1
+    except OSError:
+        pass
+
+    # Reels created (any paid user who clicked "Make my reel" leaves a
+    # consent record, whether or not they opted in to Typortrait sharing).
+    try:
+        for p in PRIVATE_DIR.glob("*.consent.json"):
+            stats["reels_created"] += 1
+            d = time.strftime("%Y-%m-%d", time.localtime(p.stat().st_mtime))
+            if d in by_day:
+                by_day[d]["reels"] += 1
+    except OSError:
+        pass
+
+    # Typortrait-share consents + lifecycle state distribution.
+    try:
+        for p in PRIVATE_DIR.glob("*.review.json"):
+            stats["typortrait_consents"] += 1
+            d = time.strftime("%Y-%m-%d", time.localtime(p.stat().st_mtime))
+            if d in by_day:
+                by_day[d]["consents"] += 1
+            try:
+                r = json.loads(p.read_text(encoding="utf-8"))
+                st = r.get("state", "queued")
+                if st in stats["states"]:
+                    stats["states"][st] += 1
+            except Exception:  # noqa: BLE001
+                pass
+    except OSError:
+        pass
+
+    stats["by_day"] = [(d, by_day[d]) for d in sorted(by_day.keys(), reverse=True)]
+    return stats
+
+
+def _pct(num: float, den: float) -> str:
+    if not den:
+        return "—"
+    return f"{(100.0 * num / den):.1f}%"
+
+
 # --- Legacy migration -----------------------------------------------------
 
 def migrate_legacy_queue_markers() -> int:
@@ -363,10 +480,22 @@ video{{max-width:100%;max-height:60vh;border-radius:10px;background:#000;display
 .msg{{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:14px}}.msg.ok{{background:#d1fae5;color:#065f46}}.msg.err{{background:#fee2e2;color:#991b1b}}
 img.thumb{{max-width:80px;border-radius:6px;display:block}}
 a{{color:#0d1b3a}}
+.kpis{{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 18px}}
+.kpi{{background:#fff;border:1px solid #ece9e3;border-radius:10px;padding:10px 14px;min-width:88px;flex:1}}
+.kpi-v{{font-family:Georgia,serif;font-size:22px;color:#0d1b3a;line-height:1.1}}
+.kpi-v a{{text-decoration:none}}
+.kpi-l{{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-top:3px}}
+.bar{{display:inline-block;height:10px;background:#0d1b3a;border-radius:4px;vertical-align:middle;margin-right:6px}}
+.row-num{{text-align:right;font-variant-numeric:tabular-nums;color:#6b7280}}
+.funnel-step{{display:flex;align-items:baseline;gap:14px;padding:8px 0;border-top:1px solid #f1eee8}}
+.funnel-step:first-child{{border-top:0}}
+.funnel-num{{font-family:Georgia,serif;font-size:20px;color:#0d1b3a;min-width:70px}}
+.funnel-pct{{color:#6b7280;font-size:12px;min-width:80px}}
+.muted{{color:#6b7280;font-size:12px}}
 </style></head><body><div class="wrap">{body}</div></body></html>"""
 
 
-def _admin_nav(current: str = "all") -> str:
+def _admin_nav(current: str = "all", stats_active: bool = False) -> str:
     items = [
         ("all", "All", "/admin/reels"),
         ("queued", "Queued", "/admin/reels?filter=queued"),
@@ -377,11 +506,32 @@ def _admin_nav(current: str = "all") -> str:
     ]
     bits = []
     for key, label, url in items:
-        cls = ' class="cur"' if key == current else ""
+        cls = ' class="cur"' if key == current and not stats_active else ""
         bits.append(f'<a href="{url}"{cls}>{html.escape(label)}</a>')
+    stats_cls = ' class="cur"' if stats_active else ""
+    bits.append(f'<a href="/admin/stats"{stats_cls}>Stats</a>')
     bits.append('<span class="gap"></span>')
     bits.append('<form method="post" action="/admin/logout"><button class="btn ghost" type="submit">Log out</button></form>')
     return f'<nav>{"".join(bits)}</nav>'
+
+
+def _kpi_strip(stats: dict) -> str:
+    """Compact stats summary rendered above the reel list."""
+    s = stats
+    def k(label, value, link=None):
+        v = f'<a href="{link}">{value}</a>' if link else str(value)
+        return (f'<div class="kpi"><div class="kpi-v">{v}</div>'
+                f'<div class="kpi-l">{html.escape(label)}</div></div>')
+    items = [
+        k("Renders", s["total_renders"]),
+        k("Paid", s["paid_orders"]),
+        k("Reels made", s["reels_created"]),
+        k("Shared w/ us", s["typortrait_consents"]),
+        k("Queued", s["states"]["queued"], "/admin/reels?filter=queued"),
+        k("Approved", s["states"]["approved"], "/admin/reels?filter=approved"),
+        k("Posted", s["states"]["posted"], "/admin/reels?filter=posted"),
+    ]
+    return f'<div class="kpis">{"".join(items)}</div>'
 
 
 # --- Endpoints ------------------------------------------------------------
@@ -460,6 +610,10 @@ def admin_list(filter: str = "all",
         )
     body = '<h1>Reels for review</h1>'
     body += _admin_nav(current=flt)
+    try:
+        body += _kpi_strip(compute_stats())
+    except Exception as e:  # noqa: BLE001
+        _log(f"kpi_strip failed: {e}")
     if not smtp_configured():
         body += ('<div class="msg err">SMTP is not fully configured — the '
                  'background mailer is paused. Queued reels still show here.</div>')
@@ -470,6 +624,102 @@ def admin_list(filter: str = "all",
                  '<th>State</th><th></th></tr></thead><tbody>'
                  + "".join(rows) + '</tbody></table>')
     return HTMLResponse(_admin_chrome("Reels", body))
+
+
+@router.get("/stats", response_class=HTMLResponse)
+def admin_stats(admin_session: Optional[str] = Cookie(None)):
+    guard = _require_admin(admin_session)
+    if guard is not None:
+        return guard
+    s = compute_stats()
+    body = '<h1>Stats &amp; signals</h1>'
+    body += _admin_nav(stats_active=True)
+    body += _kpi_strip(s)
+
+    # --- Funnel -----------------------------------------------------------
+    renders = s["total_renders"]
+    paid = s["paid_orders"]
+    reels = s["reels_created"]
+    consents = s["typortrait_consents"]
+    approved = s["states"]["approved"] + s["states"]["posted"] + s["states"]["revoked"]
+    posted = s["states"]["posted"] + s["states"]["revoked"]
+    funnel = [
+        ("Renders",          renders,  None,     "Visitors who generated a watermarked preview."),
+        ("Paid orders",      paid,     renders,  "Conversion: paid downloads / renders."),
+        ("Reels made",       reels,    paid,     "Of paid buyers, how many built a shareable reel."),
+        ("Shared with us",   consents, reels,    "Of reel makers, how many opted in to let us feature it."),
+        ("Approved",         approved, consents, "Of opt-ins, how many you green-lit (approved + posted + revoked)."),
+        ("Posted",           posted,   approved, "Of approved, how many you actually posted (or posted then revoked)."),
+    ]
+    body += '<div class="card"><h2>Funnel</h2>'
+    for label, num, den, hint in funnel:
+        body += (f'<div class="funnel-step">'
+                 f'<span class="funnel-num">{num}</span>'
+                 f'<span class="funnel-pct">{_pct(num, den) if den is not None else "—"}</span>'
+                 f'<span><b>{html.escape(label)}</b><br>'
+                 f'<span class="muted">{html.escape(hint)}</span></span></div>')
+    body += f'<p class="muted" style="margin-top:14px">Window: last {s["retention_days"]} days (file retention).</p>'
+    body += '</div>'
+
+    # --- Choice popularity (style + ink + word count + toggles) -----------
+    def _bar_table(title: str, counter: dict, total: int):
+        if not counter:
+            return f'<div class="card"><h2>{html.escape(title)}</h2><p class="muted">No data yet.</p></div>'
+        rows = []
+        items = sorted(counter.items(), key=lambda kv: kv[1], reverse=True)
+        top = items[0][1] if items else 1
+        for k, v in items:
+            width = int(180 * (v / top)) if top else 0
+            pct = (100 * v / total) if total else 0
+            rows.append(
+                f'<tr><td>{html.escape(str(k))}</td>'
+                f'<td class="row-num">{v}</td>'
+                f'<td class="row-num">{pct:.1f}%</td>'
+                f'<td><span class="bar" style="width:{width}px"></span></td></tr>'
+            )
+        return (f'<div class="card"><h2>{html.escape(title)}</h2>'
+                f'<table style="background:transparent;border:0">'
+                f'<tbody>' + "".join(rows) + '</tbody></table></div>')
+
+    body += _bar_table("Ink color popularity", s["inks"], renders)
+    body += _bar_table("Style popularity", s["styles"], renders)
+    body += _bar_table("Word-count distribution", s["word_count_buckets"], renders)
+
+    # --- Render-option toggles -------------------------------------------
+    toggles_total = renders or 1
+    body += ('<div class="card"><h2>Render options</h2>'
+             f'<p>Uppercase enabled: <b>{s["uppercase_count"]}</b> ({100*s["uppercase_count"]/toggles_total:.0f}%)</p>'
+             f'<p>Background removed: <b>{s["remove_bg_count"]}</b> ({100*s["remove_bg_count"]/toggles_total:.0f}%)</p>'
+             f'<p>Light mode: <b>{s["light_count"]}</b> ({100*s["light_count"]/toggles_total:.0f}%)</p>'
+             '</div>')
+
+    # --- Daily timeline ---------------------------------------------------
+    body += '<div class="card"><h2>Last {0} days</h2>'.format(s["retention_days"])
+    body += ('<table><thead><tr><th>Date</th><th class="row-num">Renders</th>'
+             '<th class="row-num">Paid</th><th class="row-num">Reels</th>'
+             '<th class="row-num">Shared w/ us</th></tr></thead><tbody>')
+    for d, row in s["by_day"]:
+        if row["renders"] == 0 and row["paid"] == 0 and row["reels"] == 0 and row["consents"] == 0:
+            continue
+        body += (f'<tr><td>{d}</td>'
+                 f'<td class="row-num">{row["renders"]}</td>'
+                 f'<td class="row-num">{row["paid"]}</td>'
+                 f'<td class="row-num">{row["reels"]}</td>'
+                 f'<td class="row-num">{row["consents"]}</td></tr>')
+    body += '</tbody></table>'
+    body += f'<p class="muted" style="margin-top:14px">Counts are bucketed by file modification time. Days with no activity hidden.</p>'
+    body += '</div>'
+
+    # --- Lifecycle state distribution -------------------------------------
+    body += '<div class="card"><h2>Review states</h2>'
+    body += '<table style="background:transparent;border:0"><tbody>'
+    for st in REEL_STATES:
+        n = s["states"][st]
+        body += (f'<tr><td><span class="state s-{st}">{st}</span></td>'
+                 f'<td class="row-num">{n}</td></tr>')
+    body += '</tbody></table></div>'
+
+    return HTMLResponse(_admin_chrome("Stats", body))
 
 
 @router.get("/reels/{job}", response_class=HTMLResponse)

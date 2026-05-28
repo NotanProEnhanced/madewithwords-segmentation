@@ -40,12 +40,21 @@ HASHTAGS = ("#typortrait #wordart #wordportrait #typographyart #portraitart "
             "#personalizedgift #customgift #meaningfulgifts #keepsake #giftideas "
             "#anniversarygift #memorialgift #giftsforher #giftsforhim")
 
+def _default_audio_path():
+    """Optional music bed. Override with TYPO_REEL_AUDIO=/abs/path/to/track.mp3.
+    See tools/assets/README.md for sourcing license-clear tracks."""
+    env = os.environ.get("TYPO_REEL_AUDIO", "").strip()
+    if env:
+        return env
+    default = os.path.join(HERE, "assets", "reel_audio.mp3")
+    return default if os.path.exists(default) else None
+
+
 def to_mp4(gif, mp4):
-    if not shutil.which("ffmpeg"): return False
-    vf = ("scale=1080:-2:flags=lanczos,pad=1080:1920:0:(1920-ih)/2:color=0xFAF9F7")
-    subprocess.run(["ffmpeg","-y","-i",gif,"-movflags","+faststart","-pix_fmt","yuv420p","-vf",vf,mp4],
-                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return True
+    """Backwards-compat wrapper: routes to reel_template.convert_gif_to_mp4
+    so this script and the live /reel endpoint share one encoder + audio path."""
+    from reel_template import convert_gif_to_mp4
+    return convert_gif_to_mp4(gif, mp4, audio_path=_default_audio_path())
 
 def main():
     manifest = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "reels_manifest.example.json")
