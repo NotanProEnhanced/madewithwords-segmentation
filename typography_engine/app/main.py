@@ -528,7 +528,9 @@ def make_reel(
         recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "bad_recipe"}, status_code=500)
-    words = [w for w in (recipe.get("words") or []) if str(w).strip()]
+    # The recipe persists the raw user-typed string in `text`; parse it the
+    # same way the render endpoint does to recover the word list.
+    words = _parse_words(recipe.get("text"), None)
     if not words:
         return JSONResponse({"ok": False, "error": "no_words"}, status_code=400)
 
