@@ -252,6 +252,7 @@ def _read_words_for_job(job: str):
 
 def send_review_email(job: str, words, consent: dict) -> bool:
     if not smtp_configured():
+        _log(f"send_review_email skipped (smtp not configured): job={job}")
         return False
     approve = f"{PUBLIC_BASE_URL}/admin/email/approve?token={make_email_token(job, 'approve')}"
     reject  = f"{PUBLIC_BASE_URL}/admin/email/reject?token={make_email_token(job, 'reject')}"
@@ -297,14 +298,23 @@ def send_review_email(job: str, words, consent: dict) -> bool:
             s.starttls()
             s.login(SMTP_USER, SMTP_PASS)
             s.send_message(msg)
+        _log(f"send_review_email ok: job={job} to={ADMIN_EMAIL}")
         return True
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _log(f"send_review_email FAILED: job={job} err={type(e).__name__}: {e}")
         return False
+
+
+def _log(msg: str) -> None:
+    """Surface admin/scanner events to docker compose logs typortrait."""
+    import sys
+    print(f"[admin] {msg}", file=sys.stderr, flush=True)
 
 
 # --- Background scanner ---------------------------------------------------
 
 def _scanner_loop() -> None:
+    _log(f"scanner started (smtp_configured={smtp_configured()})")
     while True:
         try:
             if smtp_configured():
@@ -320,8 +330,8 @@ def _scanner_loop() -> None:
                             pass
                     if send_review_email(job, _read_words_for_job(job), consent):
                         write_review(job, emailed_at=int(time.time()))
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:  # noqa: BLE001
+            _log(f"scanner loop error: {type(e).__name__}: {e}")
         time.sleep(60)
 
 
@@ -349,7 +359,7 @@ tr:last-child td{{border-bottom:0}}
 .card{{background:#fff;border:1px solid #ece9e3;border-radius:12px;padding:18px;margin:12px 0}}
 .field{{display:block;margin:8px 0}}.field label{{display:block;font-size:12px;color:#6b7280;margin-bottom:4px}}.field input,.field textarea{{width:100%;padding:8px 10px;border:1px solid #ece9e3;border-radius:8px;font-family:inherit;font-size:14px}}
 pre{{background:#f5f3ee;padding:12px;border-radius:8px;font-size:12px;overflow:auto}}
-video{{max-width:100%;border-radius:10px;background:#000;display:block}}
+video{{max-width:100%;max-height:60vh;border-radius:10px;background:#000;display:block;margin:0 auto}}
 .msg{{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:14px}}.msg.ok{{background:#d1fae5;color:#065f46}}.msg.err{{background:#fee2e2;color:#991b1b}}
 img.thumb{{max-width:80px;border-radius:6px;display:block}}
 a{{color:#0d1b3a}}
@@ -500,6 +510,8 @@ def admin_detail(job: str, msg: str = "",
         body += '<div class="msg ok">Marked as posted.</div>'
     elif msg == "revoked":
         body += '<div class="msg ok">Revoked — reel files purged. Posted record retained for audit.</div>'
+    elif msg == "resent":
+        body += '<div class="msg ok">Re-queued — the background scanner will email within ~60 seconds.</div>'
     body += f'<div class="card"><span class="state s-{st}">{st}</span></div>'
     body += (f'<div class="card"><h2>Preview</h2>'
              f'<video src="/outputs/{je}_reel.mp4" controls playsinline></video></div>')
@@ -533,6 +545,11 @@ def admin_detail(job: str, msg: str = "",
                  f'<button class="btn warn" type="submit">Revoke (user requested removal)</button></form>')
     else:
         body += f'<p>No further actions available for state <b>{html.escape(st)}</b>.</p>'
+    # Re-queue / re-send is available from any state so you can re-test the
+    # email path or re-notify yourself without going through another checkout.
+    body += (f'<form method="post" action="/admin/reels/{je}/resend" style="display:inline;margin-top:8px" '
+             f'onsubmit="return confirm(\'Re-queue this reel and trigger another notification email?\')">'
+             f'<button class="btn ghost" type="submit">Re-send notification email</button></form>')
     body += '</div>'
     body += ('<div class="card"><h2>Consent record</h2><pre>'
              + html.escape(json.dumps(consent, indent=2)) + '</pre></div>')
@@ -587,6 +604,20 @@ def admin_revoke(job: str, admin_session: Optional[str] = Cookie(None)):
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
     transition(job, "revoked")
     return RedirectResponse(url=f"/admin/reels/{job}?msg=revoked", status_code=302)
+
+
+@router.post("/reels/{job}/resend")
+def admin_resend(job: str, admin_session: Optional[str] = Cookie(None)):
+    """Reset state to queued + clear emailed_at so the background scanner
+    re-emails the notification. Useful for testing SMTP and for re-notifying
+    yourself if you missed an email. Does not delete reel files."""
+    guard = _require_admin(admin_session)
+    if guard is not None:
+        return guard
+    if not read_review(job):
+        return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    write_review(job, state="queued", emailed_at=None)
+    return RedirectResponse(url=f"/admin/reels/{job}?msg=resent", status_code=302)
 
 
 @router.get("/email/{action}")
