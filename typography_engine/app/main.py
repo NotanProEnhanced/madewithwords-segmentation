@@ -639,13 +639,13 @@ def success(job: str, session_id: str):
             '<span>Optional: Allow Typortrait to feature this reel on our own social channels '
             '(<a href="/terms" target="_blank" rel="noopener">terms</a>). You can revoke any time by emailing us.</span></label>'
             '<button class="btn" id="mk" disabled>Make my reel</button>'
+            '<div class="link-wrap"><a class="link" href="/static/index.html">Create another portrait</a></div>'
             '<div id="rlOut" style="display:none">'
             '<p class="sub" id="rlSub">Your reel is ready.</p>'
             '<a class="btn" id="rlMp4" download="typortrait-reel.mp4" style="display:none">Download MP4</a>'
             '<a class="btn ghost" id="rlGif" download="typortrait-reel.gif">Download GIF</a>'
             '<button class="btn ghost" id="rlSh" style="display:none">Share reel</button>'
             '</div>'
-            '<a class="link" href="/static/index.html">Create another portrait</a>'
             '<script>(function(){var url=' + _json.dumps(png_url) + ';'
             'var job=' + _json.dumps(job) + ',sid=' + _json.dumps(session_id) + ',o=location.origin;'
             'var shareUrl=o+"/p/"+job,prevUrl=o+"/outputs/"+job+"_preview.png";'
@@ -729,6 +729,7 @@ def success(job: str, session_id: str):
         ".chk{display:flex;align-items:flex-start;gap:10px;text-align:left;color:#16203a;font-size:13.5px;line-height:1.45;margin:8px 4px}"
         ".chk input{margin-top:3px;flex-shrink:0}"
         ".chk a{color:var(--navy)}"
+        ".link-wrap{text-align:center;margin-top:14px}"
         "</style></head><body><div class='card'>" + inner + "</div></body></html>"
     )
     return HTMLResponse(page)
