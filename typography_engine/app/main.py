@@ -75,6 +75,21 @@ app = FastAPI(title="Typography Portrait Engine", version=__version__)
 # Initialize the orders DB once at import time (idempotent).
 orders_db.init_db()
 
+
+def _stripe_to_dict(obj):
+    """Stripe SDK v15+ removed dict-style `.get()` from StripeObject; convert
+    to a plain dict by round-tripping through JSON (Stripe objects' __str__
+    emits canonical JSON) so the rest of the code can treat them as dicts."""
+    if obj is None or isinstance(obj, (str, int, float, bool, list)):
+        return obj
+    if isinstance(obj, dict):
+        return obj
+    try:
+        return json.loads(str(obj))
+    except (ValueError, TypeError):
+        return {}
+
+
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -471,7 +486,7 @@ def download(job: str, session_id: str, fmt: str = "png"):
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
     try:
-        sess = stripe.checkout.Session.retrieve(session_id)
+        sess = _stripe_to_dict(stripe.checkout.Session.retrieve(session_id))
     except Exception:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "bad_session"}, status_code=400)
     if sess.get("payment_status") != "paid" or (sess.get("metadata") or {}).get("job") != job:
@@ -557,9 +572,9 @@ async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Hea
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
         try:
-            event = stripe.Webhook.construct_event(
+            event = _stripe_to_dict(stripe.Webhook.construct_event(
                 payload, stripe_signature or "", STRIPE_WEBHOOK_SECRET,
-            )
+            ))
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=f"bad_signature: {e}")
     else:
@@ -602,7 +617,7 @@ def order_status(order_id: str, session_id: Optional[str] = None):
         try:
             import stripe
             stripe.api_key = STRIPE_SECRET_KEY
-            sess = stripe.checkout.Session.retrieve(session_id)
+            sess = _stripe_to_dict(stripe.checkout.Session.retrieve(session_id))
             if sess.get("payment_status") == "paid":
                 recipient = _recipient_from_session(sess)
                 transitioned = orders_db.mark_paid(
