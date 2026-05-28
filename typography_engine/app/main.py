@@ -465,6 +465,148 @@ def _session_paid(session_id: str, job: str) -> bool:
             and (getattr(meta, "job", None) if meta is not None else None) == job)
 
 
+# Bumped whenever the consent copy on the success page materially changes,
+# so every stored consent record points at the exact wording the user saw.
+CONSENT_TEXT_VERSION = "v1-2026-05"
+
+
+def _make_square_crop_jpeg(src_path, dst_path) -> bool:
+    """Center-crop the source upload to a 1:1 JPEG for use as the reel's
+    'before' frame. Honors EXIF rotation so phone photos aren't sideways."""
+    try:
+        from PIL import Image, ImageOps
+        with Image.open(str(src_path)) as im:
+            im = ImageOps.exif_transpose(im).convert("RGB")
+            w, h = im.size
+            s = min(w, h)
+            left, top = (w - s) // 2, (h - s) // 2
+            im = im.crop((left, top, left + s, top + s))
+            im.thumbnail((1080, 1080), Image.LANCZOS)
+            im.save(str(dst_path), "JPEG", quality=88, optimize=True)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+@app.post("/reel")
+def make_reel(
+    job: str = Form(...),
+    session_id: str = Form(...),
+    personal_consent: str = Form(""),
+    typortrait_consent: str = Form(""),
+) -> JSONResponse:
+    """Generate a shareable reel (GIF + MP4 when ffmpeg is present) from a
+    paid job. Records the user's dual-consent decision.
+
+    - `personal_consent` (required): the user confirms they will share the
+      reel themselves for personal use.
+    - `typortrait_consent` (optional, off by default): grants Typortrait a
+      revocable license to feature the reel on its own social channels.
+    """
+    import sys, time
+    if not _session_paid(session_id, job):
+        return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
+    if (personal_consent or "").lower() not in ("on", "true", "1", "yes"):
+        return JSONResponse({"ok": False, "error": "consent_required"}, status_code=400)
+
+    recipe_path = PRIVATE_DIR / f"{job}.json"
+    src_path = PRIVATE_DIR / f"{job}.src"
+    portrait_path = PRIVATE_DIR / f"{job}.png"
+    if not recipe_path.exists() or not src_path.exists():
+        return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    if not portrait_path.exists():
+        # The high-res PNG is composed lazily on the first paid /download
+        # request; the success page fetches it immediately, but if a user
+        # hits the reel button before that finishes we surface a clear retry.
+        return JSONResponse(
+            {"ok": False, "error": "portrait_not_ready",
+             "detail": "Your portrait is still being prepared — please wait a few seconds and try again."},
+            status_code=409,
+        )
+
+    try:
+        recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "bad_recipe"}, status_code=500)
+    words = [w for w in (recipe.get("words") or []) if str(w).strip()]
+    if not words:
+        return JSONResponse({"ok": False, "error": "no_words"}, status_code=400)
+
+    before_path = OUTPUTS_DIR / f"{job}_before.jpg"
+    if not before_path.exists():
+        if not _make_square_crop_jpeg(src_path, before_path):
+            return JSONResponse({"ok": False, "error": "crop_failed"}, status_code=500)
+    gif_path = OUTPUTS_DIR / f"{job}_reel.gif"
+    mp4_path = OUTPUTS_DIR / f"{job}_reel.mp4"
+
+    tools_dir = STATIC_DIR.parent / "tools"
+    if str(tools_dir) not in sys.path:
+        sys.path.insert(0, str(tools_dir))
+    try:
+        from reel_template import build_reel  # type: ignore
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "reel_import_failed", "detail": str(e)}, status_code=500)
+
+    try:
+        build_reel({
+            "before": str(before_path),
+            "after":  str(portrait_path),
+            "words":  words,
+            "out":    str(gif_path),
+            "cta":    "Make yours  ·  typortrait.com",
+        })
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "reel_build_failed", "detail": str(e)}, status_code=500)
+
+    mp4_made = False
+    try:
+        import shutil, subprocess
+        if shutil.which("ffmpeg"):
+            vf = "scale=1080:-2:flags=lanczos,pad=1080:1920:0:(1920-ih)/2:color=0xFAF9F7"
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", str(gif_path), "-movflags", "+faststart",
+                 "-pix_fmt", "yuv420p", "-vf", vf, str(mp4_path)],
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            mp4_made = mp4_path.exists()
+    except Exception:  # noqa: BLE001
+        mp4_made = False
+
+    tp_consent = (typortrait_consent or "").lower() in ("on", "true", "1", "yes")
+    try:
+        (PRIVATE_DIR / f"{job}.consent.json").write_text(
+            json.dumps({
+                "job": job,
+                "session_id": session_id,
+                "personal_consent": True,
+                "typortrait_share_consent": tp_consent,
+                "consent_text_version": CONSENT_TEXT_VERSION,
+                "ts": int(time.time()),
+            }, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+    # When the user opts in to Typortrait sharing, drop a queue marker so the
+    # Phase-C review process (email preview + approve/reject) can pick it up.
+    if tp_consent:
+        try:
+            (PRIVATE_DIR / f"{job}.queue").write_text(
+                json.dumps({"queued_ts": int(time.time())}), encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+    return JSONResponse({
+        "ok": True,
+        "gif_url": f"/outputs/{job}_reel.gif",
+        "mp4_url": f"/outputs/{job}_reel.mp4" if mp4_made else None,
+        "share_url": f"/p/{job}",
+        "typortrait_share": tp_consent,
+    })
+
+
 @app.get("/success", response_class=HTMLResponse)
 def success(job: str, session_id: str):
     """Post-payment page: confirms the purchase and offers both the high-res PNG
@@ -485,9 +627,25 @@ def success(job: str, session_id: str):
             '<button class="btn" id="dl" disabled><span class="spin"></span>Preparing…</button>'
             '<button class="btn ghost" id="sh">Share</button>'
             '<p class="note">Watermark-free, print-quality — ready to print or share.</p>'
+            # ---- Phase B: optional "Make a reel" card with dual consent ----
+            '<div class="divider"></div>'
+            '<h2 class="reel-h">Make a reel from your portrait</h2>'
+            '<p class="sub reel-sub">Turn it into a short 9:16 video — the dissolve, your words, and the finished portrait — perfect for sharing.</p>'
+            '<label class="chk"><input type="checkbox" id="cp"> '
+            '<span>Yes, I’ll share my reel for personal use.</span></label>'
+            '<label class="chk"><input type="checkbox" id="ct"> '
+            '<span>Optional: Allow Typortrait to feature this reel on our own social channels '
+            '(<a href="/terms" target="_blank" rel="noopener">terms</a>). You can revoke any time by emailing us.</span></label>'
+            '<button class="btn" id="mk" disabled>Make my reel</button>'
+            '<div id="rlOut" style="display:none">'
+            '<p class="sub" id="rlSub">Your reel is ready.</p>'
+            '<a class="btn" id="rlMp4" download="typortrait-reel.mp4" style="display:none">Download MP4</a>'
+            '<a class="btn ghost" id="rlGif" download="typortrait-reel.gif">Download GIF</a>'
+            '<button class="btn ghost" id="rlSh" style="display:none">Share reel</button>'
+            '</div>'
             '<a class="link" href="/static/index.html">Create another portrait</a>'
             '<script>(function(){var url=' + _json.dumps(png_url) + ';'
-            'var job=' + _json.dumps(job) + ',o=location.origin;'
+            'var job=' + _json.dumps(job) + ',sid=' + _json.dumps(session_id) + ',o=location.origin;'
             'var shareUrl=o+"/p/"+job,prevUrl=o+"/outputs/"+job+"_preview.png";'
             'var btn=document.getElementById("dl"),sub=document.getElementById("sub"),sh=document.getElementById("sh");'
             'function save(b){var a=document.createElement("a");a.href=URL.createObjectURL(b);'
@@ -504,6 +662,34 @@ def success(job: str, session_id: str):
             'if(navigator.canShare({files:[f]}))return navigator.share({title:"Typortrait",text:t,url:shareUrl,files:[f]});'
             'throw 0;}):Promise.reject())'
             '.catch(function(){if(navigator.clipboard){navigator.clipboard.writeText(shareUrl);sh.textContent="Link copied — paste anywhere";}else{prompt("Copy this link:",shareUrl);}});};'
+            # ---- Reel maker JS ----
+            'var cp=document.getElementById("cp"),ct=document.getElementById("ct"),mk=document.getElementById("mk");'
+            'var rlOut=document.getElementById("rlOut"),rlSub=document.getElementById("rlSub");'
+            'var rlGif=document.getElementById("rlGif"),rlMp4=document.getElementById("rlMp4"),rlSh=document.getElementById("rlSh");'
+            'cp.onchange=function(){mk.disabled=!cp.checked;};'
+            'mk.onclick=function(){if(!cp.checked)return;'
+            'mk.disabled=true;mk.innerHTML=\'<span class="spin"></span>Making your reel… (~30s)\';'
+            'var fd=new FormData();fd.append("job",job);fd.append("session_id",sid);'
+            'fd.append("personal_consent",cp.checked?"on":"");'
+            'fd.append("typortrait_consent",ct.checked?"on":"");'
+            'fetch("/reel",{method:"POST",body:fd}).then(function(r){return r.json();}).then(function(j){'
+            'if(!j||!j.ok){mk.disabled=false;mk.innerHTML="Make my reel";'
+            'rlSub.textContent="Sorry, that didn\\u2019t work: "+((j&&(j.detail||j.error))||"please try again.");'
+            'rlOut.style.display="block";return;}'
+            'mk.style.display="none";rlOut.style.display="block";'
+            'rlSub.textContent=j.typortrait_share?"Your reel is ready. Thanks \\u2014 we\\u2019ll review it before posting on our channels.":"Your reel is ready.";'
+            'rlGif.href=j.gif_url;'
+            'if(j.mp4_url){rlMp4.href=j.mp4_url;rlMp4.style.display="inline-block";}'
+            'var mob=(window.matchMedia&&matchMedia("(pointer:coarse)").matches)||/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");'
+            'if(mob&&navigator.canShare){rlSh.style.display="inline-block";rlSh.onclick=function(){'
+            'var u=j.mp4_url||j.gif_url;var nm=j.mp4_url?"typortrait-reel.mp4":"typortrait-reel.gif";'
+            'var mt=j.mp4_url?"video/mp4":"image/gif";'
+            'fetch(u).then(function(r){return r.blob();}).then(function(bl){'
+            'var f=new File([bl],nm,{type:mt});'
+            'if(navigator.canShare({files:[f]}))return navigator.share({title:"Typortrait",text:"Made from our words \\u2014 with Typortrait.",url:shareUrl,files:[f]});'
+            'throw 0;}).catch(function(){if(navigator.clipboard){navigator.clipboard.writeText(shareUrl);rlSh.textContent="Link copied";}});};}'
+            '}).catch(function(){mk.disabled=false;mk.innerHTML="Make my reel";'
+            'rlSub.textContent="Network error \\u2014 please try again.";rlOut.style.display="block";});};'
             '})();</script>'
         )
     else:
@@ -535,6 +721,12 @@ def success(job: str, session_id: str):
         ".spin{display:inline-block;width:14px;height:14px;margin-right:8px;border-radius:50%;"
         "border:2px solid rgba(255,255,255,.4);border-top-color:#fff;vertical-align:-2px;animation:sp .8s linear infinite}"
         "@keyframes sp{to{transform:rotate(360deg)}}"
+        ".divider{height:1px;background:var(--line);margin:24px -4px 18px}"
+        ".reel-h{font-family:Georgia,'Times New Roman',serif;color:var(--navy);font-size:20px;margin:4px 0 6px}"
+        ".reel-sub{margin-bottom:14px}"
+        ".chk{display:flex;align-items:flex-start;gap:10px;text-align:left;color:#16203a;font-size:13.5px;line-height:1.45;margin:8px 4px}"
+        ".chk input{margin-top:3px;flex-shrink:0}"
+        ".chk a{color:var(--navy)}"
         "</style></head><body><div class='card'>" + inner + "</div></body></html>"
     )
     return HTMLResponse(page)
@@ -624,6 +816,10 @@ def terms():
         ("4. Prohibited uses", "<p>Do not use the Service for unlawful, infringing, deceptive, or harmful purposes; do not upload other people&rsquo;s images without permission; do not resell or redistribute the Service itself.</p>"),
         ("5. Purchases and downloads", "<p>Prices are shown at checkout and processed securely by Stripe. The preview is free and watermarked; payment unlocks a watermark-free, high-resolution download for your personal and gift use. Because files are delivered immediately, sales are final once the file is delivered &mdash; but if anything is wrong with your file, contact us and we&rsquo;ll make it right.</p>"),
         ("6. Intellectual property", "<p>You receive a license to use your generated portrait for personal, non-commercial purposes, including printing and gifting. Typortrait retains all rights in the Service, software, and brand.</p>"),
+        ("6.5 Optional social-sharing license", "<p>After purchase you may, at your option, generate a short shareable &ldquo;reel&rdquo; version of your portrait. At that step you will see two checkboxes:</p><ul>"
+            "<li><b>Personal use</b> &mdash; confirms that you will share the reel yourself. This does not transfer any rights to Typortrait.</li>"
+            "<li><b>Allow Typortrait to feature this on our social channels</b> &mdash; this box is <b>off by default</b>. If you tick it, you grant Typortrait a revocable, non-exclusive, worldwide, royalty-free license to use the resulting reel (which includes your portrait, the words you provided, and the photo as used inside the reel) for promotional posts on Typortrait&rsquo;s own websites and social channels.</li></ul>"
+            "<p>You can revoke the optional license at any time by emailing us, and we will remove the post within a reasonable period. Generating the reel is always optional; nothing is shared on our channels unless you explicitly tick the second box.</p>"),
         ("7. Disclaimer", "<p>The Service is provided &ldquo;as is&rdquo; without warranties of any kind. Results depend on the photo you provide.</p>"),
         ("8. Limitation of liability", "<p>To the maximum extent permitted by law, Typortrait is not liable for indirect or consequential damages, and total liability will not exceed the amount you paid.</p>"),
         ("9. Indemnification", "<p>You agree to indemnify Typortrait against claims arising from your content or your breach of these Terms.</p>"),
@@ -642,7 +838,8 @@ def privacy():
             "<li><b>Basic technical data</b> (e.g., server logs) needed to operate the Service.</li></ul>"),
         ("How we use it", "<p>To generate and deliver your portrait, process your payment, and operate and improve the Service.</p>"),
         ("Storage and retention", f"<p>Your uploaded photo and generated files are stored only to provide your preview and download, and are automatically deleted after about {RETENTION_DAYS} days. Email us to request earlier deletion.</p>"),
-        ("Sharing", "<p>We share data only with the service providers needed to run Typortrait (for example, Stripe for payments and our hosting provider). We do not sell your data. We may disclose information if required by law.</p>"),
+        ("Sharing", "<p>We share data only with the service providers needed to run Typortrait (for example, Stripe for payments and our hosting provider). We do not sell your data. We may disclose information if required by law.</p>"
+            "<p><b>Optional social-channel feature.</b> After you purchase, you can choose to generate a short shareable &ldquo;reel&rdquo; of your portrait. Before doing so you are shown two checkboxes; only if you explicitly tick the second &mdash; &ldquo;Allow Typortrait to feature this on our social channels&rdquo; &mdash; will the reel be eligible to appear on Typortrait&rsquo;s own social channels. The default is off. You can revoke this at any time by emailing us; we will remove the post within a reasonable period. See section 6.5 of the <a href=\"/terms\">Terms of Use</a> for the full license language.</p>"),
         ("Your choices", "<p>You may request access to or deletion of your data by contacting us.</p>"),
         ("Children", "<p>The Service is not directed to children under 13, and you should not upload a minor&rsquo;s photo without parental consent.</p>"),
         ("Security", "<p>We use reasonable measures to protect your data, but no method of transmission or storage is completely secure.</p>"),
