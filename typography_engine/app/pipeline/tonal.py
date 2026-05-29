@@ -451,38 +451,32 @@ def build_tonal_portrait(
     dark = _emphasize_features(dark, an, scale, mset)
     dark = _sharpen_eyes(dark, an, scale, mset)
 
-    # Photo-underlay mode uses a larger font so individual words are clearly
-    # readable on top of the photograph (otherwise the grid stipples into
-    # texture). Standard rendering keeps the fine-grained tonal grid.
-    photo_ink = ink == "photo"
-    if photo_ink:
-        font = max(cfg.min_font_px * 1.7, 34.0)
-    else:
-        font = min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px))
-    cell_w = font * _MONO_ADVANCE
-    row_h = font * 0.80
-    cols = max(1, int(W / cell_w))
-    rows = max(1, int(H / row_h))
+    # Graduated font sizing: small font on the face (preserves fine detail in
+    # eyes/brows/lips/cheek modeling) and a larger font on the body (clothes,
+    # shoulders, hair) where broader words read more cleanly. Eyes themselves
+    # get an even finer pass below. This matches the Margot-style reference:
+    # the face is densely word-textured, the body is built from bigger,
+    # readable words. The min/max font in RenderConfig defines the range.
+    font_face = max(cfg.min_font_px, min(cfg.max_font_px, cfg.min_font_px))  # standard
+    font_body = max(font_face * 1.7, min(cfg.max_font_px, font_face + 18.0))  # ~2x
 
-    # Area-average the tone into the glyph grid so each letter reflects the mean
-    # darkness of its whole cell -> smooth, faithful gradients (not point noise).
-    grid = cv2.resize(dark, (cols, rows), interpolation=cv2.INTER_AREA)
-    # Coarse silhouette mask at the glyph grid resolution. In photo-underlay
-    # mode we fill every silhouette cell with text (the photo carries the
-    # tonal signal), so hair / bright skin still receive words -- not just the
-    # dark zones the global `level` threshold lets through.
-    sil_grid = cv2.resize(mask, (cols, rows), interpolation=cv2.INTER_AREA) > 96
+    # Build a per-pixel face mask (feathered convex hull of landmarks). When no
+    # landmarks are available we fall back to using only the body font over the
+    # whole silhouette -- the standard single-resolution behaviour.
+    face_px = np.zeros((H, W), np.float32)
+    have_faces = False
+    for face in _faces_of(an):
+        have_faces = True
+        pts = (face.points * scale).astype(np.int32)
+        hull = cv2.convexHull(pts)
+        cv2.fillConvexPoly(face_px, hull, 1.0)
+    if have_faces:
+        face_px = cv2.GaussianBlur(face_px, (0, 0), max(4.0, W * 0.012))
 
-    # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
-    # the source photo. Mono keeps the existing gray ramp untouched.
-    # (photo_ink set above so we could size the grid for photo mode.)
+    # Ink treatment: grayscale (mono), a named duotone, or photo-tinted.
     grad = _GRADIENTS.get(ink)
     duo = _PALETTES[ink][:2] if (ink in _PALETTES and ink != "mono") else None
     bg = _PALETTES[ink][2] if (ink in _PALETTES and ink != "mono") else cfg.background_hex
-    color_grid = (
-        cv2.resize(an.img.bgr, (cols, rows), interpolation=cv2.INTER_AREA)
-        if photo_ink else None
-    )
     lo_rgb, hi_rgb = (_hex_to_rgb(duo[0]), _hex_to_rgb(duo[1])) if duo is not None else (None, None)
 
     span = max(1, _SHADE_LIGHT - _SHADE_DARK)
@@ -494,26 +488,14 @@ def build_tonal_portrait(
         n = 1.0 if n > 1.0 else (0.0 if n < 0.0 else n)
         return n ** power
 
-    def fill_for(t_dark: float, src=None, vfrac: float = 0.0) -> str:
+    def fill_for(t_dark: float, vfrac: float = 0.0) -> str:
         g = _SHADE_LIGHT - int(round(span * t_dark))
         g = 0 if g < 0 else (255 if g > 255 else g)
         if grad is not None:
-            # Hue from vertical position; blend from white (faint highlight) to
-            # the full hue (saturated shadow) by tone, so features read crisp.
             hr, hg, hb = _grad_rgb(grad, vfrac)
             cr = int(round(255 + (hr - 255) * t_dark))
             cg = int(round(255 + (hg - 255) * t_dark))
             cb = int(round(255 + (hb - 255) * t_dark))
-            return f"#{cr:02x}{cg:02x}{cb:02x}"
-        if photo_ink:
-            # Strong dark ink over the photo so the typography is unambiguously
-            # legible against skin / hair highlights. The tonal modulation goes
-            # mid-grey -> near-black so features still anchor the gradient,
-            # but even the lightest cell stays dark enough to read.
-            lo_p, hi_p = (80, 84, 96), (0, 0, 0)
-            cr = int(round(lo_p[0] + (hi_p[0] - lo_p[0]) * t_dark))
-            cg = int(round(lo_p[1] + (hi_p[1] - lo_p[1]) * t_dark))
-            cb = int(round(lo_p[2] + (hi_p[2] - lo_p[2]) * t_dark))
             return f"#{cr:02x}{cg:02x}{cb:02x}"
         if duo is not None:
             cr = int(round(lo_rgb[0] + (hi_rgb[0] - lo_rgb[0]) * t_dark))
@@ -522,8 +504,8 @@ def build_tonal_portrait(
             return f"#{cr:02x}{cg:02x}{cb:02x}"
         return f"#{g:02x}{g:02x}{g:02x}"
 
-    # Eyes get a finer pass (below) for crisp iris/lid/catchlight; the main grid
-    # skips these regions so the two don't overprint.
+    # Eyes get a finer pass (below) for crisp iris/lid/catchlight; both passes
+    # skip these regions so the eye detail can be drawn at half-size on top.
     eyes = _eye_ellipses(an, scale)
 
     def in_eyes(px: float, py: float) -> bool:
@@ -533,135 +515,114 @@ def build_tonal_portrait(
         return False
 
     doc = SvgDoc(width=W, height=H, background=bg)
-    # Photo-underlay mode: when ink="photo", embed the source image as the
-    # canvas background -- silhouette-masked so the background drops to white
-    # and only the subject shows under the typography. This produces the
-    # "exceptional likeness" look: the photo carries the recognition, the
-    # words carry the personalization, and the silhouette stays clean.
-    if photo_ink:
-        import base64
-        import io as _io
-        from PIL import Image as _PILImage
-        # Composite source-photo over white at native resolution using the
-        # ORIGINAL silhouette mask, then resize. Doing the masking at native
-        # size keeps the soft mask feather sharp and avoids upscaling artefacts.
-        src_bgr = an.img.bgr
-        orig_mask = an.silhouette.mask
-        if orig_mask.shape[:2] != src_bgr.shape[:2]:
-            orig_mask = cv2.resize(orig_mask, (src_bgr.shape[1], src_bgr.shape[0]),
-                                   interpolation=cv2.INTER_NEAREST)
-        rgb = cv2.cvtColor(src_bgr, cv2.COLOR_BGR2RGB)
-        m = orig_mask.astype(np.float32) / 255.0
-        m = cv2.GaussianBlur(m, (0, 0), max(1.5, src_bgr.shape[1] * 0.004))
-        m3 = np.dstack([m, m, m])
-        white = np.full_like(rgb, 255, dtype=np.uint8)
-        composed = (rgb.astype(np.float32) * m3 + white.astype(np.float32) * (1.0 - m3)).astype(np.uint8)
-        pil = _PILImage.fromarray(composed).resize((W, H), _PILImage.LANCZOS)
-        buf = _io.BytesIO()
-        pil.save(buf, format="JPEG", quality=82, optimize=True)
-        doc.bg_image_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-        doc.bg_image_mime = "image/jpeg"
     runs: List[TextRun] = []
-    # Seeded (reproducible) per-row jitter offsets break up the rigid column grid
-    # so words don't form vertical "rivers" or horizontal banding.
     rng = np.random.default_rng(seed)
 
-    for r in range(rows):
-        ox = (rng.random() - 0.5) * cell_w * jitter
-        oy = (rng.random() - 0.5) * row_h * jitter * 0.5
-        baseline = (r + 0.5) * row_h + font * 0.34 + oy
-        row = grid[r]
-        # Photo-underlay: fill every silhouette cell. Otherwise: only cells
-        # darker than `level` -- standard tonal-density behaviour.
-        ink = sil_grid[r] if photo_ink else (row > level)
-        if eyes:
-            cy_nom = (r + 0.5) * row_h
-            for c in range(cols):
-                if ink[c] and in_eyes((c + 0.5) * cell_w, cy_nom):
-                    ink[c] = False
-        c = 0
-        while c < cols:
-            if not ink[c]:
-                c += 1
-                continue
-            start = c
-            while c < cols and ink[c]:
-                c += 1
-            end = c
-            pos = start
-            glyphs: List[str] = []
-            first = True
-            while True:
-                need = 0 if first else _WORD_GAP  # blank cells between words
-                avail = end - pos - need
-                if avail < shortest:
-                    break
-                # Random word order (seeded) so word-boundary spaces fall at
-                # different x on each row instead of stacking into vertical
-                # "rivers"; pick the first that fits the remaining run.
-                chosen = None
-                for j in rng.permutation(ntok):
-                    if len(tokens[j]) <= avail:
-                        chosen = tokens[j]
-                        break
-                if chosen is None:
-                    break
-                if not first:
-                    glyphs.extend([" "] * _WORD_GAP)
-                    pos += _WORD_GAP
-                glyphs.extend(chosen)
-                pos += len(chosen)
-                first = False
-            if not glyphs:
-                continue
-            spans = []
-            # Per-WORD jitter (not per-glyph): every letter in a word shares one
-            # offset, so within a word letters stay aligned and evenly spaced
-            # (legible), while whole words scatter enough to break the rigid grid
-            # / banding. Each new word (after a space) gets a fresh offset.
-            wx = (rng.random() - 0.5) * cell_w * _JITTER_X
-            wy = (rng.random() - 0.5) * row_h * _JITTER_Y
-            prev_space = False
-            for k, ch in enumerate(glyphs):
-                if ch == " ":
-                    if not prev_space:
-                        wx = (rng.random() - 0.5) * cell_w * _JITTER_X
-                        wy = (rng.random() - 0.5) * row_h * _JITTER_Y
-                    prev_space = True
+    def _pass(font_px: float, region_px: np.ndarray, region_thresh: float, kind: str):
+        """One word-fill pass at a given font size, restricted to a region.
+
+        region_px is a [H, W] float mask in [0, 1]; cells where the mean over
+        the cell exceeds region_thresh are written. The standard tonal
+        threshold (`row > level`) still gates which cells get inked, so bright
+        cells stay blank and dark cells dense -- both passes carry the photo's
+        tone signal, just at their respective resolutions.
+        """
+        cw = font_px * _MONO_ADVANCE
+        rh = font_px * 0.80
+        cols = max(1, int(W / cw))
+        rows = max(1, int(H / rh))
+        grid = cv2.resize(dark, (cols, rows), interpolation=cv2.INTER_AREA)
+        reg_grid = cv2.resize(region_px, (cols, rows), interpolation=cv2.INTER_AREA)
+        for r in range(rows):
+            ox = (rng.random() - 0.5) * cw * jitter
+            oy = (rng.random() - 0.5) * rh * jitter * 0.5
+            baseline = (r + 0.5) * rh + font_px * 0.34 + oy
+            row = grid[r]
+            ink_row = (row > level) & (reg_grid[r] > region_thresh)
+            if eyes:
+                cy_nom = (r + 0.5) * rh
+                for c in range(cols):
+                    if ink_row[c] and in_eyes((c + 0.5) * cw, cy_nom):
+                        ink_row[c] = False
+            c = 0
+            while c < cols:
+                if not ink_row[c]:
+                    c += 1
                     continue
+                start = c
+                while c < cols and ink_row[c]:
+                    c += 1
+                end = c
+                pos = start
+                glyphs: List[str] = []
+                first = True
+                while True:
+                    need = 0 if first else _WORD_GAP
+                    avail = end - pos - need
+                    if avail < shortest:
+                        break
+                    chosen = None
+                    for j in rng.permutation(ntok):
+                        if len(tokens[j]) <= avail:
+                            chosen = tokens[j]
+                            break
+                    if chosen is None:
+                        break
+                    if not first:
+                        glyphs.extend([" "] * _WORD_GAP)
+                        pos += _WORD_GAP
+                    glyphs.extend(chosen)
+                    pos += len(chosen)
+                    first = False
+                if not glyphs:
+                    continue
+                spans = []
+                wx = (rng.random() - 0.5) * cw * _JITTER_X
+                wy = (rng.random() - 0.5) * rh * _JITTER_Y
                 prev_space = False
-                cell = start + k
-                t_dark = tdark_of(row[cell])
-                gx = cell * cell_w + ox + wx
-                gy = baseline + wy
-                fill = fill_for(t_dark, color_grid[r, cell] if photo_ink else None, gy / H)
-                spans.append(
-                    f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="{fill}">'
-                    f"{esc(ch)}</tspan>"
+                for k, ch in enumerate(glyphs):
+                    if ch == " ":
+                        if not prev_space:
+                            wx = (rng.random() - 0.5) * cw * _JITTER_X
+                            wy = (rng.random() - 0.5) * rh * _JITTER_Y
+                        prev_space = True
+                        continue
+                    prev_space = False
+                    cell = start + k
+                    t_dark = tdark_of(row[cell])
+                    gx = cell * cw + ox + wx
+                    gy = baseline + wy
+                    fill = fill_for(t_dark, gy / H)
+                    spans.append(f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="{fill}">{esc(ch)}</tspan>')
+                if not spans:
+                    continue
+                doc.add(
+                    f'<text xml:space="preserve" font-family="{esc(_MONO_FAMILY)}" '
+                    f'font-size="{font_px:.2f}" font-weight="{esc(cfg.font_weight)}">'
+                    + "".join(spans) + "</text>"
                 )
-            if not spans:
-                continue
-            doc.add(
-                f'<text xml:space="preserve" '
-                f'font-family="{esc(_MONO_FAMILY)}" font-size="{font:.2f}" '
-                f'font-weight="{esc(cfg.font_weight)}">' + "".join(spans) + "</text>"
-            )
-            runs.append(
-                TextRun(
-                    region="tonal",
-                    path_id=f"row{r}_{start}",
-                    path_d="",
-                    text="".join(glyphs),
-                    font_size=round(font, 2),
-                    kind="primary",
-                )
-            )
+                runs.append(TextRun(region=kind, path_id=f"{kind}_r{r}_c{start}",
+                                    path_d="", text="".join(glyphs),
+                                    font_size=round(font_px, 2), kind="primary"))
+
+    sil_px = mask.astype(np.float32) / 255.0
+    if have_faces:
+        # Body pass first (large font) over silhouette MINUS face -- broad text
+        # on clothes/hair/shoulders. Then face pass (small font) over the face
+        # area only -- dense, fine word texture for skin and feature detail.
+        body_px = np.clip(sil_px - face_px, 0.0, 1.0)
+        _pass(font_body, body_px, 0.4, "body")
+        _pass(font_face, face_px * (sil_px > 0.5), 0.35, "face")
+    else:
+        # No face landmarks: fall back to a single uniform pass at the standard
+        # (smaller) font over the whole silhouette.
+        _pass(font_face, sil_px, 0.4, "tonal")
 
     # ---- Finer eye pass: resolve iris / lid / catchlight inside the eye
     # ellipses (which the main grid skipped). Half-size glyphs, marked "detail"
     # so they're exempt from the readable min-font floor that governs the body.
     if eyes:
-        fe = max(6.0, font * 0.5)
+        fe = max(6.0, font_face * 0.5)
         ecw, erh = fe * _MONO_ADVANCE, fe * 0.80
         ex0 = max(0, int(min(e[0] - e[2] for e in eyes)))
         ey0 = max(0, int(min(e[1] - e[3] for e in eyes)))
@@ -673,8 +634,6 @@ def build_tonal_portrait(
             sub = cv2.resize(dark[ey0:ey1, ex0:ex1], (cols_f, rows_f), interpolation=cv2.INTER_AREA)
             msub = cv2.resize(mset.astype(np.uint8)[ey0:ey1, ex0:ex1], (cols_f, rows_f),
                               interpolation=cv2.INTER_NEAREST) > 0
-            csub = (cv2.resize(an.img.bgr[ey0:ey1, ex0:ex1], (cols_f, rows_f),
-                               interpolation=cv2.INTER_AREA) if photo_ink else None)
             for rf in range(rows_f):
                 cyf = ey0 + (rf + 0.5) * erh
                 baseline = cyf + fe * 0.34
@@ -727,7 +686,7 @@ def build_tonal_portrait(
                         cellf = start + k
                         gx = ex0 + cellf * ecw + wx
                         gy = baseline + wy
-                        fill = fill_for(tdark_of(rowf[cellf]), csub[rf, cellf] if photo_ink else None, gy / H)
+                        fill = fill_for(tdark_of(rowf[cellf]), gy / H)
                         spans.append(f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="{fill}">{esc(ch)}</tspan>')
                     if not spans:
                         continue

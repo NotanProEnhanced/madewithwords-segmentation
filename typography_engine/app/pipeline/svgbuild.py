@@ -30,11 +30,6 @@ class SvgDoc:
     width: float
     height: float
     background: str = "#ffffff"
-    # When set, an embedded base64 PNG/JPEG used as the canvas instead of (or
-    # behind) the solid background. This is what enables photo-underlay mode:
-    # the original portrait shows through and the typography overlays on top.
-    bg_image_b64: Optional[str] = None
-    bg_image_mime: str = "image/png"
     # Uniform inset (fraction of each side) so contours touching the image edge
     # are scaled inward, leaving whitespace and preventing glyph clipping.
     content_margin: float = 0.0
@@ -99,25 +94,13 @@ class SvgDoc:
             tx = m * self.width
             ty = m * self.height
             body = f'<g transform="translate({tx},{ty}) scale({s})">\n{body}\n</g>'
-        # Background: solid rect always (so the canvas has a colour fallback),
-        # then -- when supplied -- the source photo on top, scaled to fill.
-        bg_layer = (
-            f'  <rect x="0" y="0" width="{self.width}" height="{self.height}" '
-            f'fill="{self.background}" />\n'
-        )
-        if self.bg_image_b64:
-            bg_layer += (
-                f'  <image x="0" y="0" width="{self.width}" height="{self.height}" '
-                f'preserveAspectRatio="xMidYMid slice" '
-                f'xlink:href="data:{self.bg_image_mime};base64,{self.bg_image_b64}" />\n'
-            )
         return (
             '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n'
             f'<svg xmlns="http://www.w3.org/2000/svg" '
             f'xmlns:xlink="http://www.w3.org/1999/xlink" '
             f'width="{self.width}" height="{self.height}" '
             f'viewBox="0 0 {self.width} {self.height}">\n'
-            f'{bg_layer}'
+            f'  <rect x="0" y="0" width="{self.width}" height="{self.height}" fill="{self.background}" />\n'
             f"  <defs>\n{defs}\n  </defs>\n"
             f"{body}\n"
             "</svg>\n"
