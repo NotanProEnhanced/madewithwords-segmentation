@@ -344,6 +344,18 @@ def build_calligram(
     ir, ig, ib = _hex_to_rgb(ink_hex)
     br, bgc, bb = _hex_to_rgb(bg_hex)
     family = "'Courier New', 'DejaVu Sans Mono', 'Liberation Mono', monospace"
+    # Dark-ground (gold_noir / dark bg) inks need every letter visible -- the
+    # face emerges from BRIGHTNESS variation, not from gaps. Letters scale from
+    # a dim version of the ink (always above background luminance) at low tone
+    # up to the full ink colour at full tone, so even shadow areas read as
+    # subtle text rather than dropping out. Light-ground inks keep the original
+    # behaviour (text fades into paper at highlights -- the "negative" look).
+    bg_luma = 0.299 * br + 0.587 * bgc + 0.114 * bb
+    dark_bg = bg_luma < 100
+    # Minimum visibility floor for dark-ground: letters never collapse all the
+    # way to background. 0.22 -> dim but visible; tuned by eye against the
+    # reference image (white prose-portrait on near-black).
+    dim_floor = 0.22
 
     doc = SvgDoc(width=W, height=H, background=bg_hex)
     runs: List[TextRun] = []
@@ -365,15 +377,30 @@ def build_calligram(
             for k, ch in enumerate(word):
                 col = c + k
                 xi = min(W - 1, max(0, int(col * cell_w + cell_w * 0.5)))
-                if not mset[yi, xi]:
-                    continue
+                # Reference look: text fills the WHOLE canvas, not just the
+                # silhouette. The face emerges from brightness variation -- bright
+                # letters on lit skin, dim (near-bg) letters in shadow and outside
+                # the subject. tone_s outside the silhouette is ~0, which renders
+                # the letter in bg colour (invisibly blended) -- exactly the
+                # effect in the reference renders.
                 tone = float(tone_s[yi, xi])
                 norm = (tone - pivot) * contrast + pivot
                 norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
-                f = 1.0 - norm ** power           # 1 = melt into background, 0 = full ink
-                cr = int(round(ir + (br - ir) * f))
-                cg = int(round(ig + (bgc - ig) * f))
-                cb = int(round(ib + (bb - ib) * f))
+                if dark_bg:
+                    # Brightness modulation of the ink colour. Push the curve
+                    # so highlights jump to near-full ink and shadows fall to
+                    # a quiet floor -- the high-contrast look of the reference.
+                    # `norm` already had the pivot/contrast S-curve applied, so
+                    # this is an additional gamma squash on top of that.
+                    b = dim_floor + (1.0 - dim_floor) * (norm ** 0.55)
+                    cr = int(round(ir * b))
+                    cg = int(round(ig * b))
+                    cb = int(round(ib * b))
+                else:
+                    f = 1.0 - norm ** power       # 1 = melt into background, 0 = full ink
+                    cr = int(round(ir + (br - ir) * f))
+                    cg = int(round(ig + (bgc - ig) * f))
+                    cb = int(round(ib + (bb - ib) * f))
                 spans.append(
                     f'<tspan x="{col * cell_w:.1f}" fill="#{cr:02x}{cg:02x}{cb:02x}">{esc(ch)}</tspan>'
                 )
