@@ -13,7 +13,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi8 \
       libgl1 libgles2 libegl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
-      fonts-dejavu-core fonts-liberation \
+      fonts-dejavu fonts-liberation \
       curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
