@@ -451,7 +451,14 @@ def build_tonal_portrait(
     dark = _emphasize_features(dark, an, scale, mset)
     dark = _sharpen_eyes(dark, an, scale, mset)
 
-    font = min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px))
+    # Photo-underlay mode uses a larger font so individual words are clearly
+    # readable on top of the photograph (otherwise the grid stipples into
+    # texture). Standard rendering keeps the fine-grained tonal grid.
+    photo_ink = ink == "photo"
+    if photo_ink:
+        font = max(cfg.min_font_px * 1.7, 34.0)
+    else:
+        font = min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px))
     cell_w = font * _MONO_ADVANCE
     row_h = font * 0.80
     cols = max(1, int(W / cell_w))
@@ -460,10 +467,15 @@ def build_tonal_portrait(
     # Area-average the tone into the glyph grid so each letter reflects the mean
     # darkness of its whole cell -> smooth, faithful gradients (not point noise).
     grid = cv2.resize(dark, (cols, rows), interpolation=cv2.INTER_AREA)
+    # Coarse silhouette mask at the glyph grid resolution. In photo-underlay
+    # mode we fill every silhouette cell with text (the photo carries the
+    # tonal signal), so hair / bright skin still receive words -- not just the
+    # dark zones the global `level` threshold lets through.
+    sil_grid = cv2.resize(mask, (cols, rows), interpolation=cv2.INTER_AREA) > 96
 
     # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
     # the source photo. Mono keeps the existing gray ramp untouched.
-    photo_ink = ink == "photo"
+    # (photo_ink set above so we could size the grid for photo mode.)
     grad = _GRADIENTS.get(ink)
     duo = _PALETTES[ink][:2] if (ink in _PALETTES and ink != "mono") else None
     bg = _PALETTES[ink][2] if (ink in _PALETTES and ink != "mono") else cfg.background_hex
@@ -493,11 +505,16 @@ def build_tonal_portrait(
             cg = int(round(255 + (hg - 255) * t_dark))
             cb = int(round(255 + (hb - 255) * t_dark))
             return f"#{cr:02x}{cg:02x}{cb:02x}"
-        if photo_ink and src is not None:
-            b0, g0, r0 = int(src[0]), int(src[1]), int(src[2])  # BGR
-            luma = 0.299 * r0 + 0.587 * g0 + 0.114 * b0
-            s = g / max(luma, 1.0)  # tint source colour to our tonal lightness
-            return f"#{min(255,int(r0*s)):02x}{min(255,int(g0*s)):02x}{min(255,int(b0*s)):02x}"
+        if photo_ink:
+            # Strong dark ink over the photo so the typography is unambiguously
+            # legible against skin / hair highlights. The tonal modulation goes
+            # mid-grey -> near-black so features still anchor the gradient,
+            # but even the lightest cell stays dark enough to read.
+            lo_p, hi_p = (80, 84, 96), (0, 0, 0)
+            cr = int(round(lo_p[0] + (hi_p[0] - lo_p[0]) * t_dark))
+            cg = int(round(lo_p[1] + (hi_p[1] - lo_p[1]) * t_dark))
+            cb = int(round(lo_p[2] + (hi_p[2] - lo_p[2]) * t_dark))
+            return f"#{cr:02x}{cg:02x}{cb:02x}"
         if duo is not None:
             cr = int(round(lo_rgb[0] + (hi_rgb[0] - lo_rgb[0]) * t_dark))
             cg = int(round(lo_rgb[1] + (hi_rgb[1] - lo_rgb[1]) * t_dark))
@@ -517,17 +534,29 @@ def build_tonal_portrait(
 
     doc = SvgDoc(width=W, height=H, background=bg)
     # Photo-underlay mode: when ink="photo", embed the source image as the
-    # canvas background so the actual portrait shows through and the typography
-    # overlays on top. This is what produces the "exceptional likeness" look --
-    # the photo carries the recognition, the words carry the personalization.
+    # canvas background -- silhouette-masked so the background drops to white
+    # and only the subject shows under the typography. This produces the
+    # "exceptional likeness" look: the photo carries the recognition, the
+    # words carry the personalization, and the silhouette stays clean.
     if photo_ink:
         import base64
         import io as _io
         from PIL import Image as _PILImage
-        # Resize the source to match the SVG canvas so the embedded payload
-        # isn't gratuitously large. JPEG is far smaller than PNG for portraits.
-        rgb = cv2.cvtColor(an.img.bgr, cv2.COLOR_BGR2RGB)
-        pil = _PILImage.fromarray(rgb).resize((W, H), _PILImage.LANCZOS)
+        # Composite source-photo over white at native resolution using the
+        # ORIGINAL silhouette mask, then resize. Doing the masking at native
+        # size keeps the soft mask feather sharp and avoids upscaling artefacts.
+        src_bgr = an.img.bgr
+        orig_mask = an.silhouette.mask
+        if orig_mask.shape[:2] != src_bgr.shape[:2]:
+            orig_mask = cv2.resize(orig_mask, (src_bgr.shape[1], src_bgr.shape[0]),
+                                   interpolation=cv2.INTER_NEAREST)
+        rgb = cv2.cvtColor(src_bgr, cv2.COLOR_BGR2RGB)
+        m = orig_mask.astype(np.float32) / 255.0
+        m = cv2.GaussianBlur(m, (0, 0), max(1.5, src_bgr.shape[1] * 0.004))
+        m3 = np.dstack([m, m, m])
+        white = np.full_like(rgb, 255, dtype=np.uint8)
+        composed = (rgb.astype(np.float32) * m3 + white.astype(np.float32) * (1.0 - m3)).astype(np.uint8)
+        pil = _PILImage.fromarray(composed).resize((W, H), _PILImage.LANCZOS)
         buf = _io.BytesIO()
         pil.save(buf, format="JPEG", quality=82, optimize=True)
         doc.bg_image_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
@@ -542,7 +571,9 @@ def build_tonal_portrait(
         oy = (rng.random() - 0.5) * row_h * jitter * 0.5
         baseline = (r + 0.5) * row_h + font * 0.34 + oy
         row = grid[r]
-        ink = row > level
+        # Photo-underlay: fill every silhouette cell. Otherwise: only cells
+        # darker than `level` -- standard tonal-density behaviour.
+        ink = sil_grid[r] if photo_ink else (row > level)
         if eyes:
             cy_nom = (r + 0.5) * row_h
             for c in range(cols):
