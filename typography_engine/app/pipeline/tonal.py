@@ -516,6 +516,22 @@ def build_tonal_portrait(
         return False
 
     doc = SvgDoc(width=W, height=H, background=bg)
+    # Photo-underlay mode: when ink="photo", embed the source image as the
+    # canvas background so the actual portrait shows through and the typography
+    # overlays on top. This is what produces the "exceptional likeness" look --
+    # the photo carries the recognition, the words carry the personalization.
+    if photo_ink:
+        import base64
+        import io as _io
+        from PIL import Image as _PILImage
+        # Resize the source to match the SVG canvas so the embedded payload
+        # isn't gratuitously large. JPEG is far smaller than PNG for portraits.
+        rgb = cv2.cvtColor(an.img.bgr, cv2.COLOR_BGR2RGB)
+        pil = _PILImage.fromarray(rgb).resize((W, H), _PILImage.LANCZOS)
+        buf = _io.BytesIO()
+        pil.save(buf, format="JPEG", quality=82, optimize=True)
+        doc.bg_image_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        doc.bg_image_mime = "image/jpeg"
     runs: List[TextRun] = []
     # Seeded (reproducible) per-row jitter offsets break up the rigid column grid
     # so words don't form vertical "rivers" or horizontal banding.
