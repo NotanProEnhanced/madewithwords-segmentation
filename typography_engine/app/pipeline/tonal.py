@@ -428,7 +428,7 @@ def build_calligram(
         #   rather than slamming all the way down to xxs(6).
         # In background: signal stays high but subject_only stops placement.
         body_base = 0.36 + 0.55 * hull_d
-        body_signal = np.clip(body_base - 0.22 * detail_map, 0.15, 0.91)
+        body_signal = np.clip(body_base - 0.22 * detail_map, 0.10, 0.91)
         size_signal = np.where(
             feature_mask > 0,
             0.16 * (1.0 - feat_d),  # 0 at feature centre, 0.16 at feature edge
@@ -530,14 +530,16 @@ def build_calligram(
         # so the largest letters don't visibly smear into each other.
         advance_ratio = 0.55 if fp <= 22.0 else 0.60
         cw = fp * advance_ratio
-        # Row-spacing gradient kept tight across all tiers so letters pack
-        # densely vertically without the paper showing between rows.
+        # Row-spacing gradient. Pushed tighter on body tiers so non-face
+        # regions (hair, clothing) approach face density, per 2026-05-30
+        # feedback. Some glyph ascender/descender overlap at the smallest
+        # tiers is acceptable -- those tiers function as tonal texture.
         if fp <= 11.0:
-            row_ratio = 0.78
+            row_ratio = 0.74
         elif fp <= 18.0:
-            row_ratio = 0.85
+            row_ratio = 0.82
         else:
-            row_ratio = 0.90
+            row_ratio = 0.88
         rh = fp * row_ratio
         cols = max(1, int(W / cw))
         rows = max(1, int(H / rh))
@@ -765,14 +767,18 @@ def build_calligram(
                 alpha = np.clip(1.0 - text_arr.min(axis=2, keepdims=True), 0.0, 1.0)
             bg_rgb = np.array([br, bgc, bb], dtype=np.float32) / 255.0
             # SOFT PHOTO UNDERLAY: non-letter pixels inside the silhouette
-            # carry a faint hint of photo tone (brightness_raw, unboosted by
-            # feature/eye contrast) at ~22% strength. This makes the image
-            # read as a continuous tonal field with typography on top --
-            # closer to a photograph than to a card. Outside the silhouette
-            # stays solid bg via mset_f. (2026-05-30: 'more photographic look'.)
-            underlay_strength = 0.22
+            # carry a faint hint of photo tone. Strength reduced to 12% and
+            # the silhouette mask used here is the TIGHT version (~5px
+            # feather, not the wide ~28px ink_amount feather), so the
+            # underlay does NOT bleed past the silhouette edge and create
+            # a halo / glow around the face (2026-05-30 feedback). The wide
+            # mset_f feather is still used for ink_amount so letters at the
+            # hair line fade gracefully.
+            underlay_strength = 0.12
+            mset_tight = cv2.GaussianBlur(mset.astype(np.float32), (0, 0), max(2.0, W * 0.004))
+            mset_tight = np.clip(mset_tight, 0.0, 1.0)
             soft_tone = cv2.GaussianBlur(brightness_raw, (0, 0), max(6.0, W * 0.014))
-            soft_amount = soft_tone * underlay_strength * mset_f
+            soft_amount = soft_tone * underlay_strength * mset_tight
             underlay = (
                 bg_rgb_arr * (1.0 - soft_amount[..., None])
                 + ink_rgb_arr * soft_amount[..., None]
