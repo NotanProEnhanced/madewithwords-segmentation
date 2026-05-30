@@ -421,15 +421,18 @@ def build_calligram(
         # interpolation between them via the three distance fields.
         # In feature: signal = 0.00 - 0.16 (slight variation by position).
         # In hull but not feature: signal = 0.16 + 0.20 * feat_d.
-        # In silhouette but not hull: distance-based base 0.20 + 0.30*hull_d
-        #   MINUS 0.22*detail. Body letters now span xxs..md (6..18px), close
-        #   to face density (face spans xxs..sm = 6..14px). Without this the
-        #   body was 14-28px while the face was 6-14px, leaving body visibly
-        #   sparser regardless of how tight the row spacing got. Graduated by
-        #   distance-from-face, with detail bias densifying textured zones.
+        # In silhouette but not hull: distance-based base 0.34 + 0.66*hull_d
+        #   MINUS 0.22*detail. Body letters span sm..xl (14..36px) graduated
+        #   by distance from face -- the Margot reference relationship:
+        #   FACE = tiny tight letters (6-11px), HAIR = medium (14-20px),
+        #   CLOTHING = large (22-36px). Density comes from tight row spacing
+        #   and 0.55em advance, not from shrinking body letters into face
+        #   range (which inverted the reference). Detail bias pulls
+        #   textured zones (hair strands, fabric weave) toward smaller within
+        #   the body range so density grows where photo info is highest.
         # In background: signal stays high but subject_only stops placement.
-        body_base = 0.20 + 0.30 * hull_d
-        body_signal = np.clip(body_base - 0.22 * detail_map, 0.06, 0.58)
+        body_base = 0.34 + 0.66 * hull_d
+        body_signal = np.clip(body_base - 0.22 * detail_map, 0.20, 1.00)
         size_signal = np.where(
             feature_mask > 0,
             0.16 * (1.0 - feat_d),  # 0 at feature centre, 0.16 at feature edge
@@ -742,16 +745,17 @@ def build_calligram(
                     cyy, cxx = np.unravel_index(int(np.argmax(patch_raw)), patch_raw.shape)
                     catch_x, catch_y = float(x0 + cxx), float(y0 + cyy)
                     catch_b = float(patch_raw.max())
-                    sig_p = max(2.5, float(rxe) * 0.20)
+                    # Pupil: wider sigma and stronger push so the pupil is
+                    # clearly a dark hole spanning multiple xxs letters.
+                    sig_p = max(3.5, float(rxe) * 0.26)
                     d_p = (xx_g - pupil_x) ** 2 + (yy_g - pupil_y) ** 2
                     g_p = np.exp(-d_p / (2.0 * sig_p * sig_p)).astype(np.float32)
-                    brightness = brightness * (1.0 - 0.92 * g_p)
-                    if catch_b > 0.25:
-                        # Larger sigma + full lift to 1.0 so the catchlight
-                        # spans enough pixels to be made of multiple letters
-                        # at the smallest tier, and reads as a clear bright
-                        # glint instead of one stray bright letter.
-                        sig_c = max(3.5, float(rxe) * 0.20)
+                    brightness = brightness * (1.0 - 0.96 * g_p)
+                    if catch_b > 0.20:
+                        # Catchlight: large enough sigma to span ~4-6 xxs
+                        # letters so the glint reads as a cluster of bright
+                        # letters, not a single stray one. Full lift to 1.0.
+                        sig_c = max(5.0, float(rxe) * 0.30)
                         d_c = (xx_g - catch_x) ** 2 + (yy_g - catch_y) ** 2
                         g_c = np.exp(-d_c / (2.0 * sig_c * sig_c)).astype(np.float32)
                         brightness = brightness + (1.0 - brightness) * g_c
