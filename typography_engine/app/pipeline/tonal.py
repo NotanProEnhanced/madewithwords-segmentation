@@ -533,16 +533,20 @@ def build_calligram(
         # small/mid tiers almost exclusively now (lg/xl rare), so 0.55
         # everywhere keeps density consistent across the silhouette.
         cw = fp * 0.55
-        # Row-spacing gradient -- letters DELIBERATELY overlap their type
-        # bounds. Combined with bold weight (added below) this matches the
-        # Margot continuous-tonal-field look where adjacent rows touch
-        # their cap heights / descenders. (2026-05-30 'almost touching'.)
+        # Row pitch as a fraction of em. Forced WELL below bold cap height
+        # so rows intermesh: cap-to-cap distance is smaller than the bold
+        # glyph cap height, producing the continuous tonal field of the
+        # Margot reference. Six previous passes with incremental ratios
+        # (0.74 -> 0.68 -> 0.62 -> 0.55) all left visible inter-row gaps
+        # because they were still above cap height for the rendered font.
+        # 0.40 / 0.46 / 0.52 puts pitch firmly below cap height at every
+        # tier. (2026-05-30 'horizontal spacing between lines too large'.)
         if fp <= 11.0:
-            row_ratio = 0.55
+            row_ratio = 0.40
         elif fp <= 18.0:
-            row_ratio = 0.62
+            row_ratio = 0.46
         else:
-            row_ratio = 0.68
+            row_ratio = 0.52
         rh = fp * row_ratio
         cols = max(1, int(W / cw))
         rows = max(1, int(H / rh))
