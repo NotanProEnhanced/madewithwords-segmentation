@@ -439,6 +439,15 @@ def build_calligram(
     bg_luma = 0.299 * br + 0.587 * bgc + 0.114 * bb
     dark_bg = bg_luma < 100
     dim_floor = 0.10
+    # Per-cell contrast curve overrides for light_bg. The default 3.5/0.45/0.65
+    # were tuned for the dark_bg modulation path and clip too aggressively for
+    # direct per-cell tspan rendering (mid-tones cluster near full ink,
+    # highlights clip to bg). The historical 71d531b curve (2.3/0.5/1.0)
+    # gives a broader value spread; an ink floor below ensures highlights
+    # stay visibly inked rather than melting into the white ground.
+    if not dark_bg:
+        contrast, pivot, power = 2.3, 0.5, 1.0
+    light_bg_ink_floor = 0.12   # min visible ink (12%) on light_bg highlights
 
     doc = SvgDoc(width=W, height=H, background=bg_hex)
     runs: List[TextRun] = []
@@ -479,7 +488,13 @@ def build_calligram(
         tone = float(tone_s[yi, xi])
         norm = (tone - pivot) * contrast + pivot
         norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
-        f = 1.0 - norm ** p
+        f = 1.0 - norm ** power
+        # Ink floor: cap `f` so the brightest in-silhouette letters still
+        # carry visible ink rather than vanishing into the white ground.
+        # (Outside the silhouette, subject_only stops placement entirely.)
+        f_max = 1.0 - light_bg_ink_floor
+        if f > f_max:
+            f = f_max
         cr = int(round(ir + (br - ir) * f))
         cg = int(round(ig + (bgc - ig) * f))
         cb = int(round(ib + (bb - ib) * f))
