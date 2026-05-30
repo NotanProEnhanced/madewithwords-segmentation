@@ -581,11 +581,15 @@ def build_calligram(
     # Margot reference. We pass the modulation image back to the caller; if
     # present it overrides the standard cairosvg-only path.
     modulation_png = None  # type: Optional[bytes]
-    # Run modulation for both dark and light grounds. The per-glyph photo
-    # tonal gradation is what gives the typography dimension, regardless of
-    # whether the ink is bright-on-dark (gold_noir) or dark-on-light
-    # (navy/burgundy/etc on white). Direction-dependent details below.
-    if True:
+    # Modulation pass runs ONLY on dark_bg. On light_bg the per-cell tspan
+    # tonal colours already encode the photo tone per letter (the 71d531b
+    # approach Jeff approved), and the modern 8-tier hierarchy + feature
+    # emphasis in the tone field give graduated typography with proper
+    # value contrast. Running modulation on top of that washes the per-cell
+    # colours into a flat field; skipping it keeps the dimensional look.
+    if dark_bg:
+        # Run modulation for dark grounds. The per-glyph photo tonal
+        # gradation is what gives the typography dimension on gold_noir.
         from .raster import svg_to_png_bytes
         import io as _io2
         import re as _re2
