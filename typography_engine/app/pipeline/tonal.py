@@ -533,15 +533,16 @@ def build_calligram(
         # small/mid tiers almost exclusively now (lg/xl rare), so 0.55
         # everywhere keeps density consistent across the silhouette.
         cw = fp * 0.55
-        # Row-spacing gradient -- uniformly tight. Some glyph
-        # ascender/descender overlap at the smallest tiers is acceptable;
-        # they function as tonal texture more than readable prose.
+        # Row-spacing gradient -- VERY tight. Letters nearly touch their
+        # ascender/descender bounds; some visible overlap at all tiers is
+        # deliberate per Margot reference where rows compress to form a
+        # continuous tonal field (2026-05-30 'almost touching').
         if fp <= 11.0:
-            row_ratio = 0.70
+            row_ratio = 0.62
         elif fp <= 18.0:
-            row_ratio = 0.76
+            row_ratio = 0.68
         else:
-            row_ratio = 0.82
+            row_ratio = 0.74
         rh = fp * row_ratio
         cols = max(1, int(W / cw))
         rows = max(1, int(H / rh))
@@ -784,9 +785,13 @@ def build_calligram(
                 ink_amount_face = 0.40 + 0.60 * ((1.0 - brightness) ** 0.55)
                 ink_amount_outside = 0.0    # bg letters fully melt into white
             outside = np.full_like(brightness, ink_amount_outside)
-            # Wide silhouette feather so face-to-bg transitions over ~60 px.
+            # TIGHT silhouette feather (~3px). The wide ~60px feather was
+            # creating a visible halo around the head where edge letters
+            # faded into a gradient (2026-05-30 feedback). subject_only=True
+            # already prevents background placement; a few-pixel feather is
+            # enough to avoid jagged edge alpha.
             mset_f = mset.astype(np.float32)
-            mset_f = cv2.GaussianBlur(mset_f, (0, 0), max(14.0, W * 0.028))
+            mset_f = cv2.GaussianBlur(mset_f, (0, 0), max(1.5, W * 0.003))
             mset_f = np.clip(mset_f, 0.0, 1.0)
             ink_amount = ink_amount_face * mset_f + outside * (1.0 - mset_f)
             # Unified photo_fill: bg + ink_amount * (ink - bg). Same formula
