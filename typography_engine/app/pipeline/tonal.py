@@ -670,22 +670,12 @@ def build_calligram(
                 # and a catchlight spot reads as full bright ink). This trick
                 # only works for the dark_bg direction where brightness=0
                 # maps to bg and brightness=1 maps to full ink. On light_bg
-                # the same forcing inverts the meaning; the direct paint
-                # pass at the end handles pupil/catchlight there instead.
-                if dark_bg:
-                    for cx, cy, rx, ry in eye_centers:
-                        x0 = max(0, int(cx - rx)); x1 = min(W, int(cx + rx) + 1)
-                        y0 = max(0, int(cy - ry)); y1 = min(H, int(cy + ry) + 1)
-                        if x1 - x0 < 4 or y1 - y0 < 4:
-                            continue
-                        patch = brightness[y0:y1, x0:x1]
-                        py, px = np.unravel_index(int(np.argmin(patch)), patch.shape)
-                        r_pup = max(3, int(round(min(rx, ry) * 0.22)))
-                        cv2.circle(brightness, (x0 + px, y0 + py), r_pup, 0.0, -1)
-                        cx_l = x0 + px - max(2, int(rx * 0.18))
-                        cy_l = y0 + py - max(2, int(ry * 0.18))
-                        r_cl = max(3, int(round(min(rx, ry) * 0.16)))
-                        cv2.circle(brightness, (int(cx_l), int(cy_l)), r_cl, 1.0, -1)
+                # the same forcing inverts the meaning. Per 2026-05-30
+                # feedback: pupil/catchlight should emerge from typography
+                # carrying the natural photo tonal values, not from forced
+                # uniform extremes. _sharpen_eyes (in the `dark` field)
+                # provides local contrast boost; we let that flow through
+                # the modulation pass naturally.
 
             # Smooth interior-silhouette transitions so the letter colour
             # gradient flows without a stark edge between bright skin and
@@ -746,95 +736,13 @@ def build_calligram(
             bg_rgb = np.array([br, bgc, bb], dtype=np.float32) / 255.0
             modulated = photo_fill * alpha + bg_rgb * (1.0 - alpha)
             modulated_u8 = (modulated * 255).clip(0, 255).astype(np.uint8)
-            # Paint pupils, crescent catchlights, and (dark_bg only) sclera
-            # highlights DIRECTLY on the modulated image so eyes read as
-            # curved spheres regardless of which glyphs landed where:
-            #   - Search & paint constrained to the eye's ELLIPSE so the
-            #     outline reads as almond, not rectangular.
-            #   - PUPIL: pure-black disk at the darkest in-ellipse pixel.
-            #   - CATCHLIGHT: crescent -- a bright disk with a near-
-            #     overlapping black disk carved out. The "bright" colour is
-            #     the ink on dark_bg (gold pops against dark) and the bg on
-            #     light_bg (white pops against the black pupil).
-            #   - SCLERA HIGHLIGHTS: two bright ink dots at the brightest
-            #     in-ellipse pixels away from the pupil. Only on dark_bg;
-            #     on light_bg the sclera reads naturally via letter sparsity.
-            mh, mw = modulated_u8.shape[:2]
-            sx = mw / float(W); sy = mh / float(H)
-            ink_rgb = (int(ir), int(ig), int(ib))
-            bright_color = ink_rgb if dark_bg else (int(br), int(bgc), int(bb))
-            for cx, cy, rx, ry in eye_centers:
-                x0 = max(0, int(cx - rx)); x1 = min(W, int(cx + rx) + 1)
-                y0 = max(0, int(cy - ry)); y1 = min(H, int(cy + ry) + 1)
-                if x1 - x0 < 4 or y1 - y0 < 4:
-                    continue
-                pw_, ph_ = x1 - x0, y1 - y0
-                # Elliptical mask for THIS eye -- restricts pupil/sclera search
-                # to the actual almond shape, not the bounding rectangle.
-                emask = np.zeros((ph_, pw_), np.uint8)
-                cv2.ellipse(
-                    emask, (int(cx) - x0, int(cy) - y0),
-                    (max(1, int(rx)), max(1, int(ry))), 0, 0, 360, 255, -1,
-                )
-                patch = dark[y0:y1, x0:x1].astype(np.float32)
-                # PUPIL: darkest pixel inside the eye ellipse.
-                pupil_search = patch.copy()
-                pupil_search[emask == 0] = -1.0
-                py, px = np.unravel_index(int(np.argmax(pupil_search)), pupil_search.shape)
-                pup_cx = int((x0 + px) * sx)
-                pup_cy = int((y0 + py) * sy)
-                r_pup = max(6, int(round(min(rx, ry) * 0.28 * min(sx, sy))))
-                cv2.circle(modulated_u8, (pup_cx, pup_cy), r_pup, (0, 0, 0), -1)
-
-                # SCLERA HIGHLIGHTS (dark_bg only): two brightest sclera
-                # pixels, away from the pupil. dark[] is darkness; sclera
-                # = 1 - dark. On light_bg the sclera area is already letter-
-                # sparse (highlights melt into the white ground), so painting
-                # white-on-white dots adds nothing -- skip.
-                if dark_bg:
-                    bright = (1.0 - patch).astype(np.float32)
-                    bright[emask == 0] = 0.0
-                    # Exclude a generous neighbourhood around the pupil so we
-                    # don't pick iris pixels right next to it.
-                    yy, xx = np.ogrid[:ph_, :pw_]
-                    pup_dist = np.sqrt((yy - py) ** 2 + (xx - px) ** 2)
-                    exclude_r = max(3, int(round(min(rx, ry) * 0.45)))
-                    bright[pup_dist <= exclude_r] = 0.0
-                    flat = bright.flatten()
-                    placed = []
-                    r_scl = max(2, int(round(min(rx, ry) * 0.08 * min(sx, sy))))
-                    for idx in np.argsort(flat)[::-1][:64]:
-                        val = float(flat[idx])
-                        if val <= 0.05 or len(placed) >= 2:
-                            break
-                        syp, sxp = int(idx // pw_), int(idx % pw_)
-                        too_close = any(
-                            (syp - p[0]) ** 2 + (sxp - p[1]) ** 2 < (max(rx, ry) * 0.55) ** 2
-                            for p in placed
-                        )
-                        if too_close:
-                            continue
-                        placed.append((syp, sxp))
-                        scl_cx = int((x0 + sxp) * sx)
-                        scl_cy = int((y0 + syp) * sy)
-                        cv2.circle(modulated_u8, (scl_cx, scl_cy), r_scl, ink_rgb, -1)
-
-                # CATCHLIGHT (crescent): only on dark_bg. On light_bg the
-                # carve-out black disk reads as a stray dark notch on the
-                # dense face -- it doesn't suggest a spherical highlight the
-                # way it does against gold-on-dark. Skip it.
-                if dark_bg:
-                    cl_cx = pup_cx - max(3, int(rx * 0.22 * sx))
-                    cl_cy = pup_cy - max(3, int(ry * 0.22 * sy))
-                    r_cl = max(5, int(round(min(rx, ry) * 0.20 * min(sx, sy))))
-                    cv2.circle(modulated_u8, (cl_cx, cl_cy), r_cl, bright_color, -1)
-                    carve_off = max(1, int(round(r_cl * 0.45)))
-                    r_carve = max(2, int(round(r_cl * 0.82)))
-                    cv2.circle(
-                        modulated_u8,
-                        (cl_cx - carve_off, cl_cy - carve_off),
-                        r_carve, (0, 0, 0), -1,
-                    )
+            # Eyes are NOT painted as solid shapes. Pupils and catchlights
+            # emerge from the typography itself -- the _sharpen_eyes pass
+            # increases local contrast in the eye region so iris/pupil land
+            # at dense ink and sclera/catchlight land at near-bg; the
+            # modulation pass then renders those values through whatever
+            # glyphs occupy the eye area. This keeps the look "made of
+            # words" instead of stamped circles on top of words.
             out_img = _PILImage2.fromarray(modulated_u8)
             buf2 = _io2.BytesIO()
             out_img.save(buf2, format="PNG", optimize=True)
