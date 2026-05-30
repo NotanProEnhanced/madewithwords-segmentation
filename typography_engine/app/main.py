@@ -221,7 +221,7 @@ async def render(
     uppercase: bool = Form(True),
     background_hex: Optional[str] = Form(None),
     foreground_hex: Optional[str] = Form(None),
-    ink: str = Form("navy"),
+    ink: str = Form("gold_noir"),
     style: str = Form("mosaic"),
     message: Optional[str] = Form(None),
     poster: bool = Form(False),
@@ -271,7 +271,7 @@ async def render(
 
     from .pipeline.tonal import _PALETTES, _CALLIGRAM, _GRADIENTS, build_calligram
     from .pipeline.svgbuild import validate_svg as _validate
-    ink_choice = ink if (ink in _PALETTES or ink in _GRADIENTS or ink == "photo") else "navy"
+    ink_choice = ink if (ink in _PALETTES or ink in _GRADIENTS or ink in _CALLIGRAM or ink == "photo") else "gold_noir"
     style_choice = "story" if style == "story" else "mosaic"
 
     modulation_png_bytes = None
@@ -280,7 +280,7 @@ async def render(
             # Continuous-prose calligram from the user's message (falls back to
             # the approved words if no passage was supplied).
             passage = (message or "").strip() or " ".join(word_list)
-            ink_hex, bg_hex = _CALLIGRAM.get(ink_choice, _CALLIGRAM["navy"])
+            ink_hex, bg_hex = _CALLIGRAM.get(ink_choice, _CALLIGRAM["gold_noir"])
             svg, runs, modulation_png_bytes = build_calligram(
                 an, passage, cfg, warns, ink_hex=ink_hex, bg_hex=bg_hex
             )

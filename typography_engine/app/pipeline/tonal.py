@@ -90,16 +90,16 @@ def _grad_rgb(stops, v: float) -> Tuple[int, int, int]:
             return tuple(int(round(a[k] + (b[k] - a[k]) * t)) for k in range(3))
     return _hex_to_rgb(stops[-1][1])
 
-# Calligram looks, keyed by the same swatch names as the mosaic inks:
-# (ink/full-darkness colour, background). gold_noir is light ink on a dark page.
+# Calligram looks: each entry is (ink_hex, bg_hex). After the 2026-05-30
+# pivot we ship dark-ground palettes only -- the modulation pass (with
+# per-glyph photo tonal gradation + feature emphasis + painted pupil)
+# produces gallery-grade depth on dark backgrounds; the light-ground path
+# could not match the same density without highlights melting into white.
 _CALLIGRAM = {
-    "navy":      ("#0d1b3a", "#ffffff"),
-    "sepia":     ("#2a1808", "#fbf6ea"),
-    "burgundy":  ("#3f0d16", "#ffffff"),
-    "forest":    ("#0d2418", "#ffffff"),
-    "gold_noir": ("#e8c66a", "#101216"),
-    "mono":      ("#141414", "#ffffff"),
-    "photo":     ("#15202b", "#ffffff"),
+    "gold_noir":  ("#e8c66a", "#101216"),  # warm gold on near-black
+    "navy_marigold": ("#f3c34a", "#0f1a35"),  # warm yellow on deep navy
+    "forest_bone":   ("#f1e8d4", "#143226"),  # cream on hunter green
+    "burgundy_champagne": ("#e9d39a", "#3a0f17"),  # pale gold on oxblood
 }
 
 # MediaPipe 478-point mesh index groups for the recognition features we deepen.

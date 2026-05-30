@@ -176,17 +176,18 @@
 const $ = s => document.querySelector(s);
 const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const ANIM_CAP = 2600;                 // max glyphs animated (perf); image shows all
-const INKS = [["navy","#0d1b3a","Navy"],["photo","conic","Photo"],["sepia","#5a3a1a","Sepia"],
-  ["burgundy","#4a0d18","Burgundy"],["forest","#0f2e1e","Forest"],["gold_noir","gold","Gold noir"],
-  ["spectrum","spectrum","Spectrum"],["aurora","aurora","Aurora"],["mono","#555555","Mono"]];
-function placeholderBg(col){
-  if(col==="conic") return "conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)";
-  if(col==="gold") return "radial-gradient(circle at 50% 42%, #e8c66a 0 40%, #0d0f13 44%)";
-  if(col==="spectrum") return "linear-gradient(180deg,#f2b705,#f25c05,#e6002e,#b5179e,#6a1fb5,#1f3fb5)";
-  if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
-  return col;
+// Dark-ground palette set (post 2026-05-30 pivot): each swatch is rendered
+// as a radial preview hinting at "bright ink centred on dark page".
+const INKS = [
+  ["gold_noir",          "#e8c66a", "#101216", "Gold Noir"],
+  ["navy_marigold",      "#f3c34a", "#0f1a35", "Navy & Marigold"],
+  ["forest_bone",        "#f1e8d4", "#143226", "Forest & Bone"],
+  ["burgundy_champagne", "#e9d39a", "#3a0f17", "Burgundy & Champagne"],
+];
+function placeholderBg(ink, bg){
+  return `radial-gradient(circle at 50% 42%, ${ink} 0 40%, ${bg} 44%)`;
 }
-const state = { file:null, ink:"navy", poster:false, style:"mosaic", sku:null, size:null };
+const state = { file:null, ink:"gold_noir", poster:false, style:"story", sku:null, size:null };
 function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
 let catalog = null;
 // Load the product catalog (digital + physical SKUs, prices, sizes). Single
@@ -232,11 +233,11 @@ function setFile(f){ if(!f.type.startsWith("image/"))return; state.file=f; previ
 
 /* ---------- swatch filmstrip (live thumbnails of THIS portrait per ink) ----- */
 const swatchEl=$("#swatches");
-INKS.forEach(([id,col,label])=>{
+INKS.forEach(([id,ink,bg,label])=>{
   const el=document.createElement("button"); el.type="button";
-  el.className="thumb"+(id==="navy"?" sel":""); el.dataset.ink=id;
+  el.className="thumb"+(id===state.ink?" sel":""); el.dataset.ink=id;
   const pic=document.createElement("div"); pic.className="pic loading"; pic.dataset.ink=id;
-  pic.style.background=placeholderBg(col);
+  pic.style.background=placeholderBg(ink,bg);
   const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
   el.append(pic,nm); el.addEventListener("click", ()=>selectInk(id)); swatchEl.append(el);
 });
