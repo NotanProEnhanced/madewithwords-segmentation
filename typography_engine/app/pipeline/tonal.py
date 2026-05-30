@@ -299,9 +299,9 @@ def build_calligram(
     warns: WarningCollector,
     render_w: int = 2600,
     font_px: float = 22.0,
-    contrast: float = 2.3,
-    pivot: float = 0.5,
-    power: float = 1.0,
+    contrast: float = 3.5,
+    pivot: float = 0.45,
+    power: float = 0.65,
     ink_hex: str = "#15202b",
     bg_hex: str = "#ffffff",
 ) -> Tuple[str, List[TextRun]]:
@@ -353,9 +353,9 @@ def build_calligram(
     bg_luma = 0.299 * br + 0.587 * bgc + 0.114 * bb
     dark_bg = bg_luma < 100
     # Minimum visibility floor for dark-ground: letters never collapse all the
-    # way to background. 0.22 -> dim but visible; tuned by eye against the
-    # reference image (white prose-portrait on near-black).
-    dim_floor = 0.22
+    # way to background. 0.10 -> very dim but still readable; tuned for high
+    # contrast between in-face highlights (full ink) and out-of-face shadow.
+    dim_floor = 0.10
 
     doc = SvgDoc(width=W, height=H, background=bg_hex)
     runs: List[TextRun] = []
