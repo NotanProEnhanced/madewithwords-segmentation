@@ -472,7 +472,12 @@ def build_calligram(
     claimed_px = np.zeros((H, W), dtype=bool)
     for label, fp, d_lo, d_hi in tiers:
         cw = fp * _MONO_ADVANCE
-        rh = fp * 1.05
+        # Denser rows on fine tiers -- 0.85x instead of 1.05x -- packs more
+        # rows of small letters into the face vertically so features get
+        # the high density Margot has. Larger tiers keep the standard 1.05x
+        # row height for clean readable prose.
+        row_ratio = 0.85 if fp <= 14.0 else 1.05
+        rh = fp * row_ratio
         cols = max(1, int(W / cw))
         rows = max(1, int(H / rh))
         tone_s = cv2.GaussianBlur(dark, (0, 0), max(1.0, fp * 0.5))
@@ -569,6 +574,18 @@ def build_calligram(
                 plo, phi = float(t.min()), float(max(t.min() + 1e-3, t.max()))
             t = np.clip((t - plo) / max(1e-3, phi - plo), 0.0, 1.0)
             brightness = (1.0 - t).astype(np.float32)
+            # FEATURE CONTRAST BOOST: inside eye/brow/lip/nose hulls, push
+            # darks darker and brights brighter so features really POP as
+            # features instead of reading as mild tonal variation. Iris/pupil
+            # become near-black, sclera bright; lash line crisp; lip rim sharp.
+            if have_face:
+                fm = (feature_mask > 0).astype(np.float32)
+                # Soft falloff at the hull boundary so the contrast lift
+                # blends smoothly into surrounding skin tones.
+                fm = cv2.GaussianBlur(fm, (0, 0), max(2.0, W * 0.003))
+                # S-curve around 0.5 -- darks go darker, brights go brighter.
+                boosted = np.clip(((brightness - 0.5) * 1.6) + 0.5, 0.0, 1.0)
+                brightness = brightness * (1.0 - fm) + boosted * fm
             # COMPRESSED dynamic range with gentle gamma -- many subtle tones,
             # not just bright/dark. Face brightness: [0.30, 0.92]. Background
             # at 0.42 sits in the middle of that range, so transitions read as
