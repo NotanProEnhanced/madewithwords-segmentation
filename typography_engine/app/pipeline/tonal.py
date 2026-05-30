@@ -360,6 +360,8 @@ def build_calligram(
     size_signal = np.zeros((H, W), np.float32)
     face_hull_mask = np.zeros((H, W), np.uint8)
     feature_mask = np.zeros((H, W), np.uint8)
+    eye_mask = np.zeros((H, W), np.uint8)   # eyes only, for sharper contrast
+    eye_centers = []                         # list of (cx, cy, rx, ry) per eye
     have_face = False
     for face in _faces_of(an):
         have_face = True
@@ -374,6 +376,18 @@ def build_calligram(
             try:
                 fhull = cv2.convexHull(np.array([pts[i] for i in grp], np.int32))
                 cv2.fillConvexPoly(feature_mask, fhull, 255)
+            except Exception:
+                pass
+        # Eye-only mask + per-eye centre/extent, used for pupil/catchlight pass.
+        for grp in (_EYE_L, _EYE_R):
+            try:
+                ep = pts[list(grp)]
+                ehull = cv2.convexHull(np.array([pts[i] for i in grp], np.int32))
+                cv2.fillConvexPoly(eye_mask, ehull, 255)
+                cx, cy = float(ep[:, 0].mean()), float(ep[:, 1].mean())
+                rx = (float(ep[:, 0].max() - ep[:, 0].min()) / 2.0)
+                ry = (float(ep[:, 1].max() - ep[:, 1].min()) / 2.0)
+                eye_centers.append((cx, cy, rx, ry))
             except Exception:
                 pass
         feature_mask = cv2.dilate(feature_mask, np.ones((3, 3), np.uint8))
@@ -585,6 +599,41 @@ def build_calligram(
                 # visible (dim but readable, not invisible against dark bg).
                 boosted = np.clip(((brightness - 0.5) * 1.6) + 0.5, 0.10, 1.0)
                 brightness = brightness * (1.0 - fm) + boosted * fm
+
+                # EYES PASS: sharper contrast specifically in eye hulls --
+                # pupil drops near-black, sclera goes near-white, and we
+                # explicitly paint a small CATCHLIGHT in each eye so a letter
+                # at the brightest spot renders pure ink (the small reflection
+                # that makes the portrait look back at you, per the Margot
+                # reference).
+                em = (eye_mask > 0).astype(np.float32)
+                em = cv2.GaussianBlur(em, (0, 0), max(1.5, W * 0.0025))
+                # Steeper S-curve, floor 0.04 -- pupil really goes near-black.
+                eye_boost = np.clip(((brightness - 0.5) * 2.6) + 0.5, 0.04, 1.0)
+                brightness = brightness * (1.0 - em) + eye_boost * em
+                # Force darkest spot per eye to be the pupil (very dark),
+                # and place a catchlight (a small bright dot) just above it.
+                for cx, cy, rx, ry in eye_centers:
+                    x0 = max(0, int(cx - rx)); x1 = min(W, int(cx + rx) + 1)
+                    y0 = max(0, int(cy - ry)); y1 = min(H, int(cy + ry) + 1)
+                    if x1 - x0 < 4 or y1 - y0 < 4:
+                        continue
+                    patch = brightness[y0:y1, x0:x1]
+                    # Pupil = locally darkest spot; clamp to near-black.
+                    py, px = np.unravel_index(int(np.argmin(patch)), patch.shape)
+                    r_pup = max(2, int(round(min(rx, ry) * 0.20)))
+                    cv2.circle(brightness, (x0 + px, y0 + py), r_pup, 0.04, -1)
+                    # Catchlight = small bright dot offset slightly toward
+                    # upper-left of pupil; full ink colour after modulation.
+                    cx_l = x0 + px - max(1, int(rx * 0.10))
+                    cy_l = y0 + py - max(1, int(ry * 0.10))
+                    r_cl = max(2, int(round(min(rx, ry) * 0.12)))
+                    cv2.circle(brightness, (int(cx_l), int(cy_l)), r_cl, 1.0, -1)
+
+            # Smooth hair / forehead and other interior-silhouette transitions
+            # so the letter colour gradient flows without a stark edge between
+            # bright skin and dark hair. Small sigma so feature detail is kept.
+            brightness = cv2.GaussianBlur(brightness, (0, 0), max(1.5, W * 0.0025))
             # In-face range raised to [0.22, 1.0] so the darkest face letters
             # are clearly brighter than bg floor (0.12). Without this gap the
             # iris / brow letters wash into the background.
