@@ -280,15 +280,9 @@ def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.nd
             fm = cv2.GaussianBlur(fm, (0, 0), max(1.0, ew * 0.12)) * mset[by0:by1, bx0:bx1]
             out[by0:by1, bx0:bx1] = patch * (1.0 - fm) + sharp * fm
 
-            # Catchlight: keep the brightest spot inside the eye a crisp light
-            # glint (only if a real highlight exists), so eyes don't read dead.
-            ix0, iy0 = int(max(0, x0)), int(max(0, y0))
-            ix1, iy1 = int(min(W, x1)), int(min(H, y1))
-            eye_in = out[iy0:iy1, ix0:ix1]
-            if eye_in.size and float(eye_in.min()) < 0.30:
-                cyl, cxl = np.unravel_index(int(np.argmin(eye_in)), eye_in.shape)
-                r = max(3, int(round(eh * 0.09)))
-                cv2.circle(out, (ix0 + cxl, iy0 + cyl), r, 0.0, -1)
+            # Catchlight removed (2026-05-30): forcing a bright dot at the
+            # darkest eye pixel produced the 'sticker' look. The unsharp pass
+            # above already lifts any real catchlight; let it carry naturally.
     return np.clip(out, 0.0, 1.0)
 
 
@@ -664,6 +658,12 @@ def build_calligram(
                 plo, phi = float(t.min()), float(max(t.min() + 1e-3, t.max()))
             t = np.clip((t - plo) / max(1e-3, phi - plo), 0.0, 1.0)
             brightness = (1.0 - t).astype(np.float32)
+            # Snapshot the UNBOOSTED brightness for the soft photo underlay
+            # below -- it carries the photo's natural tonal field. Letter
+            # rendering uses the BOOSTED brightness (with feature/eye contrast)
+            # so iris/pupil/brow read crisply; the underlay between letters
+            # stays photographic, not sticker-like.
+            brightness_raw = brightness.copy()
             # FEATURE CONTRAST BOOST: inside eye/brow/lip/nose hulls, push
             # darks darker and brights brighter -- WITH a 0.10 floor so the
             # darkest feature pixels (iris, pupil, eyebrow) stay visible as
@@ -686,7 +686,10 @@ def build_calligram(
                 em = (eye_mask > 0).astype(np.float32)
                 em = cv2.GaussianBlur(em, (0, 0), max(1.5, W * 0.0025))
                 if dark_bg:
-                    eye_boost = np.clip(((brightness - 0.5) * 2.6) + 0.5, 0.04, 1.0)
+                    # Softened 2.6 -> 1.9: pupils still distinct without
+                    # slamming the entire iris to flat near-black, which let
+                    # the typography read as a 'dot' (2026-05-30 feedback).
+                    eye_boost = np.clip(((brightness - 0.5) * 1.9) + 0.5, 0.08, 1.0)
                 else:
                     eye_boost = np.clip(((brightness - 0.5) * 3.0) + 0.5, 0.0, 1.0)
                 brightness = brightness * (1.0 - em) + eye_boost * em
@@ -759,7 +762,26 @@ def build_calligram(
             else:
                 alpha = np.clip(1.0 - text_arr.min(axis=2, keepdims=True), 0.0, 1.0)
             bg_rgb = np.array([br, bgc, bb], dtype=np.float32) / 255.0
-            modulated = photo_fill * alpha + bg_rgb * (1.0 - alpha)
+            # SOFT PHOTO UNDERLAY: non-letter pixels inside the silhouette
+            # carry a faint hint of photo tone (brightness_raw, unboosted by
+            # feature/eye contrast) at ~22% strength. This makes the image
+            # read as a continuous tonal field with typography on top --
+            # closer to a photograph than to a card. Outside the silhouette
+            # stays solid bg via mset_f. (2026-05-30: 'more photographic look'.)
+            underlay_strength = 0.22
+            soft_tone = cv2.GaussianBlur(brightness_raw, (0, 0), max(6.0, W * 0.014))
+            soft_amount = soft_tone * underlay_strength * mset_f
+            underlay = (
+                bg_rgb_arr * (1.0 - soft_amount[..., None])
+                + ink_rgb_arr * soft_amount[..., None]
+            ).astype(np.float32) / 255.0
+            if underlay.shape[:2] != text_arr.shape[:2]:
+                underlay_img = _PILImage2.fromarray((underlay * 255).clip(0, 255).astype(np.uint8))
+                underlay_img = underlay_img.resize(
+                    (text_arr.shape[1], text_arr.shape[0]), _PILImage2.LANCZOS
+                )
+                underlay = np.asarray(underlay_img).astype(np.float32) / 255.0
+            modulated = photo_fill * alpha + underlay * (1.0 - alpha)
             modulated_u8 = (modulated * 255).clip(0, 255).astype(np.uint8)
             # Eyes are NOT painted as solid shapes. Pupils and catchlights
             # emerge from the typography itself -- the _sharpen_eyes pass
