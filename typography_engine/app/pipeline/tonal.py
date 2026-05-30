@@ -410,15 +410,14 @@ def build_calligram(
         # Distance into silhouette (0 inside silhouette, 1 far in bg).
         sil_d = cv2.distanceTransform(255 - mask, cv2.DIST_L2, 5)
         sil_d = np.clip(sil_d / max(40.0, W * 0.04), 0.0, 1.0)
-        # Local detail map: |Laplacian| of the photo, blurred. High where the
-        # photo has edges/texture (hair strands, fabric weave, jacket seam),
-        # low where the photo is smooth. Used to pull body/hair signal toward
-        # SMALLER tiers in detailed areas -- letters get denser exactly where
-        # the photo has detail to reveal, larger where the photo is smooth.
-        # This satisfies 'much denser typography while letting the tonal
-        # values resonate and provide details' (2026-05-30).
+        # Local detail map: |Laplacian| of the photo, HEAVILY blurred so
+        # detail-driven density changes happen over wide bands (not per cell).
+        # Used as a GENTLE bias in body regions: detailed areas get slightly
+        # denser tiers, smooth areas keep the larger ones. Heavy smoothing
+        # prevents the 'tiny letters next to huge letters' chaos that comes
+        # from sharp detail-map edges crossing tier boundaries.
         detail_map = np.abs(cv2.Laplacian(dark, cv2.CV_32F, ksize=3))
-        detail_map = cv2.GaussianBlur(detail_map, (0, 0), max(2.0, W * 0.008))
+        detail_map = cv2.GaussianBlur(detail_map, (0, 0), max(10.0, W * 0.030))
         dm_norm = float(np.percentile(detail_map, 95))
         if dm_norm > 1e-6:
             detail_map = np.clip(detail_map / dm_norm, 0.0, 1.0)
@@ -428,13 +427,14 @@ def build_calligram(
         # interpolation between them via the three distance fields.
         # In feature: signal = 0.00 - 0.16 (slight variation by position).
         # In hull but not feature: signal = 0.16 + 0.20 * feat_d.
-        # In silhouette but not hull: distance-based base 0.36 + 0.64*hull_d
-        #   MINUS 0.55*detail. Detailed hair/fabric pulls signal down (smaller
-        #   denser letters); smooth body/clothing keeps the larger letters.
-        #   Net range ~0.10 .. 1.00 -> all body tiers (xs through xl) fire.
+        # In silhouette but not hull: distance-based base 0.36 + 0.55*hull_d
+        #   MINUS 0.22*detail. Range tightened to 0.22 .. 0.91 (was 0.04 ..
+        #   1.00); transitions are graduated through sm/md/md+/lg, with the
+        #   detail bias pulling subtly toward smaller tiers in textured areas
+        #   rather than slamming all the way down to xxs(6).
         # In background: signal stays high but subject_only stops placement.
-        body_base = 0.36 + 0.64 * hull_d
-        body_signal = np.clip(body_base - 0.85 * detail_map, 0.04, 1.00)
+        body_base = 0.36 + 0.55 * hull_d
+        body_signal = np.clip(body_base - 0.22 * detail_map, 0.22, 0.91)
         size_signal = np.where(
             feature_mask > 0,
             0.16 * (1.0 - feat_d),  # 0 at feature centre, 0.16 at feature edge
@@ -448,6 +448,11 @@ def build_calligram(
                 ),
             ),
         ).astype(np.float32)
+        # Final smoothing on size_signal to soften any residual cell-to-cell
+        # jitter between adjacent tiers. Light blur preserves the zone
+        # structure but removes the speckled tier-jumping that produces the
+        # 'sparse here, condensed-tiny there' artifact in hair/clothing.
+        size_signal = cv2.GaussianBlur(size_signal, (0, 0), max(3.0, W * 0.006))
     else:
         size_signal = np.full((H, W), 0.45, dtype=np.float32)
     size_signal = np.clip(size_signal, 0.0, 1.0)
