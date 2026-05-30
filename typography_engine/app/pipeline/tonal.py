@@ -427,21 +427,19 @@ def build_calligram(
                     word = word[:cols]; wl = cols
                 if c + wl > cols:
                     break
-                # Tier-and-claim check at the WORD START:
+                # Tier check at the WORD START only (no claim system -- letting
+                # tiers overlap is fine because the per-glyph photo modulation
+                # produces the final colour. The result is much denser typography
+                # with no blank gaps between coarse words.)
                 xi_start = min(W - 1, max(0, int(c * cw + cw * 0.5)))
                 d = float(detail[yi, xi_start])
                 in_tier = (d_lo <= d < d_hi)
-                cy = min(claim_rows - 1, int(yi / fine_rh))
-                claim_x_start = max(0, int(c * cw / fine_cw))
-                claim_x_end = min(claim_cols, int((c + wl) * cw / fine_cw) + 1)
-                already_claimed = claimed[cy, claim_x_start:claim_x_end].any()
-                if not in_tier or already_claimed:
-                    # Skip this position without consuming a word; advance one
-                    # cell and try again. This stops the writer from spinning
-                    # forever on a row where nothing fits.
+                if not in_tier:
                     c += 1
                     continue
-                # Place the whole word at this tier's size.
+                # Place the whole word at this tier's size. Fill is the
+                # tone-mapped pattern -- each letter shows the photo's actual
+                # tonal gradient through its glyph shape.
                 for k, ch in enumerate(word):
                     col = c + k
                     xi = min(W - 1, max(0, int(col * cw + cw * 0.5)))
@@ -450,10 +448,6 @@ def build_calligram(
                         f'<tspan x="{col * cw:.1f}" fill="{fill}">{esc(ch)}</tspan>'
                     )
                     line_chars.append(ch)
-                # Claim the whole word's footprint on the fine grid.
-                claim_y_lo = max(0, int((baseline - rh) / fine_rh))
-                claim_y_hi = min(claim_rows, int(baseline / fine_rh) + 1)
-                claimed[claim_y_lo:claim_y_hi, claim_x_start:claim_x_end] = True
                 c += wl + 1
                 wi += 1
             if not spans:
@@ -497,22 +491,16 @@ def build_calligram(
             else:
                 plo, phi = float(t.min()), float(max(t.min() + 1e-3, t.max()))
             t = np.clip((t - plo) / max(1e-3, phi - plo), 0.0, 1.0)
-            # `t` is darkness (1 = dark feature, 0 = bright highlight). For
-            # dark-bg inks we want the OPPOSITE: bright photo highlights ->
-            # full ink colour, dark features -> dim ink, outside-silhouette ->
-            # very dim but still visible (so background letters read as a
-            # quiet texture rather than blank regions). This eliminates the
-            # "tattoo on black" effect -- the whole canvas carries text, with
-            # the face brightness-pop emerging from the gradient.
             brightness = (1.0 - t).astype(np.float32)
-            # Lift the inside-silhouette curve so features pop, with an S-curve
-            # that crushes midtones (more dynamic range in highlights/shadows).
-            in_face = brightness ** 0.55
-            # Outside silhouette gets a quiet uniform floor + a hint of the
-            # photo's own darkness pattern (clamped so it doesn't compete with
-            # the face).
+            # In-silhouette: lift dark areas so even shadow letters (eye
+            # sockets, brows, lash line) stay visibly readable rather than
+            # vanishing into black -- this is what builds the LIKENESS of dark
+            # features as text. 0.18 floor + gamma stretch keeps highlights
+            # popping while shadows still carry typography.
+            in_face = 0.18 + 0.82 * (brightness ** 0.55)
+            # Outside silhouette: uniform low floor so background reads as
+            # quiet texture, never empty.
             outside = np.full_like(brightness, 0.18)
-            # Compose: in-silhouette uses `in_face`, outside uses `outside`.
             brightness = np.where(mset, in_face, outside)
             photo_fill = np.stack([brightness * ir, brightness * ig, brightness * ib],
                                   axis=-1).astype(np.float32) / 255.0
