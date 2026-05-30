@@ -627,17 +627,24 @@ def build_calligram(
             if have_face:
                 fm = (feature_mask > 0).astype(np.float32)
                 fm = cv2.GaussianBlur(fm, (0, 0), max(2.0, W * 0.003))
-                # S-curve around 0.5, floor 0.10 so iris/brow letters stay
-                # visible (dim but readable, not invisible against dark bg).
-                boosted = np.clip(((brightness - 0.5) * 1.6) + 0.5, 0.10, 1.0)
+                # Feature S-curve: on dark_bg keep a 0.10 brightness floor
+                # so dim features stay visible against the dark ground; on
+                # light_bg drop the floor so brows / iris / lips can sink to
+                # full ink (brightness 0 -> ink_amount near 1.0).
+                if dark_bg:
+                    boosted = np.clip(((brightness - 0.5) * 1.6) + 0.5, 0.10, 1.0)
+                else:
+                    boosted = np.clip(((brightness - 0.5) * 2.0) + 0.5, 0.0, 1.0)
                 brightness = brightness * (1.0 - fm) + boosted * fm
 
                 # EYES PASS: sharper contrast specifically in eye hulls --
                 # pupil drops near-black, sclera goes near-white.
                 em = (eye_mask > 0).astype(np.float32)
                 em = cv2.GaussianBlur(em, (0, 0), max(1.5, W * 0.0025))
-                # Steeper S-curve, floor 0.04 -- pupil really goes near-black.
-                eye_boost = np.clip(((brightness - 0.5) * 2.6) + 0.5, 0.04, 1.0)
+                if dark_bg:
+                    eye_boost = np.clip(((brightness - 0.5) * 2.6) + 0.5, 0.04, 1.0)
+                else:
+                    eye_boost = np.clip(((brightness - 0.5) * 3.0) + 0.5, 0.0, 1.0)
                 brightness = brightness * (1.0 - em) + eye_boost * em
                 # On dark_bg only: force darkest spot per eye into the
                 # brightness map (so letters at the pupil render as bg-black
@@ -680,7 +687,13 @@ def build_calligram(
                 ink_amount_face = 0.22 + 0.78 * (brightness ** 0.55)
                 ink_amount_outside = 0.12   # quiet bg letters, face dominates
             else:
-                ink_amount_face = 0.30 + 0.65 * ((1.0 - brightness) ** 0.70)
+                # Light_bg needs more density than dark_bg -- on white,
+                # mid-skin and hair must read as solidly inked navy, not
+                # wispy gray, for the face to have any value contrast.
+                # Floor 0.40 so even highlights are clearly inked; curve
+                # exponent 0.55 (vs the 0.70 of the earlier attempt) skews
+                # the bulk of the tone range toward more ink.
+                ink_amount_face = 0.40 + 0.60 * ((1.0 - brightness) ** 0.55)
                 ink_amount_outside = 0.0    # bg letters fully melt into white
             outside = np.full_like(brightness, ink_amount_outside)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
@@ -787,21 +800,22 @@ def build_calligram(
                         scl_cy = int((y0 + syp) * sy)
                         cv2.circle(modulated_u8, (scl_cx, scl_cy), r_scl, ink_rgb, -1)
 
-                # CATCHLIGHT (crescent): bright disk + slightly offset black
-                # disk carved out, the curve a specular highlight takes on
-                # a real spherical eye. Bright colour adapts to bg direction
-                # (see bright_color computed above).
-                cl_cx = pup_cx - max(3, int(rx * 0.22 * sx))
-                cl_cy = pup_cy - max(3, int(ry * 0.22 * sy))
-                r_cl = max(5, int(round(min(rx, ry) * 0.20 * min(sx, sy))))
-                cv2.circle(modulated_u8, (cl_cx, cl_cy), r_cl, bright_color, -1)
-                carve_off = max(1, int(round(r_cl * 0.45)))
-                r_carve = max(2, int(round(r_cl * 0.82)))
-                cv2.circle(
-                    modulated_u8,
-                    (cl_cx - carve_off, cl_cy - carve_off),
-                    r_carve, (0, 0, 0), -1,
-                )
+                # CATCHLIGHT (crescent): only on dark_bg. On light_bg the
+                # carve-out black disk reads as a stray dark notch on the
+                # dense face -- it doesn't suggest a spherical highlight the
+                # way it does against gold-on-dark. Skip it.
+                if dark_bg:
+                    cl_cx = pup_cx - max(3, int(rx * 0.22 * sx))
+                    cl_cy = pup_cy - max(3, int(ry * 0.22 * sy))
+                    r_cl = max(5, int(round(min(rx, ry) * 0.20 * min(sx, sy))))
+                    cv2.circle(modulated_u8, (cl_cx, cl_cy), r_cl, bright_color, -1)
+                    carve_off = max(1, int(round(r_cl * 0.45)))
+                    r_carve = max(2, int(round(r_cl * 0.82)))
+                    cv2.circle(
+                        modulated_u8,
+                        (cl_cx - carve_off, cl_cy - carve_off),
+                        r_carve, (0, 0, 0), -1,
+                    )
             out_img = _PILImage2.fromarray(modulated_u8)
             buf2 = _io2.BytesIO()
             out_img.save(buf2, format="PNG", optimize=True)
