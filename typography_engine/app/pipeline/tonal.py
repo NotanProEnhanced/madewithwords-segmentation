@@ -421,14 +421,15 @@ def build_calligram(
         # interpolation between them via the three distance fields.
         # In feature: signal = 0.00 - 0.16 (slight variation by position).
         # In hull but not feature: signal = 0.16 + 0.20 * feat_d.
-        # In silhouette but not hull: distance-based base 0.36 + 0.55*hull_d
-        #   MINUS 0.22*detail. Range tightened to 0.22 .. 0.91 (was 0.04 ..
-        #   1.00); transitions are graduated through sm/md/md+/lg, with the
-        #   detail bias pulling subtly toward smaller tiers in textured areas
-        #   rather than slamming all the way down to xxs(6).
+        # In silhouette but not hull: distance-based base 0.20 + 0.30*hull_d
+        #   MINUS 0.22*detail. Body letters now span xxs..md (6..18px), close
+        #   to face density (face spans xxs..sm = 6..14px). Without this the
+        #   body was 14-28px while the face was 6-14px, leaving body visibly
+        #   sparser regardless of how tight the row spacing got. Graduated by
+        #   distance-from-face, with detail bias densifying textured zones.
         # In background: signal stays high but subject_only stops placement.
-        body_base = 0.36 + 0.55 * hull_d
-        body_signal = np.clip(body_base - 0.22 * detail_map, 0.10, 0.91)
+        body_base = 0.20 + 0.30 * hull_d
+        body_signal = np.clip(body_base - 0.22 * detail_map, 0.06, 0.58)
         size_signal = np.where(
             feature_mask > 0,
             0.16 * (1.0 - feat_d),  # 0 at feature centre, 0.16 at feature edge
@@ -525,21 +526,19 @@ def build_calligram(
     # transitions: smaller text fits BETWEEN bigger text with no visual smear.
     claimed_px = np.zeros((H, W), dtype=bool)
     for label, fp, d_lo, d_hi in tiers:
-        # Horizontal advance: small/mid tiers pack tighter (0.55em) so body
-        # density goes up without breaking the graduation; lg/xl keep 0.6em
-        # so the largest letters don't visibly smear into each other.
-        advance_ratio = 0.55 if fp <= 22.0 else 0.60
-        cw = fp * advance_ratio
-        # Row-spacing gradient. Pushed tighter on body tiers so non-face
-        # regions (hair, clothing) approach face density, per 2026-05-30
-        # feedback. Some glyph ascender/descender overlap at the smallest
-        # tiers is acceptable -- those tiers function as tonal texture.
+        # Horizontal advance: every tier packs at 0.55em. The body uses
+        # small/mid tiers almost exclusively now (lg/xl rare), so 0.55
+        # everywhere keeps density consistent across the silhouette.
+        cw = fp * 0.55
+        # Row-spacing gradient -- uniformly tight. Some glyph
+        # ascender/descender overlap at the smallest tiers is acceptable;
+        # they function as tonal texture more than readable prose.
         if fp <= 11.0:
-            row_ratio = 0.74
+            row_ratio = 0.70
         elif fp <= 18.0:
-            row_ratio = 0.82
+            row_ratio = 0.76
         else:
-            row_ratio = 0.88
+            row_ratio = 0.82
         rh = fp * row_ratio
         cols = max(1, int(W / cw))
         rows = max(1, int(H / rh))
