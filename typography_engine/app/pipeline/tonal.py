@@ -672,37 +672,88 @@ def build_calligram(
             bg_rgb = np.array([br, bgc, bb], dtype=np.float32) / 255.0
             modulated = photo_fill * alpha + bg_rgb * (1.0 - alpha)
             modulated_u8 = (modulated * 255).clip(0, 255).astype(np.uint8)
-            # Paint pupils and catchlights DIRECTLY on the modulated image,
-            # bypassing the letter-modulation pipeline so they're guaranteed
-            # visible regardless of which glyphs landed where. Pupil = solid
-            # pure black disk. Catchlight = small bright dot of full ink.
-            # Image is at text_arr resolution (typically W x H of render).
+            # Paint pupils, crescent catchlights, and sclera highlights DIRECTLY
+            # on the modulated image so eyes read as curved spheres with proper
+            # structure regardless of which glyphs landed where:
+            #   - Search & paint are constrained to the eye's ELLIPSE (not the
+            #     rectangular bounding box) so the eye outline reads as almond.
+            #   - PUPIL: pure-black disk at the darkest in-ellipse pixel.
+            #   - CATCHLIGHT: crescent (bright disk with a near-overlapping
+            #     black disk carved out) -- a real spherical reflection.
+            #   - SCLERA HIGHLIGHTS: two bright ink dots at the brightest
+            #     in-ellipse pixels away from the pupil; these read as the
+            #     light reflecting off the curved white of the eye.
             mh, mw = modulated_u8.shape[:2]
             sx = mw / float(W); sy = mh / float(H)
             ink_rgb = (int(ir), int(ig), int(ib))
             for cx, cy, rx, ry in eye_centers:
-                # Find darkest spot per eye in the underlying tone field --
-                # this is the pupil location.
                 x0 = max(0, int(cx - rx)); x1 = min(W, int(cx + rx) + 1)
                 y0 = max(0, int(cy - ry)); y1 = min(H, int(cy + ry) + 1)
                 if x1 - x0 < 4 or y1 - y0 < 4:
                     continue
-                patch = dark[y0:y1, x0:x1]
-                py, px = np.unravel_index(int(np.argmax(patch)), patch.shape)
-                # Pupil in output coords. Make it ~28% of the smaller eye
-                # radius -- big enough to read as the pupil, small enough that
-                # iris and sclera detail still surround it.
+                pw_, ph_ = x1 - x0, y1 - y0
+                # Elliptical mask for THIS eye -- restricts pupil/sclera search
+                # to the actual almond shape, not the bounding rectangle.
+                emask = np.zeros((ph_, pw_), np.uint8)
+                cv2.ellipse(
+                    emask, (int(cx) - x0, int(cy) - y0),
+                    (max(1, int(rx)), max(1, int(ry))), 0, 0, 360, 255, -1,
+                )
+                patch = dark[y0:y1, x0:x1].astype(np.float32)
+                # PUPIL: darkest pixel inside the eye ellipse.
+                pupil_search = patch.copy()
+                pupil_search[emask == 0] = -1.0
+                py, px = np.unravel_index(int(np.argmax(pupil_search)), pupil_search.shape)
                 pup_cx = int((x0 + px) * sx)
                 pup_cy = int((y0 + py) * sy)
                 r_pup = max(6, int(round(min(rx, ry) * 0.28 * min(sx, sy))))
-                # Black pupil disk -- pure RGB(0,0,0) so it's clearly a pupil.
                 cv2.circle(modulated_u8, (pup_cx, pup_cy), r_pup, (0, 0, 0), -1)
-                # Catchlight: offset up-and-left from pupil centre by ~25% of
-                # eye radius, slightly larger than before so it's unmistakable.
+
+                # SCLERA HIGHLIGHTS: two brightest sclera pixels, away from
+                # the pupil. dark[] is darkness; sclera = 1 - dark.
+                bright = (1.0 - patch).astype(np.float32)
+                bright[emask == 0] = 0.0
+                # Exclude a generous neighbourhood around the pupil so we
+                # don't pick iris pixels right next to it.
+                yy, xx = np.ogrid[:ph_, :pw_]
+                pup_dist = np.sqrt((yy - py) ** 2 + (xx - px) ** 2)
+                exclude_r = max(3, int(round(min(rx, ry) * 0.45)))
+                bright[pup_dist <= exclude_r] = 0.0
+                flat = bright.flatten()
+                # Take the top spots; suppress neighbours so the two dots end
+                # up on opposite sides of the pupil rather than clumped.
+                placed = []
+                r_scl = max(2, int(round(min(rx, ry) * 0.08 * min(sx, sy))))
+                for idx in np.argsort(flat)[::-1][:64]:
+                    val = float(flat[idx])
+                    if val <= 0.05 or len(placed) >= 2:
+                        break
+                    syp, sxp = int(idx // pw_), int(idx % pw_)
+                    too_close = any(
+                        (syp - p[0]) ** 2 + (sxp - p[1]) ** 2 < (max(rx, ry) * 0.55) ** 2
+                        for p in placed
+                    )
+                    if too_close:
+                        continue
+                    placed.append((syp, sxp))
+                    scl_cx = int((x0 + sxp) * sx)
+                    scl_cy = int((y0 + syp) * sy)
+                    cv2.circle(modulated_u8, (scl_cx, scl_cy), r_scl, ink_rgb, -1)
+
+                # CATCHLIGHT (crescent): bright disk, then a slightly offset
+                # black disk carved out to leave a curved crescent -- the way
+                # a specular highlight wraps a real spherical eye.
                 cl_cx = pup_cx - max(3, int(rx * 0.22 * sx))
                 cl_cy = pup_cy - max(3, int(ry * 0.22 * sy))
-                r_cl = max(4, int(round(min(rx, ry) * 0.18 * min(sx, sy))))
+                r_cl = max(5, int(round(min(rx, ry) * 0.20 * min(sx, sy))))
                 cv2.circle(modulated_u8, (cl_cx, cl_cy), r_cl, ink_rgb, -1)
+                carve_off = max(1, int(round(r_cl * 0.45)))
+                r_carve = max(2, int(round(r_cl * 0.82)))
+                cv2.circle(
+                    modulated_u8,
+                    (cl_cx - carve_off, cl_cy - carve_off),
+                    r_carve, (0, 0, 0), -1,
+                )
             out_img = _PILImage2.fromarray(modulated_u8)
             buf2 = _io2.BytesIO()
             out_img.save(buf2, format="PNG", optimize=True)
