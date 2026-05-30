@@ -712,6 +712,42 @@ def build_calligram(
             # gradient flows without a stark edge between bright skin and
             # dark hair. Small sigma so feature detail is kept.
             brightness = cv2.GaussianBlur(brightness, (0, 0), max(1.5, W * 0.0025))
+            # PUPIL + CATCHLIGHT (typography-only). For each eye, locate the
+            # darkest pixel (pupil) and brightest pixel (catchlight) in the
+            # eye-hull region, then drive brightness toward 0 / 1 locally
+            # with a small Gaussian falloff. The letters covering those
+            # pixels then paint at extreme ink_amount -- pupil letters fade
+            # to bg (dark hole in the typography field), catchlight letters
+            # paint as full bright ink (small bright glint of letters). No
+            # solid shapes are stamped; the eyes are entirely made of
+            # photo-modulated typography. (2026-05-30 feedback.)
+            if dark_bg and have_face and eye_centers:
+                yy_g, xx_g = np.mgrid[0:H, 0:W].astype(np.float32)
+                for (cxe, cye, rxe, rye) in eye_centers:
+                    x0 = int(max(0, cxe - rxe * 1.1))
+                    x1 = int(min(W, cxe + rxe * 1.1 + 1))
+                    y0 = int(max(0, cye - rye * 1.2))
+                    y1 = int(min(H, cye + rye * 1.2 + 1))
+                    if x1 - x0 < 4 or y1 - y0 < 3:
+                        continue
+                    patch = brightness[y0:y1, x0:x1]
+                    if patch.size == 0:
+                        continue
+                    py, pxx = np.unravel_index(int(np.argmin(patch)), patch.shape)
+                    pupil_x, pupil_y = float(x0 + pxx), float(y0 + py)
+                    cyy, cxx = np.unravel_index(int(np.argmax(patch)), patch.shape)
+                    catch_x, catch_y = float(x0 + cxx), float(y0 + cyy)
+                    catch_b = float(patch.max())
+                    sig_p = max(2.5, float(rxe) * 0.20)
+                    d_p = (xx_g - pupil_x) ** 2 + (yy_g - pupil_y) ** 2
+                    g_p = np.exp(-d_p / (2.0 * sig_p * sig_p)).astype(np.float32)
+                    brightness = brightness * (1.0 - 0.92 * g_p)
+                    if catch_b > 0.40:
+                        sig_c = max(1.8, float(rxe) * 0.10)
+                        d_c = (xx_g - catch_x) ** 2 + (yy_g - catch_y) ** 2
+                        g_c = np.exp(-d_c / (2.0 * sig_c * sig_c)).astype(np.float32)
+                        brightness = brightness + (1.0 - brightness) * 0.85 * g_c
+                brightness = np.clip(brightness, 0.0, 1.0)
             # Map brightness -> ink_amount in [0,1]: how much ink shows at
             # each pixel (0 = full bg, 1 = full ink). Direction-specific
             # curves keep mid-tones clearly visible regardless of which way
