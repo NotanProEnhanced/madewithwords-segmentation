@@ -397,9 +397,11 @@ def build_calligram(
         # Distance into feature mask (0 inside, growing outward).
         feat_d = cv2.distanceTransform(255 - feature_mask, cv2.DIST_L2, 5)
         feat_d = np.clip(feat_d / max(8.0, W * 0.005), 0.0, 1.0)
-        # Distance into face hull (0 inside face hull, 1 far away).
+        # Distance into face hull (0 inside face hull, 1 far away). WIDER
+        # normalization so the transition from face-hull-size to body-size
+        # spans a generous band rather than stepping right at the hairline.
         hull_d = cv2.distanceTransform(255 - face_hull_mask, cv2.DIST_L2, 5)
-        hull_d = np.clip(hull_d / max(20.0, W * 0.015), 0.0, 1.0)
+        hull_d = np.clip(hull_d / max(40.0, W * 0.045), 0.0, 1.0)
         # Distance into silhouette (0 inside silhouette, 1 far in bg).
         sil_d = cv2.distanceTransform(255 - mask, cv2.DIST_L2, 5)
         sil_d = np.clip(sil_d / max(40.0, W * 0.04), 0.0, 1.0)
@@ -486,11 +488,17 @@ def build_calligram(
     claimed_px = np.zeros((H, W), dtype=bool)
     for label, fp, d_lo, d_hi in tiers:
         cw = fp * _MONO_ADVANCE
-        # Denser rows on fine tiers -- 0.85x instead of 1.05x -- packs more
-        # rows of small letters into the face vertically so features get
-        # the high density Margot has. Larger tiers keep the standard 1.05x
-        # row height for clean readable prose.
-        row_ratio = 0.85 if fp <= 14.0 else 1.05
+        # Smoother row-spacing gradient so face-to-hair transition isn't a
+        # density step change. Smallest tiers get 0.90x, middle tiers 0.95x,
+        # largest tiers 1.0x -- a gentle slope instead of the prior 0.85
+        # vs 1.05 jump that made forehead-vs-hair look like two different
+        # textures collide.
+        if fp <= 11.0:
+            row_ratio = 0.90
+        elif fp <= 18.0:
+            row_ratio = 0.95
+        else:
+            row_ratio = 1.00
         rh = fp * row_ratio
         cols = max(1, int(W / cw))
         rows = max(1, int(H / rh))
@@ -611,23 +619,27 @@ def build_calligram(
                 # Steeper S-curve, floor 0.04 -- pupil really goes near-black.
                 eye_boost = np.clip(((brightness - 0.5) * 2.6) + 0.5, 0.04, 1.0)
                 brightness = brightness * (1.0 - em) + eye_boost * em
-                # Force darkest spot per eye to be the pupil (very dark),
-                # and place a catchlight (a small bright dot) just above it.
+                # Force darkest spot per eye to be the pupil -- PURE BLACK
+                # (brightness 0 so letters there render as bg / invisible) so
+                # the pupil reads as a true black dot. Catchlight offset more
+                # and slightly larger so it stands out against the now-pure
+                # black pupil.
                 for cx, cy, rx, ry in eye_centers:
                     x0 = max(0, int(cx - rx)); x1 = min(W, int(cx + rx) + 1)
                     y0 = max(0, int(cy - ry)); y1 = min(H, int(cy + ry) + 1)
                     if x1 - x0 < 4 or y1 - y0 < 4:
                         continue
                     patch = brightness[y0:y1, x0:x1]
-                    # Pupil = locally darkest spot; clamp to near-black.
+                    # Pupil = locally darkest spot; PURE black.
                     py, px = np.unravel_index(int(np.argmin(patch)), patch.shape)
-                    r_pup = max(2, int(round(min(rx, ry) * 0.20)))
-                    cv2.circle(brightness, (x0 + px, y0 + py), r_pup, 0.04, -1)
-                    # Catchlight = small bright dot offset slightly toward
-                    # upper-left of pupil; full ink colour after modulation.
-                    cx_l = x0 + px - max(1, int(rx * 0.10))
-                    cy_l = y0 + py - max(1, int(ry * 0.10))
-                    r_cl = max(2, int(round(min(rx, ry) * 0.12)))
+                    r_pup = max(3, int(round(min(rx, ry) * 0.22)))
+                    cv2.circle(brightness, (x0 + px, y0 + py), r_pup, 0.0, -1)
+                    # Catchlight = small bright dot offset further up-and-left
+                    # so it sits CLEARLY OUTSIDE the pupil, against a near-
+                    # black pupil it pops sharply.
+                    cx_l = x0 + px - max(2, int(rx * 0.18))
+                    cy_l = y0 + py - max(2, int(ry * 0.18))
+                    r_cl = max(3, int(round(min(rx, ry) * 0.16)))
                     cv2.circle(brightness, (int(cx_l), int(cy_l)), r_cl, 1.0, -1)
 
             # Smooth hair / forehead and other interior-silhouette transitions
