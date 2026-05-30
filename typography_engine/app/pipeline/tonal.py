@@ -366,15 +366,16 @@ def build_calligram(
     doc = SvgDoc(width=W, height=H, background=bg_hex)
     runs: List[TextRun] = []
 
-    # Three tiers. Each tier paints into a NON-OVERLAPPING band of detail.
-    # Pre-claim a coarse-resolution "claim map" so a small-tier letter at one
-    # location prevents the large-tier from also writing nearby (otherwise
-    # passes overlap and the canvas turns into a smear).
+    # FIVE tiers for much smoother font-size gradation. Smaller smallest-tier
+    # (8px) so the densest features get filled with tiny letters; larger
+    # largest-tier (50px) so broad surfaces carry truly bold words.
     # Tier (label, font_px, detail_low, detail_high)
     tiers = [
-        ("coarse",  44.0, 0.00, 0.20),   # broad surfaces / hair / clothes / bg
-        ("medium",  22.0, 0.20, 0.55),   # cheeks, forehead, neck
-        ("fine",    11.0, 0.55, 1.01),   # eyes, brows, lips, nose, lash line
+        ("xl",   50.0, 0.00, 0.12),   # broadest surfaces / clothes / bg
+        ("lg",   34.0, 0.12, 0.28),   # hair / cheek mass / shoulder
+        ("md",   22.0, 0.28, 0.46),   # cheekbone, forehead, neck contour
+        ("sm",   14.0, 0.46, 0.68),   # nose ridge, jaw line, lip mass
+        ("xs",    8.0, 0.68, 1.01),   # eyes, brows, lash line, lip edge
     ]
     # claim grid at the finest tier's resolution; once claimed by a finer tier,
     # coarser tiers skip those cells.
@@ -504,19 +505,17 @@ def build_calligram(
                 plo, phi = float(t.min()), float(max(t.min() + 1e-3, t.max()))
             t = np.clip((t - plo) / max(1e-3, phi - plo), 0.0, 1.0)
             brightness = (1.0 - t).astype(np.float32)
-            # In-silhouette: WIDE dynamic range -- face highlights (cheek,
-            # forehead) hit full ink, dark features (eye sockets, brows) drop
-            # to ~0.18. Even the dark features fall just below the background
-            # floor, which means the face reads as both brighter (highlights)
-            # AND darker (shadows) than the bg -- matches how a real face
-            # contrasts with a flat backdrop.
-            in_face = 0.18 + 0.82 * (brightness ** 0.50)   # range [0.18, 1.0]
-            outside_floor = 0.30                            # background mid-tone
+            # COMPRESSED dynamic range with gentle gamma -- many subtle tones,
+            # not just bright/dark. Face brightness: [0.30, 0.92]. Background
+            # at 0.42 sits in the middle of that range, so transitions read as
+            # smooth value-gradation (more like a photo's continuous tone)
+            # rather than a high-contrast cutout.
+            in_face = 0.22 + 0.78 * (brightness ** 0.70)   # range [0.22, 1.0]
+            outside_floor = 0.34                            # mid-range bg, face mins below it
             outside = np.full_like(brightness, outside_floor)
-            # Feather the silhouette mask so face-to-bg fades smoothly over a
-            # wide band rather than stepping at the silhouette edge.
+            # Wide silhouette feather so face-to-bg transitions over ~60 px.
             mset_f = mset.astype(np.float32)
-            mset_f = cv2.GaussianBlur(mset_f, (0, 0), max(10.0, W * 0.022))
+            mset_f = cv2.GaussianBlur(mset_f, (0, 0), max(14.0, W * 0.028))
             mset_f = np.clip(mset_f, 0.0, 1.0)
             brightness = in_face * mset_f + outside * (1.0 - mset_f)
             photo_fill = np.stack([brightness * ir, brightness * ig, brightness * ib],
