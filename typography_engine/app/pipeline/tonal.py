@@ -410,15 +410,31 @@ def build_calligram(
         # Distance into silhouette (0 inside silhouette, 1 far in bg).
         sil_d = cv2.distanceTransform(255 - mask, cv2.DIST_L2, 5)
         sil_d = np.clip(sil_d / max(40.0, W * 0.04), 0.0, 1.0)
+        # Local detail map: |Laplacian| of the photo, blurred. High where the
+        # photo has edges/texture (hair strands, fabric weave, jacket seam),
+        # low where the photo is smooth. Used to pull body/hair signal toward
+        # SMALLER tiers in detailed areas -- letters get denser exactly where
+        # the photo has detail to reveal, larger where the photo is smooth.
+        # This satisfies 'much denser typography while letting the tonal
+        # values resonate and provide details' (2026-05-30).
+        detail_map = np.abs(cv2.Laplacian(dark, cv2.CV_32F, ksize=3))
+        detail_map = cv2.GaussianBlur(detail_map, (0, 0), max(2.0, W * 0.008))
+        dm_norm = float(np.percentile(detail_map, 95))
+        if dm_norm > 1e-6:
+            detail_map = np.clip(detail_map / dm_norm, 0.0, 1.0)
+        else:
+            detail_map = np.zeros_like(detail_map)
         # Compose: each zone contributes a range of the signal; smooth
         # interpolation between them via the three distance fields.
         # In feature: signal = 0.00 - 0.16 (slight variation by position).
         # In hull but not feature: signal = 0.16 + 0.20 * feat_d.
-        # In silhouette but not hull: signal = 0.36 + 0.64 * hull_d. Body /
-        #   hair / clothing now spans md(18) -> xl(36) so hair gets visibly
-        #   larger letters as it moves away from the face, per 2026-05-30
-        #   feedback that body tiers were too uniform with only md/md+.
+        # In silhouette but not hull: distance-based base 0.36 + 0.64*hull_d
+        #   MINUS 0.55*detail. Detailed hair/fabric pulls signal down (smaller
+        #   denser letters); smooth body/clothing keeps the larger letters.
+        #   Net range ~0.10 .. 1.00 -> all body tiers (xs through xl) fire.
         # In background: signal stays high but subject_only stops placement.
+        body_base = 0.36 + 0.64 * hull_d
+        body_signal = np.clip(body_base - 0.55 * detail_map, 0.10, 1.00)
         size_signal = np.where(
             feature_mask > 0,
             0.16 * (1.0 - feat_d),  # 0 at feature centre, 0.16 at feature edge
@@ -427,7 +443,7 @@ def build_calligram(
                 0.16 + 0.20 * feat_d,
                 np.where(
                     mset,
-                    0.36 + 0.64 * hull_d,
+                    body_signal,
                     0.66 + 0.34 * sil_d,
                 ),
             ),
