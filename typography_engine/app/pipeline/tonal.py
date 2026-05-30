@@ -672,6 +672,37 @@ def build_calligram(
             bg_rgb = np.array([br, bgc, bb], dtype=np.float32) / 255.0
             modulated = photo_fill * alpha + bg_rgb * (1.0 - alpha)
             modulated_u8 = (modulated * 255).clip(0, 255).astype(np.uint8)
+            # Paint pupils and catchlights DIRECTLY on the modulated image,
+            # bypassing the letter-modulation pipeline so they're guaranteed
+            # visible regardless of which glyphs landed where. Pupil = solid
+            # pure black disk. Catchlight = small bright dot of full ink.
+            # Image is at text_arr resolution (typically W x H of render).
+            mh, mw = modulated_u8.shape[:2]
+            sx = mw / float(W); sy = mh / float(H)
+            ink_rgb = (int(ir), int(ig), int(ib))
+            for cx, cy, rx, ry in eye_centers:
+                # Find darkest spot per eye in the underlying tone field --
+                # this is the pupil location.
+                x0 = max(0, int(cx - rx)); x1 = min(W, int(cx + rx) + 1)
+                y0 = max(0, int(cy - ry)); y1 = min(H, int(cy + ry) + 1)
+                if x1 - x0 < 4 or y1 - y0 < 4:
+                    continue
+                patch = dark[y0:y1, x0:x1]
+                py, px = np.unravel_index(int(np.argmax(patch)), patch.shape)
+                # Pupil in output coords. Make it ~28% of the smaller eye
+                # radius -- big enough to read as the pupil, small enough that
+                # iris and sclera detail still surround it.
+                pup_cx = int((x0 + px) * sx)
+                pup_cy = int((y0 + py) * sy)
+                r_pup = max(6, int(round(min(rx, ry) * 0.28 * min(sx, sy))))
+                # Black pupil disk -- pure RGB(0,0,0) so it's clearly a pupil.
+                cv2.circle(modulated_u8, (pup_cx, pup_cy), r_pup, (0, 0, 0), -1)
+                # Catchlight: offset up-and-left from pupil centre by ~25% of
+                # eye radius, slightly larger than before so it's unmistakable.
+                cl_cx = pup_cx - max(3, int(rx * 0.22 * sx))
+                cl_cy = pup_cy - max(3, int(ry * 0.22 * sy))
+                r_cl = max(4, int(round(min(rx, ry) * 0.18 * min(sx, sy))))
+                cv2.circle(modulated_u8, (cl_cx, cl_cy), r_cl, ink_rgb, -1)
             out_img = _PILImage2.fromarray(modulated_u8)
             buf2 = _io2.BytesIO()
             out_img.save(buf2, format="PNG", optimize=True)
