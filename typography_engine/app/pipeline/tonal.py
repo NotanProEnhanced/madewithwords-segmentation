@@ -351,44 +351,64 @@ def build_calligram(
     detail = np.clip((detail - lo) / max(1e-3, hi - lo), 0.0, 1.0)
     detail[~mset] = 0.0
 
-    # Letter size map: three structural zones, each occupying ~1/3 of the
-    # size signal range.
-    #   FACE HULL  -> 0.00 ... 0.33  (smallest letters)
-    #   BODY       -> 0.33 ... 0.66  (medium letters; inside silhouette but
-    #                                 outside face hull)
-    #   BACKGROUND -> 0.66 ... 1.00  (largest letters; outside silhouette)
-    # This gives the Margot structure: tiny letters across the whole face
-    # so features emerge from BRIGHTNESS variation, medium on the body, big
-    # on the background / clothing / hair edges.
+    # Letter size map: four structural zones, smoothly feathered so size
+    # transitions are gradual not stepped.
+    #   FACE FEATURES (eyes/brows/lips/nose) -> 0.00 ... 0.16  (tiniest)
+    #   FACE HULL (rest)                     -> 0.16 ... 0.36  (small)
+    #   BODY (inside silhouette, off face)   -> 0.36 ... 0.66  (medium)
+    #   BACKGROUND                            -> 0.66 ... 1.00  (largest)
     size_signal = np.zeros((H, W), np.float32)
     face_hull_mask = np.zeros((H, W), np.uint8)
+    feature_mask = np.zeros((H, W), np.uint8)
     have_face = False
     for face in _faces_of(an):
         have_face = True
         pts = (face.points * scale).astype(np.int32)
+        # Face hull (encompasses the whole face area).
         hull = cv2.convexHull(pts)
         cv2.fillConvexPoly(face_hull_mask, hull, 255)
+        # Per-feature convex hulls (eyes / brows / lips / nose) for the very
+        # finest tier so eye sclera / iris / lashes / brow line / nostrils /
+        # lip corners get the smallest possible letters.
+        for grp in _FEATURE_GROUPS:
+            try:
+                fhull = cv2.convexHull(np.array([pts[i] for i in grp], np.int32))
+                cv2.fillConvexPoly(feature_mask, fhull, 255)
+            except Exception:
+                pass
+        feature_mask = cv2.dilate(feature_mask, np.ones((3, 3), np.uint8))
     if have_face:
-        # Inside face hull: 0 .. 0.33 by distance from hull centre (smaller in
-        # the centre where features are, slightly bigger near the hull edge).
-        face_dist = cv2.distanceTransform(face_hull_mask, cv2.DIST_L2, 5)
-        max_face = max(1.0, float(face_dist.max()))
-        in_face = (1.0 - face_dist / max_face) * 0.33   # 0 at edge, 0.33 at hull edge inverted
-        # Inside silhouette, outside face hull: 0.33 .. 0.66 by distance from
-        # face hull edge (smoothly bigger as we move toward silhouette edge).
-        body_mask = (mset & (face_hull_mask == 0))
-        body_dist = cv2.distanceTransform(255 - face_hull_mask, cv2.DIST_L2, 5)
-        body_max = max(1.0, float(body_dist[body_mask].max() if body_mask.any() else 1.0))
-        in_body = 0.33 + 0.33 * np.clip(body_dist / body_max, 0.0, 1.0)
-        # Outside silhouette: 0.66 .. 1.00 by distance from silhouette edge.
-        out_dist = cv2.distanceTransform(255 - mask, cv2.DIST_L2, 5)
-        out_max = max(1.0, float(out_dist.max()))
-        outside = 0.66 + 0.34 * np.clip(out_dist / out_max, 0.0, 1.0)
-        # Compose by zone.
-        size_signal = np.where(face_hull_mask > 0, in_face,
-                       np.where(mset, in_body, outside)).astype(np.float32)
+        # Use feathered distance transforms so each zone fades smoothly into
+        # the next -- no harsh tier boundaries.
+        # Distance into feature mask (0 inside, growing outward).
+        feat_d = cv2.distanceTransform(255 - feature_mask, cv2.DIST_L2, 5)
+        feat_d = np.clip(feat_d / max(8.0, W * 0.005), 0.0, 1.0)
+        # Distance into face hull (0 inside face hull, 1 far away).
+        hull_d = cv2.distanceTransform(255 - face_hull_mask, cv2.DIST_L2, 5)
+        hull_d = np.clip(hull_d / max(20.0, W * 0.015), 0.0, 1.0)
+        # Distance into silhouette (0 inside silhouette, 1 far in bg).
+        sil_d = cv2.distanceTransform(255 - mask, cv2.DIST_L2, 5)
+        sil_d = np.clip(sil_d / max(40.0, W * 0.04), 0.0, 1.0)
+        # Compose: each zone contributes a range of the signal; smooth
+        # interpolation between them via the three distance fields.
+        # In feature: signal = 0.00 - 0.16 (slight variation by position).
+        # In hull but not feature: signal = 0.16 + 0.20 * feat_d.
+        # In silhouette but not hull: signal = 0.36 + 0.30 * hull_d.
+        # In background: signal = 0.66 + 0.34 * sil_d.
+        size_signal = np.where(
+            feature_mask > 0,
+            0.16 * (1.0 - feat_d),  # 0 at feature centre, 0.16 at feature edge
+            np.where(
+                face_hull_mask > 0,
+                0.16 + 0.20 * feat_d,
+                np.where(
+                    mset,
+                    0.36 + 0.30 * hull_d,
+                    0.66 + 0.34 * sil_d,
+                ),
+            ),
+        ).astype(np.float32)
     else:
-        # No face landmarks: fall back to mostly-uniform medium tier.
         size_signal = np.full((H, W), 0.45, dtype=np.float32)
     size_signal = np.clip(size_signal, 0.0, 1.0)
 
@@ -405,12 +425,17 @@ def build_calligram(
     # FIVE tiers, indexed by `size_signal`. Each zone (face/body/bg) spans
     # ~1/3 of the signal so all tiers are reachable.
     # Tier (label, font_px, size_low, size_high)
+    # SIX tiers for smooth font-size gradation. Smallest (8px) reserved for
+    # the eye sclera / iris / lashes / brow line / nostrils / lip corners.
+    # Step ratios kept gentle (~1.3-1.4x between tiers) so size transitions
+    # read as gradual not jarring.
     tiers = [
-        ("xl",   40.0, 0.83, 1.01),   # deep background, far from silhouette
-        ("lg",   28.0, 0.66, 0.83),   # silhouette edge / background
-        ("md",   20.0, 0.50, 0.66),   # body interior / hair
-        ("sm",   15.0, 0.33, 0.50),   # body / shoulders / hair near face
-        ("xs",   12.0, 0.00, 0.33),   # face hull -- features at high density
+        ("xl",   34.0, 0.84, 1.01),   # deep background, far from silhouette
+        ("lg",   25.0, 0.66, 0.84),   # silhouette edge / background near subject
+        ("md",   19.0, 0.50, 0.66),   # body interior / hair
+        ("sm",   15.0, 0.36, 0.50),   # body / shoulders / hair near face
+        ("xs",   11.0, 0.16, 0.36),   # face hull (cheek, forehead, jaw)
+        ("xxs",   8.0, 0.00, 0.16),   # eyes, brows, lips, nostrils, lash line
     ]
     # claim grid at the finest tier's resolution; once claimed by a finer tier,
     # coarser tiers skip those cells.
