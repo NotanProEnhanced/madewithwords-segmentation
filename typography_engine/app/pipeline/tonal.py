@@ -504,16 +504,21 @@ def build_calligram(
                 plo, phi = float(t.min()), float(max(t.min() + 1e-3, t.max()))
             t = np.clip((t - plo) / max(1e-3, phi - plo), 0.0, 1.0)
             brightness = (1.0 - t).astype(np.float32)
-            # In-silhouette: lift dark areas so even shadow letters (eye
-            # sockets, brows, lash line) stay visibly readable rather than
-            # vanishing into black -- this is what builds the LIKENESS of dark
-            # features as text. 0.18 floor + gamma stretch keeps highlights
-            # popping while shadows still carry typography.
-            in_face = 0.18 + 0.82 * (brightness ** 0.55)
-            # Outside silhouette: uniform low floor so background reads as
-            # quiet texture, never empty.
-            outside = np.full_like(brightness, 0.18)
-            brightness = np.where(mset, in_face, outside)
+            # In-silhouette: WIDE dynamic range -- face highlights (cheek,
+            # forehead) hit full ink, dark features (eye sockets, brows) drop
+            # to ~0.18. Even the dark features fall just below the background
+            # floor, which means the face reads as both brighter (highlights)
+            # AND darker (shadows) than the bg -- matches how a real face
+            # contrasts with a flat backdrop.
+            in_face = 0.18 + 0.82 * (brightness ** 0.50)   # range [0.18, 1.0]
+            outside_floor = 0.30                            # background mid-tone
+            outside = np.full_like(brightness, outside_floor)
+            # Feather the silhouette mask so face-to-bg fades smoothly over a
+            # wide band rather than stepping at the silhouette edge.
+            mset_f = mset.astype(np.float32)
+            mset_f = cv2.GaussianBlur(mset_f, (0, 0), max(10.0, W * 0.022))
+            mset_f = np.clip(mset_f, 0.0, 1.0)
+            brightness = in_face * mset_f + outside * (1.0 - mset_f)
             photo_fill = np.stack([brightness * ir, brightness * ig, brightness * ib],
                                   axis=-1).astype(np.float32) / 255.0
             # Resize photo_fill to match the rendered text image.
