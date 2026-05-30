@@ -575,23 +575,20 @@ def build_calligram(
             t = np.clip((t - plo) / max(1e-3, phi - plo), 0.0, 1.0)
             brightness = (1.0 - t).astype(np.float32)
             # FEATURE CONTRAST BOOST: inside eye/brow/lip/nose hulls, push
-            # darks darker and brights brighter so features really POP as
-            # features instead of reading as mild tonal variation. Iris/pupil
-            # become near-black, sclera bright; lash line crisp; lip rim sharp.
+            # darks darker and brights brighter -- WITH a 0.10 floor so the
+            # darkest feature pixels (iris, pupil, eyebrow) stay visible as
+            # dim letters rather than collapsing into pure black.
             if have_face:
                 fm = (feature_mask > 0).astype(np.float32)
-                # Soft falloff at the hull boundary so the contrast lift
-                # blends smoothly into surrounding skin tones.
                 fm = cv2.GaussianBlur(fm, (0, 0), max(2.0, W * 0.003))
-                # S-curve around 0.5 -- darks go darker, brights go brighter.
-                boosted = np.clip(((brightness - 0.5) * 1.6) + 0.5, 0.0, 1.0)
+                # S-curve around 0.5, floor 0.10 so iris/brow letters stay
+                # visible (dim but readable, not invisible against dark bg).
+                boosted = np.clip(((brightness - 0.5) * 1.6) + 0.5, 0.10, 1.0)
                 brightness = brightness * (1.0 - fm) + boosted * fm
-            # COMPRESSED dynamic range with gentle gamma -- many subtle tones,
-            # not just bright/dark. Face brightness: [0.30, 0.92]. Background
-            # at 0.42 sits in the middle of that range, so transitions read as
-            # smooth value-gradation (more like a photo's continuous tone)
-            # rather than a high-contrast cutout.
-            in_face = 0.15 + 0.85 * (brightness ** 0.55)   # range [0.15, 1.0]
+            # In-face range raised to [0.22, 1.0] so the darkest face letters
+            # are clearly brighter than bg floor (0.12). Without this gap the
+            # iris / brow letters wash into the background.
+            in_face = 0.22 + 0.78 * (brightness ** 0.55)
             outside_floor = 0.12                            # quiet bg, face dominates
             outside = np.full_like(brightness, outside_floor)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
