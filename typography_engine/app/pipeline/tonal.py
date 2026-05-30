@@ -428,7 +428,7 @@ def build_calligram(
         #   rather than slamming all the way down to xxs(6).
         # In background: signal stays high but subject_only stops placement.
         body_base = 0.36 + 0.55 * hull_d
-        body_signal = np.clip(body_base - 0.22 * detail_map, 0.22, 0.91)
+        body_signal = np.clip(body_base - 0.22 * detail_map, 0.15, 0.91)
         size_signal = np.where(
             feature_mask > 0,
             0.16 * (1.0 - feat_d),  # 0 at feature centre, 0.16 at feature edge
@@ -525,17 +525,19 @@ def build_calligram(
     # transitions: smaller text fits BETWEEN bigger text with no visual smear.
     claimed_px = np.zeros((H, W), dtype=bool)
     for label, fp, d_lo, d_hi in tiers:
-        cw = fp * _MONO_ADVANCE
+        # Horizontal advance: small/mid tiers pack tighter (0.55em) so body
+        # density goes up without breaking the graduation; lg/xl keep 0.6em
+        # so the largest letters don't visibly smear into each other.
+        advance_ratio = 0.55 if fp <= 22.0 else 0.60
+        cw = fp * advance_ratio
         # Row-spacing gradient kept tight across all tiers so letters pack
-        # densely vertically without the paper showing between rows. Smaller
-        # tiers can pack tighter (less ascender/descender clearance needed)
-        # than larger ones.
+        # densely vertically without the paper showing between rows.
         if fp <= 11.0:
-            row_ratio = 0.82
+            row_ratio = 0.78
         elif fp <= 18.0:
-            row_ratio = 0.88
+            row_ratio = 0.85
         else:
-            row_ratio = 0.94
+            row_ratio = 0.90
         rh = fp * row_ratio
         cols = max(1, int(W / cw))
         rows = max(1, int(H / rh))
