@@ -592,7 +592,7 @@ def build_calligram(
             # smooth value-gradation (more like a photo's continuous tone)
             # rather than a high-contrast cutout.
             in_face = 0.15 + 0.85 * (brightness ** 0.55)   # range [0.15, 1.0]
-            outside_floor = 0.20                            # dimmer bg, face pops
+            outside_floor = 0.12                            # quiet bg, face dominates
             outside = np.full_like(brightness, outside_floor)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
             mset_f = mset.astype(np.float32)
