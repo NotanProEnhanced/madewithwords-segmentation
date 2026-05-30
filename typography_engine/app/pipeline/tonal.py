@@ -414,8 +414,11 @@ def build_calligram(
         # interpolation between them via the three distance fields.
         # In feature: signal = 0.00 - 0.16 (slight variation by position).
         # In hull but not feature: signal = 0.16 + 0.20 * feat_d.
-        # In silhouette but not hull: signal = 0.36 + 0.30 * hull_d.
-        # In background: signal = 0.66 + 0.34 * sil_d.
+        # In silhouette but not hull: signal = 0.36 + 0.64 * hull_d. Body /
+        #   hair / clothing now spans md(18) -> xl(36) so hair gets visibly
+        #   larger letters as it moves away from the face, per 2026-05-30
+        #   feedback that body tiers were too uniform with only md/md+.
+        # In background: signal stays high but subject_only stops placement.
         size_signal = np.where(
             feature_mask > 0,
             0.16 * (1.0 - feat_d),  # 0 at feature centre, 0.16 at feature edge
@@ -424,7 +427,7 @@ def build_calligram(
                 0.16 + 0.20 * feat_d,
                 np.where(
                     mset,
-                    0.36 + 0.30 * hull_d,
+                    0.36 + 0.64 * hull_d,
                     0.66 + 0.34 * sil_d,
                 ),
             ),

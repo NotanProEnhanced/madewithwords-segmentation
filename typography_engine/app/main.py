@@ -282,7 +282,8 @@ async def render(
             passage = (message or "").strip() or " ".join(word_list)
             ink_hex, bg_hex = _CALLIGRAM.get(ink_choice, _CALLIGRAM["gold_noir"])
             svg, runs, modulation_png_bytes = build_calligram(
-                an, passage, cfg, warns, ink_hex=ink_hex, bg_hex=bg_hex
+                an, passage, cfg, warns,
+                ink_hex=ink_hex, bg_hex=bg_hex, subject_only=True,
             )
             if svg:
                 _validate(svg)
