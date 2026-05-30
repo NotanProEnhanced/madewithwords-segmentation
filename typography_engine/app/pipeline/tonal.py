@@ -533,16 +533,16 @@ def build_calligram(
         # small/mid tiers almost exclusively now (lg/xl rare), so 0.55
         # everywhere keeps density consistent across the silhouette.
         cw = fp * 0.55
-        # Row-spacing gradient -- VERY tight. Letters nearly touch their
-        # ascender/descender bounds; some visible overlap at all tiers is
-        # deliberate per Margot reference where rows compress to form a
-        # continuous tonal field (2026-05-30 'almost touching').
+        # Row-spacing gradient -- letters DELIBERATELY overlap their type
+        # bounds. Combined with bold weight (added below) this matches the
+        # Margot continuous-tonal-field look where adjacent rows touch
+        # their cap heights / descenders. (2026-05-30 'almost touching'.)
         if fp <= 11.0:
-            row_ratio = 0.62
+            row_ratio = 0.55
         elif fp <= 18.0:
-            row_ratio = 0.68
+            row_ratio = 0.62
         else:
-            row_ratio = 0.74
+            row_ratio = 0.68
         rh = fp * row_ratio
         cols = max(1, int(W / cw))
         rows = max(1, int(H / rh))
@@ -609,7 +609,7 @@ def build_calligram(
                 continue
             doc.add(
                 f'<text y="{baseline:.1f}" xml:space="preserve" font-family="{esc(family)}" '
-                f'font-size="{fp:.1f}">' + "".join(spans) + "</text>"
+                f'font-size="{fp:.1f}" font-weight="bold">' + "".join(spans) + "</text>"
             )
             runs.append(TextRun(region=f"calligram_{label}", path_id=f"{label}_r{r}",
                                 path_d="", text="".join(line_chars),
@@ -693,10 +693,13 @@ def build_calligram(
                 em = (eye_mask > 0).astype(np.float32)
                 em = cv2.GaussianBlur(em, (0, 0), max(1.5, W * 0.0025))
                 if dark_bg:
-                    # Softened 2.6 -> 1.9: pupils still distinct without
-                    # slamming the entire iris to flat near-black, which let
-                    # the typography read as a 'dot' (2026-05-30 feedback).
-                    eye_boost = np.clip(((brightness - 0.5) * 1.9) + 0.5, 0.08, 1.0)
+                    # Boost with a SCLERA CEILING of 0.78 so the catchlight
+                    # push (lifts to 1.0) stays visibly distinct from
+                    # sclera. Iris floor 0.05 so iris letters read clearly
+                    # darker than sclera and the pupil-iris-sclera-glint
+                    # tonal hierarchy is preserved end-to-end. (2026-05-30
+                    # Margot reference: clear pupil/iris/sclera relation.)
+                    eye_boost = np.clip(((brightness - 0.5) * 1.7) + 0.5, 0.05, 0.78)
                 else:
                     eye_boost = np.clip(((brightness - 0.5) * 3.0) + 0.5, 0.0, 1.0)
                 brightness = brightness * (1.0 - em) + eye_boost * em
@@ -773,7 +776,12 @@ def build_calligram(
             #              ground; ceiling 0.95 so the darkest shadow isn't
             #              a solid ink blob.
             if dark_bg:
-                ink_amount_face = 0.22 + 0.78 * (brightness ** 0.55)
+                # Floor dropped 0.22 -> 0.06 so pupil pixels (brightness
+                # near 0 after the pupil push) genuinely fade to bg colour
+                # -- a true dark hole instead of dim 22%-ink letters.
+                # Power kept at 0.55 so mid-skin still reads as dense ink.
+                # (2026-05-30 Margot reference: clear black pupil.)
+                ink_amount_face = 0.06 + 0.94 * (brightness ** 0.55)
                 ink_amount_outside = 0.12   # quiet bg letters, face dominates
             else:
                 # Light_bg needs more density than dark_bg -- on white,
