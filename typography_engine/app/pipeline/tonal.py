@@ -425,17 +425,17 @@ def build_calligram(
     # FIVE tiers, indexed by `size_signal`. Each zone (face/body/bg) spans
     # ~1/3 of the signal so all tiers are reachable.
     # Tier (label, font_px, size_low, size_high)
-    # SIX tiers for smooth font-size gradation. Smallest (8px) reserved for
-    # the eye sclera / iris / lashes / brow line / nostrils / lip corners.
-    # Step ratios kept gentle (~1.3-1.4x between tiers) so size transitions
-    # read as gradual not jarring.
+    # EIGHT tiers for very smooth size gradation. Smallest (6px) for the
+    # innermost feature centres, largest (36px) for far background.
     tiers = [
-        ("xl",   34.0, 0.84, 1.01),   # deep background, far from silhouette
-        ("lg",   25.0, 0.66, 0.84),   # silhouette edge / background near subject
-        ("md",   19.0, 0.50, 0.66),   # body interior / hair
-        ("sm",   15.0, 0.36, 0.50),   # body / shoulders / hair near face
-        ("xs",   11.0, 0.16, 0.36),   # face hull (cheek, forehead, jaw)
-        ("xxs",   8.0, 0.00, 0.16),   # eyes, brows, lips, nostrils, lash line
+        ("xl",   36.0, 0.86, 1.01),   # deep background
+        ("lg",   28.0, 0.72, 0.86),   # silhouette edge / background near subject
+        ("md+",  22.0, 0.58, 0.72),   # body / hair body
+        ("md",   18.0, 0.46, 0.58),   # shoulders / hair near face
+        ("sm",   14.0, 0.34, 0.46),   # silhouette-near-face / outer hair
+        ("xs+",  11.0, 0.22, 0.34),   # face hull / cheek / forehead
+        ("xs",    9.0, 0.10, 0.22),   # feature edges (lid line, lip line)
+        ("xxs",   6.0, 0.00, 0.10),   # eye sclera/iris, lash line, lip corners
     ]
     # claim grid at the finest tier's resolution; once claimed by a finer tier,
     # coarser tiers skip those cells.
@@ -521,7 +521,11 @@ def build_calligram(
                 # Claim this word's pixel footprint so finer tiers don't paint
                 # over its letters (they're free to fill the gaps after it).
                 claimed_px[y_lo:y_hi, wx_lo:wx_hi] = True
-                c += wl + 1
+                # Tight packing: NO inter-word space on the finest tiers (so
+                # face features get maximum letter density), 1-cell gap on
+                # larger tiers (keeps words readable in the body / bg).
+                gap = 0 if fp <= 14.0 else 1
+                c += wl + gap
                 wi += 1
             if not spans:
                 continue
@@ -571,7 +575,7 @@ def build_calligram(
             # smooth value-gradation (more like a photo's continuous tone)
             # rather than a high-contrast cutout.
             in_face = 0.15 + 0.85 * (brightness ** 0.55)   # range [0.15, 1.0]
-            outside_floor = 0.30                            # mid-range bg, face mins below it
+            outside_floor = 0.20                            # dimmer bg, face pops
             outside = np.full_like(brightness, outside_floor)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
             mset_f = mset.astype(np.float32)
