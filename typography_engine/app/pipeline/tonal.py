@@ -665,38 +665,38 @@ def build_calligram(
             # gradient flows without a stark edge between bright skin and
             # dark hair. Small sigma so feature detail is kept.
             brightness = cv2.GaussianBlur(brightness, (0, 0), max(1.5, W * 0.0025))
-            # In-face range: keep the darkest face letters above the bg
-            # floor so iris/brow letters don't wash into the ground.
-            #   dark_bg:  raise floor -> dim letters are still visible.
-            #   light_bg: cap ceiling -> highlight letters stay faintly inked
-            #             rather than melting completely into white.
+            # Map brightness -> ink_amount in [0,1]: how much ink shows at
+            # each pixel (0 = full bg, 1 = full ink). Direction-specific
+            # curves keep mid-tones clearly visible regardless of which way
+            # the ink runs:
+            #   dark_bg  : BRIGHT photo -> high ink_amount (visible gold).
+            #              Floor 0.22 so even shadows have a hint of ink.
+            #   light_bg : DARK photo  -> high ink_amount (visible navy).
+            #              Floor 0.30 so mid-skin still reads as solidly
+            #              inked rather than melting wispy into the white
+            #              ground; ceiling 0.95 so the darkest shadow isn't
+            #              a solid ink blob.
             if dark_bg:
-                in_face = 0.22 + 0.78 * (brightness ** 0.55)
-                outside_floor = 0.12   # quiet bg letters, face dominates
+                ink_amount_face = 0.22 + 0.78 * (brightness ** 0.55)
+                ink_amount_outside = 0.12   # quiet bg letters, face dominates
             else:
-                in_face = 0.05 + 0.78 * (brightness ** 0.55)
-                outside_floor = 0.95   # bg letters melt into the white ground
-            outside = np.full_like(brightness, outside_floor)
+                ink_amount_face = 0.30 + 0.65 * ((1.0 - brightness) ** 0.70)
+                ink_amount_outside = 0.0    # bg letters fully melt into white
+            outside = np.full_like(brightness, ink_amount_outside)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
             mset_f = mset.astype(np.float32)
             mset_f = cv2.GaussianBlur(mset_f, (0, 0), max(14.0, W * 0.028))
             mset_f = np.clip(mset_f, 0.0, 1.0)
-            brightness = in_face * mset_f + outside * (1.0 - mset_f)
-            # photo_fill direction depends on bg:
-            #   dark_bg:  bright photo -> full bright ink, dark photo -> bg
-            #             via (brightness * ink_rgb).
-            #   light_bg: bright photo -> bg (faint letter), dark photo ->
-            #             full ink via (ink + brightness * (bg - ink)).
-            if dark_bg:
-                photo_fill = np.stack(
-                    [brightness * ir, brightness * ig, brightness * ib], axis=-1
-                ).astype(np.float32) / 255.0
-            else:
-                photo_fill = np.stack([
-                    ir + brightness * (br - ir),
-                    ig + brightness * (bgc - ig),
-                    ib + brightness * (bb - ib),
-                ], axis=-1).astype(np.float32) / 255.0
+            ink_amount = ink_amount_face * mset_f + outside * (1.0 - mset_f)
+            # Unified photo_fill: bg + ink_amount * (ink - bg). Same formula
+            # in both directions -- the per-direction work is encoded in how
+            # ink_amount maps from brightness above.
+            ink_rgb_arr = np.array([ir, ig, ib], dtype=np.float32)
+            bg_rgb_arr = np.array([br, bgc, bb], dtype=np.float32)
+            photo_fill = (
+                bg_rgb_arr * (1.0 - ink_amount[..., None])
+                + ink_rgb_arr * ink_amount[..., None]
+            ).astype(np.float32) / 255.0
             # Resize photo_fill to match the rendered text image.
             if photo_fill.shape[:2] != text_arr.shape[:2]:
                 photo_fill_img = _PILImage2.fromarray((photo_fill * 255).astype(np.uint8))
