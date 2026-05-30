@@ -403,12 +403,13 @@ def build_calligram(
         cb = int(round(ib + (bb - ib) * f))
         return f"#{cr:02x}{cg:02x}{cb:02x}"
 
-    # Render tiers fine -> coarse so the smallest letters claim feature areas
-    # first, and the coarser tiers fill what's left without overlapping them.
-    # Words are drawn ATOMICALLY (entire word at one size) -- their *first*
-    # letter's cell decides which tier they belong to. This keeps the prose
-    # readable instead of fragmenting words across tiers.
-    for label, fp, d_lo, d_hi in reversed(tiers):
+    # Render tiers COARSE -> MEDIUM -> FINE. Each tier claims the pixel
+    # footprint of each LETTER it draws (not whole-word bounds), so finer
+    # tiers fill the SPACES between larger letters / words without overlapping
+    # the large letters themselves. This gives Margot-style clean tier
+    # transitions: smaller text fits BETWEEN bigger text with no visual smear.
+    claimed_px = np.zeros((H, W), dtype=bool)
+    for label, fp, d_lo, d_hi in tiers:
         cw = fp * _MONO_ADVANCE
         rh = fp * 1.05
         cols = max(1, int(W / cw))
@@ -417,6 +418,8 @@ def build_calligram(
         for r in range(rows):
             baseline = (r + 1) * rh
             yi = min(H - 1, max(0, int(baseline - 0.32 * fp)))
+            y_lo = max(0, int(baseline - rh))
+            y_hi = min(H, int(baseline) + 1)
             spans = []
             line_chars = []
             c = 0
@@ -427,19 +430,25 @@ def build_calligram(
                     word = word[:cols]; wl = cols
                 if c + wl > cols:
                     break
-                # Tier check at the WORD START only (no claim system -- letting
-                # tiers overlap is fine because the per-glyph photo modulation
-                # produces the final colour. The result is much denser typography
-                # with no blank gaps between coarse words.)
+                # Try to place the word starting at column c. Check the start
+                # cell's detail bucket; if it doesn't match the tier, skip a
+                # cell and try again.
                 xi_start = min(W - 1, max(0, int(c * cw + cw * 0.5)))
                 d = float(detail[yi, xi_start])
-                in_tier = (d_lo <= d < d_hi)
-                if not in_tier:
+                if not (d_lo <= d < d_hi):
                     c += 1
                     continue
-                # Place the whole word at this tier's size. Fill is the
-                # tone-mapped pattern -- each letter shows the photo's actual
-                # tonal gradient through its glyph shape.
+                # Check that no letter of this word would land on a pixel
+                # already claimed by an earlier (larger) tier. If any would,
+                # advance one cell and retry; this lets the word slide right
+                # until it finds a clear stretch.
+                wx_lo = max(0, int(c * cw))
+                wx_hi = min(W, int((c + wl) * cw) + 1)
+                if claimed_px[y_lo:y_hi, wx_lo:wx_hi].any():
+                    c += 1
+                    continue
+                # Place the word. Per-glyph fill: photo tone runs through each
+                # letter via the modulation pass.
                 for k, ch in enumerate(word):
                     col = c + k
                     xi = min(W - 1, max(0, int(col * cw + cw * 0.5)))
@@ -448,6 +457,9 @@ def build_calligram(
                         f'<tspan x="{col * cw:.1f}" fill="{fill}">{esc(ch)}</tspan>'
                     )
                     line_chars.append(ch)
+                # Claim this word's pixel footprint so finer tiers don't paint
+                # over its letters (they're free to fill the gaps after it).
+                claimed_px[y_lo:y_hi, wx_lo:wx_hi] = True
                 c += wl + 1
                 wi += 1
             if not spans:
