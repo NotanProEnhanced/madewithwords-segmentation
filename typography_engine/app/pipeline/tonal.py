@@ -305,12 +305,12 @@ def build_calligram(
     ink_hex: str = "#15202b",
     bg_hex: str = "#ffffff",
 ) -> Tuple[str, List[TextRun]]:
-    """Story calligram: lay the user's own passage as continuous, ordered,
-    readable prose in lines across the subject, shading each glyph by the photo's
-    tone so the face emerges from the text's density. Unlike the word-mosaic this
-    keeps the words in order and unbroken (you can read it), fills the whole
-    masked region (faint in highlights, dark in shadows), and runs in straight
-    lines like a page. Ink colour is derived from `ink_hex` (the dark end)."""
+    """Story calligram: lay the user's passage as continuous prose, multi-size,
+    so the face emerges from text density. Small font in detail areas (eyes,
+    brows, lip line), medium on cheek/forehead, large on hair / body / edges.
+    Brightness modulated by photo tone -- bright letters on lit skin, dim
+    letters in shadow / outside the subject -- yields the high-contrast Margot
+    look on dark-ground inks (gold_noir, etc)."""
     words = [w for w in str(text).split() if w]
     if not words:
         warns.error("text", "no_words", "No passage supplied for the calligram.")
@@ -335,87 +335,134 @@ def build_calligram(
     dark = _balance_faces(dark, an, scale, mset)
     dark = _emphasize_features(dark, an, scale, mset)
     dark = _sharpen_eyes(dark, an, scale, mset)
-    tone_s = cv2.GaussianBlur(dark, (0, 0), max(1.0, font_px * 0.5))
+    # Cast back to float32 -- the helpers above can promote to float64 via
+    # numpy ops, and cv2.GaussianBlur rejects float64 inputs.
+    dark = dark.astype(np.float32)
 
-    cell_w = font_px * _MONO_ADVANCE
-    row_h = font_px * 1.05
-    cols = max(1, int(W / cell_w))
-    rows = max(1, int(H / row_h))
+    # Local-detail map for graduated font sizing. Sobel gradient magnitude of
+    # the tone field, smoothed slightly, normalised. High gradient = features
+    # (eyes, brows, lip line) -> small font. Low gradient = smooth surfaces
+    # (cheek, neck, hair, body) -> large font. This is the structural feature
+    # that produces the Margot-style multi-size mosaic.
+    gx = cv2.Sobel(dark, cv2.CV_32F, 1, 0, ksize=5)
+    gy = cv2.Sobel(dark, cv2.CV_32F, 0, 1, ksize=5)
+    detail = np.sqrt(gx * gx + gy * gy).astype(np.float32)
+    detail = cv2.GaussianBlur(detail, (0, 0), max(3.0, W * 0.008))
+    # Normalise on percentiles so the bucket thresholds are robust across images.
+    if mset.sum() > 50:
+        lo, hi = np.percentile(detail[mset], [10, 95])
+    else:
+        lo, hi = float(detail.min()), float(max(detail.min() + 1e-3, detail.max()))
+    detail = np.clip((detail - lo) / max(1e-3, hi - lo), 0.0, 1.0)
+    detail[~mset] = 0.0  # background = no detail = large font tier
+
     ir, ig, ib = _hex_to_rgb(ink_hex)
     br, bgc, bb = _hex_to_rgb(bg_hex)
     family = "'Courier New', 'DejaVu Sans Mono', 'Liberation Mono', monospace"
-    # Dark-ground (gold_noir / dark bg) inks need every letter visible -- the
-    # face emerges from BRIGHTNESS variation, not from gaps. Letters scale from
-    # a dim version of the ink (always above background luminance) at low tone
-    # up to the full ink colour at full tone, so even shadow areas read as
-    # subtle text rather than dropping out. Light-ground inks keep the original
-    # behaviour (text fades into paper at highlights -- the "negative" look).
     bg_luma = 0.299 * br + 0.587 * bgc + 0.114 * bb
     dark_bg = bg_luma < 100
-    # Minimum visibility floor for dark-ground: letters never collapse all the
-    # way to background. 0.10 -> very dim but still readable; tuned for high
-    # contrast between in-face highlights (full ink) and out-of-face shadow.
     dim_floor = 0.10
 
     doc = SvgDoc(width=W, height=H, background=bg_hex)
     runs: List[TextRun] = []
-    wi = 0
-    for r in range(rows):
-        baseline = (r + 1) * row_h
-        yi = min(H - 1, max(0, int(baseline - 0.32 * font_px)))
-        spans = []
-        line_chars = []
-        c = 0
-        while c < cols:
-            word = words[wi % len(words)]
-            wl = len(word)
-            if wl > cols:
-                word = word[:cols]; wl = cols
-            if c + wl > cols:
-                break
-            drew = False
-            for k, ch in enumerate(word):
-                col = c + k
-                xi = min(W - 1, max(0, int(col * cell_w + cell_w * 0.5)))
-                # Reference look: text fills the WHOLE canvas, not just the
-                # silhouette. The face emerges from brightness variation -- bright
-                # letters on lit skin, dim (near-bg) letters in shadow and outside
-                # the subject. tone_s outside the silhouette is ~0, which renders
-                # the letter in bg colour (invisibly blended) -- exactly the
-                # effect in the reference renders.
-                tone = float(tone_s[yi, xi])
-                norm = (tone - pivot) * contrast + pivot
-                norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
-                if dark_bg:
-                    # Brightness modulation of the ink colour. Push the curve
-                    # so highlights jump to near-full ink and shadows fall to
-                    # a quiet floor -- the high-contrast look of the reference.
-                    # `norm` already had the pivot/contrast S-curve applied, so
-                    # this is an additional gamma squash on top of that.
-                    b = dim_floor + (1.0 - dim_floor) * (norm ** 0.55)
-                    cr = int(round(ir * b))
-                    cg = int(round(ig * b))
-                    cb = int(round(ib * b))
-                else:
-                    f = 1.0 - norm ** power       # 1 = melt into background, 0 = full ink
-                    cr = int(round(ir + (br - ir) * f))
-                    cg = int(round(ig + (bgc - ig) * f))
-                    cb = int(round(ib + (bb - ib) * f))
-                spans.append(
-                    f'<tspan x="{col * cell_w:.1f}" fill="#{cr:02x}{cg:02x}{cb:02x}">{esc(ch)}</tspan>'
-                )
-                line_chars.append(ch); drew = True
-            c += wl + 1
-            if drew:                              # only consume a word when it's actually shown
+
+    # Three tiers. Each tier paints into a NON-OVERLAPPING band of detail.
+    # Pre-claim a coarse-resolution "claim map" so a small-tier letter at one
+    # location prevents the large-tier from also writing nearby (otherwise
+    # passes overlap and the canvas turns into a smear).
+    # Tier (label, font_px, detail_low, detail_high)
+    tiers = [
+        ("coarse",  44.0, 0.00, 0.20),   # broad surfaces / hair / clothes / bg
+        ("medium",  22.0, 0.20, 0.55),   # cheeks, forehead, neck
+        ("fine",    11.0, 0.55, 1.01),   # eyes, brows, lips, nose, lash line
+    ]
+    # claim grid at the finest tier's resolution; once claimed by a finer tier,
+    # coarser tiers skip those cells.
+    fine_cw = tiers[-1][1] * _MONO_ADVANCE
+    fine_rh = tiers[-1][1] * 1.05
+    claim_cols = max(1, int(W / fine_cw))
+    claim_rows = max(1, int(H / fine_rh))
+    claimed = np.zeros((claim_rows, claim_cols), dtype=bool)
+
+    wi = 0  # advances through the words list across all tiers
+
+    def _color_for(yi: int, xi: int, p: float) -> str:
+        """Pick the ink colour for a letter at (yi, xi) given the tone curve
+        exponent `p`. Tone is sampled from the smoothed dark map at the cell."""
+        tone = float(tone_s[yi, xi])
+        norm = (tone - pivot) * contrast + pivot
+        norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
+        if dark_bg:
+            b = dim_floor + (1.0 - dim_floor) * (norm ** p)
+            return f"#{int(round(ir * b)):02x}{int(round(ig * b)):02x}{int(round(ib * b)):02x}"
+        f = 1.0 - norm ** p
+        cr = int(round(ir + (br - ir) * f))
+        cg = int(round(ig + (bgc - ig) * f))
+        cb = int(round(ib + (bb - ib) * f))
+        return f"#{cr:02x}{cg:02x}{cb:02x}"
+
+    # Render tiers fine -> coarse so the smallest letters claim feature areas
+    # first, and the coarser tiers fill what's left without overlapping them.
+    # Words are drawn ATOMICALLY (entire word at one size) -- their *first*
+    # letter's cell decides which tier they belong to. This keeps the prose
+    # readable instead of fragmenting words across tiers.
+    for label, fp, d_lo, d_hi in reversed(tiers):
+        cw = fp * _MONO_ADVANCE
+        rh = fp * 1.05
+        cols = max(1, int(W / cw))
+        rows = max(1, int(H / rh))
+        tone_s = cv2.GaussianBlur(dark, (0, 0), max(1.0, fp * 0.5))
+        for r in range(rows):
+            baseline = (r + 1) * rh
+            yi = min(H - 1, max(0, int(baseline - 0.32 * fp)))
+            spans = []
+            line_chars = []
+            c = 0
+            while c < cols:
+                word = words[wi % len(words)]
+                wl = len(word)
+                if wl > cols:
+                    word = word[:cols]; wl = cols
+                if c + wl > cols:
+                    break
+                # Tier-and-claim check at the WORD START:
+                xi_start = min(W - 1, max(0, int(c * cw + cw * 0.5)))
+                d = float(detail[yi, xi_start])
+                in_tier = (d_lo <= d < d_hi)
+                cy = min(claim_rows - 1, int(yi / fine_rh))
+                claim_x_start = max(0, int(c * cw / fine_cw))
+                claim_x_end = min(claim_cols, int((c + wl) * cw / fine_cw) + 1)
+                already_claimed = claimed[cy, claim_x_start:claim_x_end].any()
+                if not in_tier or already_claimed:
+                    # Skip this position without consuming a word; advance one
+                    # cell and try again. This stops the writer from spinning
+                    # forever on a row where nothing fits.
+                    c += 1
+                    continue
+                # Place the whole word at this tier's size.
+                for k, ch in enumerate(word):
+                    col = c + k
+                    xi = min(W - 1, max(0, int(col * cw + cw * 0.5)))
+                    fill = _color_for(yi, xi, 0.55)
+                    spans.append(
+                        f'<tspan x="{col * cw:.1f}" fill="{fill}">{esc(ch)}</tspan>'
+                    )
+                    line_chars.append(ch)
+                # Claim the whole word's footprint on the fine grid.
+                claim_y_lo = max(0, int((baseline - rh) / fine_rh))
+                claim_y_hi = min(claim_rows, int(baseline / fine_rh) + 1)
+                claimed[claim_y_lo:claim_y_hi, claim_x_start:claim_x_end] = True
+                c += wl + 1
                 wi += 1
-        if not spans:
-            continue
-        doc.add(
-            f'<text y="{baseline:.1f}" xml:space="preserve" font-family="{esc(family)}" '
-            f'font-size="{font_px:.1f}">' + "".join(spans) + "</text>"
-        )
-        runs.append(TextRun(region="calligram", path_id=f"row{r}", path_d="",
-                            text="".join(line_chars), font_size=round(font_px, 1), kind="primary"))
+            if not spans:
+                continue
+            doc.add(
+                f'<text y="{baseline:.1f}" xml:space="preserve" font-family="{esc(family)}" '
+                f'font-size="{fp:.1f}">' + "".join(spans) + "</text>"
+            )
+            runs.append(TextRun(region=f"calligram_{label}", path_id=f"{label}_r{r}",
+                                path_d="", text="".join(line_chars),
+                                font_size=round(fp, 1), kind="primary"))
 
     if not runs:
         warns.error("text", "no_runs", "Calligram produced no text (mask empty?).")
