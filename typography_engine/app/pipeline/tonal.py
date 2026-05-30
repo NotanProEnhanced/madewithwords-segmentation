@@ -735,18 +735,26 @@ def build_calligram(
                         continue
                     py, pxx = np.unravel_index(int(np.argmin(patch)), patch.shape)
                     pupil_x, pupil_y = float(x0 + pxx), float(y0 + py)
-                    cyy, cxx = np.unravel_index(int(np.argmax(patch)), patch.shape)
+                    # Catchlight detection uses the UNBOOSTED brightness so
+                    # we find the photo's natural iris glint, not the boosted
+                    # sclera. Search the same eye-hull window.
+                    patch_raw = brightness_raw[y0:y1, x0:x1]
+                    cyy, cxx = np.unravel_index(int(np.argmax(patch_raw)), patch_raw.shape)
                     catch_x, catch_y = float(x0 + cxx), float(y0 + cyy)
-                    catch_b = float(patch.max())
+                    catch_b = float(patch_raw.max())
                     sig_p = max(2.5, float(rxe) * 0.20)
                     d_p = (xx_g - pupil_x) ** 2 + (yy_g - pupil_y) ** 2
                     g_p = np.exp(-d_p / (2.0 * sig_p * sig_p)).astype(np.float32)
                     brightness = brightness * (1.0 - 0.92 * g_p)
-                    if catch_b > 0.40:
-                        sig_c = max(1.8, float(rxe) * 0.10)
+                    if catch_b > 0.25:
+                        # Larger sigma + full lift to 1.0 so the catchlight
+                        # spans enough pixels to be made of multiple letters
+                        # at the smallest tier, and reads as a clear bright
+                        # glint instead of one stray bright letter.
+                        sig_c = max(3.5, float(rxe) * 0.20)
                         d_c = (xx_g - catch_x) ** 2 + (yy_g - catch_y) ** 2
                         g_c = np.exp(-d_c / (2.0 * sig_c * sig_c)).astype(np.float32)
-                        brightness = brightness + (1.0 - brightness) * 0.85 * g_c
+                        brightness = brightness + (1.0 - brightness) * g_c
                 brightness = np.clip(brightness, 0.0, 1.0)
             # Map brightness -> ink_amount in [0,1]: how much ink shows at
             # each pixel (0 = full bg, 1 = full ink). Direction-specific
