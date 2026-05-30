@@ -339,22 +339,58 @@ def build_calligram(
     # numpy ops, and cv2.GaussianBlur rejects float64 inputs.
     dark = dark.astype(np.float32)
 
-    # Local-detail map for graduated font sizing. Sobel gradient magnitude of
-    # the tone field, smoothed slightly, normalised. High gradient = features
-    # (eyes, brows, lip line) -> small font. Low gradient = smooth surfaces
-    # (cheek, neck, hair, body) -> large font. This is the structural feature
-    # that produces the Margot-style multi-size mosaic.
+    # Local tonal-detail signal -- secondary input to font sizing.
     gx = cv2.Sobel(dark, cv2.CV_32F, 1, 0, ksize=5)
     gy = cv2.Sobel(dark, cv2.CV_32F, 0, 1, ksize=5)
     detail = np.sqrt(gx * gx + gy * gy).astype(np.float32)
     detail = cv2.GaussianBlur(detail, (0, 0), max(3.0, W * 0.008))
-    # Normalise on percentiles so the bucket thresholds are robust across images.
     if mset.sum() > 50:
         lo, hi = np.percentile(detail[mset], [10, 95])
     else:
         lo, hi = float(detail.min()), float(max(detail.min() + 1e-3, detail.max()))
     detail = np.clip((detail - lo) / max(1e-3, hi - lo), 0.0, 1.0)
-    detail[~mset] = 0.0  # background = no detail = large font tier
+    detail[~mset] = 0.0
+
+    # Letter size map: three structural zones, each occupying ~1/3 of the
+    # size signal range.
+    #   FACE HULL  -> 0.00 ... 0.33  (smallest letters)
+    #   BODY       -> 0.33 ... 0.66  (medium letters; inside silhouette but
+    #                                 outside face hull)
+    #   BACKGROUND -> 0.66 ... 1.00  (largest letters; outside silhouette)
+    # This gives the Margot structure: tiny letters across the whole face
+    # so features emerge from BRIGHTNESS variation, medium on the body, big
+    # on the background / clothing / hair edges.
+    size_signal = np.zeros((H, W), np.float32)
+    face_hull_mask = np.zeros((H, W), np.uint8)
+    have_face = False
+    for face in _faces_of(an):
+        have_face = True
+        pts = (face.points * scale).astype(np.int32)
+        hull = cv2.convexHull(pts)
+        cv2.fillConvexPoly(face_hull_mask, hull, 255)
+    if have_face:
+        # Inside face hull: 0 .. 0.33 by distance from hull centre (smaller in
+        # the centre where features are, slightly bigger near the hull edge).
+        face_dist = cv2.distanceTransform(face_hull_mask, cv2.DIST_L2, 5)
+        max_face = max(1.0, float(face_dist.max()))
+        in_face = (1.0 - face_dist / max_face) * 0.33   # 0 at edge, 0.33 at hull edge inverted
+        # Inside silhouette, outside face hull: 0.33 .. 0.66 by distance from
+        # face hull edge (smoothly bigger as we move toward silhouette edge).
+        body_mask = (mset & (face_hull_mask == 0))
+        body_dist = cv2.distanceTransform(255 - face_hull_mask, cv2.DIST_L2, 5)
+        body_max = max(1.0, float(body_dist[body_mask].max() if body_mask.any() else 1.0))
+        in_body = 0.33 + 0.33 * np.clip(body_dist / body_max, 0.0, 1.0)
+        # Outside silhouette: 0.66 .. 1.00 by distance from silhouette edge.
+        out_dist = cv2.distanceTransform(255 - mask, cv2.DIST_L2, 5)
+        out_max = max(1.0, float(out_dist.max()))
+        outside = 0.66 + 0.34 * np.clip(out_dist / out_max, 0.0, 1.0)
+        # Compose by zone.
+        size_signal = np.where(face_hull_mask > 0, in_face,
+                       np.where(mset, in_body, outside)).astype(np.float32)
+    else:
+        # No face landmarks: fall back to mostly-uniform medium tier.
+        size_signal = np.full((H, W), 0.45, dtype=np.float32)
+    size_signal = np.clip(size_signal, 0.0, 1.0)
 
     ir, ig, ib = _hex_to_rgb(ink_hex)
     br, bgc, bb = _hex_to_rgb(bg_hex)
@@ -366,16 +402,15 @@ def build_calligram(
     doc = SvgDoc(width=W, height=H, background=bg_hex)
     runs: List[TextRun] = []
 
-    # FIVE tiers for much smoother font-size gradation. Smaller smallest-tier
-    # (8px) so the densest features get filled with tiny letters; larger
-    # largest-tier (50px) so broad surfaces carry truly bold words.
-    # Tier (label, font_px, detail_low, detail_high)
+    # FIVE tiers, indexed by `size_signal`. Each zone (face/body/bg) spans
+    # ~1/3 of the signal so all tiers are reachable.
+    # Tier (label, font_px, size_low, size_high)
     tiers = [
-        ("xl",   50.0, 0.00, 0.12),   # broadest surfaces / clothes / bg
-        ("lg",   34.0, 0.12, 0.28),   # hair / cheek mass / shoulder
-        ("md",   22.0, 0.28, 0.46),   # cheekbone, forehead, neck contour
-        ("sm",   14.0, 0.46, 0.68),   # nose ridge, jaw line, lip mass
-        ("xs",    8.0, 0.68, 1.01),   # eyes, brows, lash line, lip edge
+        ("xl",   40.0, 0.83, 1.01),   # deep background, far from silhouette
+        ("lg",   28.0, 0.66, 0.83),   # silhouette edge / background
+        ("md",   20.0, 0.50, 0.66),   # body interior / hair
+        ("sm",   15.0, 0.33, 0.50),   # body / shoulders / hair near face
+        ("xs",   12.0, 0.00, 0.33),   # face hull -- features at high density
     ]
     # claim grid at the finest tier's resolution; once claimed by a finer tier,
     # coarser tiers skip those cells.
@@ -435,8 +470,8 @@ def build_calligram(
                 # cell's detail bucket; if it doesn't match the tier, skip a
                 # cell and try again.
                 xi_start = min(W - 1, max(0, int(c * cw + cw * 0.5)))
-                d = float(detail[yi, xi_start])
-                if not (d_lo <= d < d_hi):
+                s = float(size_signal[yi, xi_start])
+                if not (d_lo <= s < d_hi):
                     c += 1
                     continue
                 # Check that no letter of this word would land on a pixel
@@ -510,8 +545,8 @@ def build_calligram(
             # at 0.42 sits in the middle of that range, so transitions read as
             # smooth value-gradation (more like a photo's continuous tone)
             # rather than a high-contrast cutout.
-            in_face = 0.22 + 0.78 * (brightness ** 0.70)   # range [0.22, 1.0]
-            outside_floor = 0.34                            # mid-range bg, face mins below it
+            in_face = 0.15 + 0.85 * (brightness ** 0.55)   # range [0.15, 1.0]
+            outside_floor = 0.30                            # mid-range bg, face mins below it
             outside = np.full_like(brightness, outside_floor)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
             mset_f = mset.astype(np.float32)
