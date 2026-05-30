@@ -542,11 +542,11 @@ def build_calligram(
         # 0.40 / 0.46 / 0.52 puts pitch firmly below cap height at every
         # tier. (2026-05-30 'horizontal spacing between lines too large'.)
         if fp <= 11.0:
-            row_ratio = 0.40
+            row_ratio = 0.34
         elif fp <= 18.0:
-            row_ratio = 0.46
+            row_ratio = 0.40
         else:
-            row_ratio = 0.52
+            row_ratio = 0.46
         rh = fp * row_ratio
         cols = max(1, int(W / cw))
         rows = max(1, int(H / rh))
