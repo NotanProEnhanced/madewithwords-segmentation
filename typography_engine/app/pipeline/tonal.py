@@ -581,18 +581,32 @@ def build_calligram(
     # Margot reference. We pass the modulation image back to the caller; if
     # present it overrides the standard cairosvg-only path.
     modulation_png = None  # type: Optional[bytes]
-    if dark_bg:
+    # Run modulation for both dark and light grounds. The per-glyph photo
+    # tonal gradation is what gives the typography dimension, regardless of
+    # whether the ink is bright-on-dark (gold_noir) or dark-on-light
+    # (navy/burgundy/etc on white). Direction-dependent details below.
+    if True:
         from .raster import svg_to_png_bytes
         import io as _io2
+        import re as _re2
         from PIL import Image as _PILImage2
-        # Render the SVG as currently built -- text is dim->bright per-cell
-        # which already encodes coarse tone. We use the LUMINANCE of the
-        # rendered text as a mask, and replace each text pixel with the
-        # corresponding pixel of a high-contrast gold-tinted photo. This adds
-        # the per-glyph internal gradient on top of the per-cell brightness.
+        # For alpha extraction we need uniform letter contrast against the
+        # ground. On dark_bg the SVG already has white letters on a dark
+        # ground (good alpha as-is). On light_bg the letters are per-cell
+        # coloured -- swap every tspan fill to black for the alpha render so
+        # the alpha mask reflects letter SHAPE only, not pre-baked cell tone
+        # (otherwise we'd double-modulate when photo_fill is applied below).
         svg_text = doc.to_svg()
+        if dark_bg:
+            alpha_svg = svg_text
+        else:
+            alpha_svg = _re2.sub(
+                r'(<tspan\b[^>]*?)fill="#[0-9a-fA-F]{6}"',
+                r'\1fill="#000000"',
+                svg_text,
+            )
         try:
-            png_bytes_raw = svg_to_png_bytes(svg_text, output_width=W)
+            png_bytes_raw = svg_to_png_bytes(alpha_svg, output_width=W)
         except Exception:
             png_bytes_raw = None
         if png_bytes_raw:
@@ -619,56 +633,70 @@ def build_calligram(
                 brightness = brightness * (1.0 - fm) + boosted * fm
 
                 # EYES PASS: sharper contrast specifically in eye hulls --
-                # pupil drops near-black, sclera goes near-white, and we
-                # explicitly paint a small CATCHLIGHT in each eye so a letter
-                # at the brightest spot renders pure ink (the small reflection
-                # that makes the portrait look back at you, per the Margot
-                # reference).
+                # pupil drops near-black, sclera goes near-white.
                 em = (eye_mask > 0).astype(np.float32)
                 em = cv2.GaussianBlur(em, (0, 0), max(1.5, W * 0.0025))
                 # Steeper S-curve, floor 0.04 -- pupil really goes near-black.
                 eye_boost = np.clip(((brightness - 0.5) * 2.6) + 0.5, 0.04, 1.0)
                 brightness = brightness * (1.0 - em) + eye_boost * em
-                # Force darkest spot per eye to be the pupil -- PURE BLACK
-                # (brightness 0 so letters there render as bg / invisible) so
-                # the pupil reads as a true black dot. Catchlight offset more
-                # and slightly larger so it stands out against the now-pure
-                # black pupil.
-                for cx, cy, rx, ry in eye_centers:
-                    x0 = max(0, int(cx - rx)); x1 = min(W, int(cx + rx) + 1)
-                    y0 = max(0, int(cy - ry)); y1 = min(H, int(cy + ry) + 1)
-                    if x1 - x0 < 4 or y1 - y0 < 4:
-                        continue
-                    patch = brightness[y0:y1, x0:x1]
-                    # Pupil = locally darkest spot; PURE black.
-                    py, px = np.unravel_index(int(np.argmin(patch)), patch.shape)
-                    r_pup = max(3, int(round(min(rx, ry) * 0.22)))
-                    cv2.circle(brightness, (x0 + px, y0 + py), r_pup, 0.0, -1)
-                    # Catchlight = small bright dot offset further up-and-left
-                    # so it sits CLEARLY OUTSIDE the pupil, against a near-
-                    # black pupil it pops sharply.
-                    cx_l = x0 + px - max(2, int(rx * 0.18))
-                    cy_l = y0 + py - max(2, int(ry * 0.18))
-                    r_cl = max(3, int(round(min(rx, ry) * 0.16)))
-                    cv2.circle(brightness, (int(cx_l), int(cy_l)), r_cl, 1.0, -1)
+                # On dark_bg only: force darkest spot per eye into the
+                # brightness map (so letters at the pupil render as bg-black
+                # and a catchlight spot reads as full bright ink). This trick
+                # only works for the dark_bg direction where brightness=0
+                # maps to bg and brightness=1 maps to full ink. On light_bg
+                # the same forcing inverts the meaning; the direct paint
+                # pass at the end handles pupil/catchlight there instead.
+                if dark_bg:
+                    for cx, cy, rx, ry in eye_centers:
+                        x0 = max(0, int(cx - rx)); x1 = min(W, int(cx + rx) + 1)
+                        y0 = max(0, int(cy - ry)); y1 = min(H, int(cy + ry) + 1)
+                        if x1 - x0 < 4 or y1 - y0 < 4:
+                            continue
+                        patch = brightness[y0:y1, x0:x1]
+                        py, px = np.unravel_index(int(np.argmin(patch)), patch.shape)
+                        r_pup = max(3, int(round(min(rx, ry) * 0.22)))
+                        cv2.circle(brightness, (x0 + px, y0 + py), r_pup, 0.0, -1)
+                        cx_l = x0 + px - max(2, int(rx * 0.18))
+                        cy_l = y0 + py - max(2, int(ry * 0.18))
+                        r_cl = max(3, int(round(min(rx, ry) * 0.16)))
+                        cv2.circle(brightness, (int(cx_l), int(cy_l)), r_cl, 1.0, -1)
 
-            # Smooth hair / forehead and other interior-silhouette transitions
-            # so the letter colour gradient flows without a stark edge between
-            # bright skin and dark hair. Small sigma so feature detail is kept.
+            # Smooth interior-silhouette transitions so the letter colour
+            # gradient flows without a stark edge between bright skin and
+            # dark hair. Small sigma so feature detail is kept.
             brightness = cv2.GaussianBlur(brightness, (0, 0), max(1.5, W * 0.0025))
-            # In-face range raised to [0.22, 1.0] so the darkest face letters
-            # are clearly brighter than bg floor (0.12). Without this gap the
-            # iris / brow letters wash into the background.
-            in_face = 0.22 + 0.78 * (brightness ** 0.55)
-            outside_floor = 0.12                            # quiet bg, face dominates
+            # In-face range: keep the darkest face letters above the bg
+            # floor so iris/brow letters don't wash into the ground.
+            #   dark_bg:  raise floor -> dim letters are still visible.
+            #   light_bg: cap ceiling -> highlight letters stay faintly inked
+            #             rather than melting completely into white.
+            if dark_bg:
+                in_face = 0.22 + 0.78 * (brightness ** 0.55)
+                outside_floor = 0.12   # quiet bg letters, face dominates
+            else:
+                in_face = 0.05 + 0.78 * (brightness ** 0.55)
+                outside_floor = 0.95   # bg letters melt into the white ground
             outside = np.full_like(brightness, outside_floor)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
             mset_f = mset.astype(np.float32)
             mset_f = cv2.GaussianBlur(mset_f, (0, 0), max(14.0, W * 0.028))
             mset_f = np.clip(mset_f, 0.0, 1.0)
             brightness = in_face * mset_f + outside * (1.0 - mset_f)
-            photo_fill = np.stack([brightness * ir, brightness * ig, brightness * ib],
-                                  axis=-1).astype(np.float32) / 255.0
+            # photo_fill direction depends on bg:
+            #   dark_bg:  bright photo -> full bright ink, dark photo -> bg
+            #             via (brightness * ink_rgb).
+            #   light_bg: bright photo -> bg (faint letter), dark photo ->
+            #             full ink via (ink + brightness * (bg - ink)).
+            if dark_bg:
+                photo_fill = np.stack(
+                    [brightness * ir, brightness * ig, brightness * ib], axis=-1
+                ).astype(np.float32) / 255.0
+            else:
+                photo_fill = np.stack([
+                    ir + brightness * (br - ir),
+                    ig + brightness * (bgc - ig),
+                    ib + brightness * (bb - ib),
+                ], axis=-1).astype(np.float32) / 255.0
             # Resize photo_fill to match the rendered text image.
             if photo_fill.shape[:2] != text_arr.shape[:2]:
                 photo_fill_img = _PILImage2.fromarray((photo_fill * 255).astype(np.uint8))
@@ -676,26 +704,33 @@ def build_calligram(
                     (text_arr.shape[1], text_arr.shape[0]), _PILImage2.LANCZOS
                 )
                 photo_fill = np.asarray(photo_fill_img).astype(np.float32) / 255.0
-            # Use the text image's luminance as alpha: where the rendered text
-            # was bright (a letter), composite the photo; elsewhere keep bg.
-            alpha = text_arr.max(axis=2, keepdims=True)
+            # Alpha mask from the rendered text image:
+            #   dark_bg:  white-on-dark -> alpha = max channel.
+            #   light_bg: black-on-white (after fill swap) -> alpha = 1 - min.
+            if dark_bg:
+                alpha = text_arr.max(axis=2, keepdims=True)
+            else:
+                alpha = np.clip(1.0 - text_arr.min(axis=2, keepdims=True), 0.0, 1.0)
             bg_rgb = np.array([br, bgc, bb], dtype=np.float32) / 255.0
             modulated = photo_fill * alpha + bg_rgb * (1.0 - alpha)
             modulated_u8 = (modulated * 255).clip(0, 255).astype(np.uint8)
-            # Paint pupils, crescent catchlights, and sclera highlights DIRECTLY
-            # on the modulated image so eyes read as curved spheres with proper
-            # structure regardless of which glyphs landed where:
-            #   - Search & paint are constrained to the eye's ELLIPSE (not the
-            #     rectangular bounding box) so the eye outline reads as almond.
+            # Paint pupils, crescent catchlights, and (dark_bg only) sclera
+            # highlights DIRECTLY on the modulated image so eyes read as
+            # curved spheres regardless of which glyphs landed where:
+            #   - Search & paint constrained to the eye's ELLIPSE so the
+            #     outline reads as almond, not rectangular.
             #   - PUPIL: pure-black disk at the darkest in-ellipse pixel.
-            #   - CATCHLIGHT: crescent (bright disk with a near-overlapping
-            #     black disk carved out) -- a real spherical reflection.
+            #   - CATCHLIGHT: crescent -- a bright disk with a near-
+            #     overlapping black disk carved out. The "bright" colour is
+            #     the ink on dark_bg (gold pops against dark) and the bg on
+            #     light_bg (white pops against the black pupil).
             #   - SCLERA HIGHLIGHTS: two bright ink dots at the brightest
-            #     in-ellipse pixels away from the pupil; these read as the
-            #     light reflecting off the curved white of the eye.
+            #     in-ellipse pixels away from the pupil. Only on dark_bg;
+            #     on light_bg the sclera reads naturally via letter sparsity.
             mh, mw = modulated_u8.shape[:2]
             sx = mw / float(W); sy = mh / float(H)
             ink_rgb = (int(ir), int(ig), int(ib))
+            bright_color = ink_rgb if dark_bg else (int(br), int(bgc), int(bb))
             for cx, cy, rx, ry in eye_centers:
                 x0 = max(0, int(cx - rx)); x1 = min(W, int(cx + rx) + 1)
                 y0 = max(0, int(cy - ry)); y1 = min(H, int(cy + ry) + 1)
@@ -719,44 +754,47 @@ def build_calligram(
                 r_pup = max(6, int(round(min(rx, ry) * 0.28 * min(sx, sy))))
                 cv2.circle(modulated_u8, (pup_cx, pup_cy), r_pup, (0, 0, 0), -1)
 
-                # SCLERA HIGHLIGHTS: two brightest sclera pixels, away from
-                # the pupil. dark[] is darkness; sclera = 1 - dark.
-                bright = (1.0 - patch).astype(np.float32)
-                bright[emask == 0] = 0.0
-                # Exclude a generous neighbourhood around the pupil so we
-                # don't pick iris pixels right next to it.
-                yy, xx = np.ogrid[:ph_, :pw_]
-                pup_dist = np.sqrt((yy - py) ** 2 + (xx - px) ** 2)
-                exclude_r = max(3, int(round(min(rx, ry) * 0.45)))
-                bright[pup_dist <= exclude_r] = 0.0
-                flat = bright.flatten()
-                # Take the top spots; suppress neighbours so the two dots end
-                # up on opposite sides of the pupil rather than clumped.
-                placed = []
-                r_scl = max(2, int(round(min(rx, ry) * 0.08 * min(sx, sy))))
-                for idx in np.argsort(flat)[::-1][:64]:
-                    val = float(flat[idx])
-                    if val <= 0.05 or len(placed) >= 2:
-                        break
-                    syp, sxp = int(idx // pw_), int(idx % pw_)
-                    too_close = any(
-                        (syp - p[0]) ** 2 + (sxp - p[1]) ** 2 < (max(rx, ry) * 0.55) ** 2
-                        for p in placed
-                    )
-                    if too_close:
-                        continue
-                    placed.append((syp, sxp))
-                    scl_cx = int((x0 + sxp) * sx)
-                    scl_cy = int((y0 + syp) * sy)
-                    cv2.circle(modulated_u8, (scl_cx, scl_cy), r_scl, ink_rgb, -1)
+                # SCLERA HIGHLIGHTS (dark_bg only): two brightest sclera
+                # pixels, away from the pupil. dark[] is darkness; sclera
+                # = 1 - dark. On light_bg the sclera area is already letter-
+                # sparse (highlights melt into the white ground), so painting
+                # white-on-white dots adds nothing -- skip.
+                if dark_bg:
+                    bright = (1.0 - patch).astype(np.float32)
+                    bright[emask == 0] = 0.0
+                    # Exclude a generous neighbourhood around the pupil so we
+                    # don't pick iris pixels right next to it.
+                    yy, xx = np.ogrid[:ph_, :pw_]
+                    pup_dist = np.sqrt((yy - py) ** 2 + (xx - px) ** 2)
+                    exclude_r = max(3, int(round(min(rx, ry) * 0.45)))
+                    bright[pup_dist <= exclude_r] = 0.0
+                    flat = bright.flatten()
+                    placed = []
+                    r_scl = max(2, int(round(min(rx, ry) * 0.08 * min(sx, sy))))
+                    for idx in np.argsort(flat)[::-1][:64]:
+                        val = float(flat[idx])
+                        if val <= 0.05 or len(placed) >= 2:
+                            break
+                        syp, sxp = int(idx // pw_), int(idx % pw_)
+                        too_close = any(
+                            (syp - p[0]) ** 2 + (sxp - p[1]) ** 2 < (max(rx, ry) * 0.55) ** 2
+                            for p in placed
+                        )
+                        if too_close:
+                            continue
+                        placed.append((syp, sxp))
+                        scl_cx = int((x0 + sxp) * sx)
+                        scl_cy = int((y0 + syp) * sy)
+                        cv2.circle(modulated_u8, (scl_cx, scl_cy), r_scl, ink_rgb, -1)
 
-                # CATCHLIGHT (crescent): bright disk, then a slightly offset
-                # black disk carved out to leave a curved crescent -- the way
-                # a specular highlight wraps a real spherical eye.
+                # CATCHLIGHT (crescent): bright disk + slightly offset black
+                # disk carved out, the curve a specular highlight takes on
+                # a real spherical eye. Bright colour adapts to bg direction
+                # (see bright_color computed above).
                 cl_cx = pup_cx - max(3, int(rx * 0.22 * sx))
                 cl_cy = pup_cy - max(3, int(ry * 0.22 * sy))
                 r_cl = max(5, int(round(min(rx, ry) * 0.20 * min(sx, sy))))
-                cv2.circle(modulated_u8, (cl_cx, cl_cy), r_cl, ink_rgb, -1)
+                cv2.circle(modulated_u8, (cl_cx, cl_cy), r_cl, bright_color, -1)
                 carve_off = max(1, int(round(r_cl * 0.45)))
                 r_carve = max(2, int(round(r_cl * 0.82)))
                 cv2.circle(
