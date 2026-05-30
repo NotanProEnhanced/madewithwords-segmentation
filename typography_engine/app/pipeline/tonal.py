@@ -387,14 +387,16 @@ def build_calligram(
     wi = 0  # advances through the words list across all tiers
 
     def _color_for(yi: int, xi: int, p: float) -> str:
-        """Pick the ink colour for a letter at (yi, xi) given the tone curve
-        exponent `p`. Tone is sampled from the smoothed dark map at the cell."""
+        """Pick the ink colour for a letter at (yi, xi). For dark-ground inks
+        we render all letters PURE WHITE in the SVG and add the photo's tonal
+        gradient via the per-pixel modulation pass below -- that gives the
+        Margot-style internal-glyph tonal variation. Light-ground inks keep
+        the per-cell colour modulation."""
+        if dark_bg:
+            return "#ffffff"
         tone = float(tone_s[yi, xi])
         norm = (tone - pivot) * contrast + pivot
         norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
-        if dark_bg:
-            b = dim_floor + (1.0 - dim_floor) * (norm ** p)
-            return f"#{int(round(ir * b)):02x}{int(round(ig * b)):02x}{int(round(ib * b)):02x}"
         f = 1.0 - norm ** p
         cr = int(round(ir + (br - ir) * f))
         cg = int(round(ig + (bgc - ig) * f))
@@ -464,9 +466,72 @@ def build_calligram(
                                 path_d="", text="".join(line_chars),
                                 font_size=round(fp, 1), kind="primary"))
 
+    # Per-glyph tonal modulation: render the SVG normally with WHITE text on
+    # solid bg, then use numpy to mask the photo through the rendered letter
+    # shapes. Each letter ends up filled with the actual photo tones beneath
+    # its glyph -- the "lip-contour-inside-each-letter" effect from the
+    # Margot reference. We pass the modulation image back to the caller; if
+    # present it overrides the standard cairosvg-only path.
+    modulation_png = None  # type: Optional[bytes]
+    if dark_bg:
+        from .raster import svg_to_png_bytes
+        import io as _io2
+        from PIL import Image as _PILImage2
+        # Render the SVG as currently built -- text is dim->bright per-cell
+        # which already encodes coarse tone. We use the LUMINANCE of the
+        # rendered text as a mask, and replace each text pixel with the
+        # corresponding pixel of a high-contrast gold-tinted photo. This adds
+        # the per-glyph internal gradient on top of the per-cell brightness.
+        svg_text = doc.to_svg()
+        try:
+            png_bytes_raw = svg_to_png_bytes(svg_text, output_width=W)
+        except Exception:
+            png_bytes_raw = None
+        if png_bytes_raw:
+            text_img = _PILImage2.open(_io2.BytesIO(png_bytes_raw)).convert("RGB")
+            text_arr = np.asarray(text_img).astype(np.float32) / 255.0  # H,W,3
+            # Recompute the high-contrast tone-mapped photo at render resolution.
+            t = dark.copy()
+            if mset.sum() > 50:
+                plo, phi = np.percentile(t[mset], [3, 97])
+            else:
+                plo, phi = float(t.min()), float(max(t.min() + 1e-3, t.max()))
+            t = np.clip((t - plo) / max(1e-3, phi - plo), 0.0, 1.0)
+            # `t` is darkness (1 = dark feature, 0 = bright highlight). For
+            # dark-bg inks we want the OPPOSITE: bright photo highlights ->
+            # full ink colour, dark features -> dim/near-black. The mask zeros
+            # `t` outside the silhouette which would otherwise make the
+            # background read as "bright" -- so we explicitly zero brightness
+            # outside the silhouette.
+            brightness = (1.0 - t).astype(np.float32)
+            brightness[~mset] = 0.0
+            # Gamma-stretch so highlights pop and shadows fall harder. No
+            # lower clip -- background and shadow letters genuinely fall to
+            # near-black, matching the high contrast of the Margot reference.
+            brightness = brightness ** 0.7
+            photo_fill = np.stack([brightness * ir, brightness * ig, brightness * ib],
+                                  axis=-1).astype(np.float32) / 255.0
+            # Resize photo_fill to match the rendered text image.
+            if photo_fill.shape[:2] != text_arr.shape[:2]:
+                photo_fill_img = _PILImage2.fromarray((photo_fill * 255).astype(np.uint8))
+                photo_fill_img = photo_fill_img.resize(
+                    (text_arr.shape[1], text_arr.shape[0]), _PILImage2.LANCZOS
+                )
+                photo_fill = np.asarray(photo_fill_img).astype(np.float32) / 255.0
+            # Use the text image's luminance as alpha: where the rendered text
+            # was bright (a letter), composite the photo; elsewhere keep bg.
+            alpha = text_arr.max(axis=2, keepdims=True)
+            bg_rgb = np.array([br, bgc, bb], dtype=np.float32) / 255.0
+            modulated = photo_fill * alpha + bg_rgb * (1.0 - alpha)
+            modulated_u8 = (modulated * 255).clip(0, 255).astype(np.uint8)
+            out_img = _PILImage2.fromarray(modulated_u8)
+            buf2 = _io2.BytesIO()
+            out_img.save(buf2, format="PNG", optimize=True)
+            modulation_png = buf2.getvalue()
+
     if not runs:
         warns.error("text", "no_runs", "Calligram produced no text (mask empty?).")
-    return doc.to_svg(), runs
+    return doc.to_svg(), runs, modulation_png
 
 
 def build_tonal_portrait(

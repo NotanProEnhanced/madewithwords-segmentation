@@ -274,13 +274,16 @@ async def render(
     ink_choice = ink if (ink in _PALETTES or ink in _GRADIENTS or ink == "photo") else "navy"
     style_choice = "story" if style == "story" else "mosaic"
 
+    modulation_png_bytes = None
     try:
         if style_choice == "story":
             # Continuous-prose calligram from the user's message (falls back to
             # the approved words if no passage was supplied).
             passage = (message or "").strip() or " ".join(word_list)
             ink_hex, bg_hex = _CALLIGRAM.get(ink_choice, _CALLIGRAM["navy"])
-            svg, runs = build_calligram(an, passage, cfg, warns, ink_hex=ink_hex, bg_hex=bg_hex)
+            svg, runs, modulation_png_bytes = build_calligram(
+                an, passage, cfg, warns, ink_hex=ink_hex, bg_hex=bg_hex
+            )
             if svg:
                 _validate(svg)
             from .pipeline.portrait import PortraitResult
@@ -316,7 +319,13 @@ async def render(
     clean_png = PRIVATE_DIR / f"{job_id}.png"
     preview_path = OUTPUTS_DIR / f"{job_id}_preview.png"
     try:
-        write_png(svg_out, clean_png, output_width=max(cfg.canvas_w, int(png_width)))
+        if modulation_png_bytes:
+            # Story style with per-glyph photo modulation: bytes were pre-rendered
+            # in build_calligram so the photo's tone runs THROUGH each letter shape.
+            # Bypass cairosvg here -- write the bytes directly.
+            clean_png.write_bytes(modulation_png_bytes)
+        else:
+            write_png(svg_out, clean_png, output_width=max(cfg.canvas_w, int(png_width)))
         from .pipeline.watermark import add_watermark
         preview_path.write_bytes(add_watermark(clean_png.read_bytes(), url=WATERMARK_URL))
     except Exception as e:  # noqa: BLE001
