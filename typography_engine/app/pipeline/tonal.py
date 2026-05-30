@@ -434,7 +434,7 @@ def build_calligram(
         #   Net range ~0.10 .. 1.00 -> all body tiers (xs through xl) fire.
         # In background: signal stays high but subject_only stops placement.
         body_base = 0.36 + 0.64 * hull_d
-        body_signal = np.clip(body_base - 0.55 * detail_map, 0.10, 1.00)
+        body_signal = np.clip(body_base - 0.85 * detail_map, 0.04, 1.00)
         size_signal = np.where(
             feature_mask > 0,
             0.16 * (1.0 - feat_d),  # 0 at feature centre, 0.16 at feature edge
@@ -527,17 +527,16 @@ def build_calligram(
     claimed_px = np.zeros((H, W), dtype=bool)
     for label, fp, d_lo, d_hi in tiers:
         cw = fp * _MONO_ADVANCE
-        # Smoother row-spacing gradient so face-to-hair transition isn't a
-        # density step change. Smallest tiers get 0.90x, middle tiers 0.95x,
-        # largest tiers 1.0x -- a gentle slope instead of the prior 0.85
-        # vs 1.05 jump that made forehead-vs-hair look like two different
-        # textures collide.
+        # Row-spacing gradient kept tight across all tiers so letters pack
+        # densely vertically without the paper showing between rows. Smaller
+        # tiers can pack tighter (less ascender/descender clearance needed)
+        # than larger ones.
         if fp <= 11.0:
-            row_ratio = 0.90
+            row_ratio = 0.82
         elif fp <= 18.0:
-            row_ratio = 0.95
+            row_ratio = 0.88
         else:
-            row_ratio = 1.00
+            row_ratio = 0.94
         rh = fp * row_ratio
         cols = max(1, int(W / cw))
         rows = max(1, int(H / rh))
@@ -592,10 +591,12 @@ def build_calligram(
                 # Claim this word's pixel footprint so finer tiers don't paint
                 # over its letters (they're free to fill the gaps after it).
                 claimed_px[y_lo:y_hi, wx_lo:wx_hi] = True
-                # Tight packing: NO inter-word space on the finest tiers (so
-                # face features get maximum letter density), 1-cell gap on
-                # larger tiers (keeps words readable in the body / bg).
-                gap = 0 if fp <= 14.0 else 1
+                # Tight packing: NO inter-word space on all but the very
+                # largest tier. Density takes priority over read-as-prose
+                # legibility on the body -- letters here form a tonal field
+                # more than they form words. xl(36) keeps a 1-cell gap so the
+                # biggest letters don't smear together at the silhouette edge.
+                gap = 0 if fp <= 28.0 else 1
                 c += wl + gap
                 wi += 1
             if not spans:
