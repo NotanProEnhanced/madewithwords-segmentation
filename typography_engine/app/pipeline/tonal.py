@@ -499,16 +499,21 @@ def build_calligram(
             t = np.clip((t - plo) / max(1e-3, phi - plo), 0.0, 1.0)
             # `t` is darkness (1 = dark feature, 0 = bright highlight). For
             # dark-bg inks we want the OPPOSITE: bright photo highlights ->
-            # full ink colour, dark features -> dim/near-black. The mask zeros
-            # `t` outside the silhouette which would otherwise make the
-            # background read as "bright" -- so we explicitly zero brightness
-            # outside the silhouette.
+            # full ink colour, dark features -> dim ink, outside-silhouette ->
+            # very dim but still visible (so background letters read as a
+            # quiet texture rather than blank regions). This eliminates the
+            # "tattoo on black" effect -- the whole canvas carries text, with
+            # the face brightness-pop emerging from the gradient.
             brightness = (1.0 - t).astype(np.float32)
-            brightness[~mset] = 0.0
-            # Gamma-stretch so highlights pop and shadows fall harder. No
-            # lower clip -- background and shadow letters genuinely fall to
-            # near-black, matching the high contrast of the Margot reference.
-            brightness = brightness ** 0.7
+            # Lift the inside-silhouette curve so features pop, with an S-curve
+            # that crushes midtones (more dynamic range in highlights/shadows).
+            in_face = brightness ** 0.55
+            # Outside silhouette gets a quiet uniform floor + a hint of the
+            # photo's own darkness pattern (clamped so it doesn't compete with
+            # the face).
+            outside = np.full_like(brightness, 0.18)
+            # Compose: in-silhouette uses `in_face`, outside uses `outside`.
+            brightness = np.where(mset, in_face, outside)
             photo_fill = np.stack([brightness * ir, brightness * ig, brightness * ib],
                                   axis=-1).astype(np.float32) / 255.0
             # Resize photo_fill to match the rendered text image.
