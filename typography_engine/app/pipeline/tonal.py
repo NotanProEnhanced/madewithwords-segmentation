@@ -304,13 +304,18 @@ def build_calligram(
     power: float = 0.65,
     ink_hex: str = "#15202b",
     bg_hex: str = "#ffffff",
+    subject_only: bool = False,
 ) -> Tuple[str, List[TextRun]]:
     """Story calligram: lay the user's passage as continuous prose, multi-size,
     so the face emerges from text density. Small font in detail areas (eyes,
     brows, lip line), medium on cheek/forehead, large on hair / body / edges.
     Brightness modulated by photo tone -- bright letters on lit skin, dim
     letters in shadow / outside the subject -- yields the high-contrast Margot
-    look on dark-ground inks (gold_noir, etc)."""
+    look on dark-ground inks (gold_noir, etc).
+
+    When `subject_only=True`, words are placed only on cells whose centre falls
+    inside the silhouette -- the background tiers stay blank so the subject
+    reads as a portrait on a clean ground, not a full-canvas type field."""
     words = [w for w in str(text).split() if w]
     if not words:
         warns.error("text", "no_words", "No passage supplied for the calligram.")
@@ -522,6 +527,11 @@ def build_calligram(
                 # cell's detail bucket; if it doesn't match the tier, skip a
                 # cell and try again.
                 xi_start = min(W - 1, max(0, int(c * cw + cw * 0.5)))
+                # Subject-only mode: skip cells whose centre falls outside the
+                # silhouette so the background tiers never paint.
+                if subject_only and not mset[yi, xi_start]:
+                    c += 1
+                    continue
                 s = float(size_signal[yi, xi_start])
                 if not (d_lo <= s < d_hi):
                     c += 1
