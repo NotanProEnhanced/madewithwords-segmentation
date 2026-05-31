@@ -457,7 +457,7 @@ def build_calligram(
 
     ir, ig, ib = _hex_to_rgb(ink_hex)
     br, bgc, bb = _hex_to_rgb(bg_hex)
-    family = "'Courier New', 'DejaVu Sans Mono', 'Liberation Mono', monospace"
+    family = "'Bebas Neue', 'Oswald', 'Arial Narrow', sans-serif"
     bg_luma = 0.299 * br + 0.587 * bgc + 0.114 * bb
     dark_bg = bg_luma < 100
     dim_floor = 0.10
@@ -529,10 +529,10 @@ def build_calligram(
     # transitions: smaller text fits BETWEEN bigger text with no visual smear.
     claimed_px = np.zeros((H, W), dtype=bool)
     for label, fp, d_lo, d_hi in tiers:
-        # Horizontal advance: every tier packs at 0.55em. The body uses
-        # small/mid tiers almost exclusively now (lg/xl rare), so 0.55
-        # everywhere keeps density consistent across the silhouette.
-        cw = fp * 0.55
+        # Bebas Neue is heavily CONDENSED, so the per-glyph horizontal
+        # advance is much smaller than Courier's 0.55em. 0.42em packs the
+        # condensed letterforms tightly without overlap collisions.
+        cw = fp * 0.42
         # Row pitch as a fraction of em. Forced WELL below bold cap height
         # so rows intermesh: cap-to-cap distance is smaller than the bold
         # glyph cap height, producing the continuous tonal field of the
@@ -699,12 +699,11 @@ def build_calligram(
                 # light_bg drop the floor so brows / iris / lips can sink to
                 # full ink (brightness 0 -> ink_amount near 1.0).
                 if dark_bg:
-                    # Skin (and brow/lip/nose) capped at 0.78 so the eye
-                    # sclera (capped 0.92 below) can be GENUINELY BRIGHTER
-                    # than the brightest skin highlight. Without this cap
-                    # both could pin at 1.0 and sclera wouldn't read as
-                    # 'the bright part of the eye'. (2026-05-30.)
-                    boosted = np.clip(((brightness - 0.5) * 1.6) + 0.5, 0.10, 0.78)
+                    # Full value range: ceilings dropped so skin highlights
+                    # and sclera can both reach 1.0 -- matches Margot's
+                    # full ink-to-bg span. (2026-05-31 'open value range
+                    # back up'.)
+                    boosted = np.clip(((brightness - 0.5) * 1.6) + 0.5, 0.0, 1.0)
                 else:
                     boosted = np.clip(((brightness - 0.5) * 2.0) + 0.5, 0.0, 1.0)
                 brightness = brightness * (1.0 - fm) + boosted * fm
@@ -714,13 +713,11 @@ def build_calligram(
                 em = (eye_mask > 0).astype(np.float32)
                 em = cv2.GaussianBlur(em, (0, 0), max(1.5, W * 0.0025))
                 if dark_bg:
-                    # Sclera ceiling 0.92 (was 0.78). With skin capped at
-                    # 0.78 by feature_boost above, this guarantees
-                    # sclera > skin. Iris floor 0.04 so iris reads visibly
-                    # darker than sclera. Catchlight push (below) lifts
-                    # to 1.0 from this 0.92 ceiling -- 0.08 of headroom
-                    # for the glint to stand out. (2026-05-30.)
-                    eye_boost = np.clip(((brightness - 0.5) * 1.7) + 0.5, 0.04, 0.92)
+                    # Full value range; sclera can hit 1.0, iris hits 0.
+                    # Catchlight push and sclera now share the same ceiling
+                    # -- catchlight reads as part of the bright pool rather
+                    # than a distinct hot spot (matches Margot).
+                    eye_boost = np.clip(((brightness - 0.5) * 1.7) + 0.5, 0.0, 1.0)
                 else:
                     eye_boost = np.clip(((brightness - 0.5) * 3.0) + 0.5, 0.0, 1.0)
                 brightness = brightness * (1.0 - em) + eye_boost * em
@@ -801,12 +798,12 @@ def build_calligram(
             #              ground; ceiling 0.95 so the darkest shadow isn't
             #              a solid ink blob.
             if dark_bg:
-                # Floor dropped further (0.06 -> 0.02) so pupil pixels
-                # truly vanish into the bg colour. With pupil push at 0.98
-                # and floor 0.02, the pupil renders as pure bg = a real
-                # dark hole. (2026-05-30 'pupil should be darker'.)
-                ink_amount_face = 0.02 + 0.98 * (brightness ** 0.55)
-                ink_amount_outside = 0.12   # quiet bg letters, face dominates
+                # Full value range: floor 0, ceiling 1. Pupils at brightness
+                # 0 vanish to pure bg, sclera/highlights at brightness 1
+                # reach pure ink. Matches Margot's full ink-to-bg span
+                # without compression.
+                ink_amount_face = brightness ** 0.55
+                ink_amount_outside = 0.0    # subject_only suppresses bg anyway
             else:
                 # Light_bg needs more density than dark_bg -- on white,
                 # mid-skin and hair must read as solidly inked navy, not
@@ -858,7 +855,7 @@ def build_calligram(
             # a halo / glow around the face (2026-05-30 feedback). The wide
             # mset_f feather is still used for ink_amount so letters at the
             # hair line fade gracefully.
-            underlay_strength = 0.12
+            underlay_strength = 0.0    # off -- matches Margot pure-black bg
             mset_tight = cv2.GaussianBlur(mset.astype(np.float32), (0, 0), max(2.0, W * 0.004))
             mset_tight = np.clip(mset_tight, 0.0, 1.0)
             soft_tone = cv2.GaussianBlur(brightness_raw, (0, 0), max(6.0, W * 0.014))
