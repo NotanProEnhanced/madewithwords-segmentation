@@ -315,6 +315,21 @@ def build_calligram(
     if not words:
         warns.error("text", "no_words", "No passage supplied for the calligram.")
         return "", []
+    # Per-row shuffled word sequences. Without this, repeating a short
+    # keyword set ('MARGOT BEAUTIFUL SISTER SWEET') produces visible
+    # vertical banding -- the same word lengths align at the same column
+    # positions across rows. A deterministic Random-per-row shuffle keeps
+    # the alphabet identical but breaks the column alignment, eliminating
+    # the bands. (2026-05-31 'vertical banding' feedback.)
+    import random as _rnd_calligram
+    _row_word_cache: dict = {}
+    def _words_for_row(r: int):
+        wl = _row_word_cache.get(r)
+        if wl is None:
+            wl = words.copy()
+            _rnd_calligram.Random(r * 1009 + 7).shuffle(wl)
+            _row_word_cache[r] = wl
+        return wl
 
     gray = an.img.gray
     mask = an.silhouette.mask
@@ -560,8 +575,9 @@ def build_calligram(
             spans = []
             line_chars = []
             c = 0
+            row_words = _words_for_row(r)
             while c < cols:
-                word = words[wi % len(words)]
+                word = row_words[wi % len(row_words)]
                 wl = len(word)
                 if wl > cols:
                     word = word[:cols]; wl = cols
