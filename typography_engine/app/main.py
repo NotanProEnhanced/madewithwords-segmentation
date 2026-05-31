@@ -281,9 +281,15 @@ async def render(
             # the approved words if no passage was supplied).
             passage = (message or "").strip() or " ".join(word_list)
             ink_hex, bg_hex = _CALLIGRAM.get(ink_choice, _CALLIGRAM["gold_noir"])
+            # Per-palette sclera dimming. Warm/saturated inks (marigold)
+            # render the eye sclera over-bright at the default 1.0 ceiling;
+            # 0.82 reins it in while keeping the catchlight white-pop.
+            _SCLERA_PER_PALETTE = {"navy_marigold": 0.82}
+            sclera = _SCLERA_PER_PALETTE.get(ink_choice, 1.0)
             svg, runs, modulation_png_bytes = build_calligram(
                 an, passage, cfg, warns,
                 ink_hex=ink_hex, bg_hex=bg_hex, subject_only=True,
+                sclera_intensity=sclera,
             )
             if svg:
                 _validate(svg)

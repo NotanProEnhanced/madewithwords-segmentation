@@ -299,6 +299,7 @@ def build_calligram(
     ink_hex: str = "#15202b",
     bg_hex: str = "#ffffff",
     subject_only: bool = False,
+    sclera_intensity: float = 1.0,
 ) -> Tuple[str, List[TextRun]]:
     """Story calligram: lay the user's passage as continuous prose, multi-size,
     so the face emerges from text density. Small font in detail areas (eyes,
@@ -713,11 +714,14 @@ def build_calligram(
                 em = (eye_mask > 0).astype(np.float32)
                 em = cv2.GaussianBlur(em, (0, 0), max(1.5, W * 0.0025))
                 if dark_bg:
-                    # Full value range; sclera can hit 1.0, iris hits 0.
-                    # Catchlight push and sclera now share the same ceiling
-                    # -- catchlight reads as part of the bright pool rather
-                    # than a distinct hot spot (matches Margot).
-                    eye_boost = np.clip(((brightness - 0.5) * 1.7) + 0.5, 0.0, 1.0)
+                    # Sclera CEILING set by `sclera_intensity` so warm /
+                    # saturated inks (e.g. marigold) can be dimmed in the
+                    # eye area without affecting other palettes. Catchlight
+                    # whitening below still pushes letters to pure white at
+                    # the glint position, so a lower sclera ceiling actually
+                    # makes the catchlight pop MORE (greater contrast vs
+                    # surrounding sclera). Default 1.0 keeps prior behaviour.
+                    eye_boost = np.clip(((brightness - 0.5) * 1.7) + 0.5, 0.0, float(sclera_intensity))
                 else:
                     eye_boost = np.clip(((brightness - 0.5) * 3.0) + 0.5, 0.0, 1.0)
                 brightness = brightness * (1.0 - em) + eye_boost * em
