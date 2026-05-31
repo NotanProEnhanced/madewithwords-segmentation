@@ -96,7 +96,7 @@ def _grad_rgb(stops, v: float) -> Tuple[int, int, int]:
 # produces gallery-grade depth on dark backgrounds; the light-ground path
 # could not match the same density without highlights melting into white.
 _CALLIGRAM = {
-    "gold_noir":  ("#e8c66a", "#101216"),  # warm gold on near-black
+    "gold_noir":  ("#d4b67a", "#101216"),  # champagne gold on near-black (refined 2026-05-31, was #e8c66a too yellow)
     "navy_marigold": ("#f3c34a", "#0f1a35"),  # warm yellow on deep navy
     "forest_bone":   ("#f1e8d4", "#143226"),  # cream on hunter green
     "burgundy_champagne": ("#e9d39a", "#3a0f17"),  # pale gold on oxblood
@@ -432,7 +432,7 @@ def build_calligram(
         #   the body range so density grows where photo info is highest.
         # In background: signal stays high but subject_only stops placement.
         body_base = 0.34 + 0.66 * hull_d
-        body_signal = np.clip(body_base - 0.22 * detail_map, 0.20, 1.00)
+        body_signal = np.clip(body_base - 0.32 * detail_map, 0.12, 1.00)
         size_signal = np.where(
             feature_mask > 0,
             0.16 * (1.0 - feat_d),  # 0 at feature centre, 0.16 at feature edge
@@ -819,8 +819,11 @@ def build_calligram(
             # faded into a gradient (2026-05-30 feedback). subject_only=True
             # already prevents background placement; a few-pixel feather is
             # enough to avoid jagged edge alpha.
+            # Edge feather: 8px (was 3). Hair-line letters fade gracefully
+            # into bg over a short transition instead of cutting hard at
+            # the silhouette mask.
             mset_f = mset.astype(np.float32)
-            mset_f = cv2.GaussianBlur(mset_f, (0, 0), max(1.5, W * 0.003))
+            mset_f = cv2.GaussianBlur(mset_f, (0, 0), max(3.0, W * 0.008))
             mset_f = np.clip(mset_f, 0.0, 1.0)
             ink_amount = ink_amount_face * mset_f + outside * (1.0 - mset_f)
             # Unified photo_fill: bg + ink_amount * (ink - bg). Same formula
@@ -855,7 +858,10 @@ def build_calligram(
             # a halo / glow around the face (2026-05-30 feedback). The wide
             # mset_f feather is still used for ink_amount so letters at the
             # hair line fade gracefully.
-            underlay_strength = 0.0    # off -- matches Margot pure-black bg
+            # Subtle underlay: 5% strength, tight feather. Adds 'breath' to
+            # the inside of the silhouette without a halo outside it. The
+            # previous 12% was visible as a layer; 5% reads as atmosphere.
+            underlay_strength = 0.05
             mset_tight = cv2.GaussianBlur(mset.astype(np.float32), (0, 0), max(2.0, W * 0.004))
             mset_tight = np.clip(mset_tight, 0.0, 1.0)
             soft_tone = cv2.GaussianBlur(brightness_raw, (0, 0), max(6.0, W * 0.014))
@@ -871,6 +877,44 @@ def build_calligram(
                 )
                 underlay = np.asarray(underlay_img).astype(np.float32) / 255.0
             modulated = photo_fill * alpha + underlay * (1.0 - alpha)
+            # CATCHLIGHT WHITENING: at each detected eye, push letter pixels
+            # within the catchlight gaussian toward pure white -- BEYOND
+            # the ink colour so the glint reads as a distinct hot spot
+            # against the otherwise-uniform-bright sclera. Only affects
+            # letter pixels (alpha-gated), so non-letter pixels stay bg.
+            if dark_bg and have_face and eye_centers:
+                white_rgb = np.ones((1, 1, 3), dtype=np.float32)
+                if alpha.shape[:2] != mset.shape:
+                    alpha_native = np.asarray(_PILImage2.fromarray(
+                        (alpha[..., 0] * 255).astype(np.uint8)
+                    ).resize((W, H), _PILImage2.LANCZOS)).astype(np.float32) / 255.0
+                else:
+                    alpha_native = alpha[..., 0]
+                yy2, xx2 = np.mgrid[0:H, 0:W].astype(np.float32)
+                catch_field = np.zeros((H, W), dtype=np.float32)
+                for (cxe2, cye2, rxe2, rye2) in eye_centers:
+                    ix0 = int(max(0, cxe2 - rxe2 * 0.55))
+                    ix1 = int(min(W, cxe2 + rxe2 * 0.55 + 1))
+                    iy0 = int(max(0, cye2 - rye2 * 0.55))
+                    iy1 = int(min(H, cye2 + rye2 * 0.55 + 1))
+                    if ix1 - ix0 < 3 or iy1 - iy0 < 3:
+                        continue
+                    irisr = brightness_raw[iy0:iy1, ix0:ix1]
+                    if irisr.size == 0:
+                        continue
+                    cyy2, cxx_2 = np.unravel_index(int(np.argmax(irisr)), irisr.shape)
+                    if float(irisr.max()) < 0.20:
+                        continue
+                    sig_c2 = max(4.0, float(rxe2) * 0.22)
+                    d_c2 = (xx2 - (ix0 + cxx_2)) ** 2 + (yy2 - (iy0 + cyy2)) ** 2
+                    catch_field = np.maximum(catch_field, np.exp(-d_c2 / (2.0 * sig_c2 * sig_c2)).astype(np.float32))
+                white_amt = catch_field * alpha_native
+                if white_amt.shape != modulated.shape[:2]:
+                    white_amt_img = _PILImage2.fromarray(
+                        (white_amt * 255).clip(0, 255).astype(np.uint8)
+                    ).resize((modulated.shape[1], modulated.shape[0]), _PILImage2.LANCZOS)
+                    white_amt = np.asarray(white_amt_img).astype(np.float32) / 255.0
+                modulated = modulated * (1.0 - white_amt[..., None]) + white_rgb * white_amt[..., None]
             modulated_u8 = (modulated * 255).clip(0, 255).astype(np.uint8)
             # Eyes are NOT painted as solid shapes. Pupils and catchlights
             # emerge from the typography itself -- the _sharpen_eyes pass
@@ -880,6 +924,37 @@ def build_calligram(
             # glyphs occupy the eye area. This keeps the look "made of
             # words" instead of stamped circles on top of words.
             out_img = _PILImage2.fromarray(modulated_u8)
+            # ARTIST MARK: small caption in subtle ink colour in the
+            # lower-right -- signals 'limited edition' to a discerning
+            # buyer. Uses Bebas Neue letter-spaced so the typography
+            # vocabulary matches the portrait.
+            try:
+                from PIL import ImageDraw as _ImD, ImageFont as _ImF
+                mark_text = "TYPORTRAIT  ·  EDITION  ·  MMXXVI"
+                mark_fp = max(14, int(H * 0.014))
+                mark_font = None
+                for fp_path in ("/root/.fonts/BebasNeue-Regular.ttf",
+                                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"):
+                    try:
+                        mark_font = _ImF.truetype(fp_path, mark_fp)
+                        break
+                    except Exception:
+                        pass
+                if mark_font is not None:
+                    md = _ImD.Draw(out_img)
+                    bb = mark_font.getbbox(mark_text)
+                    tw, th = bb[2] - bb[0], bb[3] - bb[1]
+                    margin = max(16, int(W * 0.018))
+                    tx = W - tw - margin
+                    ty = H - th - margin
+                    mark_rgb = (
+                        int(round(ir * 0.55)),
+                        int(round(ig * 0.55)),
+                        int(round(ib * 0.55)),
+                    )
+                    md.text((tx, ty), mark_text, fill=mark_rgb, font=mark_font)
+            except Exception:
+                pass
             buf2 = _io2.BytesIO()
             out_img.save(buf2, format="PNG", optimize=True)
             modulation_png = buf2.getvalue()
