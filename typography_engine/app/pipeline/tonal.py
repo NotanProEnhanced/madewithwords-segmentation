@@ -480,14 +480,14 @@ def build_calligram(
     # EIGHT tiers for very smooth size gradation. Smallest (6px) for the
     # innermost feature centres, largest (36px) for far background.
     tiers = [
-        ("xl",   42.0, 0.86, 1.01),
-        ("lg",   34.0, 0.72, 0.86),
-        ("md+",  30.0, 0.58, 0.72),
-        ("md",   26.0, 0.46, 0.58),
-        ("sm",   23.0, 0.34, 0.46),
-        ("xs+",  20.0, 0.22, 0.34),
-        ("xs",   17.0, 0.10, 0.22),
-        ("xxs",  14.0, 0.00, 0.10),   # eye sclera/iris/pupil
+        ("xl",   48.0, 0.86, 1.01),
+        ("lg",   40.0, 0.72, 0.86),
+        ("md+",  34.0, 0.58, 0.72),
+        ("md",   30.0, 0.46, 0.58),
+        ("sm",   26.0, 0.34, 0.46),
+        ("xs+",  23.0, 0.22, 0.34),
+        ("xs",   19.0, 0.10, 0.22),
+        ("xxs",  16.0, 0.00, 0.10),   # eye sclera/iris/pupil
     ]
     # claim grid at the finest tier's resolution; once claimed by a finer tier,
     # coarser tiers skip those cells.
