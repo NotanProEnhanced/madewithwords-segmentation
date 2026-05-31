@@ -479,15 +479,18 @@ def build_calligram(
     # Tier (label, font_px, size_low, size_high)
     # EIGHT tiers for very smooth size gradation. Smallest (6px) for the
     # innermost feature centres, largest (36px) for far background.
+    # Face tier sizes raised 2026-05-30: 6/9/11/14 was unreadable at typical
+    # display sizes. Now 10/13/15/17 -- readable while still smaller than
+    # body tiers (18-36). Body tier sizes unchanged.
     tiers = [
-        ("xl",   36.0, 0.86, 1.01),   # deep background
+        ("xl",   36.0, 0.86, 1.01),   # deep background / far hair top
         ("lg",   28.0, 0.72, 0.86),   # silhouette edge / background near subject
         ("md+",  22.0, 0.58, 0.72),   # body / hair body
         ("md",   18.0, 0.46, 0.58),   # shoulders / hair near face
-        ("sm",   14.0, 0.34, 0.46),   # silhouette-near-face / outer hair
-        ("xs+",  11.0, 0.22, 0.34),   # face hull / cheek / forehead
-        ("xs",    9.0, 0.10, 0.22),   # feature edges (lid line, lip line)
-        ("xxs",   6.0, 0.00, 0.10),   # eye sclera/iris, lash line, lip corners
+        ("sm",   17.0, 0.34, 0.46),   # silhouette-near-face / outer hair
+        ("xs+",  15.0, 0.22, 0.34),   # face hull / cheek / forehead
+        ("xs",   13.0, 0.10, 0.22),   # feature edges (lid line, lip line)
+        ("xxs",  10.0, 0.00, 0.10),   # eye sclera/iris, lash line, lip corners
     ]
     # claim grid at the finest tier's resolution; once claimed by a finer tier,
     # coarser tiers skip those cells.
