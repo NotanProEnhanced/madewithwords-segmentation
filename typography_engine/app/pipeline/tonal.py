@@ -479,18 +479,18 @@ def build_calligram(
     # Tier (label, font_px, size_low, size_high)
     # EIGHT tiers for very smooth size gradation. Smallest (6px) for the
     # innermost feature centres, largest (36px) for far background.
-    # Face tier sizes raised 2026-05-30: 6/9/11/14 was unreadable at typical
-    # display sizes. Now 10/13/15/17 -- readable while still smaller than
-    # body tiers (18-36). Body tier sizes unchanged.
+    # Face tier sizes raised again 2026-05-30 (xxs..sm = 12..20). Body
+    # tiers also bumped (22..40) to preserve face<body relationship while
+    # keeping everything readable at typical display sizes.
     tiers = [
-        ("xl",   36.0, 0.86, 1.01),   # deep background / far hair top
-        ("lg",   28.0, 0.72, 0.86),   # silhouette edge / background near subject
-        ("md+",  22.0, 0.58, 0.72),   # body / hair body
-        ("md",   18.0, 0.46, 0.58),   # shoulders / hair near face
-        ("sm",   17.0, 0.34, 0.46),   # silhouette-near-face / outer hair
-        ("xs+",  15.0, 0.22, 0.34),   # face hull / cheek / forehead
-        ("xs",   13.0, 0.10, 0.22),   # feature edges (lid line, lip line)
-        ("xxs",  10.0, 0.00, 0.10),   # eye sclera/iris, lash line, lip corners
+        ("xl",   40.0, 0.86, 1.01),   # far hair top / shoulders edge
+        ("lg",   32.0, 0.72, 0.86),   # silhouette mid-distance
+        ("md+",  26.0, 0.58, 0.72),   # body / hair body
+        ("md",   22.0, 0.46, 0.58),   # shoulders / hair near face
+        ("sm",   20.0, 0.34, 0.46),   # silhouette-near-face / outer hair
+        ("xs+",  18.0, 0.22, 0.34),   # face hull / cheek / forehead
+        ("xs",   15.0, 0.10, 0.22),   # feature edges (lid line, lip line)
+        ("xxs",  12.0, 0.00, 0.10),   # eye sclera/iris, lash line, lip corners
     ]
     # claim grid at the finest tier's resolution; once claimed by a finer tier,
     # coarser tiers skip those cells.
@@ -738,24 +738,28 @@ def build_calligram(
             if dark_bg and have_face and eye_centers:
                 yy_g, xx_g = np.mgrid[0:H, 0:W].astype(np.float32)
                 for (cxe, cye, rxe, rye) in eye_centers:
-                    x0 = int(max(0, cxe - rxe * 1.1))
-                    x1 = int(min(W, cxe + rxe * 1.1 + 1))
-                    y0 = int(max(0, cye - rye * 1.2))
-                    y1 = int(min(H, cye + rye * 1.2 + 1))
-                    if x1 - x0 < 4 or y1 - y0 < 3:
+                    # Constrain pupil + catchlight search to the IRIS area
+                    # (~55% of eye half-width / -height centred on the eye
+                    # landmark midpoint). Without this constraint, argmin
+                    # picks up the lash line as 'darkest' and argmax picks
+                    # up sclera, giving wrong pupil/catchlight positions
+                    # and unrealistic eyes. (2026-05-30: 'eyes must be
+                    # perfect, people focus there'.)
+                    ix0 = int(max(0, cxe - rxe * 0.55))
+                    ix1 = int(min(W, cxe + rxe * 0.55 + 1))
+                    iy0 = int(max(0, cye - rye * 0.55))
+                    iy1 = int(min(H, cye + rye * 0.55 + 1))
+                    if ix1 - ix0 < 3 or iy1 - iy0 < 3:
                         continue
-                    patch = brightness[y0:y1, x0:x1]
-                    if patch.size == 0:
+                    iris_patch = brightness[iy0:iy1, ix0:ix1]
+                    iris_raw = brightness_raw[iy0:iy1, ix0:ix1]
+                    if iris_patch.size == 0:
                         continue
-                    py, pxx = np.unravel_index(int(np.argmin(patch)), patch.shape)
-                    pupil_x, pupil_y = float(x0 + pxx), float(y0 + py)
-                    # Catchlight detection uses the UNBOOSTED brightness so
-                    # we find the photo's natural iris glint, not the boosted
-                    # sclera. Search the same eye-hull window.
-                    patch_raw = brightness_raw[y0:y1, x0:x1]
-                    cyy, cxx = np.unravel_index(int(np.argmax(patch_raw)), patch_raw.shape)
-                    catch_x, catch_y = float(x0 + cxx), float(y0 + cyy)
-                    catch_b = float(patch_raw.max())
+                    py, pxx = np.unravel_index(int(np.argmin(iris_patch)), iris_patch.shape)
+                    pupil_x, pupil_y = float(ix0 + pxx), float(iy0 + py)
+                    cyy, cxx = np.unravel_index(int(np.argmax(iris_raw)), iris_raw.shape)
+                    catch_x, catch_y = float(ix0 + cxx), float(iy0 + cyy)
+                    catch_b = float(iris_raw.max())
                     # Pupil: wider sigma and stronger push so the pupil is
                     # clearly a dark hole spanning multiple xxs letters.
                     sig_p = max(3.5, float(rxe) * 0.26)
