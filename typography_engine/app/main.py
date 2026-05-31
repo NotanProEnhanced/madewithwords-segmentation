@@ -284,7 +284,7 @@ async def render(
             # Per-palette sclera dimming. Warm/saturated inks (marigold)
             # render the eye sclera over-bright at the default 1.0 ceiling;
             # 0.82 reins it in while keeping the catchlight white-pop.
-            _SCLERA_PER_PALETTE = {"navy_marigold": 0.82}
+            _SCLERA_PER_PALETTE = {"navy_marigold": 0.62}
             sclera = _SCLERA_PER_PALETTE.get(ink_choice, 1.0)
             svg, runs, modulation_png_bytes = build_calligram(
                 an, passage, cfg, warns,

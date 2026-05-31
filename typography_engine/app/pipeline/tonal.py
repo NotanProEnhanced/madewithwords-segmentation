@@ -909,7 +909,7 @@ def build_calligram(
                     cyy2, cxx_2 = np.unravel_index(int(np.argmax(irisr)), irisr.shape)
                     if float(irisr.max()) < 0.20:
                         continue
-                    sig_c2 = max(4.0, float(rxe2) * 0.22)
+                    sig_c2 = max(2.5, float(rxe2) * 0.10)
                     d_c2 = (xx2 - (ix0 + cxx_2)) ** 2 + (yy2 - (iy0 + cyy2)) ** 2
                     catch_field = np.maximum(catch_field, np.exp(-d_c2 / (2.0 * sig_c2 * sig_c2)).astype(np.float32))
                 white_amt = catch_field * alpha_native
