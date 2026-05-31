@@ -479,18 +479,15 @@ def build_calligram(
     # Tier (label, font_px, size_low, size_high)
     # EIGHT tiers for very smooth size gradation. Smallest (6px) for the
     # innermost feature centres, largest (36px) for far background.
-    # Face tier sizes raised again 2026-05-30 (xxs..sm = 12..20). Body
-    # tiers also bumped (22..40) to preserve face<body relationship while
-    # keeping everything readable at typical display sizes.
     tiers = [
-        ("xl",   40.0, 0.86, 1.01),   # far hair top / shoulders edge
-        ("lg",   32.0, 0.72, 0.86),   # silhouette mid-distance
-        ("md+",  26.0, 0.58, 0.72),   # body / hair body
-        ("md",   22.0, 0.46, 0.58),   # shoulders / hair near face
-        ("sm",   20.0, 0.34, 0.46),   # silhouette-near-face / outer hair
-        ("xs+",  18.0, 0.22, 0.34),   # face hull / cheek / forehead
-        ("xs",   15.0, 0.10, 0.22),   # feature edges (lid line, lip line)
-        ("xxs",  12.0, 0.00, 0.10),   # eye sclera/iris, lash line, lip corners
+        ("xl",   42.0, 0.86, 1.01),
+        ("lg",   34.0, 0.72, 0.86),
+        ("md+",  30.0, 0.58, 0.72),
+        ("md",   26.0, 0.46, 0.58),
+        ("sm",   23.0, 0.34, 0.46),
+        ("xs+",  20.0, 0.22, 0.34),
+        ("xs",   17.0, 0.10, 0.22),
+        ("xxs",  14.0, 0.00, 0.10),   # eye sclera/iris/pupil
     ]
     # claim grid at the finest tier's resolution; once claimed by a finer tier,
     # coarser tiers skip those cells.
@@ -678,6 +675,18 @@ def build_calligram(
             # so iris/pupil/brow read crisply; the underlay between letters
             # stays photographic, not sticker-like.
             brightness_raw = brightness.copy()
+            # FACE CONTOUR ENHANCEMENT: unsharp mask inside the face hull so
+            # cheekbones, nose ridge, jawline and other facial planes are
+            # defined per-letter via local-contrast brightness variation.
+            # Applied BEFORE feature/eye boosts so subsequent passes work on
+            # the contrast-enhanced base. (2026-05-30: 'let the contours and
+            # facial planes be defined, depicted by the per letter values'.)
+            if have_face:
+                fhm = (face_hull_mask > 0).astype(np.float32)
+                fhm = cv2.GaussianBlur(fhm, (0, 0), max(2.0, W * 0.004))
+                blur_b = cv2.GaussianBlur(brightness, (0, 0), max(2.0, W * 0.006))
+                sharp_b = np.clip(brightness + (brightness - blur_b) * 0.6, 0.0, 1.0)
+                brightness = brightness * (1.0 - fhm) + sharp_b * fhm
             # FEATURE CONTRAST BOOST: inside eye/brow/lip/nose hulls, push
             # darks darker and brights brighter -- WITH a 0.10 floor so the
             # darkest feature pixels (iris, pupil, eyebrow) stay visible as
@@ -690,7 +699,12 @@ def build_calligram(
                 # light_bg drop the floor so brows / iris / lips can sink to
                 # full ink (brightness 0 -> ink_amount near 1.0).
                 if dark_bg:
-                    boosted = np.clip(((brightness - 0.5) * 1.6) + 0.5, 0.10, 1.0)
+                    # Skin (and brow/lip/nose) capped at 0.78 so the eye
+                    # sclera (capped 0.92 below) can be GENUINELY BRIGHTER
+                    # than the brightest skin highlight. Without this cap
+                    # both could pin at 1.0 and sclera wouldn't read as
+                    # 'the bright part of the eye'. (2026-05-30.)
+                    boosted = np.clip(((brightness - 0.5) * 1.6) + 0.5, 0.10, 0.78)
                 else:
                     boosted = np.clip(((brightness - 0.5) * 2.0) + 0.5, 0.0, 1.0)
                 brightness = brightness * (1.0 - fm) + boosted * fm
@@ -700,13 +714,13 @@ def build_calligram(
                 em = (eye_mask > 0).astype(np.float32)
                 em = cv2.GaussianBlur(em, (0, 0), max(1.5, W * 0.0025))
                 if dark_bg:
-                    # Boost with a SCLERA CEILING of 0.78 so the catchlight
-                    # push (lifts to 1.0) stays visibly distinct from
-                    # sclera. Iris floor 0.05 so iris letters read clearly
-                    # darker than sclera and the pupil-iris-sclera-glint
-                    # tonal hierarchy is preserved end-to-end. (2026-05-30
-                    # Margot reference: clear pupil/iris/sclera relation.)
-                    eye_boost = np.clip(((brightness - 0.5) * 1.7) + 0.5, 0.05, 0.78)
+                    # Sclera ceiling 0.92 (was 0.78). With skin capped at
+                    # 0.78 by feature_boost above, this guarantees
+                    # sclera > skin. Iris floor 0.04 so iris reads visibly
+                    # darker than sclera. Catchlight push (below) lifts
+                    # to 1.0 from this 0.92 ceiling -- 0.08 of headroom
+                    # for the glint to stand out. (2026-05-30.)
+                    eye_boost = np.clip(((brightness - 0.5) * 1.7) + 0.5, 0.04, 0.92)
                 else:
                     eye_boost = np.clip(((brightness - 0.5) * 3.0) + 0.5, 0.0, 1.0)
                 brightness = brightness * (1.0 - em) + eye_boost * em
@@ -765,7 +779,7 @@ def build_calligram(
                     sig_p = max(3.5, float(rxe) * 0.26)
                     d_p = (xx_g - pupil_x) ** 2 + (yy_g - pupil_y) ** 2
                     g_p = np.exp(-d_p / (2.0 * sig_p * sig_p)).astype(np.float32)
-                    brightness = brightness * (1.0 - 0.96 * g_p)
+                    brightness = brightness * (1.0 - 0.98 * g_p)
                     if catch_b > 0.20:
                         # Catchlight: large enough sigma to span ~4-6 xxs
                         # letters so the glint reads as a cluster of bright
@@ -787,12 +801,11 @@ def build_calligram(
             #              ground; ceiling 0.95 so the darkest shadow isn't
             #              a solid ink blob.
             if dark_bg:
-                # Floor dropped 0.22 -> 0.06 so pupil pixels (brightness
-                # near 0 after the pupil push) genuinely fade to bg colour
-                # -- a true dark hole instead of dim 22%-ink letters.
-                # Power kept at 0.55 so mid-skin still reads as dense ink.
-                # (2026-05-30 Margot reference: clear black pupil.)
-                ink_amount_face = 0.06 + 0.94 * (brightness ** 0.55)
+                # Floor dropped further (0.06 -> 0.02) so pupil pixels
+                # truly vanish into the bg colour. With pupil push at 0.98
+                # and floor 0.02, the pupil renders as pure bg = a real
+                # dark hole. (2026-05-30 'pupil should be darker'.)
+                ink_amount_face = 0.02 + 0.98 * (brightness ** 0.55)
                 ink_amount_outside = 0.12   # quiet bg letters, face dominates
             else:
                 # Light_bg needs more density than dark_bg -- on white,
