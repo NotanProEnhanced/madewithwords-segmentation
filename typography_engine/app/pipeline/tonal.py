@@ -1033,17 +1033,21 @@ def build_calligram(
                 ink_amount_face = brightness ** 0.65       # moderate boost; preserves mid-tone contrast for face likeness
                 ink_amount_outside = 0.0                   # subject_only suppresses bg anyway
             else:
-                # Light_bg ink_amount: natural (1-b)^0.62 curve for the
-                # dark/mid range (so pupil > brow > eye-socket > lip line >
-                # nostril > mid-skin all sit at distinct ink_amount values
-                # and DELINEATE rather than all clipping to 1.0), plus an
-                # explicit smoothstep highlight fade so b>0.65 fades cleanly
-                # to bg by b=0.95. Values stay monotonic; the dark end is
-                # graduated, the bright end falls off fast.
-                base = (1.0 - brightness) ** 0.62
-                fade = np.clip((brightness - 0.65) / 0.30, 0.0, 1.0)
+                # Light_bg curve tuned 2026-06-01 so dark features
+                # (pupils / brows / sockets / lips / nostrils) POP against
+                # surrounding skin rather than blending into a uniform dark
+                # grey. Two changes vs the prior curve:
+                #   - Power 0.62 -> 0.50 (steeper rise from 0 to mid),
+                #     opens the dark-end spread per-feature.
+                #   - Highlight fade starts at b=0.40 (was 0.65) so mid
+                #     skin lightens aggressively to ~58% by b=0.50 and
+                #     drops to ~5% by b=0.75. Cheekbone, forehead, sclera
+                #     all read light, so eye/brow/lip/nostril features
+                #     stand out as the dark zones they actually are.
+                base = (1.0 - brightness) ** 0.50
+                fade = np.clip((brightness - 0.40) / 0.45, 0.0, 1.0)
                 fade = fade * fade * (3.0 - 2.0 * fade)
-                ink_amount_face = base * (1.0 - fade * 0.93)
+                ink_amount_face = base * (1.0 - fade * 0.95)
                 ink_amount_outside = 0.0    # bg letters fully melt into white
             outside = np.full_like(brightness, ink_amount_outside)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
