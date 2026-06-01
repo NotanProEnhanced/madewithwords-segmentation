@@ -991,7 +991,15 @@ def build_calligram(
                 # maps to bg and brightness=1 maps to full ink. On light_bg
                 # the same forcing inverts the meaning; the direct paint
                 # pass at the end handles pupil/catchlight there instead.
-                if dark_bg:
+                # Pupil + catchlight forcing applies to BOTH bg directions.
+                # The original comment said this 'inverted' on light_bg but
+                # that's not true: pushing brightness->0 at the pupil gives
+                # full ink (dark letters) on light_bg AND no ink (bg-black
+                # void) on dark_bg -- either reads as a dark pupil. Pushing
+                # brightness->1 at the catchlight gives no ink (bg-white
+                # glint) on light_bg AND full ink (bright letters) on
+                # dark_bg -- either reads as a bright catchlight.
+                if have_face and eye_centers:
                     for cx, cy, rx, ry in eye_centers:
                         x0 = max(0, int(cx - rx)); x1 = min(W, int(cx + rx) + 1)
                         y0 = max(0, int(cy - ry)); y1 = min(H, int(cy + ry) + 1)
