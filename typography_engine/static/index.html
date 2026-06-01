@@ -176,18 +176,27 @@
 const $ = s => document.querySelector(s);
 const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const ANIM_CAP = 2600;                 // max glyphs animated (perf); image shows all
-// Dark-ground palette set (post 2026-05-30 pivot): each swatch is rendered
-// as a radial preview hinting at "bright ink centred on dark page".
+// Ship palette set (2026-06-01): five styles covering five buyer
+// intents -- Classic / Premium / Coloured / Editorial / Playful.
+// Each entry is [id, ink_hex, bg_hex, label]; ink_hex / bg_hex drive
+// both the swatch preview and the engine call. white_spectrum is a
+// special case -- engine renders white_black and a rainbow gradient
+// is post-applied server-side.
 const INKS = [
-  ["gold_noir",          "#e8c66a", "#101216", "Gold Noir"],
-  ["navy_marigold",      "#f3c34a", "#0f1a35", "Navy & Marigold"],
-  ["forest_bone",        "#f1e8d4", "#143226", "Forest & Bone"],
-  ["burgundy_champagne", "#e9d39a", "#3a0f17", "Burgundy & Champagne"],
+  ["black_ink",       "#ffffff", "#000000", "Black Ink"],
+  ["gold_noir",       "#e8c66a", "#101216", "Gold Noir"],
+  ["navy_marigold",   "#f3c34a", "#0f1a35", "Navy & Marigold"],
+  ["white_black",     "#000000", "#ffffff", "White & Black"],
+  ["white_spectrum",  "spectrum", "#ffffff", "White & Spectrum"],
 ];
 function placeholderBg(ink, bg){
+  if (ink === "spectrum") {
+    // Rainbow gradient swatch hint
+    return "linear-gradient(180deg, #f2b705 0%, #f25c05 18%, #e6002e 38%, #b5179e 58%, #6a1fb5 78%, #1f3fb5 100%)";
+  }
   return `radial-gradient(circle at 50% 42%, ${ink} 0 40%, ${bg} 44%)`;
 }
-const state = { file:null, ink:"gold_noir", poster:false, style:"story", sku:null, size:null };
+const state = { file:null, ink:"black_ink", poster:false, style:"story", sku:null, size:null };
 function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
 let catalog = null;
 // Load the product catalog (digital + physical SKUs, prices, sizes). Single

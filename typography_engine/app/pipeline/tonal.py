@@ -90,13 +90,26 @@ def _grad_rgb(stops, v: float) -> Tuple[int, int, int]:
             return tuple(int(round(a[k] + (b[k] - a[k]) * t)) for k in range(3))
     return _hex_to_rgb(stops[-1][1])
 
-# Calligram looks, keyed by the same swatch names as the mosaic inks:
-# (ink/full-darkness colour, background). gold_noir is light ink on a dark page.
+# Calligram palette set (2026-06-01 ship line). Each entry is
+# (ink_hex, bg_hex). Five palettes cover five buyer intents:
+#   black_ink     -> Classic    (white on pure black) -- max resolution anchor
+#   gold_noir     -> Premium    (gold on near-black)  -- luxury / gallery
+#   navy_marigold -> Coloured   (warm yellow on navy) -- color but classy
+#   white_black   -> Editorial  (black on pure white) -- light spaces / nursery
+#   white_spectrum-> Playful    (rainbow on white)    -- giftable / social
+#
+# forest_bone and burgundy_champagne were retired from the live set on
+# 2026-06-01; their colour values are preserved in tag
+# calligram-anatomy-e01ab96 for future Phase-2 seasonal drops.
 _CALLIGRAM = {
-    "gold_noir":  ("#e8c66a", "#101216"),
-    "navy_marigold": ("#f3c34a", "#0f1a35"),
-    "forest_bone":   ("#f1e8d4", "#143226"),
-    "burgundy_champagne": ("#e9d39a", "#3a0f17"),
+    "black_ink":      ("#ffffff", "#000000"),
+    "gold_noir":      ("#e8c66a", "#101216"),
+    "navy_marigold":  ("#f3c34a", "#0f1a35"),
+    "white_black":    ("#000000", "#ffffff"),
+    # white_spectrum is rendered as white_black + a post-process spectrum
+    # tint applied at letter pixels. Engine renders the same (000 on fff);
+    # the spectrum step is wired in main.py based on the ink_choice key.
+    "white_spectrum": ("#000000", "#ffffff"),
 }
 
 # MediaPipe 478-point mesh index groups for the recognition features we deepen.

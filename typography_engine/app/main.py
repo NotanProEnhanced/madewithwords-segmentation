@@ -330,6 +330,47 @@ async def render(
             # Story style with per-glyph photo modulation: bytes were pre-rendered
             # in build_calligram so the photo's tone runs THROUGH each letter shape.
             # Bypass cairosvg here -- write the bytes directly.
+            # SPECTRUM POST-PROCESS: white_spectrum renders as white_black
+            # in the engine, then we recolour the dark letter pixels with a
+            # vertical rainbow gradient.
+            if ink_choice == "white_spectrum":
+                try:
+                    import io as _io_sp
+                    import numpy as _np_sp
+                    from PIL import Image as _Img_sp
+                    _spim = _Img_sp.open(_io_sp.BytesIO(modulation_png_bytes)).convert("RGB")
+                    _arr = _np_sp.asarray(_spim).astype(_np_sp.float32) / 255.0
+                    _H, _W = _arr.shape[:2]
+                    _ink_alpha = (1.0 - _arr.min(axis=2, keepdims=True))
+                    _STOPS = [(0.00, (242, 183, 5)),
+                              (0.18, (242, 92, 5)),
+                              (0.38, (230, 0, 46)),
+                              (0.58, (181, 23, 158)),
+                              (0.78, (106, 31, 181)),
+                              (1.00, (31, 63, 181))]
+                    def _grad(t):
+                        for _i in range(len(_STOPS) - 1):
+                            _v0, _c0 = _STOPS[_i]
+                            _v1, _c1 = _STOPS[_i + 1]
+                            if t <= _v1:
+                                _f = 0.0 if _v1 == _v0 else (t - _v0) / (_v1 - _v0)
+                                return tuple(_c0[k] + (_c1[k] - _c0[k]) * _f for k in range(3))
+                        return _STOPS[-1][1]
+                    _g = _np_sp.zeros((_H, 1, 3), dtype=_np_sp.float32)
+                    for _r in range(_H):
+                        _g[_r, 0] = _grad(_r / max(1, _H - 1))
+                    _g /= 255.0
+                    _field = _np_sp.broadcast_to(_g, (_H, _W, 3))
+                    _WHITE = _np_sp.ones((1, 1, 3), dtype=_np_sp.float32)
+                    _out = _field * _ink_alpha + _WHITE * (1.0 - _ink_alpha)
+                    _buf = _io_sp.BytesIO()
+                    _Img_sp.fromarray((_out * 255).clip(0, 255).astype(_np_sp.uint8)).save(
+                        _buf, format="PNG", optimize=True,
+                    )
+                    modulation_png_bytes = _buf.getvalue()
+                except Exception as e:  # noqa: BLE001
+                    warns.warn("compose", "spectrum_failed",
+                               f"Spectrum post-process failed: {e}")
             if poster:
                 # Keepsake mode: wrap the modulated PNG in a designed poster
                 # (title + caption + frame) via PIL, so the buyer's chosen

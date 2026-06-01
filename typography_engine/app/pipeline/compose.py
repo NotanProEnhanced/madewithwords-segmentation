@@ -16,13 +16,17 @@ from .svgbuild import esc, require_hex
 _SERIF = "Georgia, 'Times New Roman', serif"
 
 # Per-ink poster colours: (background, title/ink, muted caption+rule).
-# Updated 2026-06-01 for the dark-ground palette set we ship in production.
+# Updated 2026-06-01 for the 5-palette ship line.
 _POSTER_COLORS = {
+    "black_ink":          ("#000000", "#ffffff", "#7a7a7a"),
     "gold_noir":          ("#0b0c10", "#e8c66a", "#7a6a44"),
     "navy_marigold":      ("#0a1126", "#f3c34a", "#6f5e30"),
+    "white_black":        ("#ffffff", "#000000", "#888888"),
+    "white_spectrum":     ("#ffffff", "#1f3fb5", "#888888"),
+    # Retired palettes -- kept here only so legacy job IDs render
+    # without crashing. Removed from _CALLIGRAM in tonal.py.
     "forest_bone":        ("#0b2618", "#f1e8d4", "#7a8c7a"),
     "burgundy_champagne": ("#2a0a11", "#e9d39a", "#7a6b53"),
-    # Light-bg legacy keys still keep working in case anyone refers to them.
     "mono":               ("#ffffff", "#141414", "#777777"),
     "photo":              ("#ffffff", "#1a1a1a", "#777777"),
 }
