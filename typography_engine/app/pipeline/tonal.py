@@ -260,7 +260,8 @@ def _face_ovals(an, scale: float) -> List[Tuple[float, float, float, float]]:
     return out
 
 
-def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.ndarray:
+def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray,
+                        gamma: float = 0.48) -> np.ndarray:
     """Deepen the brows and lips of every face so the likeness anchors there.
     The nose is intentionally NOT uniformly darkened -- filling its whole hull
     turns it into a dark blob ("muddled nose"); its shape reads from natural
@@ -278,14 +279,18 @@ def _emphasize_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) ->
             cv2.fillConvexPoly(fm, hull, 255)
     fm = cv2.dilate(fm, np.ones((3, 3), np.uint8), 1)
     w = (cv2.GaussianBlur(fm, (0, 0), 2.2).astype(np.float32) / 255.0) * mset
-    return dark * (1.0 - w) + np.clip(dark ** 0.48, 0.0, 1.0) * w
+    return dark * (1.0 - w) + np.clip(dark ** gamma, 0.0, 1.0) * w
 
 
-def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.ndarray:
+def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray,
+                  contrast: float = 1.32, catchlight: str = "hard") -> np.ndarray:
     """Make each eye read as a *live* eye: strong local contrast so iris/lash go
     dark and sclera goes light, crisp lid edges (unsharp), and a preserved
     catchlight -- the small bright glint that makes a portrait look back at you.
-    Strong contrast is desirable here (unlike the gentle whole-face balance)."""
+    Strong contrast is desirable here (unlike the gentle whole-face balance).
+
+    catchlight: "hard" = flat painted disk (legacy), "soft" = Gaussian glint at
+    the eye's real brightest pixel (reads as light, not a sticker), "off"."""
     faces = _faces_of(an)
     if not faces:
         return dark
@@ -310,7 +315,7 @@ def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.nd
                 continue
             st = np.clip((patch - lo) / (hi - lo), 0.0, 1.0)
             # Push iris/lash darker and sclera lighter so the eye reads alive.
-            st = np.clip(0.5 + (st - 0.5) * 1.32, 0.0, 1.0)
+            st = np.clip(0.5 + (st - 0.5) * contrast, 0.0, 1.0)
             blur = cv2.GaussianBlur(st, (0, 0), max(1.0, ew * 0.04))
             sharp = np.clip(st + (st - blur) * 1.45, 0.0, 1.0)   # crisper iris/lid
             ph, pw = patch.shape[:2]
@@ -319,15 +324,26 @@ def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.nd
             fm = cv2.GaussianBlur(fm, (0, 0), max(1.0, ew * 0.12)) * mset[by0:by1, bx0:bx1]
             out[by0:by1, bx0:bx1] = patch * (1.0 - fm) + sharp * fm
 
-            # Catchlight: keep the brightest spot inside the eye a crisp light
+            # Catchlight: lift the brightest spot inside the eye to a light
             # glint (only if a real highlight exists), so eyes don't read dead.
-            ix0, iy0 = int(max(0, x0)), int(max(0, y0))
-            ix1, iy1 = int(min(W, x1)), int(min(H, y1))
-            eye_in = out[iy0:iy1, ix0:ix1]
-            if eye_in.size and float(eye_in.min()) < 0.30:
-                cyl, cxl = np.unravel_index(int(np.argmin(eye_in)), eye_in.shape)
-                r = max(3, int(round(eh * 0.11)))
-                cv2.circle(out, (ix0 + cxl, iy0 + cyl), r, 0.0, -1)
+            if catchlight != "off":
+                ix0, iy0 = int(max(0, x0)), int(max(0, y0))
+                ix1, iy1 = int(min(W, x1)), int(min(H, y1))
+                eye_in = out[iy0:iy1, ix0:ix1]
+                if eye_in.size and float(eye_in.min()) < 0.30:
+                    cyl, cxl = np.unravel_index(int(np.argmin(eye_in)), eye_in.shape)
+                    if catchlight == "soft":
+                        # Gaussian glint at the photo's real brightest eye pixel:
+                        # soft falloff reads as light, not a stamped disk.
+                        r = max(2, int(round(eh * 0.09)))
+                        gm = np.zeros(eye_in.shape, np.float32)
+                        cv2.circle(gm, (cxl, cyl), r, 1.0, -1)
+                        gm = cv2.GaussianBlur(gm, (0, 0), max(1.0, r * 0.7))
+                        gm *= mset[iy0:iy1, ix0:ix1]
+                        out[iy0:iy1, ix0:ix1] = eye_in * (1.0 - gm)
+                    else:
+                        r = max(3, int(round(eh * 0.11)))
+                        cv2.circle(out, (ix0 + cxl, iy0 + cyl), r, 0.0, -1)
     return np.clip(out, 0.0, 1.0)
 
 
@@ -981,6 +997,20 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     # without losing tonal separation between adjacent features.
     lum = lum * lum * (3.0 - 2.0 * lum)
     lum = np.clip((lum - 0.5) * 1.25 + 0.5, 0.0, 1.0)
+    # Anchor the likeness in the recognition features. The layered renderer
+    # builds tone purely from photo luminance, so without this the eyes/brows/
+    # lips read no stronger than skin. Apply the tonal-path emphasis on a
+    # darkness field (1 = dark feature) so eye sockets/iris deepen and lit
+    # sclera pops, then convert back to the brightness `lum`.
+    smask = an.silhouette.mask
+    if smask.shape[:2] != (H, W):
+        smask = cv2.resize(smask, (W, H), interpolation=cv2.INTER_NEAREST)
+    mset = (smask > 127).astype(np.float32)
+    fscale = W / float(an.img.gray.shape[1])
+    darkf = 1.0 - lum
+    darkf = _emphasize_features(darkf, an, fscale, mset, gamma=0.38)
+    darkf = _sharpen_eyes(darkf, an, fscale, mset, contrast=1.6, catchlight="soft")
+    lum = np.clip(1.0 - darkf, 0.0, 1.0)
     if light:
         ck = _CALLIGRAM.get(ink, ("#15202b", "#ffffff"))   # (dark ink, light paper)
         ground_hex, ink_hex = ck[1], ck[0]
