@@ -1030,8 +1030,8 @@ def build_calligram(
                 # deeper into full ink (more contrast and detail in
                 # shadows) and HIGHLIGHTS fade cleanly to bg. Values
                 # remain monotonically scaled.
-                b_stretched = np.clip(0.5 + (brightness - 0.5) * 1.65, 0.0, 1.0)
-                ink_amount_face = (1.0 - b_stretched) ** 0.50
+                b_stretched = np.clip(0.5 + (brightness - 0.5) * 2.10, 0.0, 1.0)
+                ink_amount_face = (1.0 - b_stretched) ** 0.40
                 ink_amount_outside = 0.0    # bg letters fully melt into white
             outside = np.full_like(brightness, ink_amount_outside)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
