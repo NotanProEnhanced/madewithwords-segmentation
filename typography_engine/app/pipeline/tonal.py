@@ -734,8 +734,8 @@ def build_calligram(
         ("sm",   22.0, 0.34, 0.46),   # neck / silhouette-near-face
         ("xs+",  17.0, 0.22, 0.34),   # face hull / cheek / forehead
         ("xs",   13.0, 0.10, 0.22),   # feature edges (lid line, lip line)
-        ("xxs",  10.0, 0.00, 0.10),   # other feature centres (lip corners, brows)
-        ("iris",  7.0, -0.01, 0.10),  # IRIS ONLY -- gated by iris_mask below
+        ("xxs",   8.0, 0.00, 0.10),   # other feature centres (lip corners, brows) -- shrunk 10->8
+        ("iris",  5.0, -0.01, 0.10),  # IRIS ONLY -- gated by iris_mask below -- shrunk 7->5 for multi-letter pupil shape
     ]
     # Tier flag: True means 'gate this tier by iris_mask'. Iris tier only.
     _iris_tier = {"iris"}
@@ -779,7 +779,9 @@ def build_calligram(
         # largest tiers 1.0x -- a gentle slope instead of the prior 0.85
         # vs 1.05 jump that made forehead-vs-hair look like two different
         # textures collide.
-        if fp <= 13.0:
+        if fp <= 8.0:
+            row_ratio = 0.42    # iris+xxs: TIGHT intermesh, multi-letter shape per pupil/nostril/lip-corner
+        elif fp <= 13.0:
             row_ratio = 0.55
         elif fp <= 22.0:
             row_ratio = 0.58
