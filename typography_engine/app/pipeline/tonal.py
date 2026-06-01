@@ -804,7 +804,7 @@ def build_calligram(
             #              ground; ceiling 0.95 so the darkest shadow isn't
             #              a solid ink blob.
             if dark_bg:
-                ink_amount_face = brightness ** 0.85       # full 0-1 range, slight push to brights
+                ink_amount_face = brightness ** 0.62       # global brightness boost (was 0.85); pupils still vanish at b=0, highlights still 100%
                 ink_amount_outside = 0.0                   # subject_only suppresses bg anyway
             else:
                 # Light_bg needs more density than dark_bg -- on white,
