@@ -864,26 +864,6 @@ def build_calligram(
                 alpha = np.clip(1.0 - text_arr.min(axis=2, keepdims=True), 0.0, 1.0)
             bg_rgb = np.array([br, bgc, bb], dtype=np.float32) / 255.0
             modulated = photo_fill * alpha + bg_rgb * (1.0 - alpha)
-            # PHOTOREALISM #5 — silhouette-edge DOF blur.
-            # Real portrait lenses fall off in sharpness from the eye plane
-            # outward. We approximate the look by gaussian-blurring the
-            # modulated render and blending the blurred version in based on
-            # distance-from-silhouette-edge: full blur at the edge, zero
-            # blur in the interior. Eyes / face centre stay razor sharp;
-            # silhouette boundary breathes instead of cutting hard.
-            try:
-                sil_d_in = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
-                edge_band = max(20.0, float(W) * 0.022)
-                softness = (1.0 - np.clip(sil_d_in / edge_band, 0.0, 1.0)).astype(np.float32)
-                if softness.shape != modulated.shape[:2]:
-                    soft_img = _PILImage2.fromarray((softness * 255).clip(0, 255).astype(np.uint8))
-                    soft_img = soft_img.resize((modulated.shape[1], modulated.shape[0]), _PILImage2.LANCZOS)
-                    softness = np.asarray(soft_img).astype(np.float32) / 255.0
-                blur_sigma = max(2.0, float(modulated.shape[1]) * 0.0035)
-                mod_blurred = cv2.GaussianBlur(modulated, (0, 0), blur_sigma)
-                modulated = modulated * (1.0 - softness[..., None]) + mod_blurred * softness[..., None]
-            except Exception:
-                pass
             modulated_u8 = (modulated * 255).clip(0, 255).astype(np.uint8)
             # Paint pupils, crescent catchlights, and (dark_bg only) sclera
             # highlights DIRECTLY on the modulated image so eyes read as
