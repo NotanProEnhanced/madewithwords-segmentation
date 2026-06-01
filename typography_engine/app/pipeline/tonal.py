@@ -336,15 +336,10 @@ def _accentuate_micro_features(dark: np.ndarray, an, scale: float, mset: np.ndar
                      1.0, thickness=line_thick)
         mask_lip = cv2.GaussianBlur(mask_lip, (0, 0), blur_sigma_line)
         out = out + 0.22 * mask_lip * (1.0 - out)
-        # 3) Lacrimal caruncle brightness lift (small gaussian spot)
-        for idx in _CARUNCLE:
-            px, py = int(pts[idx][0]), int(pts[idx][1])
-            spot_mask = np.zeros((H, W), np.float32)
-            cv2.circle(spot_mask, (px, py),
-                       max(2, int(round(W * 0.0028))), 1.0, -1)
-            spot_mask = cv2.GaussianBlur(spot_mask, (0, 0), max(1.5, W * 0.0024))
-            # Reduce darkness (brighten)
-            out = out - 0.35 * spot_mask * out
+        # Lacrimal caruncle brightness lift removed 2026-06-01 -- it
+        # rendered as visible bright crescents at the inner eye corners
+        # (the typography couldn't distribute the lift smoothly enough).
+        # Letting the photo's natural inner-eye tones come through.
     out = np.clip(out, 0.0, 1.0)
     # Restrict to silhouette so no spill outside the subject.
     out[~mset] = dark[~mset]
@@ -774,17 +769,11 @@ def build_calligram(
                 if not (d_lo <= s < d_hi):
                     c += 1
                     continue
-                # Stochastic-by-tone density skip (photorealism #1).
-                # In bright zones (highlights, skin specular), randomly skip
-                # placement so density follows tone -- not just region.
-                # Shadow letters always place; highlight letters place
-                # ~30-60% of the time. Reads as photographic falloff.
-                local_b = 1.0 - float(tone_s[yi, xi_start])
-                if local_b > 0.55:
-                    skip_p = min(0.62, (local_b - 0.55) * 1.55)
-                    if (((yi * 73 + xi_start * 41 + r * 19) & 1023) / 1023.0) < skip_p:
-                        c += 1
-                        continue
+                # Stochastic density skip removed 2026-06-01: it broke
+                # face likeness. The Margot reference reads BECAUSE every
+                # cell gets a letter; photo tone modulates each letter's
+                # brightness. Sparseness loses the face. Keep the field
+                # uniform; tonal variation does the form work.
                 # Check that no letter of this word would land on a pixel
                 # already claimed by an earlier (larger) tier. If any would,
                 # advance one cell and retry; this lets the word slide right
@@ -937,7 +926,7 @@ def build_calligram(
             #              ground; ceiling 0.95 so the darkest shadow isn't
             #              a solid ink blob.
             if dark_bg:
-                ink_amount_face = brightness ** 0.50       # further brightness boost (was 0.62 -> 0.50); pupils still vanish at b=0, highlights still 100%
+                ink_amount_face = brightness ** 0.65       # moderate boost; preserves mid-tone contrast for face likeness
                 ink_amount_outside = 0.0                   # subject_only suppresses bg anyway
             else:
                 # Light_bg needs more density than dark_bg -- on white,
