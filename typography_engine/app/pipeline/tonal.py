@@ -1073,6 +1073,16 @@ def build_calligram(
                 )
                 fade = fade * fade * (3.0 - 2.0 * fade)
                 ink_amount_face = base * (1.0 - fade * 0.98)
+                # PHOTOREALISM FLOOR: every in-silhouette pixel keeps at
+                # least ~12% ink so highlights render as VERY LIGHT GRAY
+                # typography rather than vanishing into the white ground.
+                # Without this floor the face has continuity holes
+                # (cheek/forehead/sclera disappear). With it, the face
+                # reads as a fully-shaded 3D surface: very-light-gray
+                # highlights -> mid-gray skin -> dark-gray shadows ->
+                # near-black features. (2026-06-01 'photorealistic
+                # white-ground portraits'.)
+                ink_amount_face = np.maximum(ink_amount_face, 0.12)
                 ink_amount_outside = 0.0    # bg letters fully melt into white
             outside = np.full_like(brightness, ink_amount_outside)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
