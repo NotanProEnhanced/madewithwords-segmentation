@@ -31,7 +31,7 @@ from .textlayout import TextRun, normalize_words
 from .warnings import WarningCollector
 
 _MONO_FAMILY = "'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', monospace"
-_MONO_ADVANCE = 0.6  # glyph advance as a fraction of em for monospace fonts
+_MONO_ADVANCE = 0.52  # glyph advance — pulled in for denser horizontal packing
 
 # Legibility/texture controls. Per-word jitter (fraction of cell/row) scatters
 # whole words to break the grid without wobbling letters within a word; word gap
@@ -90,16 +90,13 @@ def _grad_rgb(stops, v: float) -> Tuple[int, int, int]:
             return tuple(int(round(a[k] + (b[k] - a[k]) * t)) for k in range(3))
     return _hex_to_rgb(stops[-1][1])
 
-# Calligram looks: each entry is (ink_hex, bg_hex). After the 2026-05-30
-# pivot we ship dark-ground palettes only -- the modulation pass (with
-# per-glyph photo tonal gradation + feature emphasis + painted pupil)
-# produces gallery-grade depth on dark backgrounds; the light-ground path
-# could not match the same density without highlights melting into white.
+# Calligram looks, keyed by the same swatch names as the mosaic inks:
+# (ink/full-darkness colour, background). gold_noir is light ink on a dark page.
 _CALLIGRAM = {
-    "gold_noir":  ("#d4b67a", "#101216"),  # champagne gold on near-black (refined 2026-05-31, was #e8c66a too yellow)
-    "navy_marigold": ("#f3c34a", "#0f1a35"),  # warm yellow on deep navy
-    "forest_bone":   ("#f1e8d4", "#143226"),  # cream on hunter green
-    "burgundy_champagne": ("#e9d39a", "#3a0f17"),  # pale gold on oxblood
+    "gold_noir":  ("#e8c66a", "#101216"),
+    "navy_marigold": ("#f3c34a", "#0f1a35"),
+    "forest_bone":   ("#f1e8d4", "#143226"),
+    "burgundy_champagne": ("#e9d39a", "#3a0f17"),
 }
 
 # MediaPipe 478-point mesh index groups for the recognition features we deepen.
@@ -280,9 +277,15 @@ def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.nd
             fm = cv2.GaussianBlur(fm, (0, 0), max(1.0, ew * 0.12)) * mset[by0:by1, bx0:bx1]
             out[by0:by1, bx0:bx1] = patch * (1.0 - fm) + sharp * fm
 
-            # Catchlight removed (2026-05-30): forcing a bright dot at the
-            # darkest eye pixel produced the 'sticker' look. The unsharp pass
-            # above already lifts any real catchlight; let it carry naturally.
+            # Catchlight: keep the brightest spot inside the eye a crisp light
+            # glint (only if a real highlight exists), so eyes don't read dead.
+            ix0, iy0 = int(max(0, x0)), int(max(0, y0))
+            ix1, iy1 = int(min(W, x1)), int(min(H, y1))
+            eye_in = out[iy0:iy1, ix0:ix1]
+            if eye_in.size and float(eye_in.min()) < 0.30:
+                cyl, cxl = np.unravel_index(int(np.argmin(eye_in)), eye_in.shape)
+                r = max(3, int(round(eh * 0.09)))
+                cv2.circle(out, (ix0 + cxl, iy0 + cyl), r, 0.0, -1)
     return np.clip(out, 0.0, 1.0)
 
 
@@ -299,7 +302,6 @@ def build_calligram(
     ink_hex: str = "#15202b",
     bg_hex: str = "#ffffff",
     subject_only: bool = False,
-    sclera_intensity: float = 1.0,
 ) -> Tuple[str, List[TextRun]]:
     """Story calligram: lay the user's passage as continuous prose, multi-size,
     so the face emerges from text density. Small font in detail areas (eyes,
@@ -312,15 +314,6 @@ def build_calligram(
     inside the silhouette -- the background tiers stay blank so the subject
     reads as a portrait on a clean ground, not a full-canvas type field."""
     words = [w for w in str(text).split() if w]
-    if not words:
-        warns.error("text", "no_words", "No passage supplied for the calligram.")
-        return "", []
-    # Per-row shuffled word sequences. Without this, repeating a short
-    # keyword set ('MARGOT BEAUTIFUL SISTER SWEET') produces visible
-    # vertical banding -- the same word lengths align at the same column
-    # positions across rows. A deterministic Random-per-row shuffle keeps
-    # the alphabet identical but breaks the column alignment, eliminating
-    # the bands. (2026-05-31 'vertical banding' feedback.)
     import random as _rnd_calligram
     _row_word_cache: dict = {}
     def _words_for_row(r: int):
@@ -330,6 +323,11 @@ def build_calligram(
             _rnd_calligram.Random(r * 1009 + 7).shuffle(wl)
             _row_word_cache[r] = wl
         return wl
+    def _col_offset(r: int) -> int:
+        return _rnd_calligram.Random(r * 31 + 3).randint(0, 6)
+    if not words:
+        warns.error("text", "no_words", "No passage supplied for the calligram.")
+        return "", []
 
     gray = an.img.gray
     mask = an.silhouette.mask
@@ -420,35 +418,12 @@ def build_calligram(
         # Distance into silhouette (0 inside silhouette, 1 far in bg).
         sil_d = cv2.distanceTransform(255 - mask, cv2.DIST_L2, 5)
         sil_d = np.clip(sil_d / max(40.0, W * 0.04), 0.0, 1.0)
-        # Local detail map: |Laplacian| of the photo, HEAVILY blurred so
-        # detail-driven density changes happen over wide bands (not per cell).
-        # Used as a GENTLE bias in body regions: detailed areas get slightly
-        # denser tiers, smooth areas keep the larger ones. Heavy smoothing
-        # prevents the 'tiny letters next to huge letters' chaos that comes
-        # from sharp detail-map edges crossing tier boundaries.
-        detail_map = np.abs(cv2.Laplacian(dark, cv2.CV_32F, ksize=3))
-        detail_map = cv2.GaussianBlur(detail_map, (0, 0), max(10.0, W * 0.030))
-        dm_norm = float(np.percentile(detail_map, 95))
-        if dm_norm > 1e-6:
-            detail_map = np.clip(detail_map / dm_norm, 0.0, 1.0)
-        else:
-            detail_map = np.zeros_like(detail_map)
         # Compose: each zone contributes a range of the signal; smooth
         # interpolation between them via the three distance fields.
         # In feature: signal = 0.00 - 0.16 (slight variation by position).
         # In hull but not feature: signal = 0.16 + 0.20 * feat_d.
-        # In silhouette but not hull: distance-based base 0.34 + 0.66*hull_d
-        #   MINUS 0.22*detail. Body letters span sm..xl (14..36px) graduated
-        #   by distance from face -- the Margot reference relationship:
-        #   FACE = tiny tight letters (6-11px), HAIR = medium (14-20px),
-        #   CLOTHING = large (22-36px). Density comes from tight row spacing
-        #   and 0.55em advance, not from shrinking body letters into face
-        #   range (which inverted the reference). Detail bias pulls
-        #   textured zones (hair strands, fabric weave) toward smaller within
-        #   the body range so density grows where photo info is highest.
-        # In background: signal stays high but subject_only stops placement.
-        body_base = 0.34 + 0.66 * hull_d
-        body_signal = np.clip(body_base - 0.32 * detail_map, 0.12, 1.00)
+        # In silhouette but not hull: signal = 0.36 + 0.30 * hull_d.
+        # In background: signal = 0.66 + 0.34 * sil_d.
         size_signal = np.where(
             feature_mask > 0,
             0.16 * (1.0 - feat_d),  # 0 at feature centre, 0.16 at feature edge
@@ -457,35 +432,21 @@ def build_calligram(
                 0.16 + 0.20 * feat_d,
                 np.where(
                     mset,
-                    body_signal,
+                    0.36 + 0.64 * hull_d,
                     0.66 + 0.34 * sil_d,
                 ),
             ),
         ).astype(np.float32)
-        # Final smoothing on size_signal to soften any residual cell-to-cell
-        # jitter between adjacent tiers. Light blur preserves the zone
-        # structure but removes the speckled tier-jumping that produces the
-        # 'sparse here, condensed-tiny there' artifact in hair/clothing.
-        size_signal = cv2.GaussianBlur(size_signal, (0, 0), max(3.0, W * 0.006))
     else:
         size_signal = np.full((H, W), 0.45, dtype=np.float32)
     size_signal = np.clip(size_signal, 0.0, 1.0)
 
     ir, ig, ib = _hex_to_rgb(ink_hex)
     br, bgc, bb = _hex_to_rgb(bg_hex)
-    family = "'Bebas Neue', 'Oswald', 'Arial Narrow', sans-serif"
+    family = "'Courier New', 'DejaVu Sans Mono', 'Liberation Mono', monospace"
     bg_luma = 0.299 * br + 0.587 * bgc + 0.114 * bb
     dark_bg = bg_luma < 100
     dim_floor = 0.10
-    # Per-cell contrast curve overrides for light_bg. The default 3.5/0.45/0.65
-    # were tuned for the dark_bg modulation path and clip too aggressively for
-    # direct per-cell tspan rendering (mid-tones cluster near full ink,
-    # highlights clip to bg). The historical 71d531b curve (2.3/0.5/1.0)
-    # gives a broader value spread; an ink floor below ensures highlights
-    # stay visibly inked rather than melting into the white ground.
-    if not dark_bg:
-        contrast, pivot, power = 2.3, 0.5, 1.0
-    light_bg_ink_floor = 0.12   # min visible ink (12%) on light_bg highlights
 
     doc = SvgDoc(width=W, height=H, background=bg_hex)
     runs: List[TextRun] = []
@@ -495,15 +456,18 @@ def build_calligram(
     # Tier (label, font_px, size_low, size_high)
     # EIGHT tiers for very smooth size gradation. Smallest (6px) for the
     # innermost feature centres, largest (36px) for far background.
+    # Face tiers (xxs..sm) UNCHANGED -- Jeff said face is "perfect".
+    # Body tiers (md..xl) pulled in for denser non-face regions while
+    # preserving the smooth graduation toward the silhouette edge.
     tiers = [
-        ("xl",   48.0, 0.86, 1.01),
-        ("lg",   40.0, 0.72, 0.86),
-        ("md+",  34.0, 0.58, 0.72),
-        ("md",   30.0, 0.46, 0.58),
-        ("sm",   26.0, 0.34, 0.46),
-        ("xs+",  23.0, 0.22, 0.34),
-        ("xs",   19.0, 0.10, 0.22),
-        ("xxs",  16.0, 0.00, 0.10),   # eye sclera/iris/pupil
+        ("xl",   42.0, 0.86, 1.01),   # silhouette-edge / outermost clothing
+        ("lg",   34.0, 0.72, 0.86),   # body / lower hair
+        ("md+",  27.0, 0.58, 0.72),   # shoulders / mid hair
+        ("md",   22.0, 0.46, 0.58),   # upper jacket / hat
+        ("sm",   22.0, 0.34, 0.46),   # neck / silhouette-near-face
+        ("xs+",  17.0, 0.22, 0.34),   # face hull / cheek / forehead
+        ("xs",   13.0, 0.10, 0.22),   # feature edges (lid line, lip line)
+        ("xxs",  10.0, 0.00, 0.10),   # eye sclera/iris, lip corners
     ]
     # claim grid at the finest tier's resolution; once claimed by a finer tier,
     # coarser tiers skip those cells.
@@ -526,13 +490,7 @@ def build_calligram(
         tone = float(tone_s[yi, xi])
         norm = (tone - pivot) * contrast + pivot
         norm = 1.0 if norm > 1.0 else (0.0 if norm < 0.0 else norm)
-        f = 1.0 - norm ** power
-        # Ink floor: cap `f` so the brightest in-silhouette letters still
-        # carry visible ink rather than vanishing into the white ground.
-        # (Outside the silhouette, subject_only stops placement entirely.)
-        f_max = 1.0 - light_bg_ink_floor
-        if f > f_max:
-            f = f_max
+        f = 1.0 - norm ** p
         cr = int(round(ir + (br - ir) * f))
         cg = int(round(ig + (bgc - ig) * f))
         cb = int(round(ib + (bb - ib) * f))
@@ -545,24 +503,18 @@ def build_calligram(
     # transitions: smaller text fits BETWEEN bigger text with no visual smear.
     claimed_px = np.zeros((H, W), dtype=bool)
     for label, fp, d_lo, d_hi in tiers:
-        # Bebas Neue is heavily CONDENSED, so the per-glyph horizontal
-        # advance is much smaller than Courier's 0.55em. 0.42em packs the
-        # condensed letterforms tightly without overlap collisions.
-        cw = fp * 0.42
-        # Row pitch as a fraction of em. Forced WELL below bold cap height
-        # so rows intermesh: cap-to-cap distance is smaller than the bold
-        # glyph cap height, producing the continuous tonal field of the
-        # Margot reference. Six previous passes with incremental ratios
-        # (0.74 -> 0.68 -> 0.62 -> 0.55) all left visible inter-row gaps
-        # because they were still above cap height for the rendered font.
-        # 0.40 / 0.46 / 0.52 puts pitch firmly below cap height at every
-        # tier. (2026-05-30 'horizontal spacing between lines too large'.)
-        if fp <= 11.0:
-            row_ratio = 0.34
-        elif fp <= 18.0:
-            row_ratio = 0.40
+        cw = fp * _MONO_ADVANCE
+        # Smoother row-spacing gradient so face-to-hair transition isn't a
+        # density step change. Smallest tiers get 0.90x, middle tiers 0.95x,
+        # largest tiers 1.0x -- a gentle slope instead of the prior 0.85
+        # vs 1.05 jump that made forehead-vs-hair look like two different
+        # textures collide.
+        if fp <= 13.0:
+            row_ratio = 0.62
+        elif fp <= 22.0:
+            row_ratio = 0.66
         else:
-            row_ratio = 0.46
+            row_ratio = 0.70
         rh = fp * row_ratio
         cols = max(1, int(W / cw))
         rows = max(1, int(H / rh))
@@ -574,7 +526,7 @@ def build_calligram(
             y_hi = min(H, int(baseline) + 1)
             spans = []
             line_chars = []
-            c = 0
+            c = _col_offset(r)
             row_words = _words_for_row(r)
             while c < cols:
                 word = row_words[wi % len(row_words)]
@@ -618,19 +570,17 @@ def build_calligram(
                 # Claim this word's pixel footprint so finer tiers don't paint
                 # over its letters (they're free to fill the gaps after it).
                 claimed_px[y_lo:y_hi, wx_lo:wx_hi] = True
-                # Tight packing: NO inter-word space on all but the very
-                # largest tier. Density takes priority over read-as-prose
-                # legibility on the body -- letters here form a tonal field
-                # more than they form words. xl(36) keeps a 1-cell gap so the
-                # biggest letters don't smear together at the silhouette edge.
-                gap = 0 if fp <= 28.0 else 1
+                # Tight packing: NO inter-word space on the finest tiers (so
+                # face features get maximum letter density), 1-cell gap on
+                # larger tiers (keeps words readable in the body / bg).
+                gap = 0   # no inter-word gap at any tier; words butt against each other
                 c += wl + gap
                 wi += 1
             if not spans:
                 continue
             doc.add(
                 f'<text y="{baseline:.1f}" xml:space="preserve" font-family="{esc(family)}" '
-                f'font-size="{fp:.1f}" font-weight="bold">' + "".join(spans) + "</text>"
+                f'font-size="{fp:.1f}">' + "".join(spans) + "</text>"
             )
             runs.append(TextRun(region=f"calligram_{label}", path_id=f"{label}_r{r}",
                                 path_d="", text="".join(line_chars),
@@ -643,15 +593,11 @@ def build_calligram(
     # Margot reference. We pass the modulation image back to the caller; if
     # present it overrides the standard cairosvg-only path.
     modulation_png = None  # type: Optional[bytes]
-    # Modulation pass runs ONLY on dark_bg. On light_bg the per-cell tspan
-    # tonal colours already encode the photo tone per letter (the 71d531b
-    # approach Jeff approved), and the modern 8-tier hierarchy + feature
-    # emphasis in the tone field give graduated typography with proper
-    # value contrast. Running modulation on top of that washes the per-cell
-    # colours into a flat field; skipping it keeps the dimensional look.
-    if dark_bg:
-        # Run modulation for dark grounds. The per-glyph photo tonal
-        # gradation is what gives the typography dimension on gold_noir.
+    # Run modulation for both dark and light grounds. The per-glyph photo
+    # tonal gradation is what gives the typography dimension, regardless of
+    # whether the ink is bright-on-dark (gold_noir) or dark-on-light
+    # (navy/burgundy/etc on white). Direction-dependent details below.
+    if True:
         from .raster import svg_to_png_bytes
         import io as _io2
         import re as _re2
@@ -686,24 +632,6 @@ def build_calligram(
                 plo, phi = float(t.min()), float(max(t.min() + 1e-3, t.max()))
             t = np.clip((t - plo) / max(1e-3, phi - plo), 0.0, 1.0)
             brightness = (1.0 - t).astype(np.float32)
-            # Snapshot the UNBOOSTED brightness for the soft photo underlay
-            # below -- it carries the photo's natural tonal field. Letter
-            # rendering uses the BOOSTED brightness (with feature/eye contrast)
-            # so iris/pupil/brow read crisply; the underlay between letters
-            # stays photographic, not sticker-like.
-            brightness_raw = brightness.copy()
-            # FACE CONTOUR ENHANCEMENT: unsharp mask inside the face hull so
-            # cheekbones, nose ridge, jawline and other facial planes are
-            # defined per-letter via local-contrast brightness variation.
-            # Applied BEFORE feature/eye boosts so subsequent passes work on
-            # the contrast-enhanced base. (2026-05-30: 'let the contours and
-            # facial planes be defined, depicted by the per letter values'.)
-            if have_face:
-                fhm = (face_hull_mask > 0).astype(np.float32)
-                fhm = cv2.GaussianBlur(fhm, (0, 0), max(2.0, W * 0.004))
-                blur_b = cv2.GaussianBlur(brightness, (0, 0), max(2.0, W * 0.006))
-                sharp_b = np.clip(brightness + (brightness - blur_b) * 0.6, 0.0, 1.0)
-                brightness = brightness * (1.0 - fhm) + sharp_b * fhm
             # FEATURE CONTRAST BOOST: inside eye/brow/lip/nose hulls, push
             # darks darker and brights brighter -- WITH a 0.10 floor so the
             # darkest feature pixels (iris, pupil, eyebrow) stay visible as
@@ -716,11 +644,7 @@ def build_calligram(
                 # light_bg drop the floor so brows / iris / lips can sink to
                 # full ink (brightness 0 -> ink_amount near 1.0).
                 if dark_bg:
-                    # Full value range: ceilings dropped so skin highlights
-                    # and sclera can both reach 1.0 -- matches Margot's
-                    # full ink-to-bg span. (2026-05-31 'open value range
-                    # back up'.)
-                    boosted = np.clip(((brightness - 0.5) * 1.6) + 0.5, 0.0, 1.0)
+                    boosted = np.clip(((brightness - 0.5) * 1.6) + 0.5, 0.10, 1.0)
                 else:
                     boosted = np.clip(((brightness - 0.5) * 2.0) + 0.5, 0.0, 1.0)
                 brightness = brightness * (1.0 - fm) + boosted * fm
@@ -730,14 +654,7 @@ def build_calligram(
                 em = (eye_mask > 0).astype(np.float32)
                 em = cv2.GaussianBlur(em, (0, 0), max(1.5, W * 0.0025))
                 if dark_bg:
-                    # Sclera CEILING set by `sclera_intensity` so warm /
-                    # saturated inks (e.g. marigold) can be dimmed in the
-                    # eye area without affecting other palettes. Catchlight
-                    # whitening below still pushes letters to pure white at
-                    # the glint position, so a lower sclera ceiling actually
-                    # makes the catchlight pop MORE (greater contrast vs
-                    # surrounding sclera). Default 1.0 keeps prior behaviour.
-                    eye_boost = np.clip(((brightness - 0.5) * 1.7) + 0.5, 0.0, float(sclera_intensity))
+                    eye_boost = np.clip(((brightness - 0.5) * 2.6) + 0.5, 0.04, 1.0)
                 else:
                     eye_boost = np.clip(((brightness - 0.5) * 3.0) + 0.5, 0.0, 1.0)
                 brightness = brightness * (1.0 - em) + eye_boost * em
@@ -746,66 +663,27 @@ def build_calligram(
                 # and a catchlight spot reads as full bright ink). This trick
                 # only works for the dark_bg direction where brightness=0
                 # maps to bg and brightness=1 maps to full ink. On light_bg
-                # the same forcing inverts the meaning. Per 2026-05-30
-                # feedback: pupil/catchlight should emerge from typography
-                # carrying the natural photo tonal values, not from forced
-                # uniform extremes. _sharpen_eyes (in the `dark` field)
-                # provides local contrast boost; we let that flow through
-                # the modulation pass naturally.
+                # the same forcing inverts the meaning; the direct paint
+                # pass at the end handles pupil/catchlight there instead.
+                if dark_bg:
+                    for cx, cy, rx, ry in eye_centers:
+                        x0 = max(0, int(cx - rx)); x1 = min(W, int(cx + rx) + 1)
+                        y0 = max(0, int(cy - ry)); y1 = min(H, int(cy + ry) + 1)
+                        if x1 - x0 < 4 or y1 - y0 < 4:
+                            continue
+                        patch = brightness[y0:y1, x0:x1]
+                        py, px = np.unravel_index(int(np.argmin(patch)), patch.shape)
+                        r_pup = max(3, int(round(min(rx, ry) * 0.22)))
+                        cv2.circle(brightness, (x0 + px, y0 + py), r_pup, 0.0, -1)
+                        cx_l = x0 + px - max(2, int(rx * 0.18))
+                        cy_l = y0 + py - max(2, int(ry * 0.18))
+                        r_cl = max(3, int(round(min(rx, ry) * 0.16)))
+                        cv2.circle(brightness, (int(cx_l), int(cy_l)), r_cl, 1.0, -1)
 
             # Smooth interior-silhouette transitions so the letter colour
             # gradient flows without a stark edge between bright skin and
             # dark hair. Small sigma so feature detail is kept.
             brightness = cv2.GaussianBlur(brightness, (0, 0), max(1.5, W * 0.0025))
-            # PUPIL + CATCHLIGHT (typography-only). For each eye, locate the
-            # darkest pixel (pupil) and brightest pixel (catchlight) in the
-            # eye-hull region, then drive brightness toward 0 / 1 locally
-            # with a small Gaussian falloff. The letters covering those
-            # pixels then paint at extreme ink_amount -- pupil letters fade
-            # to bg (dark hole in the typography field), catchlight letters
-            # paint as full bright ink (small bright glint of letters). No
-            # solid shapes are stamped; the eyes are entirely made of
-            # photo-modulated typography. (2026-05-30 feedback.)
-            if dark_bg and have_face and eye_centers:
-                yy_g, xx_g = np.mgrid[0:H, 0:W].astype(np.float32)
-                for (cxe, cye, rxe, rye) in eye_centers:
-                    # Constrain pupil + catchlight search to the IRIS area
-                    # (~55% of eye half-width / -height centred on the eye
-                    # landmark midpoint). Without this constraint, argmin
-                    # picks up the lash line as 'darkest' and argmax picks
-                    # up sclera, giving wrong pupil/catchlight positions
-                    # and unrealistic eyes. (2026-05-30: 'eyes must be
-                    # perfect, people focus there'.)
-                    ix0 = int(max(0, cxe - rxe * 0.55))
-                    ix1 = int(min(W, cxe + rxe * 0.55 + 1))
-                    iy0 = int(max(0, cye - rye * 0.55))
-                    iy1 = int(min(H, cye + rye * 0.55 + 1))
-                    if ix1 - ix0 < 3 or iy1 - iy0 < 3:
-                        continue
-                    iris_patch = brightness[iy0:iy1, ix0:ix1]
-                    iris_raw = brightness_raw[iy0:iy1, ix0:ix1]
-                    if iris_patch.size == 0:
-                        continue
-                    py, pxx = np.unravel_index(int(np.argmin(iris_patch)), iris_patch.shape)
-                    pupil_x, pupil_y = float(ix0 + pxx), float(iy0 + py)
-                    cyy, cxx = np.unravel_index(int(np.argmax(iris_raw)), iris_raw.shape)
-                    catch_x, catch_y = float(ix0 + cxx), float(iy0 + cyy)
-                    catch_b = float(iris_raw.max())
-                    # Pupil: wider sigma and stronger push so the pupil is
-                    # clearly a dark hole spanning multiple xxs letters.
-                    sig_p = max(3.5, float(rxe) * 0.26)
-                    d_p = (xx_g - pupil_x) ** 2 + (yy_g - pupil_y) ** 2
-                    g_p = np.exp(-d_p / (2.0 * sig_p * sig_p)).astype(np.float32)
-                    brightness = brightness * (1.0 - 0.98 * g_p)
-                    if catch_b > 0.20:
-                        # Catchlight: large enough sigma to span ~4-6 xxs
-                        # letters so the glint reads as a cluster of bright
-                        # letters, not a single stray one. Full lift to 1.0.
-                        sig_c = max(5.0, float(rxe) * 0.30)
-                        d_c = (xx_g - catch_x) ** 2 + (yy_g - catch_y) ** 2
-                        g_c = np.exp(-d_c / (2.0 * sig_c * sig_c)).astype(np.float32)
-                        brightness = brightness + (1.0 - brightness) * g_c
-                brightness = np.clip(brightness, 0.0, 1.0)
             # Map brightness -> ink_amount in [0,1]: how much ink shows at
             # each pixel (0 = full bg, 1 = full ink). Direction-specific
             # curves keep mid-tones clearly visible regardless of which way
@@ -818,12 +696,8 @@ def build_calligram(
             #              ground; ceiling 0.95 so the darkest shadow isn't
             #              a solid ink blob.
             if dark_bg:
-                # Full value range: floor 0, ceiling 1. Pupils at brightness
-                # 0 vanish to pure bg, sclera/highlights at brightness 1
-                # reach pure ink. Matches Margot's full ink-to-bg span
-                # without compression.
-                ink_amount_face = brightness ** 0.55
-                ink_amount_outside = 0.0    # subject_only suppresses bg anyway
+                ink_amount_face = brightness ** 0.85       # full 0-1 range, slight push to brights
+                ink_amount_outside = 0.0                   # subject_only suppresses bg anyway
             else:
                 # Light_bg needs more density than dark_bg -- on white,
                 # mid-skin and hair must read as solidly inked navy, not
@@ -834,16 +708,9 @@ def build_calligram(
                 ink_amount_face = 0.40 + 0.60 * ((1.0 - brightness) ** 0.55)
                 ink_amount_outside = 0.0    # bg letters fully melt into white
             outside = np.full_like(brightness, ink_amount_outside)
-            # TIGHT silhouette feather (~3px). The wide ~60px feather was
-            # creating a visible halo around the head where edge letters
-            # faded into a gradient (2026-05-30 feedback). subject_only=True
-            # already prevents background placement; a few-pixel feather is
-            # enough to avoid jagged edge alpha.
-            # Edge feather: 8px (was 3). Hair-line letters fade gracefully
-            # into bg over a short transition instead of cutting hard at
-            # the silhouette mask.
+            # Wide silhouette feather so face-to-bg transitions over ~60 px.
             mset_f = mset.astype(np.float32)
-            mset_f = cv2.GaussianBlur(mset_f, (0, 0), max(3.0, W * 0.008))
+            mset_f = cv2.GaussianBlur(mset_f, (0, 0), max(14.0, W * 0.028))
             mset_f = np.clip(mset_f, 0.0, 1.0)
             ink_amount = ink_amount_face * mset_f + outside * (1.0 - mset_f)
             # Unified photo_fill: bg + ink_amount * (ink - bg). Same formula
@@ -862,119 +729,114 @@ def build_calligram(
                     (text_arr.shape[1], text_arr.shape[0]), _PILImage2.LANCZOS
                 )
                 photo_fill = np.asarray(photo_fill_img).astype(np.float32) / 255.0
-            # Alpha mask from the rendered text image:
-            #   dark_bg:  white-on-dark -> alpha = max channel.
-            #   light_bg: black-on-white (after fill swap) -> alpha = 1 - min.
+            # Alpha mask from the rendered text image. SUBTRACT the bg
+            # colour first so empty bg pixels read alpha=0 regardless of
+            # palette. The previous `text_arr.max()` worked only for pure
+            # black bg (max channel = 0). For navy bg (max ~0.21) or
+            # near-black (max ~0.09), bg pixels read as non-zero alpha,
+            # bleeding photo_fill across the canvas as a halo. (2026-06-01.)
+            bg_rgb_n = np.array([br, bgc, bb], dtype=np.float32) / 255.0
             if dark_bg:
-                alpha = text_arr.max(axis=2, keepdims=True)
+                diff = np.clip(text_arr - bg_rgb_n, 0.0, 1.0)
+                amp = max(1e-6, float(1.0 - bg_rgb_n.max()))
+                alpha = np.clip(diff.max(axis=2, keepdims=True) / amp, 0.0, 1.0)
             else:
+                diff = np.clip(bg_rgb_n - text_arr, 0.0, 1.0)
+                amp = max(1e-6, float(bg_rgb_n.min()) if bg_rgb_n.min() > 0 else 1.0)
                 alpha = np.clip(1.0 - text_arr.min(axis=2, keepdims=True), 0.0, 1.0)
             bg_rgb = np.array([br, bgc, bb], dtype=np.float32) / 255.0
-            # SOFT PHOTO UNDERLAY: non-letter pixels inside the silhouette
-            # carry a faint hint of photo tone. Strength reduced to 12% and
-            # the silhouette mask used here is the TIGHT version (~5px
-            # feather, not the wide ~28px ink_amount feather), so the
-            # underlay does NOT bleed past the silhouette edge and create
-            # a halo / glow around the face (2026-05-30 feedback). The wide
-            # mset_f feather is still used for ink_amount so letters at the
-            # hair line fade gracefully.
-            # Subtle underlay: 5% strength, tight feather. Adds 'breath' to
-            # the inside of the silhouette without a halo outside it. The
-            # previous 12% was visible as a layer; 5% reads as atmosphere.
-            underlay_strength = 0.05
-            mset_tight = cv2.GaussianBlur(mset.astype(np.float32), (0, 0), max(2.0, W * 0.004))
-            mset_tight = np.clip(mset_tight, 0.0, 1.0)
-            soft_tone = cv2.GaussianBlur(brightness_raw, (0, 0), max(6.0, W * 0.014))
-            soft_amount = soft_tone * underlay_strength * mset_tight
-            underlay = (
-                bg_rgb_arr * (1.0 - soft_amount[..., None])
-                + ink_rgb_arr * soft_amount[..., None]
-            ).astype(np.float32) / 255.0
-            if underlay.shape[:2] != text_arr.shape[:2]:
-                underlay_img = _PILImage2.fromarray((underlay * 255).clip(0, 255).astype(np.uint8))
-                underlay_img = underlay_img.resize(
-                    (text_arr.shape[1], text_arr.shape[0]), _PILImage2.LANCZOS
-                )
-                underlay = np.asarray(underlay_img).astype(np.float32) / 255.0
-            modulated = photo_fill * alpha + underlay * (1.0 - alpha)
-            # CATCHLIGHT WHITENING: at each detected eye, push letter pixels
-            # within the catchlight gaussian toward pure white -- BEYOND
-            # the ink colour so the glint reads as a distinct hot spot
-            # against the otherwise-uniform-bright sclera. Only affects
-            # letter pixels (alpha-gated), so non-letter pixels stay bg.
-            if dark_bg and have_face and eye_centers:
-                white_rgb = np.ones((1, 1, 3), dtype=np.float32)
-                if alpha.shape[:2] != mset.shape:
-                    alpha_native = np.asarray(_PILImage2.fromarray(
-                        (alpha[..., 0] * 255).astype(np.uint8)
-                    ).resize((W, H), _PILImage2.LANCZOS)).astype(np.float32) / 255.0
-                else:
-                    alpha_native = alpha[..., 0]
-                yy2, xx2 = np.mgrid[0:H, 0:W].astype(np.float32)
-                catch_field = np.zeros((H, W), dtype=np.float32)
-                for (cxe2, cye2, rxe2, rye2) in eye_centers:
-                    ix0 = int(max(0, cxe2 - rxe2 * 0.55))
-                    ix1 = int(min(W, cxe2 + rxe2 * 0.55 + 1))
-                    iy0 = int(max(0, cye2 - rye2 * 0.55))
-                    iy1 = int(min(H, cye2 + rye2 * 0.55 + 1))
-                    if ix1 - ix0 < 3 or iy1 - iy0 < 3:
-                        continue
-                    irisr = brightness_raw[iy0:iy1, ix0:ix1]
-                    if irisr.size == 0:
-                        continue
-                    cyy2, cxx_2 = np.unravel_index(int(np.argmax(irisr)), irisr.shape)
-                    if float(irisr.max()) < 0.20:
-                        continue
-                    sig_c2 = max(2.5, float(rxe2) * 0.10)
-                    d_c2 = (xx2 - (ix0 + cxx_2)) ** 2 + (yy2 - (iy0 + cyy2)) ** 2
-                    catch_field = np.maximum(catch_field, np.exp(-d_c2 / (2.0 * sig_c2 * sig_c2)).astype(np.float32))
-                white_amt = catch_field * alpha_native
-                if white_amt.shape != modulated.shape[:2]:
-                    white_amt_img = _PILImage2.fromarray(
-                        (white_amt * 255).clip(0, 255).astype(np.uint8)
-                    ).resize((modulated.shape[1], modulated.shape[0]), _PILImage2.LANCZOS)
-                    white_amt = np.asarray(white_amt_img).astype(np.float32) / 255.0
-                modulated = modulated * (1.0 - white_amt[..., None]) + white_rgb * white_amt[..., None]
+            modulated = photo_fill * alpha + bg_rgb * (1.0 - alpha)
             modulated_u8 = (modulated * 255).clip(0, 255).astype(np.uint8)
-            # Eyes are NOT painted as solid shapes. Pupils and catchlights
-            # emerge from the typography itself -- the _sharpen_eyes pass
-            # increases local contrast in the eye region so iris/pupil land
-            # at dense ink and sclera/catchlight land at near-bg; the
-            # modulation pass then renders those values through whatever
-            # glyphs occupy the eye area. This keeps the look "made of
-            # words" instead of stamped circles on top of words.
-            out_img = _PILImage2.fromarray(modulated_u8)
-            # ARTIST MARK: small caption in subtle ink colour in the
-            # lower-right -- signals 'limited edition' to a discerning
-            # buyer. Uses Bebas Neue letter-spaced so the typography
-            # vocabulary matches the portrait.
-            try:
-                from PIL import ImageDraw as _ImD, ImageFont as _ImF
-                mark_text = "TYPORTRAIT  ·  EDITION  ·  MMXXVI"
-                mark_fp = max(14, int(H * 0.014))
-                mark_font = None
-                for fp_path in ("/root/.fonts/BebasNeue-Regular.ttf",
-                                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"):
-                    try:
-                        mark_font = _ImF.truetype(fp_path, mark_fp)
-                        break
-                    except Exception:
-                        pass
-                if mark_font is not None:
-                    md = _ImD.Draw(out_img)
-                    bb = mark_font.getbbox(mark_text)
-                    tw, th = bb[2] - bb[0], bb[3] - bb[1]
-                    margin = max(16, int(W * 0.018))
-                    tx = W - tw - margin
-                    ty = H - th - margin
-                    mark_rgb = (
-                        int(round(ir * 0.55)),
-                        int(round(ig * 0.55)),
-                        int(round(ib * 0.55)),
+            # Paint pupils, crescent catchlights, and (dark_bg only) sclera
+            # highlights DIRECTLY on the modulated image so eyes read as
+            # curved spheres regardless of which glyphs landed where:
+            #   - Search & paint constrained to the eye's ELLIPSE so the
+            #     outline reads as almond, not rectangular.
+            #   - PUPIL: pure-black disk at the darkest in-ellipse pixel.
+            #   - CATCHLIGHT: crescent -- a bright disk with a near-
+            #     overlapping black disk carved out. The "bright" colour is
+            #     the ink on dark_bg (gold pops against dark) and the bg on
+            #     light_bg (white pops against the black pupil).
+            #   - SCLERA HIGHLIGHTS: two bright ink dots at the brightest
+            #     in-ellipse pixels away from the pupil. Only on dark_bg;
+            #     on light_bg the sclera reads naturally via letter sparsity.
+            mh, mw = modulated_u8.shape[:2]
+            sx = mw / float(W); sy = mh / float(H)
+            ink_rgb = (int(ir), int(ig), int(ib))
+            bright_color = ink_rgb if dark_bg else (int(br), int(bgc), int(bb))
+            for cx, cy, rx, ry in eye_centers:
+                x0 = max(0, int(cx - rx)); x1 = min(W, int(cx + rx) + 1)
+                y0 = max(0, int(cy - ry)); y1 = min(H, int(cy + ry) + 1)
+                if x1 - x0 < 4 or y1 - y0 < 4:
+                    continue
+                pw_, ph_ = x1 - x0, y1 - y0
+                # Elliptical mask for THIS eye -- restricts pupil/sclera search
+                # to the actual almond shape, not the bounding rectangle.
+                emask = np.zeros((ph_, pw_), np.uint8)
+                cv2.ellipse(
+                    emask, (int(cx) - x0, int(cy) - y0),
+                    (max(1, int(rx)), max(1, int(ry))), 0, 0, 360, 255, -1,
+                )
+                patch = dark[y0:y1, x0:x1].astype(np.float32)
+                # PUPIL: darkest pixel inside the eye ellipse.
+                pupil_search = patch.copy()
+                pupil_search[emask == 0] = -1.0
+                py, px = np.unravel_index(int(np.argmax(pupil_search)), pupil_search.shape)
+                pup_cx = int((x0 + px) * sx)
+                pup_cy = int((y0 + py) * sy)
+                r_pup = max(6, int(round(min(rx, ry) * 0.28 * min(sx, sy))))
+                cv2.circle(modulated_u8, (pup_cx, pup_cy), r_pup, (0, 0, 0), -1)
+
+                # SCLERA HIGHLIGHTS (dark_bg only): two brightest sclera
+                # pixels, away from the pupil. dark[] is darkness; sclera
+                # = 1 - dark. On light_bg the sclera area is already letter-
+                # sparse (highlights melt into the white ground), so painting
+                # white-on-white dots adds nothing -- skip.
+                if dark_bg:
+                    bright = (1.0 - patch).astype(np.float32)
+                    bright[emask == 0] = 0.0
+                    # Exclude a generous neighbourhood around the pupil so we
+                    # don't pick iris pixels right next to it.
+                    yy, xx = np.ogrid[:ph_, :pw_]
+                    pup_dist = np.sqrt((yy - py) ** 2 + (xx - px) ** 2)
+                    exclude_r = max(3, int(round(min(rx, ry) * 0.45)))
+                    bright[pup_dist <= exclude_r] = 0.0
+                    flat = bright.flatten()
+                    placed = []
+                    r_scl = max(2, int(round(min(rx, ry) * 0.08 * min(sx, sy))))
+                    for idx in np.argsort(flat)[::-1][:64]:
+                        val = float(flat[idx])
+                        if val <= 0.05 or len(placed) >= 2:
+                            break
+                        syp, sxp = int(idx // pw_), int(idx % pw_)
+                        too_close = any(
+                            (syp - p[0]) ** 2 + (sxp - p[1]) ** 2 < (max(rx, ry) * 0.55) ** 2
+                            for p in placed
+                        )
+                        if too_close:
+                            continue
+                        placed.append((syp, sxp))
+                        scl_cx = int((x0 + sxp) * sx)
+                        scl_cy = int((y0 + syp) * sy)
+                        cv2.circle(modulated_u8, (scl_cx, scl_cy), r_scl, ink_rgb, -1)
+
+                # CATCHLIGHT (crescent): only on dark_bg. On light_bg the
+                # carve-out black disk reads as a stray dark notch on the
+                # dense face -- it doesn't suggest a spherical highlight the
+                # way it does against gold-on-dark. Skip it.
+                if dark_bg:
+                    cl_cx = pup_cx - max(3, int(rx * 0.22 * sx))
+                    cl_cy = pup_cy - max(3, int(ry * 0.22 * sy))
+                    r_cl = max(5, int(round(min(rx, ry) * 0.20 * min(sx, sy))))
+                    cv2.circle(modulated_u8, (cl_cx, cl_cy), r_cl, bright_color, -1)
+                    carve_off = max(1, int(round(r_cl * 0.45)))
+                    r_carve = max(2, int(round(r_cl * 0.82)))
+                    cv2.circle(
+                        modulated_u8,
+                        (cl_cx - carve_off, cl_cy - carve_off),
+                        r_carve, (0, 0, 0), -1,
                     )
-                    md.text((tx, ty), mark_text, fill=mark_rgb, font=mark_font)
-            except Exception:
-                pass
+            out_img = _PILImage2.fromarray(modulated_u8)
             buf2 = _io2.BytesIO()
             out_img.save(buf2, format="PNG", optimize=True)
             modulation_png = buf2.getvalue()
