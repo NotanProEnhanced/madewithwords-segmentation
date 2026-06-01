@@ -289,6 +289,68 @@ def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.nd
     return np.clip(out, 0.0, 1.0)
 
 
+# Upper-lid arcs (MediaPipe Face Mesh canonical indices). Tracing these
+# adds a thin darkened curve along the eyelash line so eye anatomy reads
+# more drawn-portrait. Lower lids omitted (already implicit in eye hull).
+_LID_R = (33, 246, 161, 160, 159, 158, 157, 173, 133)
+_LID_L = (362, 398, 384, 385, 386, 387, 388, 466, 263)
+# Outer lip border (cupid's bow, philtrum descent, mouth corners) so the
+# lip line gets a thin darker stripe in the dark field.
+_LIP_BORDER = (61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291,
+               375, 321, 405, 314, 17, 84, 181, 91, 146)
+# Inner-eye lacrimal caruncle landmark (a single point each side). Used
+# to slightly BRIGHTEN -- the wet tissue at the inner corner is the only
+# truly bright pixel near the eye in real portraits.
+_CARUNCLE = (133, 362)
+
+
+def _accentuate_micro_features(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.ndarray:
+    """Add subtle line-shaped darkness at the upper-lid line (eyelash
+    anchor) and the lip border, plus a soft brightness lift at each
+    lacrimal caruncle. Beyond the broad hull-level changes in
+    _emphasize_features, these add small-scale anatomy detail."""
+    if not _faces_of(an):
+        return dark
+    H, W = dark.shape[:2]
+    out = dark.copy()
+    line_thick = max(1, int(round(W * 0.0028)))
+    blur_sigma_line = max(1.4, W * 0.0022)
+    for face in _faces_of(an):
+        pts = (face.points * scale).astype(np.int32)
+        # 1) Upper lid line (eyelash) -- thin darker curve along each lid
+        for lid_idx in (_LID_R, _LID_L):
+            line_pts = pts[list(lid_idx)]
+            mask_line = np.zeros((H, W), np.float32)
+            for i in range(len(line_pts) - 1):
+                cv2.line(mask_line, tuple(int(v) for v in line_pts[i]),
+                         tuple(int(v) for v in line_pts[i + 1]),
+                         1.0, thickness=line_thick)
+            mask_line = cv2.GaussianBlur(mask_line, (0, 0), blur_sigma_line)
+            out = out + 0.32 * mask_line * (1.0 - out)
+        # 2) Lip border line -- thin darker stripe along the cupid's bow
+        lip_pts = pts[list(_LIP_BORDER)]
+        mask_lip = np.zeros((H, W), np.float32)
+        for i in range(len(lip_pts)):
+            cv2.line(mask_lip, tuple(int(v) for v in lip_pts[i]),
+                     tuple(int(v) for v in lip_pts[(i + 1) % len(lip_pts)]),
+                     1.0, thickness=line_thick)
+        mask_lip = cv2.GaussianBlur(mask_lip, (0, 0), blur_sigma_line)
+        out = out + 0.22 * mask_lip * (1.0 - out)
+        # 3) Lacrimal caruncle brightness lift (small gaussian spot)
+        for idx in _CARUNCLE:
+            px, py = int(pts[idx][0]), int(pts[idx][1])
+            spot_mask = np.zeros((H, W), np.float32)
+            cv2.circle(spot_mask, (px, py),
+                       max(2, int(round(W * 0.0028))), 1.0, -1)
+            spot_mask = cv2.GaussianBlur(spot_mask, (0, 0), max(1.5, W * 0.0024))
+            # Reduce darkness (brighten)
+            out = out - 0.35 * spot_mask * out
+    out = np.clip(out, 0.0, 1.0)
+    # Restrict to silhouette so no spill outside the subject.
+    out[~mset] = dark[~mset]
+    return out
+
+
 def build_calligram(
     an,
     text: str,
@@ -348,6 +410,7 @@ def build_calligram(
     dark = _balance_faces(dark, an, scale, mset)
     dark = _emphasize_features(dark, an, scale, mset)
     dark = _sharpen_eyes(dark, an, scale, mset)
+    dark = _accentuate_micro_features(dark, an, scale, mset)
     # Cast back to float32 -- the helpers above can promote to float64 via
     # numpy ops, and cv2.GaussianBlur rejects float64 inputs.
     dark = dark.astype(np.float32)
