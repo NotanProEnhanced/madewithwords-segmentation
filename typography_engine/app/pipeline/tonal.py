@@ -440,6 +440,24 @@ def build_calligram(
     else:
         size_signal = np.full((H, W), 0.45, dtype=np.float32)
     size_signal = np.clip(size_signal, 0.0, 1.0)
+    # Tier-boundary stochastic dithering (photorealism #2). Add coherent
+    # low-frequency noise so cells near a tier boundary sometimes borrow
+    # the neighbour tier's size -- breaks the implicit grid that gives
+    # adjacent face zones visible 'borders'.
+    _yy, _xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    _noise = (np.sin(_yy * 0.13 + _xx * 0.11) *
+              np.sin(_yy * 0.07 + _xx * 0.09) *
+              np.sin(_yy * 0.05 + _xx * 0.17)).astype(np.float32)
+    size_signal = np.clip(size_signal + _noise * 0.025, 0.0, 1.0)
+
+    # Iris-only mask (photorealism #3). Used to route the smallest 'iris'
+    # tier to the iris area specifically; the rest of the eye / lash /
+    # brow / lip features keep xxs (10px).
+    iris_mask_u8 = np.zeros((H, W), dtype=np.uint8)
+    for (cxe, cye, rxe, rye) in eye_centers:
+        ir_rad = max(2, int(round(min(rxe, rye) * 0.55)))
+        cv2.circle(iris_mask_u8, (int(round(cxe)), int(round(cye))), ir_rad, 255, -1)
+    iris_mask = iris_mask_u8 > 0
 
     ir, ig, ib = _hex_to_rgb(ink_hex)
     br, bgc, bb = _hex_to_rgb(bg_hex)
@@ -467,8 +485,11 @@ def build_calligram(
         ("sm",   22.0, 0.34, 0.46),   # neck / silhouette-near-face
         ("xs+",  17.0, 0.22, 0.34),   # face hull / cheek / forehead
         ("xs",   13.0, 0.10, 0.22),   # feature edges (lid line, lip line)
-        ("xxs",  10.0, 0.00, 0.10),   # eye sclera/iris, lip corners
+        ("xxs",  10.0, 0.00, 0.10),   # other feature centres (lip corners, brows)
+        ("iris",  7.0, -0.01, 0.10),  # IRIS ONLY -- gated by iris_mask below
     ]
+    # Tier flag: True means 'gate this tier by iris_mask'. Iris tier only.
+    _iris_tier = {"iris"}
     # claim grid at the finest tier's resolution; once claimed by a finer tier,
     # coarser tiers skip those cells.
     fine_cw = tiers[-1][1] * _MONO_ADVANCE
@@ -544,10 +565,33 @@ def build_calligram(
                 if subject_only and not mset[yi, xi_start]:
                     c += 1
                     continue
+                # Iris-tier gate (photorealism #3): the 'iris' tier fires
+                # ONLY inside the iris_mask circle. Outside iris_mask, this
+                # tier is suppressed; conversely, inside iris_mask the
+                # next-coarser xxs(10) tier defers to iris so iris gets the
+                # 7px sub-tier exclusively.
+                in_iris = bool(iris_mask[yi, xi_start])
+                if label == "iris" and not in_iris:
+                    c += 1
+                    continue
+                if label == "xxs" and in_iris:
+                    c += 1
+                    continue
                 s = float(size_signal[yi, xi_start])
                 if not (d_lo <= s < d_hi):
                     c += 1
                     continue
+                # Stochastic-by-tone density skip (photorealism #1).
+                # In bright zones (highlights, skin specular), randomly skip
+                # placement so density follows tone -- not just region.
+                # Shadow letters always place; highlight letters place
+                # ~30-60% of the time. Reads as photographic falloff.
+                local_b = 1.0 - float(tone_s[yi, xi_start])
+                if local_b > 0.55:
+                    skip_p = min(0.62, (local_b - 0.55) * 1.55)
+                    if (((yi * 73 + xi_start * 41 + r * 19) & 1023) / 1023.0) < skip_p:
+                        c += 1
+                        continue
                 # Check that no letter of this word would land on a pixel
                 # already claimed by an earlier (larger) tier. If any would,
                 # advance one cell and retry; this lets the word slide right
