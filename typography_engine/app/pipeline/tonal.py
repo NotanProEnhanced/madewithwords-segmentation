@@ -506,13 +506,14 @@ def build_calligram(
         # Soft-cap rotation amplitude via tanh.
         MAX_ROT = 22.0
         flow_rot = np.tanh(flow_angle_deg / 32.0) * MAX_ROT * mag
-        # Suppress rotation inside the face hull -- 95% suppression at hull
-        # core, fading out over ~face-width so the cheek / jaw transition
-        # picks up some tilt rather than snapping on at the hull edge.
+        # In face: cap rotation at ~50% of body strength so cheek, nose,
+        # brow, lip and jaw contours all pick up some flow tilt without
+        # disrupting facial readability. Was 92% suppressed previously.
         if have_face:
             fhm_f = (face_hull_mask > 0).astype(np.float32)
             fhm_f = cv2.GaussianBlur(fhm_f, (0, 0), max(8.0, W * 0.022))
-            flow_rot = flow_rot * (1.0 - fhm_f * 0.92)
+            face_scale = 0.50            # body=1.0, face=0.50 of body
+            flow_rot = flow_rot * (1.0 - fhm_f * (1.0 - face_scale))
         flow_rot = flow_rot.astype(np.float32)
     except Exception:
         flow_rot = np.zeros((H, W), dtype=np.float32)
