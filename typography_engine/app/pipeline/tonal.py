@@ -1025,13 +1025,12 @@ def build_calligram(
                 ink_amount_face = brightness ** 0.65       # moderate boost; preserves mid-tone contrast for face likeness
                 ink_amount_outside = 0.0                   # subject_only suppresses bg anyway
             else:
-                # Light_bg needs more density than dark_bg -- on white,
-                # mid-skin and hair must read as solidly inked navy, not
-                # wispy gray, for the face to have any value contrast.
-                # Floor 0.40 so even highlights are clearly inked; curve
-                # exponent 0.55 (vs the 0.70 of the earlier attempt) skews
-                # the bulk of the tone range toward more ink.
-                ink_amount_face = 0.40 + 0.60 * ((1.0 - brightness) ** 0.55)
+                # Light_bg mirror of the dark_bg formula. Floor REMOVED
+                # 2026-06-01 -- the old 0.40 floor kept every letter at
+                # least 40% black, killing highlight contrast and making
+                # the face read flat. Now: shadows (b=0) -> full ink,
+                # mid-skin -> mid-grey, highlights (b=1) -> bg (invisible).
+                ink_amount_face = (1.0 - brightness) ** 0.65
                 ink_amount_outside = 0.0    # bg letters fully melt into white
             outside = np.full_like(brightness, ink_amount_outside)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
@@ -1122,7 +1121,12 @@ def build_calligram(
                 pup_cx = int((x0 + px) * sx)
                 pup_cy = int((y0 + py) * sy)
                 r_pup = max(6, int(round(min(rx, ry) * 0.28 * min(sx, sy))))
-                cv2.circle(modulated_u8, (pup_cx, pup_cy), r_pup, (0, 0, 0), -1)
+                # PUPIL stamp: only on dark_bg. On light_bg the high
+                # ink_amount at low brightness already drives the pupil
+                # area's letters to pure ink; stamping a solid disc on top
+                # reads as a black-dot sticker rather than 'made of words'.
+                if dark_bg:
+                    cv2.circle(modulated_u8, (pup_cx, pup_cy), r_pup, (0, 0, 0), -1)
 
                 # SCLERA HIGHLIGHTS (dark_bg only): two brightest sclera
                 # pixels, away from the pupil. dark[] is darkness; sclera
