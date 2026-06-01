@@ -339,7 +339,7 @@ def _accentuate_micro_features(dark: np.ndarray, an, scale: float, mset: np.ndar
                          tuple(int(v) for v in line_pts[i + 1]),
                          1.0, thickness=line_thick + 1)
             mask_line = cv2.GaussianBlur(mask_line, (0, 0), blur_sigma_line)
-            out = out + 0.65 * mask_line * (1.0 - out)
+            out = out + 0.85 * mask_line * (1.0 - out)
         # 1b) Lower lid line. Defines the eye-shape lower boundary.
         for lid_idx in (_LID_R_LOWER, _LID_L_LOWER):
             line_pts = pts[list(lid_idx)]
@@ -349,7 +349,7 @@ def _accentuate_micro_features(dark: np.ndarray, an, scale: float, mset: np.ndar
                          tuple(int(v) for v in line_pts[i + 1]),
                          1.0, thickness=line_thick)
             mask_line = cv2.GaussianBlur(mask_line, (0, 0), blur_sigma_line)
-            out = out + 0.55 * mask_line * (1.0 - out)
+            out = out + 0.75 * mask_line * (1.0 - out)
         # 2) Lip border line -- thicker darker stripe along the cupid's bow
         lip_pts = pts[list(_LIP_BORDER)]
         mask_lip = np.zeros((H, W), np.float32)
@@ -358,7 +358,7 @@ def _accentuate_micro_features(dark: np.ndarray, an, scale: float, mset: np.ndar
                      tuple(int(v) for v in lip_pts[(i + 1) % len(lip_pts)]),
                      1.0, thickness=line_thick + 1)
         mask_lip = cv2.GaussianBlur(mask_lip, (0, 0), blur_sigma_line)
-        out = out + 0.55 * mask_lip * (1.0 - out)
+        out = out + 0.78 * mask_lip * (1.0 - out)
         # 2b) Mouth-opening line -- darken the inner upper-lip border so
         # the upper and lower lips read as two distinct shapes (otherwise
         # they merge into one lip-blob). Polyline 78->13->308.
@@ -369,7 +369,7 @@ def _accentuate_micro_features(dark: np.ndarray, an, scale: float, mset: np.ndar
                      tuple(int(v) for v in open_pts[i + 1]),
                      1.0, thickness=line_thick + 1)
         mask_open = cv2.GaussianBlur(mask_open, (0, 0), blur_sigma_line)
-        out = out + 0.75 * mask_open * (1.0 - out)
+        out = out + 0.92 * mask_open * (1.0 - out)
         # 2c) Lip corner emphasis -- each corner gets an extra dark spot
         # so the mouth shape's defining points anchor crisply.
         for idx in _LIP_CORNERS:
@@ -378,7 +378,7 @@ def _accentuate_micro_features(dark: np.ndarray, an, scale: float, mset: np.ndar
             cv2.circle(spot_mask, (px, py),
                        max(2, int(round(W * 0.0035))), 1.0, -1)
             spot_mask = cv2.GaussianBlur(spot_mask, (0, 0), max(1.6, W * 0.0028))
-            out = out + 0.85 * spot_mask * (1.0 - out)
+            out = out + 0.95 * spot_mask * (1.0 - out)
         # 3) Nostril shadows -- darker spots at the nostril hole landmarks
         # (79/309, interior, not the outer wing corners 98/327 we used
         # before). Strength 0.90 with a slightly larger circle so the
@@ -390,7 +390,7 @@ def _accentuate_micro_features(dark: np.ndarray, an, scale: float, mset: np.ndar
             cv2.circle(spot_mask, (px, py),
                        max(3, int(round(W * 0.0055))), 1.0, -1)
             spot_mask = cv2.GaussianBlur(spot_mask, (0, 0), max(2.2, W * 0.0042))
-            out = out + 0.95 * spot_mask * (1.0 - out)
+            out = out + 0.98 * spot_mask * (1.0 - out)
         # Lacrimal caruncle brightness lift removed 2026-06-01 -- it
         # rendered as visible bright crescents at the inner eye corners
         # (the typography couldn't distribute the lift smoothly enough).
@@ -1082,7 +1082,7 @@ def build_calligram(
                 # highlights -> mid-gray skin -> dark-gray shadows ->
                 # near-black features. (2026-06-01 'photorealistic
                 # white-ground portraits'.)
-                ink_amount_face = np.maximum(ink_amount_face, 0.12)
+                ink_amount_face = np.maximum(ink_amount_face, 0.18)
                 ink_amount_outside = 0.0    # bg letters fully melt into white
             outside = np.full_like(brightness, ink_amount_outside)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
