@@ -289,11 +289,13 @@ def _sharpen_eyes(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.nd
     return np.clip(out, 0.0, 1.0)
 
 
-# Upper-lid arcs (MediaPipe Face Mesh canonical indices). Tracing these
-# adds a thin darkened curve along the eyelash line so eye anatomy reads
-# more drawn-portrait. Lower lids omitted (already implicit in eye hull).
+# Upper-lid arcs (MediaPipe Face Mesh canonical indices).
 _LID_R = (33, 246, 161, 160, 159, 158, 157, 173, 133)
 _LID_L = (362, 398, 384, 385, 386, 387, 388, 466, 263)
+# Lower-lid arcs (Margot reference shows distinct upper AND lower lid
+# definition -- this is the eyelid anatomy that makes eyes read as eyes).
+_LID_R_LOWER = (33, 7, 163, 144, 145, 153, 154, 155, 133)
+_LID_L_LOWER = (362, 382, 381, 380, 374, 373, 390, 249, 263)
 # Outer lip border (cupid's bow, philtrum descent, mouth corners) so the
 # lip line gets a thin darker stripe in the dark field.
 _LIP_BORDER = (61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291,
@@ -327,6 +329,18 @@ def _accentuate_micro_features(dark: np.ndarray, an, scale: float, mset: np.ndar
                          1.0, thickness=line_thick)
             mask_line = cv2.GaussianBlur(mask_line, (0, 0), blur_sigma_line)
             out = out + 0.32 * mask_line * (1.0 - out)
+        # 1b) Lower lid line -- thinner and slightly weaker (real lower
+        # lashes are less dense). Defines the eye-shape lower boundary
+        # which the Margot reference clearly shows.
+        for lid_idx in (_LID_R_LOWER, _LID_L_LOWER):
+            line_pts = pts[list(lid_idx)]
+            mask_line = np.zeros((H, W), np.float32)
+            for i in range(len(line_pts) - 1):
+                cv2.line(mask_line, tuple(int(v) for v in line_pts[i]),
+                         tuple(int(v) for v in line_pts[i + 1]),
+                         1.0, thickness=max(1, line_thick - 1))
+            mask_line = cv2.GaussianBlur(mask_line, (0, 0), blur_sigma_line)
+            out = out + 0.22 * mask_line * (1.0 - out)
         # 2) Lip border line -- thin darker stripe along the cupid's bow
         lip_pts = pts[list(_LIP_BORDER)]
         mask_lip = np.zeros((H, W), np.float32)
@@ -815,8 +829,23 @@ def build_calligram(
                     col = c + k
                     xi = min(W - 1, max(0, int(col * cw + cw * 0.5)))
                     fill = _color_for(yi, xi, 0.55)
+                    # Per-LETTER sub-pixel x-jitter (~10% cw). Final
+                    # destruction of the column lattice -- after the
+                    # per-word jitter shifts entire words, this small
+                    # per-letter shift breaks the within-word alignment
+                    # too. Word is still readable because the jitter
+                    # is below visual letter-width tolerance; but the
+                    # eye can no longer trace ANY vertical / diagonal
+                    # alignment chain. (2026-06-01 'rivers'.)
+                    _h2 = ((wi & 0xFFFFFFFF) * 1469598103934665603) & 0xFFFFFFFF
+                    _h2 = (_h2 + (r & 0xFFFFFFFF) * 1099511628211) & 0xFFFFFFFF
+                    _h2 = (_h2 + (k & 0xFFFFFFFF) * 14695981039346656037) & 0xFFFFFFFF
+                    _h2 ^= _h2 >> 16
+                    _h2 = (_h2 * 0x85ebca6b) & 0xFFFFFFFF
+                    _h2 ^= _h2 >> 13
+                    letter_jx = ((_h2 / 0xFFFFFFFF) - 0.5) * (cw * 0.22)
                     spans.append(
-                        f'<tspan x="{col * cw + word_jx:.1f}" fill="{fill}">{esc(ch)}</tspan>'
+                        f'<tspan x="{col * cw + word_jx + letter_jx:.1f}" fill="{fill}">{esc(ch)}</tspan>'
                     )
                     line_chars.append(ch)
                     line_rotations.append(f"{float(flow_rot[yi, xi]):.1f}")
