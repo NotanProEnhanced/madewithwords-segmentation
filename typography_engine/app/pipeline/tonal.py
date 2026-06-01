@@ -45,6 +45,26 @@ _JITTER_X = 0.16
 _JITTER_Y = 0.10
 _WORD_GAP = 2
 
+# Ordered-dither (Bayer 8x8) thresholds in [0,1). Used by the optional
+# tone-density pass to thin the DEEPEST shadows into a regular halftone so the
+# dark ground shows through and the face lifts off it. Ordered (a fixed
+# repeating screen), never stochastic -- random skipping punches a Swiss-cheese
+# face; a Bayer screen reads as an even, intentional texture.
+_BAYER8 = (np.array([
+    [0, 32, 8, 40, 2, 34, 10, 42],
+    [48, 16, 56, 24, 50, 18, 58, 26],
+    [12, 44, 4, 36, 14, 46, 6, 38],
+    [60, 28, 52, 20, 62, 30, 54, 22],
+    [3, 35, 11, 43, 1, 33, 9, 41],
+    [51, 19, 59, 27, 49, 17, 57, 25],
+    [15, 47, 7, 39, 13, 45, 5, 37],
+    [63, 31, 55, 23, 61, 29, 53, 21],
+], dtype=np.float32) + 0.5) / 64.0
+# Tone above which the density pass starts thinning (1 = darkest). Only the
+# deepest shadows screen out; midtones/highlights stay fully dense so the lit
+# face keeps its continuous gold and never goes holey.
+_DENSITY_KNEE = 0.60
+
 # Per-glyph gray ramp (0-255): lightest inked cells near this gray, darkest
 # features near-black, so tone gradients carry the likeness. Kept just below
 # white so the brightest skin/hair still render as very faint words (not blank)
@@ -496,6 +516,7 @@ def build_tonal_portrait(
     contrast: float = 2.8,
     pivot: float = 0.34,
     ink: str = "mono",
+    tone_density: float = 0.0,
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
     if not approved:
@@ -660,6 +681,13 @@ def build_tonal_portrait(
                     ink[c] = False
                 elif region == "face" and not in_face(px, cy_nom):
                     ink[c] = False
+                elif tone_density > 0.0 and region in ("body", "mid") and row[c] > _DENSITY_KNEE:
+                    # Structured shadow thinning: drop cells on a Bayer screen
+                    # so the deepest shadows open to the dark ground and the
+                    # face emerges. Face/eye tiers are exempt (keep full detail).
+                    keep = 1.0 - tone_density * (row[c] - _DENSITY_KNEE) / (1.0 - _DENSITY_KNEE)
+                    if keep <= _BAYER8[r & 7, c & 7]:
+                        ink[c] = False
             c = 0
             while c < cols:
                 if not ink[c]:
@@ -1056,7 +1084,7 @@ def _ground_hex(ink: str, light: bool) -> str:
 
 def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: WarningCollector,
                        ink: str = "mono", remove_bg: bool = True, light: bool = False,
-                       out_width: int = 1400, render_w: int = 2200):
+                       out_width: int = 1400, render_w: int = 2200, tone_density: float = 0.6):
     """Layered portrait -> PNG bytes. style='message' = poster rows; else Words
     (mosaic) layout. Returns (png_bytes, runs, ground_hex, mask_svg)."""
     # The layout only needs glyph POSITIONS (we whiten them into a mask); the
@@ -1068,7 +1096,8 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
     else:
         from .portrait import build_portrait
         words = [w for w in re.split(r"[\s,]+", text) if w]
-        res = build_portrait(an, words, cfg, warns, uppercase=True, ink="mono", render_w=render_w)
+        res = build_portrait(an, words, cfg, warns, uppercase=True, ink="mono",
+                             render_w=render_w, tone_density=tone_density)
         colored, runs = res.svg, res.runs
     ground_hex = _ground_hex(ink, light)
     if not colored:
