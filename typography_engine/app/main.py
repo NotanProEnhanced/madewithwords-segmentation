@@ -96,7 +96,13 @@ if STATIC_DIR.exists():
 
 
 @app.get("/")
-def index() -> RedirectResponse:
+def index():
+    # Serve the buyer UI directly at the apex so the URL bar shows
+    # 'app.typortrait.com/' (not '/static/index.html'). Files referenced by
+    # the HTML still resolve through the /static mount.
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path), media_type="text/html")
     return RedirectResponse(url="/static/index.html")
 
 
@@ -324,7 +330,23 @@ async def render(
             # Story style with per-glyph photo modulation: bytes were pre-rendered
             # in build_calligram so the photo's tone runs THROUGH each letter shape.
             # Bypass cairosvg here -- write the bytes directly.
-            clean_png.write_bytes(modulation_png_bytes)
+            if poster:
+                # Keepsake mode: wrap the modulated PNG in a designed poster
+                # (title + caption + frame) via PIL, so the buyer's chosen
+                # palette/photo modulation IS preserved (re-rasterising the
+                # composed SVG would have lost the modulation pass).
+                from .pipeline.compose import compose_poster_png
+                try:
+                    clean_png.write_bytes(compose_poster_png(
+                        modulation_png_bytes, ink_choice,
+                        title=title, caption=caption,
+                    ))
+                except Exception as e:  # noqa: BLE001
+                    warns.warn("compose", "poster_png_failed",
+                               f"Keepsake PNG compose failed: {e}")
+                    clean_png.write_bytes(modulation_png_bytes)
+            else:
+                clean_png.write_bytes(modulation_png_bytes)
         else:
             write_png(svg_out, clean_png, output_width=max(cfg.canvas_w, int(png_width)))
         from .pipeline.watermark import add_watermark

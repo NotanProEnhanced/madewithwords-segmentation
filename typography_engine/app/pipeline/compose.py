@@ -16,14 +16,15 @@ from .svgbuild import esc, require_hex
 _SERIF = "Georgia, 'Times New Roman', serif"
 
 # Per-ink poster colours: (background, title/ink, muted caption+rule).
+# Updated 2026-06-01 for the dark-ground palette set we ship in production.
 _POSTER_COLORS = {
-    "navy":      ("#ffffff", "#0d1b3a", "#6b7790"),
-    "sepia":     ("#fbf7ee", "#2e1c0a", "#8a795f"),
-    "burgundy":  ("#ffffff", "#4a0d18", "#9a6b72"),
-    "forest":    ("#ffffff", "#0f2e1e", "#5f7d6b"),
-    "gold_noir": ("#101216", "#e8c66a", "#8a7a4e"),
-    "mono":      ("#ffffff", "#141414", "#777777"),
-    "photo":     ("#ffffff", "#1a1a1a", "#777777"),
+    "gold_noir":          ("#0b0c10", "#e8c66a", "#7a6a44"),
+    "navy_marigold":      ("#0a1126", "#f3c34a", "#6f5e30"),
+    "forest_bone":        ("#0b2618", "#f1e8d4", "#7a8c7a"),
+    "burgundy_champagne": ("#2a0a11", "#e9d39a", "#7a6b53"),
+    # Light-bg legacy keys still keep working in case anyone refers to them.
+    "mono":               ("#ffffff", "#141414", "#777777"),
+    "photo":              ("#ffffff", "#1a1a1a", "#777777"),
 }
 
 
@@ -96,3 +97,89 @@ def compose_poster(
         )
     parts.append("</svg>")
     return "\n".join(parts) + "\n"
+
+
+def compose_poster_png(
+    portrait_png_bytes: bytes,
+    ink: str,
+    title: Optional[str] = None,
+    caption: Optional[str] = None,
+    canvas_w: int = 2200,
+) -> bytes:
+    """Wrap the photo-modulated PNG portrait into a keepsake design with
+    title/caption. Used when modulation_png_bytes is the source of the
+    rendered output (story-style calligram with per-glyph photo tonal
+    gradation); embeds the PNG verbatim rather than re-rasterising the
+    SVG (which would lose the modulation pass). Returns PNG bytes."""
+    import io as _io
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except Exception as e:  # noqa: BLE001
+        # Without Pillow we can't compose; let the caller fall back.
+        raise RuntimeError(f"compose_poster_png needs Pillow: {e}")
+    bg_hex, fg_hex, muted_hex = _POSTER_COLORS.get(ink, _POSTER_COLORS["gold_noir"])
+    def _hex(h: str):
+        h = h.lstrip("#")
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+    bg, fg, muted = _hex(bg_hex), _hex(fg_hex), _hex(muted_hex)
+
+    portrait = Image.open(_io.BytesIO(portrait_png_bytes)).convert("RGB")
+    pw, ph = portrait.size
+    CW = int(canvas_w)
+    side = int(round(CW * 0.085))
+    box_w = CW - 2 * side
+    box_h = int(round(box_w * (ph / pw)))
+    top = int(round(CW * 0.075))
+    title_size = int(round(CW * 0.060))
+    cap_size = int(round(CW * 0.0185))
+    gap = int(round(CW * 0.055))
+    rule_y = top + box_h + gap
+
+    has_title = bool(title and title.strip())
+    has_cap = bool(caption and caption.strip())
+    title_base = rule_y + int(title_size * 0.95) if has_title else rule_y
+    cap_base = (title_base + int(cap_size * 1.9)) if has_cap else title_base
+    last = cap_base if has_cap else (title_base if has_title else rule_y)
+    CH = last + int(CW * 0.06)
+
+    canvas = Image.new("RGB", (CW, CH), bg)
+    portrait_resized = portrait.resize((box_w, box_h), Image.LANCZOS)
+    canvas.paste(portrait_resized, (side, top))
+
+    draw = ImageDraw.Draw(canvas)
+    # Use a system-available serif. We don't ship a TTF here; PIL's default
+    # works in a pinch but is sans. Try the DejaVu Serif that the deploy
+    # Dockerfile installs (fonts-dejavu); fall back gracefully.
+    serif_paths = (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
+    )
+    def _serif(size: int):
+        for p in serif_paths:
+            try:
+                return ImageFont.truetype(p, size)
+            except Exception:
+                continue
+        return ImageFont.load_default()
+    serif_bold = _serif(title_size) if has_title else None
+    serif_cap = _serif(cap_size) if has_cap else None
+
+    # Thin rule between portrait and title
+    if has_title or has_cap:
+        rx0 = int(CW * 0.40)
+        rx1 = int(CW * 0.60)
+        draw.line([(rx0, rule_y), (rx1, rule_y)], fill=muted, width=2)
+    if has_title:
+        txt = title.strip().upper()
+        tw = draw.textlength(txt, font=serif_bold)
+        draw.text(((CW - tw) / 2, title_base - title_size), txt,
+                  font=serif_bold, fill=fg)
+    if has_cap:
+        txt = caption.strip().upper()
+        tw = draw.textlength(txt, font=serif_cap)
+        draw.text(((CW - tw) / 2, cap_base - cap_size), txt,
+                  font=serif_cap, fill=muted)
+
+    out = _io.BytesIO()
+    canvas.save(out, format="PNG", optimize=True)
+    return out.getvalue()
