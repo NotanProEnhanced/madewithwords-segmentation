@@ -1033,13 +1033,17 @@ def build_calligram(
                 ink_amount_face = brightness ** 0.65       # moderate boost; preserves mid-tone contrast for face likeness
                 ink_amount_outside = 0.0                   # subject_only suppresses bg anyway
             else:
-                # Light_bg ink_amount with a contrast stretch on the
-                # brightness map before the power, so DARK regions go
-                # deeper into full ink (more contrast and detail in
-                # shadows) and HIGHLIGHTS fade cleanly to bg. Values
-                # remain monotonically scaled.
-                b_stretched = np.clip(0.5 + (brightness - 0.5) * 2.10, 0.0, 1.0)
-                ink_amount_face = (1.0 - b_stretched) ** 0.40
+                # Light_bg ink_amount: natural (1-b)^0.62 curve for the
+                # dark/mid range (so pupil > brow > eye-socket > lip line >
+                # nostril > mid-skin all sit at distinct ink_amount values
+                # and DELINEATE rather than all clipping to 1.0), plus an
+                # explicit smoothstep highlight fade so b>0.65 fades cleanly
+                # to bg by b=0.95. Values stay monotonic; the dark end is
+                # graduated, the bright end falls off fast.
+                base = (1.0 - brightness) ** 0.62
+                fade = np.clip((brightness - 0.65) / 0.30, 0.0, 1.0)
+                fade = fade * fade * (3.0 - 2.0 * fade)
+                ink_amount_face = base * (1.0 - fade * 0.93)
                 ink_amount_outside = 0.0    # bg letters fully melt into white
             outside = np.full_like(brightness, ink_amount_outside)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
