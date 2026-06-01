@@ -975,7 +975,12 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     gray = _sharpen(cv2.resize(an.img.gray, (W, H), interpolation=cv2.INTER_CUBIC)).astype(np.float32) / 255.0
     lo, hi = np.percentile(gray, [2, 99])
     lum = np.clip((gray - lo) / max(1e-3, hi - lo), 0.0, 1.0)
-    lum = np.clip((lum - 0.5) * 1.5 + 0.5, 0.0, 1.0)
+    # Midtone-punch S-curve. A steep linear contrast stretch clips features to
+    # one flat ink; a smoothstep deepens shadows and lifts highlights while
+    # asymptoting smoothly at 0/1, so eye sockets sink and lit planes pop
+    # without losing tonal separation between adjacent features.
+    lum = lum * lum * (3.0 - 2.0 * lum)
+    lum = np.clip((lum - 0.5) * 1.25 + 0.5, 0.0, 1.0)
     if light:
         ck = _CALLIGRAM.get(ink, ("#15202b", "#ffffff"))   # (dark ink, light paper)
         ground_hex, ink_hex = ck[1], ck[0]
