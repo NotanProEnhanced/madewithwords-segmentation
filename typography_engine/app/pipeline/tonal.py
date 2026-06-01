@@ -381,7 +381,14 @@ def build_calligram(
             _row_word_cache[r] = wl
         return wl
     def _col_offset(r: int) -> int:
-        return _rnd_calligram.Random(r * 31 + 3).randint(0, 6)
+        # Multiplicative-hash offset 0..15 -- larger range than the earlier
+        # 0..6 (which sometimes walked diagonally because the random
+        # sequence stepped by 1 across consecutive rows). 16-step range
+        # combined with per-word x-jitter (in the placement loop)
+        # eliminates diagonal rivers without sacrificing readability.
+        h = (r * 2654435761) & 0xFFFFFFFF
+        h ^= h >> 16
+        return int(h % 16)
     if not words:
         warns.error("text", "no_words", "No passage supplied for the calligram.")
         return "", []
@@ -786,11 +793,20 @@ def build_calligram(
                 # Place the word. Per-glyph fill: photo tone runs through each
                 # letter via the modulation pass.
                 for k, ch in enumerate(word):
+                # Per-WORD x-jitter to break the cell-grid alignment that
+                # otherwise produces diagonal "rivers" of text across rows.
+                # Letters within a word stay co-aligned (word remains
+                # readable); but the word's whole x-start is shifted by a
+                # deterministic sub-cell amount, so adjacent rows' word
+                # starts never line up into diagonals.
+                word_jx = (((wi * 2654435761) ^ (r * 1779033703)) & 0xFFFFFFFF)
+                word_jx = ((word_jx / 0xFFFFFFFF) - 0.5) * (cw * 0.55)
+                for k, ch in enumerate(word):
                     col = c + k
                     xi = min(W - 1, max(0, int(col * cw + cw * 0.5)))
                     fill = _color_for(yi, xi, 0.55)
                     spans.append(
-                        f'<tspan x="{col * cw:.1f}" fill="{fill}">{esc(ch)}</tspan>'
+                        f'<tspan x="{col * cw + word_jx:.1f}" fill="{fill}">{esc(ch)}</tspan>'
                     )
                     line_chars.append(ch)
                     line_rotations.append(f"{float(flow_rot[yi, xi]):.1f}")
