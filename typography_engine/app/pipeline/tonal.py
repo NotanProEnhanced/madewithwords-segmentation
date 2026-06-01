@@ -1025,12 +1025,13 @@ def build_calligram(
                 ink_amount_face = brightness ** 0.65       # moderate boost; preserves mid-tone contrast for face likeness
                 ink_amount_outside = 0.0                   # subject_only suppresses bg anyway
             else:
-                # Light_bg mirror of the dark_bg formula. Floor REMOVED
-                # 2026-06-01 -- the old 0.40 floor kept every letter at
-                # least 40% black, killing highlight contrast and making
-                # the face read flat. Now: shadows (b=0) -> full ink,
-                # mid-skin -> mid-grey, highlights (b=1) -> bg (invisible).
-                ink_amount_face = (1.0 - brightness) ** 0.65
+                # Light_bg ink_amount with a contrast stretch on the
+                # brightness map before the power, so DARK regions go
+                # deeper into full ink (more contrast and detail in
+                # shadows) and HIGHLIGHTS fade cleanly to bg. Values
+                # remain monotonically scaled.
+                b_stretched = np.clip(0.5 + (brightness - 0.5) * 1.30, 0.0, 1.0)
+                ink_amount_face = (1.0 - b_stretched) ** 0.55
                 ink_amount_outside = 0.0    # bg letters fully melt into white
             outside = np.full_like(brightness, ink_amount_outside)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
