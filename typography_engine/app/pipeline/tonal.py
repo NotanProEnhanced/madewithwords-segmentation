@@ -762,9 +762,20 @@ def build_calligram(
             # ink_amount maps from brightness above.
             ink_rgb_arr = np.array([ir, ig, ib], dtype=np.float32)
             bg_rgb_arr = np.array([br, bgc, bb], dtype=np.float32)
+            # PHOTOREALISM #4 — subtle hue temperature per pixel.
+            # Real portrait colour shows warm highlights, cool shadows. We
+            # shift the per-pixel ink colour slightly toward warm where the
+            # photo is bright and toward cool where it is dark. Magnitude
+            # kept small (~6/255) so the palette identity is preserved.
+            ink_per_pixel = np.broadcast_to(ink_rgb_arr, (H, W, 3)).astype(np.float32).copy()
+            temp = (brightness - 0.5).astype(np.float32)        # range -0.5 .. 0.5
+            warm_shift = 6.0
+            ink_per_pixel[..., 0] = np.clip(ink_per_pixel[..., 0] + temp * warm_shift, 0.0, 255.0)        # R warmer / cooler
+            ink_per_pixel[..., 1] = np.clip(ink_per_pixel[..., 1] + temp * (warm_shift * 0.4), 0.0, 255.0)  # G small follow
+            ink_per_pixel[..., 2] = np.clip(ink_per_pixel[..., 2] - temp * (warm_shift * 0.7), 0.0, 255.0)  # B opposite
             photo_fill = (
                 bg_rgb_arr * (1.0 - ink_amount[..., None])
-                + ink_rgb_arr * ink_amount[..., None]
+                + ink_per_pixel * ink_amount[..., None]
             ).astype(np.float32) / 255.0
             # Resize photo_fill to match the rendered text image.
             if photo_fill.shape[:2] != text_arr.shape[:2]:
@@ -790,6 +801,26 @@ def build_calligram(
                 alpha = np.clip(1.0 - text_arr.min(axis=2, keepdims=True), 0.0, 1.0)
             bg_rgb = np.array([br, bgc, bb], dtype=np.float32) / 255.0
             modulated = photo_fill * alpha + bg_rgb * (1.0 - alpha)
+            # PHOTOREALISM #5 — silhouette-edge DOF blur.
+            # Real portrait lenses fall off in sharpness from the eye plane
+            # outward. We approximate the look by gaussian-blurring the
+            # modulated render and blending the blurred version in based on
+            # distance-from-silhouette-edge: full blur at the edge, zero
+            # blur in the interior. Eyes / face centre stay razor sharp;
+            # silhouette boundary breathes instead of cutting hard.
+            try:
+                sil_d_in = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
+                edge_band = max(20.0, float(W) * 0.022)
+                softness = (1.0 - np.clip(sil_d_in / edge_band, 0.0, 1.0)).astype(np.float32)
+                if softness.shape != modulated.shape[:2]:
+                    soft_img = _PILImage2.fromarray((softness * 255).clip(0, 255).astype(np.uint8))
+                    soft_img = soft_img.resize((modulated.shape[1], modulated.shape[0]), _PILImage2.LANCZOS)
+                    softness = np.asarray(soft_img).astype(np.float32) / 255.0
+                blur_sigma = max(2.0, float(modulated.shape[1]) * 0.0035)
+                mod_blurred = cv2.GaussianBlur(modulated, (0, 0), blur_sigma)
+                modulated = modulated * (1.0 - softness[..., None]) + mod_blurred * softness[..., None]
+            except Exception:
+                pass
             modulated_u8 = (modulated * 255).clip(0, 255).astype(np.uint8)
             # Paint pupils, crescent catchlights, and (dark_bg only) sclera
             # highlights DIRECTLY on the modulated image so eyes read as
