@@ -1044,10 +1044,10 @@ def build_calligram(
                 #     drops to ~5% by b=0.75. Cheekbone, forehead, sclera
                 #     all read light, so eye/brow/lip/nostril features
                 #     stand out as the dark zones they actually are.
-                base = (1.0 - brightness) ** 0.50
-                fade = np.clip((brightness - 0.40) / 0.45, 0.0, 1.0)
+                base = (1.0 - brightness) ** 0.45
+                fade = np.clip((brightness - 0.30) / 0.40, 0.0, 1.0)
                 fade = fade * fade * (3.0 - 2.0 * fade)
-                ink_amount_face = base * (1.0 - fade * 0.95)
+                ink_amount_face = base * (1.0 - fade * 0.98)
                 ink_amount_outside = 0.0    # bg letters fully melt into white
             outside = np.full_like(brightness, ink_amount_outside)
             # Wide silhouette feather so face-to-bg transitions over ~60 px.
