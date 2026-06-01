@@ -30,6 +30,7 @@ class FaceLandmarks:
     image_w: int
     image_h: int
     bbox: tuple                     # (x, y, w, h) in working coords
+    z: Optional[np.ndarray] = None  # N float, normalized (~ -0.1 .. 0.1) depth; lower = closer (e.g. nose tip)
 
 
 def ensure_model(warns: WarningCollector, allow_download: bool = True) -> bool:
@@ -105,10 +106,11 @@ def detect_faces(img: LoadedImage, warns: WarningCollector) -> List[FaceLandmark
     faces: List[FaceLandmarks] = []
     for lms in result.face_landmarks:
         pts = np.array([[lm.x * w, lm.y * h] for lm in lms], dtype=np.float32)
+        z = np.array([lm.z for lm in lms], dtype=np.float32)
         x0, y0 = pts[:, 0].min(), pts[:, 1].min()
         x1, y1 = pts[:, 0].max(), pts[:, 1].max()
         bbox = (float(x0), float(y0), float(x1 - x0), float(y1 - y0))
-        faces.append(FaceLandmarks(points=pts, image_w=w, image_h=h, bbox=bbox))
+        faces.append(FaceLandmarks(points=pts, image_w=w, image_h=h, bbox=bbox, z=z))
     faces.sort(key=lambda f: f.bbox[2] * f.bbox[3], reverse=True)
     return faces
 

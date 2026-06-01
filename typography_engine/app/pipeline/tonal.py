@@ -506,14 +506,84 @@ def build_calligram(
         # Soft-cap rotation amplitude via tanh.
         MAX_ROT = 22.0
         flow_rot = np.tanh(flow_angle_deg / 32.0) * MAX_ROT * mag
-        # In face: cap rotation at ~50% of body strength so cheek, nose,
-        # brow, lip and jaw contours all pick up some flow tilt without
-        # disrupting facial readability. Was 92% suppressed previously.
+        # PHOTOREALISM #7 — ANATOMICALLY-AWARE FACE ROTATION.
+        # In the face hull we replace the photo-gradient rotation with one
+        # driven by the MediaPipe 3D mesh's depth (z) values. Construction:
+        #   1) Splat each landmark's z into a sparse depth_map at its (x,y)
+        #      pixel; track a weight map for the splat.
+        #   2) Wide-gaussian blur both maps separately; divide to get a
+        #      weighted-average smooth depth across the face area.
+        #   3) Restrict to face_hull_mask and Sobel for (dz/dx, dz/dy) --
+        #      the depth gradient ≈ the in-plane projection of the surface
+        #      normal at each point.
+        #   4) Edge-PARALLEL vector = (-dz/dy, dz/dx) -- the local "level
+        #      line" of the 3D surface. Smooth as a vector field. Convert
+        #      to angle, fold to (-90, 90], tanh-cap, scale by magnitude.
+        #   5) Mix into flow_rot inside the face hull. Outside the face,
+        #      the existing photo-gradient rotation is preserved (hair,
+        #      clothing, beard).
+        # The result: nose-ridge letters tilt along the bridge; cheek-plane
+        # letters follow the front-to-side transition; chin letters hug the
+        # jaw; eye-socket letters curl into the orbit; lip letters follow
+        # the cupid's bow. Letters now map the actual 3D face, not the 2D
+        # photo's gradient.
+        face_rot_aniso = np.zeros((H, W), dtype=np.float32)
+        if have_face:
+            for face in _faces_of(an):
+                z_vals = getattr(face, "z", None)
+                if z_vals is None or len(z_vals) == 0:
+                    continue
+                pts_xy = (face.points * scale).astype(np.float32)
+                z = z_vals.astype(np.float32)
+                # Normalize z to [0, 1] (lower = closer; MediaPipe gives
+                # negative z near the camera). Robust scaling against
+                # outliers via percentile clip.
+                z_lo = float(np.percentile(z, 2))
+                z_hi = float(np.percentile(z, 98))
+                if z_hi - z_lo < 1e-6:
+                    continue
+                z_n = np.clip((z - z_lo) / (z_hi - z_lo), 0.0, 1.0)
+                # Splat depth + weight at landmark pixel positions
+                depth_map = np.zeros((H, W), dtype=np.float32)
+                w_map = np.zeros((H, W), dtype=np.float32)
+                xs = np.clip(pts_xy[:, 0].astype(np.int32), 0, W - 1)
+                ys = np.clip(pts_xy[:, 1].astype(np.int32), 0, H - 1)
+                np.add.at(depth_map, (ys, xs), z_n)
+                np.add.at(w_map, (ys, xs), 1.0)
+                # Wide gaussian to interpolate
+                sigma_d = max(15.0, W * 0.045)
+                depth_blur = cv2.GaussianBlur(depth_map, (0, 0), sigma_d)
+                w_blur = cv2.GaussianBlur(w_map, (0, 0), sigma_d)
+                face_depth = depth_blur / np.maximum(w_blur, 1e-6)
+                # Sobel for in-plane projection of surface normal
+                dzdx = cv2.Sobel(face_depth, cv2.CV_32F, 1, 0, ksize=5)
+                dzdy = cv2.Sobel(face_depth, cv2.CV_32F, 0, 1, ksize=5)
+                # Edge-parallel vector (perpendicular to gradient)
+                vx_a = -dzdy
+                vy_a = dzdx
+                sigma_a = max(8.0, W * 0.014)
+                vx_a = cv2.GaussianBlur(vx_a, (0, 0), sigma_a)
+                vy_a = cv2.GaussianBlur(vy_a, (0, 0), sigma_a)
+                ang_a_rad = np.arctan2(vy_a, vx_a)
+                ang_a_deg = np.degrees(ang_a_rad)
+                ang_a_deg = ((ang_a_deg + 90.0) % 180.0) - 90.0
+                mag_a = np.sqrt(dzdx * dzdx + dzdy * dzdy)
+                m98 = float(np.percentile(mag_a, 98))
+                if m98 > 1e-6:
+                    mag_a = np.clip(mag_a / (m98 * 0.85), 0.0, 1.0)
+                else:
+                    mag_a = np.zeros_like(mag_a)
+                mag_a = cv2.GaussianBlur(mag_a, (0, 0), sigma_a)
+                MAX_FACE_ROT = 18.0
+                this_face_rot = np.tanh(ang_a_deg / 30.0) * MAX_FACE_ROT * mag_a
+                face_rot_aniso = np.maximum(face_rot_aniso, np.abs(this_face_rot)) * np.sign(
+                    np.where(np.abs(this_face_rot) > np.abs(face_rot_aniso), this_face_rot, face_rot_aniso)
+                )
+        # Mix into flow_rot inside the face hull.
         if have_face:
             fhm_f = (face_hull_mask > 0).astype(np.float32)
             fhm_f = cv2.GaussianBlur(fhm_f, (0, 0), max(8.0, W * 0.022))
-            face_scale = 0.50            # body=1.0, face=0.50 of body
-            flow_rot = flow_rot * (1.0 - fhm_f * (1.0 - face_scale))
+            flow_rot = flow_rot * (1.0 - fhm_f) + face_rot_aniso * fhm_f
         flow_rot = flow_rot.astype(np.float32)
     except Exception:
         flow_rot = np.zeros((H, W), dtype=np.float32)
@@ -804,7 +874,7 @@ def build_calligram(
             #              ground; ceiling 0.95 so the darkest shadow isn't
             #              a solid ink blob.
             if dark_bg:
-                ink_amount_face = brightness ** 0.62       # global brightness boost (was 0.85); pupils still vanish at b=0, highlights still 100%
+                ink_amount_face = brightness ** 0.50       # further brightness boost (was 0.62 -> 0.50); pupils still vanish at b=0, highlights still 100%
                 ink_amount_outside = 0.0                   # subject_only suppresses bg anyway
             else:
                 # Light_bg needs more density than dark_bg -- on white,
