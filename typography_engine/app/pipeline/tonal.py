@@ -300,6 +300,12 @@ _LID_L_LOWER = (362, 382, 381, 380, 374, 373, 390, 249, 263)
 # lip line gets a thin darker stripe in the dark field.
 _LIP_BORDER = (61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291,
                375, 321, 405, 314, 17, 84, 181, 91, 146)
+# Lip corners -- emphasized beyond the border darkening because corners
+# anchor the mouth shape; if they smear, the whole mouth loses character.
+_LIP_CORNERS = (61, 291)
+# Nostril landmarks (bottom of each nostril opening). Darkening these to
+# subject_only-bg gives the nose its characteristic two-shadow base.
+_NOSTRILS = (98, 327)
 # Inner-eye lacrimal caruncle landmark (a single point each side). Used
 # to slightly BRIGHTEN -- the wet tissue at the inner corner is the only
 # truly bright pixel near the eye in real portraits.
@@ -319,8 +325,18 @@ def _accentuate_micro_features(dark: np.ndarray, an, scale: float, mset: np.ndar
     blur_sigma_line = max(1.4, W * 0.0022)
     for face in _faces_of(an):
         pts = (face.points * scale).astype(np.int32)
-        # 1) Upper lid line (eyelash) -- thin darker curve along each lid
+        # 1) Upper lid line (eyelash) -- thicker darker curve along each lid
         for lid_idx in (_LID_R, _LID_L):
+            line_pts = pts[list(lid_idx)]
+            mask_line = np.zeros((H, W), np.float32)
+            for i in range(len(line_pts) - 1):
+                cv2.line(mask_line, tuple(int(v) for v in line_pts[i]),
+                         tuple(int(v) for v in line_pts[i + 1]),
+                         1.0, thickness=line_thick + 1)
+            mask_line = cv2.GaussianBlur(mask_line, (0, 0), blur_sigma_line)
+            out = out + 0.52 * mask_line * (1.0 - out)
+        # 1b) Lower lid line. Defines the eye-shape lower boundary.
+        for lid_idx in (_LID_R_LOWER, _LID_L_LOWER):
             line_pts = pts[list(lid_idx)]
             mask_line = np.zeros((H, W), np.float32)
             for i in range(len(line_pts) - 1):
@@ -328,28 +344,35 @@ def _accentuate_micro_features(dark: np.ndarray, an, scale: float, mset: np.ndar
                          tuple(int(v) for v in line_pts[i + 1]),
                          1.0, thickness=line_thick)
             mask_line = cv2.GaussianBlur(mask_line, (0, 0), blur_sigma_line)
-            out = out + 0.32 * mask_line * (1.0 - out)
-        # 1b) Lower lid line -- thinner and slightly weaker (real lower
-        # lashes are less dense). Defines the eye-shape lower boundary
-        # which the Margot reference clearly shows.
-        for lid_idx in (_LID_R_LOWER, _LID_L_LOWER):
-            line_pts = pts[list(lid_idx)]
-            mask_line = np.zeros((H, W), np.float32)
-            for i in range(len(line_pts) - 1):
-                cv2.line(mask_line, tuple(int(v) for v in line_pts[i]),
-                         tuple(int(v) for v in line_pts[i + 1]),
-                         1.0, thickness=max(1, line_thick - 1))
-            mask_line = cv2.GaussianBlur(mask_line, (0, 0), blur_sigma_line)
-            out = out + 0.22 * mask_line * (1.0 - out)
-        # 2) Lip border line -- thin darker stripe along the cupid's bow
+            out = out + 0.42 * mask_line * (1.0 - out)
+        # 2) Lip border line -- thicker darker stripe along the cupid's bow
         lip_pts = pts[list(_LIP_BORDER)]
         mask_lip = np.zeros((H, W), np.float32)
         for i in range(len(lip_pts)):
             cv2.line(mask_lip, tuple(int(v) for v in lip_pts[i]),
                      tuple(int(v) for v in lip_pts[(i + 1) % len(lip_pts)]),
-                     1.0, thickness=line_thick)
+                     1.0, thickness=line_thick + 1)
         mask_lip = cv2.GaussianBlur(mask_lip, (0, 0), blur_sigma_line)
-        out = out + 0.22 * mask_lip * (1.0 - out)
+        out = out + 0.36 * mask_lip * (1.0 - out)
+        # 2b) Lip corner emphasis -- each corner gets an extra dark spot
+        # so the mouth shape's defining points anchor crisply.
+        for idx in _LIP_CORNERS:
+            px, py = int(pts[idx][0]), int(pts[idx][1])
+            spot_mask = np.zeros((H, W), np.float32)
+            cv2.circle(spot_mask, (px, py),
+                       max(2, int(round(W * 0.0035))), 1.0, -1)
+            spot_mask = cv2.GaussianBlur(spot_mask, (0, 0), max(1.6, W * 0.0028))
+            out = out + 0.55 * spot_mask * (1.0 - out)
+        # 3) Nostril shadows -- darker spots at the two nostril landmarks
+        # giving the nose its characteristic base shadows. Stronger than
+        # the lid/lip lines since nostrils are TRULY dark in real photos.
+        for idx in _NOSTRILS:
+            px, py = int(pts[idx][0]), int(pts[idx][1])
+            spot_mask = np.zeros((H, W), np.float32)
+            cv2.circle(spot_mask, (px, py),
+                       max(2, int(round(W * 0.0050))), 1.0, -1)
+            spot_mask = cv2.GaussianBlur(spot_mask, (0, 0), max(2.0, W * 0.0040))
+            out = out + 0.65 * spot_mask * (1.0 - out)
         # Lacrimal caruncle brightness lift removed 2026-06-01 -- it
         # rendered as visible bright crescents at the inner eye corners
         # (the typography couldn't distribute the lift smoothly enough).
