@@ -459,6 +459,64 @@ def build_calligram(
         cv2.circle(iris_mask_u8, (int(round(cxe)), int(round(cye))), ir_rad, 255, -1)
     iris_mask = iris_mask_u8 > 0
 
+    # PHOTOREALISM #6 — flow-direction field for per-glyph rotation.
+    # Hair, fabric, eyebrows, beard, jaw lines all have a dominant local
+    # direction. Tilting letters to follow that direction reads as the
+    # subject's physical structure flowing through the typography (the
+    # single biggest 'alive' lift remaining in pure rendering quality).
+    #
+    # Strategy:
+    #  - Sobel on the (smoothed) photo -> per-pixel gradient (gx, gy).
+    #  - Edge-PARALLEL vector is (-gy, gx). Smooth as a vector field so
+    #    neighbouring letters land on similar angles (avoids angle-wrap
+    #    discontinuities at +/-pi).
+    #  - Convert smoothed vector to an angle, fold to (-90..90] so we
+    #    treat line direction (not vector direction) -- letters never
+    #    flip upside down.
+    #  - Cap via tanh so the angle stays within +/-MAX_ROT regardless of
+    #    raw gradient magnitude.
+    #  - Scale by gradient magnitude so smooth low-detail areas keep
+    #    letters horizontal.
+    #  - Suppress in the face-hull region (face stays the most readable
+    #    surface; tilt is reserved for hair / clothing).
+    try:
+        grad_src = cv2.GaussianBlur(gray.astype(np.float32), (0, 0),
+                                    max(2.0, W * 0.005))
+        gx = cv2.Sobel(grad_src, cv2.CV_32F, 1, 0, ksize=5)
+        gy = cv2.Sobel(grad_src, cv2.CV_32F, 0, 1, ksize=5)
+        # Edge-parallel vector (perpendicular to gradient).
+        vx_par = -gy
+        vy_par = gx
+        # Smooth as a vector field so adjacent cells stay aligned.
+        sigma_flow = max(4.0, W * 0.010)
+        vx_par = cv2.GaussianBlur(vx_par, (0, 0), sigma_flow)
+        vy_par = cv2.GaussianBlur(vy_par, (0, 0), sigma_flow)
+        flow_angle_rad = np.arctan2(vy_par, vx_par)
+        flow_angle_deg = np.degrees(flow_angle_rad)
+        # Fold to (-90, 90] -- line orientation, not vector direction.
+        flow_angle_deg = ((flow_angle_deg + 90.0) % 180.0) - 90.0
+        # Magnitude (normalized).
+        mag = np.sqrt(gx * gx + gy * gy)
+        mag_p98 = float(np.percentile(mag, 98))
+        if mag_p98 > 1e-6:
+            mag = np.clip(mag / (mag_p98 * 0.75), 0.0, 1.0)
+        else:
+            mag = np.zeros_like(mag)
+        mag = cv2.GaussianBlur(mag, (0, 0), sigma_flow)
+        # Soft-cap rotation amplitude via tanh.
+        MAX_ROT = 22.0
+        flow_rot = np.tanh(flow_angle_deg / 32.0) * MAX_ROT * mag
+        # Suppress rotation inside the face hull -- 95% suppression at hull
+        # core, fading out over ~face-width so the cheek / jaw transition
+        # picks up some tilt rather than snapping on at the hull edge.
+        if have_face:
+            fhm_f = (face_hull_mask > 0).astype(np.float32)
+            fhm_f = cv2.GaussianBlur(fhm_f, (0, 0), max(8.0, W * 0.022))
+            flow_rot = flow_rot * (1.0 - fhm_f * 0.92)
+        flow_rot = flow_rot.astype(np.float32)
+    except Exception:
+        flow_rot = np.zeros((H, W), dtype=np.float32)
+
     ir, ig, ib = _hex_to_rgb(ink_hex)
     br, bgc, bb = _hex_to_rgb(bg_hex)
     family = "'Courier New', 'DejaVu Sans Mono', 'Liberation Mono', monospace"
@@ -547,6 +605,7 @@ def build_calligram(
             y_hi = min(H, int(baseline) + 1)
             spans = []
             line_chars = []
+            line_rotations = []
             c = _col_offset(r)
             row_words = _words_for_row(r)
             while c < cols:
@@ -611,6 +670,7 @@ def build_calligram(
                         f'<tspan x="{col * cw:.1f}" fill="{fill}">{esc(ch)}</tspan>'
                     )
                     line_chars.append(ch)
+                    line_rotations.append(f"{float(flow_rot[yi, xi]):.1f}")
                 # Claim this word's pixel footprint so finer tiers don't paint
                 # over its letters (they're free to fill the gaps after it).
                 claimed_px[y_lo:y_hi, wx_lo:wx_hi] = True
@@ -622,9 +682,12 @@ def build_calligram(
                 wi += 1
             if not spans:
                 continue
+            rotate_attr = ""
+            if line_rotations and any(float(v) for v in line_rotations):
+                rotate_attr = f' rotate="{" ".join(line_rotations)}"'
             doc.add(
                 f'<text y="{baseline:.1f}" xml:space="preserve" font-family="{esc(family)}" '
-                f'font-size="{fp:.1f}">' + "".join(spans) + "</text>"
+                f'font-size="{fp:.1f}"{rotate_attr}>' + "".join(spans) + "</text>"
             )
             runs.append(TextRun(region=f"calligram_{label}", path_id=f"{label}_r{r}",
                                 path_d="", text="".join(line_chars),
