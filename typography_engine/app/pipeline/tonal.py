@@ -391,6 +391,70 @@ def _accentuate_micro_features(dark: np.ndarray, an, scale: float, mset: np.ndar
                        max(3, int(round(W * 0.0055))), 1.0, -1)
             spot_mask = cv2.GaussianBlur(spot_mask, (0, 0), max(2.2, W * 0.0042))
             out = out + 0.98 * spot_mask * (1.0 - out)
+        # ANATOMICAL GRADIENT FEATURES (2026-06-01): philtrum line,
+        # nose-underside shadow band, upper-eyelid crease, lip vertical
+        # centre. Together with the spot/border features above these
+        # give the face true 3D anatomy via landmark-driven gradients.
+        # 4) Upper-eyelid crease (per eye): polyline shifted up from
+        #    the upper-lid arc by ~30% of eye-height. Reads as the
+        #    fold above the lash line.
+        for lid_idx, eye_idx in ((_LID_R, _EYE_R), (_LID_L, _EYE_L)):
+            lid_pts = pts[list(lid_idx)]
+            eye_pts = pts[list(eye_idx)]
+            eye_h = float(eye_pts[:, 1].max() - eye_pts[:, 1].min())
+            if eye_h < 4:
+                continue
+            crease_pts = lid_pts.copy()
+            crease_pts[:, 1] = crease_pts[:, 1] - int(round(eye_h * 0.30))
+            mask_line = np.zeros((H, W), np.float32)
+            for i in range(len(crease_pts) - 1):
+                cv2.line(mask_line, tuple(int(v) for v in crease_pts[i]),
+                         tuple(int(v) for v in crease_pts[i + 1]),
+                         1.0, thickness=max(1, line_thick - 1))
+            mask_line = cv2.GaussianBlur(mask_line, (0, 0), blur_sigma_line * 1.4)
+            out = out + 0.45 * mask_line * (1.0 - out)
+        # 5) Philtrum (vertical groove from under-nose midpoint to
+        #    cupid's bow). MediaPipe landmarks 164 (below nose) and 0
+        #    (top of upper-lip centre).
+        try:
+            phil_top = pts[164]
+            phil_bot = pts[0]
+            mask_line = np.zeros((H, W), np.float32)
+            cv2.line(mask_line,
+                     (int(phil_top[0]), int(phil_top[1])),
+                     (int(phil_bot[0]), int(phil_bot[1])),
+                     1.0, thickness=max(1, line_thick - 1))
+            mask_line = cv2.GaussianBlur(mask_line, (0, 0), blur_sigma_line)
+            out = out + 0.45 * mask_line * (1.0 - out)
+        except Exception:
+            pass
+        # 6) Nose-underside shadow: triangle spanning the two nostril
+        #    landmarks plus the under-nose midpoint (2). Slightly larger
+        #    Gaussian so the shadow blends naturally into the nose base.
+        try:
+            nose_tri = np.array(
+                [pts[79], pts[2], pts[309]], dtype=np.int32,
+            ).reshape(-1, 2)
+            mask_tri = np.zeros((H, W), np.float32)
+            cv2.fillPoly(mask_tri, [nose_tri], 1.0)
+            mask_tri = cv2.GaussianBlur(mask_tri, (0, 0), max(2.8, W * 0.0055))
+            out = out + 0.62 * mask_tri * (1.0 - out)
+        except Exception:
+            pass
+        # 7) Lip vertical-centre crease: thin line from landmark 13
+        #    (top inner upper lip) to 14 (bottom inner lower lip).
+        try:
+            lc_top = pts[13]
+            lc_bot = pts[14]
+            mask_line = np.zeros((H, W), np.float32)
+            cv2.line(mask_line,
+                     (int(lc_top[0]), int(lc_top[1])),
+                     (int(lc_bot[0]), int(lc_bot[1])),
+                     1.0, thickness=max(1, line_thick - 1))
+            mask_line = cv2.GaussianBlur(mask_line, (0, 0), blur_sigma_line)
+            out = out + 0.55 * mask_line * (1.0 - out)
+        except Exception:
+            pass
         # Lacrimal caruncle brightness lift removed 2026-06-01 -- it
         # rendered as visible bright crescents at the inner eye corners
         # (the typography couldn't distribute the lift smoothly enough).
