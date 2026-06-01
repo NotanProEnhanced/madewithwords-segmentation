@@ -726,6 +726,20 @@ def build_calligram(
     # Face tiers (xxs..sm) UNCHANGED -- Jeff said face is "perfect".
     # Body tiers (md..xl) pulled in for denser non-face regions while
     # preserving the smooth graduation toward the silhouette edge.
+    #
+    # ADAPTIVE EYE TIERS: iris + xxs sizes scale to the detected eye
+    # half-width so every photo gets ~12-15 letters across the iris
+    # regardless of how large the face is in frame. Falls back to fixed
+    # 5/8 px when eye landmarks are unavailable. (2026-06-01.)
+    if eye_centers:
+        # Mean eye half-width (rx) across detected eyes.
+        mean_rxe = float(np.mean([e[2] for e in eye_centers]))
+        # Target: iris diameter ≈ 2 * (rxe * 0.55) ≈ 1.1 * rxe.
+        # 12 letters across → iris_fp ≈ (1.1 * rxe) / 12 / advance.
+        target_iris = max(3.5, min(8.0, (1.1 * mean_rxe) / 12.0 / 0.52))
+        target_xxs = max(5.5, min(12.0, target_iris * 1.6))
+    else:
+        target_iris, target_xxs = 5.0, 8.0
     tiers = [
         ("xl",   42.0, 0.86, 1.01),   # silhouette-edge / outermost clothing
         ("lg",   34.0, 0.72, 0.86),   # body / lower hair
@@ -734,8 +748,8 @@ def build_calligram(
         ("sm",   22.0, 0.34, 0.46),   # neck / silhouette-near-face
         ("xs+",  17.0, 0.22, 0.34),   # face hull / cheek / forehead
         ("xs",   13.0, 0.10, 0.22),   # feature edges (lid line, lip line)
-        ("xxs",   8.0, 0.00, 0.10),   # other feature centres (lip corners, brows) -- shrunk 10->8
-        ("iris",  5.0, -0.01, 0.10),  # IRIS ONLY -- gated by iris_mask below -- shrunk 7->5 for multi-letter pupil shape
+        ("xxs",  target_xxs,   0.00, 0.10),   # other feature centres -- adaptive
+        ("iris", target_iris, -0.01, 0.10),   # IRIS ONLY -- adaptive
     ]
     # Tier flag: True means 'gate this tier by iris_mask'. Iris tier only.
     _iris_tier = {"iris"}
@@ -1035,19 +1049,28 @@ def build_calligram(
                 ink_amount_face = brightness ** 0.65       # moderate boost; preserves mid-tone contrast for face likeness
                 ink_amount_outside = 0.0                   # subject_only suppresses bg anyway
             else:
-                # Light_bg curve tuned 2026-06-01 so dark features
-                # (pupils / brows / sockets / lips / nostrils) POP against
-                # surrounding skin rather than blending into a uniform dark
-                # grey. Two changes vs the prior curve:
-                #   - Power 0.62 -> 0.50 (steeper rise from 0 to mid),
-                #     opens the dark-end spread per-feature.
-                #   - Highlight fade starts at b=0.40 (was 0.65) so mid
-                #     skin lightens aggressively to ~58% by b=0.50 and
-                #     drops to ~5% by b=0.75. Cheekbone, forehead, sclera
-                #     all read light, so eye/brow/lip/nostril features
-                #     stand out as the dark zones they actually are.
+                # Light_bg curve. The fade window is ADAPTIVE per photo:
+                # start = 35th percentile of in-silhouette brightness,
+                # end   = 85th percentile. This lets a dark-skinned
+                # subject's mid-skin (e.g. b=0.40) still fade from the
+                # right place, where a fixed b=0.30 start would dump all
+                # the skin into the highlight-fade zone and erase the
+                # face. Same logic protects light-skinned subjects.
+                # (2026-06-01: 'how will this translate to other photos'.)
+                if mset.sum() > 50:
+                    in_sil = brightness[mset]
+                    fade_start = float(np.percentile(in_sil, 35))
+                    fade_end = float(np.percentile(in_sil, 85))
+                    # Guard rails: never invert, never collapse.
+                    fade_start = max(0.10, min(fade_start, 0.55))
+                    fade_end = max(fade_start + 0.20, min(fade_end, 0.95))
+                else:
+                    fade_start, fade_end = 0.30, 0.70
                 base = (1.0 - brightness) ** 0.45
-                fade = np.clip((brightness - 0.30) / 0.40, 0.0, 1.0)
+                fade = np.clip(
+                    (brightness - fade_start) / max(0.01, fade_end - fade_start),
+                    0.0, 1.0,
+                )
                 fade = fade * fade * (3.0 - 2.0 * fade)
                 ink_amount_face = base * (1.0 - fade * 0.98)
                 ink_amount_outside = 0.0    # bg letters fully melt into white
