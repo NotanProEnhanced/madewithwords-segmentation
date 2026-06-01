@@ -725,11 +725,11 @@ def build_calligram(
         # vs 1.05 jump that made forehead-vs-hair look like two different
         # textures collide.
         if fp <= 13.0:
-            row_ratio = 0.62
+            row_ratio = 0.55
         elif fp <= 22.0:
-            row_ratio = 0.66
+            row_ratio = 0.58
         else:
-            row_ratio = 0.70
+            row_ratio = 0.62
         rh = fp * row_ratio
         cols = max(1, int(W / cw))
         rows = max(1, int(H / rh))
@@ -798,8 +798,19 @@ def build_calligram(
                 # readable); but the word's whole x-start is shifted by a
                 # deterministic sub-cell amount, so adjacent rows' word
                 # starts never line up into diagonals.
-                word_jx = (((wi * 2654435761) ^ (r * 1779033703)) & 0xFFFFFFFF)
-                word_jx = ((word_jx / 0xFFFFFFFF) - 0.5) * (cw * 0.55)
+                # Per-WORD x-jitter using a splitmix-style mix for proper
+                # diffusion. The previous XOR of two products had low
+                # mixing -- consecutive (wi, r) pairs produced correlated
+                # jitter that still left visible diagonals. Range widened
+                # to ±0.75 cell width.
+                _h = ((wi & 0xFFFFFFFF) * 2654435761) & 0xFFFFFFFF
+                _h = (_h + r * 1779033703) & 0xFFFFFFFF
+                _h ^= _h >> 16
+                _h = (_h * 0x85ebca6b) & 0xFFFFFFFF
+                _h ^= _h >> 13
+                _h = (_h * 0xc2b2ae35) & 0xFFFFFFFF
+                _h ^= _h >> 16
+                word_jx = ((_h / 0xFFFFFFFF) - 0.5) * (cw * 1.50)
                 for k, ch in enumerate(word):
                     col = c + k
                     xi = min(W - 1, max(0, int(col * cw + cw * 0.5)))
