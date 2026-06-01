@@ -792,7 +792,6 @@ def build_calligram(
                     continue
                 # Place the word. Per-glyph fill: photo tone runs through each
                 # letter via the modulation pass.
-                for k, ch in enumerate(word):
                 # Per-WORD x-jitter to break the cell-grid alignment that
                 # otherwise produces diagonal "rivers" of text across rows.
                 # Letters within a word stay co-aligned (word remains
