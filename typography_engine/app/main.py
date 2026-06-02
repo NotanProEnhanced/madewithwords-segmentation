@@ -627,13 +627,29 @@ def printful_fetch(job: str, exp: int, sig: str):
 
 
 def _recipient_from_session(sess: dict) -> Optional[dict]:
-    """Map a Stripe Checkout Session's shipping_details to Printful's recipient
-    schema. Returns None when no address was collected (e.g. digital orders)."""
-    ship = sess.get("shipping_details") or sess.get("shipping") or {}
-    addr = (ship.get("address") or {}) if isinstance(ship, dict) else {}
-    if not addr:
-        return None
+    """Map a Stripe Checkout Session's shipping address to Printful's recipient
+    schema. Stripe relocated the collected shipping address across API versions:
+    2025+ nests it under ``collected_information.shipping_details`` while older
+    versions exposed top-level ``shipping_details`` / ``shipping``. Try the new
+    path first, then the legacy ones, then fall back to the billing address in
+    ``customer_details``. Returns None when no usable street address was
+    collected (e.g. digital orders)."""
+    collected = sess.get("collected_information") or {}
+    ship = (
+        (collected.get("shipping_details") if isinstance(collected, dict) else None)
+        or sess.get("shipping_details")
+        or sess.get("shipping")
+        or {}
+    )
+    if not isinstance(ship, dict):
+        ship = {}
     customer = sess.get("customer_details") or {}
+    addr = ship.get("address") or {}
+    if not addr.get("line1"):
+        # Last resort: the billing address Stripe collected on the customer.
+        addr = (customer.get("address") or {}) if isinstance(customer, dict) else {}
+    if not addr.get("line1"):
+        return None
     return {
         "name": ship.get("name") or customer.get("name") or "",
         "address1": addr.get("line1") or "",
