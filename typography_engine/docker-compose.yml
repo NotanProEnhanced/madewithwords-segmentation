@@ -34,6 +34,10 @@ services:
       - PRINTFUL_STORE_ID=${PRINTFUL_STORE_ID:-}
       - PRINTFUL_API_BASE=${PRINTFUL_API_BASE:-https://api.printful.com}
       - PRINT_URL_SECRET=${PRINT_URL_SECRET:-}
+      # Auto-confirm paid physical orders at Printful. Defaults to true (real
+      # fulfillment). Set PRINTFUL_CONFIRM=false while testing so orders land
+      # as deletable drafts (no charge, no print). See GO-LIVE.md.
+      - PRINTFUL_CONFIRM=${PRINTFUL_CONFIRM:-true}
     volumes:
       # Persist previews + paid clean files across restarts/rebuilds.
       - ./data/outputs:/app/outputs

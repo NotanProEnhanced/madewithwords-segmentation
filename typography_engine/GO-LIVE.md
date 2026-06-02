@@ -205,6 +205,28 @@ The product picker now appears under the preview, and `/admin/orders` starts
 logging orders. To turn physical prints back off, remove `PRINTFUL_API_TOKEN`
 and restart — the digital flow is unaffected either way.
 
+### 3d. Test a physical sale safely (draft mode) BEFORE going live
+**Important:** Printful has no "test mode" — a confirmed order is really
+printed, shipped, and billed to you. To rehearse a sale without any charge,
+put the app in **draft mode** first:
+1. While still using your Stripe **test** key (`sk_test_…`), add this line to
+   `.env`, then `sudo docker compose up -d` to apply:
+   ```bash
+   PRINTFUL_CONFIRM=false
+   ```
+   In draft mode every paid physical order is created at Printful as an
+   **unconfirmed draft** — never charged, never printed.
+2. Buy a physical product through the studio using Stripe's test card
+   `4242 4242 4242 4242` (any future expiry, any CVC/ZIP).
+3. In your Printful dashboard, open the new draft order and check:
+   - it's the **right product** (e.g. 16×20 framed poster), and
+   - your portrait shows as the **print file** (Printful fetched the art).
+   You can also watch it at `https://app.typortrait.com/admin/orders`.
+4. **Delete the draft** in Printful when satisfied — no charge, no print.
+5. **Go live:** remove `PRINTFUL_CONFIRM` from `.env` (or set it to `true`),
+   switch Stripe to live mode + `sk_live_` key, then `sudo docker compose up -d`.
+   Real orders now confirm and ship automatically.
+
 > **Order history is saved.** Orders live in a small database at
 > `typography_engine/data/orders.db`, which is volume-mounted, so it survives
 > `docker compose up --build` and code updates. Don't delete the `data/` folder.

@@ -102,6 +102,12 @@ PRINTFUL_API_BASE = os.environ.get("PRINTFUL_API_BASE", "https://api.printful.co
 # both; the final fallback is dev-only and must not be used in production.
 PRINT_URL_SECRET = (os.environ.get("PRINT_URL_SECRET", "")
                     or STRIPE_WEBHOOK_SECRET or "dev-only-not-secure")
+# Whether a paid physical order is auto-confirmed for fulfillment at Printful.
+# True (default, production): the order is charged + printed + shipped.
+# Set PRINTFUL_CONFIRM=false while testing so orders land as unconfirmed DRAFTS
+# you can inspect (right product? right art?) and delete with no charge/print.
+PRINTFUL_CONFIRM = (os.environ.get("PRINTFUL_CONFIRM", "true").strip().lower()
+                    not in ("0", "false", "no", "off"))
 # Order persistence (SQLite). Volume-mounted in docker-compose so it survives
 # container rebuilds.
 DATA_DIR = BASE_DIR / "data"

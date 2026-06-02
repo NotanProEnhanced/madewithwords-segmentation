@@ -26,6 +26,7 @@ from .config import (
     OUTPUTS_DIR,
     PREVIEW_PNG_WIDTH,
     PRINTFUL_API_TOKEN,
+    PRINTFUL_CONFIRM,
     PRIVATE_DIR,
     PUBLIC_BASE_URL,
     RETENTION_DAYS,
@@ -663,7 +664,7 @@ def _fulfill_with_printful(order_id: str, recipient: dict) -> None:
             print_file_url=signed,
             external_id=order_id,
             retail_price_cents=o["price_cents"],
-            confirm=True,
+            confirm=PRINTFUL_CONFIRM,
             placement=placement,
         )
         pf_id = res.get("id") if isinstance(res, dict) else None
