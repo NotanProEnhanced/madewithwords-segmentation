@@ -16,12 +16,15 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from . import admin as admin_mod
+from . import orders as orders_db
+from . import printful, products
 from .config import (
     CURRENCY,
     DOWNLOAD_PNG_WIDTH,
     DOWNLOAD_PRICE_CENTS,
     OUTPUTS_DIR,
     PREVIEW_PNG_WIDTH,
+    PRINTFUL_API_TOKEN,
     PRIVATE_DIR,
     PUBLIC_BASE_URL,
     RETENTION_DAYS,
@@ -114,6 +117,16 @@ def _start_retention_sweeper() -> None:
             time.sleep(12 * 3600)
 
     threading.Thread(target=loop, daemon=True).start()
+
+
+@app.on_event("startup")
+def _init_orders_db() -> None:
+    """Create the orders table if missing. Safe to call repeatedly; needed for
+    the print-on-demand order lifecycle (no-op for the digital-only path)."""
+    try:
+        orders_db.init_db()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 @app.on_event("startup")
@@ -381,6 +394,20 @@ def pricing() -> JSONResponse:
         "price_cents": DOWNLOAD_PRICE_CENTS,
         "currency": CURRENCY,
         "configured": bool(STRIPE_SECRET_KEY),
+    })
+
+
+@app.get("/products")
+def list_products() -> JSONResponse:
+    """Storefront catalog (prices, shipping, sizes) — single source of truth so
+    the UI never hardcodes prices. `fulfillment_configured` tells the front-end
+    whether physical print-on-demand is live (a Printful token is present) or
+    only the digital download should be offered."""
+    return JSONResponse({
+        "ok": True,
+        "currency": CURRENCY,
+        "products": products.public_catalog(),
+        "fulfillment_configured": bool(PRINTFUL_API_TOKEN),
     })
 
 
