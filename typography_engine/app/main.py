@@ -412,34 +412,108 @@ def list_products() -> JSONResponse:
 
 
 @app.post("/checkout")
-def checkout(job: str = Form(...), fmt: str = Form("png")) -> JSONResponse:
-    """Create a Stripe Checkout session to unlock the clean download of `job`."""
+def checkout(
+    job: str = Form(...),
+    sku: str = Form("digital"),
+    size: Optional[str] = Form(None),
+    fmt: str = Form("png"),
+) -> JSONResponse:
+    """Create a Stripe Checkout session for either the digital download or a
+    physical print. `sku` selects the product; the default "digital" preserves
+    the original (and live) download flow exactly. Physical orders additionally
+    collect a shipping address via Stripe and are fulfilled by Printful through
+    the /webhook/stripe handler."""
     if not STRIPE_SECRET_KEY:
         return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
+    product = products.get(sku)
+    if not product:
+        return JSONResponse({"ok": False, "error": "unknown_product"}, status_code=400)
     # The job's inputs (recipe) are persisted at render time; the high-res PNG is
-    # composed from them at download.
+    # composed from them lazily at download / fulfillment time.
     if not (PRIVATE_DIR / f"{job}.json").exists():
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
+
+    # --- Digital download: unchanged from the live synchronous-verify flow ----
+    if not product.physical:
+        try:
+            session = stripe.checkout.Session.create(
+                mode="payment",
+                line_items=[{
+                    "quantity": 1,
+                    "price_data": {
+                        "currency": CURRENCY,
+                        "unit_amount": DOWNLOAD_PRICE_CENTS,
+                        "product_data": {"name": "Typortrait — high-resolution download"},
+                    },
+                }],
+                metadata={"job": job},
+                success_url=f"{PUBLIC_BASE_URL}/success?job={job}&session_id={{CHECKOUT_SESSION_ID}}",
+                cancel_url=f"{PUBLIC_BASE_URL}/static/index.html?canceled=1",
+            )
+        except Exception as e:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
+        return JSONResponse({"ok": True, "url": session.url})
+
+    # --- Physical print: gated on a configured Printful token + valid size ----
+    if not PRINTFUL_API_TOKEN:
+        return JSONResponse({"ok": False, "error": "fulfillment_unconfigured"}, status_code=503)
+    variant_id = products.resolve_variant_id(product, size)
+    if variant_id is None:
+        return JSONResponse(
+            {"ok": False, "error": "missing_or_invalid_size",
+             "sizes": list(product.size_variants.keys()) if product.size_variants else []},
+            status_code=400,
+        )
+    order_id = uuid.uuid4().hex[:16]
+    ext = "svg" if fmt == "svg" else "png"
+    label_size = f" — {size}" if size else ""
+    line_items: List[dict] = [{
+        "quantity": 1,
+        "price_data": {
+            "currency": CURRENCY,
+            "unit_amount": product.price_cents,
+            "product_data": {"name": f"Typortrait — {product.name}{label_size}"},
+        },
+    }]
+    if product.shipping_cents > 0:
+        line_items.append({
+            "quantity": 1,
+            "price_data": {
+                "currency": CURRENCY,
+                "unit_amount": product.shipping_cents,
+                "product_data": {"name": "Shipping (USA)"},
+            },
+        })
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
-            line_items=[{
-                "quantity": 1,
-                "price_data": {
-                    "currency": CURRENCY,
-                    "unit_amount": DOWNLOAD_PRICE_CENTS,
-                    "product_data": {"name": "Typortrait — high-resolution download"},
-                },
-            }],
-            metadata={"job": job},
-            success_url=f"{PUBLIC_BASE_URL}/success?job={job}&session_id={{CHECKOUT_SESSION_ID}}",
+            line_items=line_items,
+            metadata={"job": job, "sku": sku, "size": size or "", "order_id": order_id, "fmt": ext},
+            shipping_address_collection={"allowed_countries": ["US"]},
+            phone_number_collection={"enabled": True},
+            success_url=f"{PUBLIC_BASE_URL}/order/{order_id}?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{PUBLIC_BASE_URL}/static/index.html?canceled=1",
         )
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
-    return JSONResponse({"ok": True, "url": session.url})
+    try:
+        orders_db.create_pending(
+            order_id=order_id,
+            stripe_session_id=session.id,
+            job_id=job,
+            sku=sku,
+            size=size,
+            variant_id=variant_id,
+            price_cents=product.price_cents,
+            shipping_cents=product.shipping_cents,
+            currency=CURRENCY,
+        )
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "order_persist_failed", "detail": str(e)},
+                            status_code=500)
+    return JSONResponse({"ok": True, "url": session.url, "order_id": order_id})
 
 
 @app.get("/download")
