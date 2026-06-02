@@ -88,6 +88,29 @@ CURRENCY = os.environ.get("TYPO_CURRENCY", "usd")
 PUBLIC_BASE_URL = os.environ.get("TYPO_PUBLIC_URL", f"http://127.0.0.1:{PORT}")
 WATERMARK_URL = os.environ.get("TYPO_WATERMARK_URL", "https://typortrait.com")
 
+# --- Print-on-demand (Printful) --------------------------------------------
+# All optional: with no PRINTFUL_API_TOKEN the catalog still renders and the
+# digital download keeps working, but physical checkout is gated off. The
+# Stripe webhook drives async fulfillment for physical orders (digital stays
+# on the existing synchronous-verify path, so the live revenue path is intact).
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+PRINTFUL_API_TOKEN = os.environ.get("PRINTFUL_API_TOKEN", "")
+PRINTFUL_STORE_ID = os.environ.get("PRINTFUL_STORE_ID", "")
+PRINTFUL_API_BASE = os.environ.get("PRINTFUL_API_BASE", "https://api.printful.com")
+# Secret used to sign the time-limited /printful-fetch art URLs Printful pulls
+# from. Falls back to the Stripe webhook secret so a single secret can cover
+# both; the final fallback is dev-only and must not be used in production.
+PRINT_URL_SECRET = (os.environ.get("PRINT_URL_SECRET", "")
+                    or STRIPE_WEBHOOK_SECRET or "dev-only-not-secure")
+# Order persistence (SQLite). Volume-mounted in docker-compose so it survives
+# container rebuilds.
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+ORDERS_DB = DATA_DIR / "orders.db"
+# The /admin/orders dashboard reuses the existing reel-admin auth
+# (TYPO_ADMIN_PASSWORD + TYPO_SECRET_KEY, see app/admin.py), so there is no
+# separate orders-admin password to configure.
+
 # Rasterization sizes. The on-screen preview stays web-light; the paid PNG is
 # rendered at print resolution (lazily, at download time) so the one expensive
 # big raster runs once per sale, not on every preview/swatch.
