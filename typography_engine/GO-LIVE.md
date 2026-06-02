@@ -163,6 +163,57 @@ Answer the prompts (enter your email, agree). When it finishes, open **https://a
 - **Go live:** in Stripe switch to **live mode**, copy the `sk_live_` key into
   `.env`, then `sudo docker compose up -d` to apply. Real cards now work.
 
+## (Optional) Physical prints via Printful
+
+The app can also sell **framed prints, canvas, posters, and t-shirts**, fulfilled
+and shipped automatically by **Printful**. This is **fully optional**: with no
+Printful token the storefront stays exactly as above (digital download only), and
+the physical products simply don't appear. Turn it on whenever you're ready.
+
+**How it works:** the customer picks a product in the studio → pays in Stripe
+(Stripe also collects their shipping address) → Stripe calls our `/webhook/stripe`
+→ the app submits the order to Printful, which prints and ships it. You watch
+every order at **`https://app.typortrait.com/admin/orders`** (same password as the
+reel admin — `TYPO_ADMIN_PASSWORD`).
+
+### 3a. Get your Printful credentials
+1. Create a store at **printful.com** and connect a payment method (Printful
+   charges *you* wholesale when an order comes in; your customer already paid you
+   via Stripe).
+2. In Printful → **Settings → API** (or **Developers**), create an **API token**.
+3. Note your **Store ID** (shown in the API/developer area).
+
+### 3b. Register the Stripe webhook
+1. Stripe Dashboard → **Developers → Webhooks → Add endpoint**.
+2. **Endpoint URL:** `https://app.typortrait.com/webhook/stripe`
+3. **Event to send:** `checkout.session.completed`
+4. Save, then click the endpoint and copy its **Signing secret** (starts with
+   `whsec_`). This lets the app trust that callbacks really came from Stripe.
+
+### 3c. Add the keys to `.env` and restart
+Add these lines to the same `.env` file from step 2d-i (keep the existing ones):
+```bash
+PRINTFUL_API_TOKEN=PASTE_YOUR_PRINTFUL_TOKEN
+PRINTFUL_STORE_ID=PASTE_YOUR_STORE_ID
+STRIPE_WEBHOOK_SECRET=whsec_PASTE_FROM_STRIPE
+```
+Then apply:
+```bash
+sudo docker compose up -d --build
+```
+The product picker now appears under the preview, and `/admin/orders` starts
+logging orders. To turn physical prints back off, remove `PRINTFUL_API_TOKEN`
+and restart — the digital flow is unaffected either way.
+
+> **Order history is saved.** Orders live in a small database at
+> `typography_engine/data/orders.db`, which is volume-mounted, so it survives
+> `docker compose up --build` and code updates. Don't delete the `data/` folder.
+
+> **Verify the Printful variant IDs before your first real sale.** The product
+> sizes/IDs are in `app/products.py`; if Printful changes a catalog ID, update it
+> there. Run one test order end-to-end (Stripe test mode + a cheap product) to
+> confirm it reaches Printful as "draft/pending" before going live.
+
 ## Updating the app later (after I push changes)
 ```bash
 ssh root@YOUR_VPS_IP

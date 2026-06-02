@@ -24,10 +24,23 @@ services:
       - TYPO_SMTP_PORT=${TYPO_SMTP_PORT:-587}
       - TYPO_SMTP_USER=${TYPO_SMTP_USER:-}
       - TYPO_SMTP_PASS=${TYPO_SMTP_PASS:-}
+      # Print-on-demand (Printful). All optional: with no PRINTFUL_API_TOKEN the
+      # storefront stays digital-only and physical checkout is gated off. The
+      # webhook secret lets the async order pipeline verify Stripe callbacks; the
+      # print-URL secret signs the time-limited art URLs Printful fetches (it
+      # falls back to the webhook secret if unset).
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - PRINTFUL_API_TOKEN=${PRINTFUL_API_TOKEN:-}
+      - PRINTFUL_STORE_ID=${PRINTFUL_STORE_ID:-}
+      - PRINTFUL_API_BASE=${PRINTFUL_API_BASE:-https://api.printful.com}
+      - PRINT_URL_SECRET=${PRINT_URL_SECRET:-}
     volumes:
       # Persist previews + paid clean files across restarts/rebuilds.
       - ./data/outputs:/app/outputs
       - ./data/private:/app/private
+      # Persist the orders SQLite DB (print-on-demand order lifecycle) so it
+      # survives `docker compose up --build`. Lives at /app/data/orders.db.
+      - ./data:/app/data
       # Serve the front-end straight from the working tree so static tweaks go
       # live on `git pull` (no image rebuild needed). Read-only: the app only
       # reads these files.
