@@ -18,14 +18,19 @@ Collect these first (write them down):
 
 # PART 1 — Marketing page on IONOS (no commands needed)
 
-### 1a. Download the files
-From this chat, save these into one folder on your PC (e.g. `Documents\typortrait-site`):
-`index.html`, `og.png`, `robots.txt`, `sitemap.xml`, `favicon.ico`, `favicon-32.png`, `apple-touch-icon.png`.
+### 1a. Get the files
+Upload the **entire contents of the `marketing/` folder** — all 12 files. If you
+miss the hero/sample images the page loads but shows blank panels. The files are:
+`index.html`, `og.png`, `robots.txt`, `sitemap.xml`, `favicon.ico`,
+`favicon-32.png`, `apple-touch-icon.png`, `hero-after.png`, `hero-before.jpg`,
+`sample-1.jpg`, `sample-2.jpg`, `sample-3.jpg`.
 
-### 1b. Edit two things (open `index.html` in Notepad)
-- **Prices:** press Ctrl+H (Find/Replace) or scroll to the `<!-- EDIT PRICES -->` line. Change the `$29 / $89 / $119` and the feature text to your real offer.
-- **Testimonials:** search for `Placeholder, replace me`. Replace all three quotes and names with **real** customer quotes (or delete that whole `<section id="love">…</section>` block until you have some — don't leave fake reviews live).
-- Save the file.
+### 1b. (Optional) change the price
+The page is already a clean single-price design at **$14.99** with no placeholder
+text — you can upload it as-is. Only if you want a different price: open
+`index.html`, find `$14.99` (there are two: the hero note and the pricing card),
+change both, and **keep the app in sync** by setting `TYPO_PRICE_CENTS` in Part 2
+to match (e.g. `$14.99` → `1499`, `$9.00` → `900`). Save.
 
 ### 1c. Upload to IONOS
 1. Log in at ionos.com → **Hosting** → your package → **"Webspace"** or **"File Manager"** (sometimes called *Web Space Explorer*).
@@ -81,14 +86,15 @@ cd typortrait/typography_engine
    ```bash
    cat > .env <<'EOF'
    STRIPE_SECRET_KEY=PASTE_YOUR_STRIPE_SECRET_KEY_HERE
-   TYPO_PRICE_CENTS=900
+   TYPO_PRICE_CENTS=1499
    TYPO_CURRENCY=usd
    TYPO_PUBLIC_URL=https://app.typortrait.com
    EOF
    ```
    - Replace `PASTE_YOUR_STRIPE_SECRET_KEY_HERE` with the key from Stripe
      (it begins with `sk_` — keep it secret).
-   - `TYPO_PRICE_CENTS=900` means **$9.00** per download. Change it to your price.
+   - `TYPO_PRICE_CENTS=1499` means **$14.99** per download — this **must match**
+     the price shown on the marketing page (Part 1b). Change both together.
    - Keep `.env` private (never commit it).
    - No Stripe key yet? You can still launch — people will see the free
      watermarked preview; the Download button just says checkout isn't set up.

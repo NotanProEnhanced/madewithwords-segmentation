@@ -129,6 +129,8 @@ def _start_admin_services() -> None:
 
 @app.get("/")
 def index() -> RedirectResponse:
+    # This deployment (VPS / app.typortrait.com) is the studio app. The marketing
+    # landing page is served separately from a static host (typortrait.com).
     return RedirectResponse(url="/static/index.html")
 
 
