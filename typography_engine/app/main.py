@@ -712,6 +712,98 @@ async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Hea
     return JSONResponse({"ok": True})
 
 
+@app.get("/order/{order_id}", response_class=HTMLResponse)
+def order_status(order_id: str, session_id: Optional[str] = None):
+    """Customer-facing order status page (physical print orders land here from
+    Stripe's success_url)."""
+    o = orders_db.get(order_id)
+    if not o:
+        raise HTTPException(status_code=404, detail="unknown_order")
+
+    # If we arrived from Stripe success and the webhook hasn't fired yet, poll
+    # Stripe directly so the customer sees a confirmed state instead of "pending
+    # payment". (Webhooks are async and can lag a few seconds.)
+    if session_id and o["status"] == "pending_payment" and STRIPE_SECRET_KEY:
+        try:
+            import stripe
+            stripe.api_key = STRIPE_SECRET_KEY
+            sess = _stripe_to_dict(stripe.checkout.Session.retrieve(session_id))
+            if sess.get("payment_status") == "paid":
+                recipient = _recipient_from_session(sess)
+                transitioned = orders_db.mark_paid(
+                    stripe_session_id=sess.get("id"),
+                    payment_intent=sess.get("payment_intent"),
+                    customer_email=(sess.get("customer_details") or {}).get("email"),
+                    recipient=recipient,
+                )
+                if transitioned and recipient and transitioned.get("variant_id"):
+                    _fulfill_with_printful(transitioned["id"], recipient)
+                o = orders_db.get(order_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+    product = products.get(o["sku"])
+    name = product.name if product else o["sku"]
+    status_msg = {
+        "pending_payment": "Waiting for payment confirmation…",
+        "paid": "Payment received. Preparing your order for fulfillment…",
+        "fulfilling": "We've sent your Typortrait to the press. You'll get an email when it ships.",
+        "shipped": "Your order has shipped!",
+        "delivered": "Delivered. Thank you!",
+        "error": "We hit a snag fulfilling this order. We'll be in touch — please reply to your receipt.",
+    }.get(o["status"], o["status"])
+
+    tracking_html = ""
+    if o.get("tracking_url"):
+        tracking_html = (
+            f'<p><a class="btn" href="{o["tracking_url"]}" target="_blank" rel="noopener">'
+            f'Track your shipment</a></p>'
+        )
+
+    download_html = ""
+    if o["sku"] == "digital" and o["status"] in ("paid", "fulfilling") and session_id:
+        download_html = (
+            f'<p><a class="btn" href="/download?job={o["job_id"]}&fmt=png'
+            f'&session_id={session_id}">Download your PNG</a></p>'
+        )
+
+    body = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Typortrait — Order {order_id}</title>
+<style>
+  body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       background:#faf9f7;color:#16203a;margin:0;padding:24px;display:flex;justify-content:center}}
+  .card{{background:#fff;border:1px solid #ece9e3;border-radius:20px;
+        box-shadow:0 10px 40px rgba(20,30,60,.10);padding:28px;max-width:520px;width:100%}}
+  h1{{font-family:Georgia,serif;color:#0d1b3a;margin:0 0 4px}}
+  .muted{{color:#6b7280;font-size:14px}}
+  dl{{margin:18px 0;display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:15px}}
+  dt{{color:#6b7280}}
+  .status{{background:#f3f5fa;border-radius:12px;padding:14px 16px;margin-top:18px}}
+  .btn{{display:inline-block;background:#0d1b3a;color:#fff;text-decoration:none;
+        border-radius:999px;padding:12px 18px;font-weight:600;margin-top:12px}}
+</style></head><body>
+<div class="card">
+  <h1>Thank you</h1>
+  <div class="muted">Order #{order_id}</div>
+  <dl>
+    <dt>Item</dt><dd>{name}{(' — ' + o['size']) if o.get('size') else ''}</dd>
+    <dt>Total</dt><dd>${(o['price_cents'] + o['shipping_cents']) / 100:.2f} {o['currency'].upper()}</dd>
+    <dt>Status</dt><dd>{o['status'].replace('_', ' ')}</dd>
+  </dl>
+  <div class="status">{status_msg}</div>
+  {tracking_html}
+  {download_html}
+  <p class="muted" style="margin-top:24px">
+    Bookmark this page to check on your order, or reply to your receipt email
+    if anything looks off.
+  </p>
+  <p><a href="/static/index.html">Make another Typortrait →</a></p>
+</div></body></html>"""
+    return HTMLResponse(body)
+
+
 def _session_paid(session_id: str, job: str) -> bool:
     """True if `session_id` is a paid Stripe session for `job`."""
     if not STRIPE_SECRET_KEY:

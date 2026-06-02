@@ -495,7 +495,8 @@ a{{color:#0d1b3a}}
 </style></head><body><div class="wrap">{body}</div></body></html>"""
 
 
-def _admin_nav(current: str = "all", stats_active: bool = False) -> str:
+def _admin_nav(current: str = "all", stats_active: bool = False,
+               orders_active: bool = False) -> str:
     items = [
         ("all", "All", "/admin/reels"),
         ("queued", "Queued", "/admin/reels?filter=queued"),
@@ -504,12 +505,15 @@ def _admin_nav(current: str = "all", stats_active: bool = False) -> str:
         ("rejected", "Rejected", "/admin/reels?filter=rejected"),
         ("revoked", "Revoked", "/admin/reels?filter=revoked"),
     ]
+    active_elsewhere = stats_active or orders_active
     bits = []
     for key, label, url in items:
-        cls = ' class="cur"' if key == current and not stats_active else ""
+        cls = ' class="cur"' if key == current and not active_elsewhere else ""
         bits.append(f'<a href="{url}"{cls}>{html.escape(label)}</a>')
     stats_cls = ' class="cur"' if stats_active else ""
     bits.append(f'<a href="/admin/stats"{stats_cls}>Stats</a>')
+    orders_cls = ' class="cur"' if orders_active else ""
+    bits.append(f'<a href="/admin/orders"{orders_cls}>Orders</a>')
     bits.append('<span class="gap"></span>')
     bits.append('<form method="post" action="/admin/logout"><button class="btn ghost" type="submit">Log out</button></form>')
     return f'<nav>{"".join(bits)}</nav>'
@@ -578,6 +582,65 @@ def admin_logout():
     r = RedirectResponse(url="/admin/login", status_code=302)
     r.delete_cookie("admin_session")
     return r
+
+
+# Pill colors for the print-order lifecycle, reusing the .state chip style.
+_ORDER_STATE_STYLE = {
+    "pending_payment": "background:#fef3c7;color:#92400e",
+    "paid":            "background:#dbeafe;color:#1e40af",
+    "fulfilling":      "background:#e0e7ff;color:#3730a3",
+    "shipped":         "background:#d1fae5;color:#065f46",
+    "delivered":       "background:#d1fae5;color:#065f46",
+    "error":           "background:#fee2e2;color:#991b1b",
+}
+
+
+@router.get("/orders", response_class=HTMLResponse)
+def admin_orders(admin_session: Optional[str] = Cookie(None)):
+    """Print-on-demand order dashboard. Shares the reel admin's cookie auth and
+    chrome; lists recent physical/digital orders with their fulfillment state."""
+    guard = _require_admin(admin_session)
+    if guard is not None:
+        return guard
+    # Imported here (not at module load) so the reel admin keeps working even if
+    # the orders/catalog modules are absent on an older deploy.
+    from . import orders as orders_db, products
+
+    rows = orders_db.list_recent(200)
+    body = '<h1>Print orders</h1>'
+    body += _admin_nav(orders_active=True)
+    if not rows:
+        body += ('<div class="card"><p class="muted">No orders yet. Physical orders '
+                 '(framed prints, canvas, posters, shirts) appear here once a customer '
+                 'completes checkout.</p></div>')
+        return HTMLResponse(_admin_chrome("Orders", body))
+
+    trs = []
+    for o in rows:
+        product = products.get(o["sku"])
+        name = product.name if product else o["sku"]
+        item = html.escape(name) + (f' / {html.escape(o["size"])}' if o.get("size") else '')
+        total = (o["price_cents"] + o["shipping_cents"]) / 100
+        cur = html.escape((o.get("currency") or "usd").upper())
+        status = o["status"]
+        pill = (f'<span class="state" style="{_ORDER_STATE_STYLE.get(status, "")}">'
+                f'{html.escape(status.replace("_", " "))}</span>')
+        pf_id = o.get("printful_order_id") or "—"
+        track = o.get("tracking_url")
+        track_html = (f'<a href="{html.escape(track)}" target="_blank" rel="noopener">track</a>'
+                      if track else "—")
+        email = html.escape(o.get("customer_email") or "—")
+        err = html.escape(o.get("error_message") or "")
+        trs.append(
+            f'<tr><td><a href="/order/{html.escape(o["id"])}">{html.escape(o["id"])}</a></td>'
+            f'<td>{item}</td><td>${total:.2f} {cur}</td>'
+            f'<td>{pill}</td><td>{email}</td><td>{pf_id}</td>'
+            f'<td>{track_html}</td><td class="muted">{err}</td></tr>'
+        )
+    body += ('<table><tr><th>Order</th><th>Item</th><th>Total</th><th>Status</th>'
+             '<th>Email</th><th>Printful</th><th>Track</th><th>Error</th></tr>'
+             + "".join(trs) + '</table>')
+    return HTMLResponse(_admin_chrome("Orders", body))
 
 
 @router.get("/reels", response_class=HTMLResponse)
