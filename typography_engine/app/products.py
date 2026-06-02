@@ -30,15 +30,15 @@ class Product:
     tag: Optional[str] = None
 
 
-# Printful variant IDs for the t-shirt (Bella+Canvas 3001, unisex, black).
-# Looked up from Printful's catalog; verify with `GET /products/71` before
-# launch. If a variant ID changes upstream, only this map needs updating.
+# Printful variant IDs for the t-shirt (Bella+Canvas 3001, unisex, BLACK).
+# Verified against Printful's live catalog (GET /products/71) 2026-06-02.
+# If a variant ID changes upstream, only this map needs updating.
 _TSHIRT_SIZES: Dict[str, int] = {
-    "S": 4012,
-    "M": 4013,
-    "L": 4014,
-    "XL": 4015,
-    "2XL": 4016,
+    "S": 4016,
+    "M": 4017,
+    "L": 4018,
+    "XL": 4019,
+    "2XL": 4020,
 }
 
 
@@ -50,7 +50,7 @@ CATALOG: List[Product] = [
         price_cents=6900,
         shipping_cents=1500,
         physical=True,
-        printful_variant_id=1320,   # Enhanced matte paper framed poster 16×20 black
+        printful_variant_id=4399,   # Enhanced Matte Paper Framed Poster 16×20, Black frame (product 2) — verified 2026-06-02
         tag="Best gift",
     ),
     Product(
@@ -60,7 +60,7 @@ CATALOG: List[Product] = [
         price_cents=4900,
         shipping_cents=1200,
         physical=True,
-        printful_variant_id=3618,   # Canvas 16×20 (1.25" thick)
+        printful_variant_id=6,      # Canvas (in) 16×20, 1.25" thick (product 3) — verified 2026-06-02
     ),
     Product(
         sku="poster_18x24",
@@ -69,7 +69,7 @@ CATALOG: List[Product] = [
         price_cents=2900,
         shipping_cents=800,
         physical=True,
-        printful_variant_id=4,      # Enhanced matte paper poster 18×24
+        printful_variant_id=1,      # Enhanced Matte Paper Poster (in) 18×24 (product 1) — verified 2026-06-02
     ),
     Product(
         sku="tshirt_unisex",
