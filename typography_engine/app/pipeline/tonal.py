@@ -1096,8 +1096,13 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
     else:
         from .portrait import build_portrait
         words = [w for w in re.split(r"[\s,]+", text) if w]
+        # Density thinning opens deep shadows to the GROUND so the face emerges.
+        # That only reads on a dark ground; on light paper a thinned shadow cell
+        # becomes white (sparse, invisible non-face areas), so disable it in light
+        # mode and keep full dark-ink-on-paper shadows (the engraving look).
+        eff_density = 0.0 if light else tone_density
         res = build_portrait(an, words, cfg, warns, uppercase=True, ink="mono",
-                             render_w=render_w, tone_density=tone_density)
+                             render_w=render_w, tone_density=eff_density)
         colored, runs = res.svg, res.runs
     ground_hex = _ground_hex(ink, light)
     if not colored:
