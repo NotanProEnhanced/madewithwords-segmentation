@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import json
 import uuid
+from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -30,6 +31,7 @@ from .config import (
     RETENTION_DAYS,
     STATIC_DIR,
     STRIPE_SECRET_KEY,
+    STRIPE_WEBHOOK_SECRET,
     WATERMARK_URL,
     RenderConfig,
 )
@@ -516,6 +518,59 @@ def checkout(
     return JSONResponse({"ok": True, "url": session.url, "order_id": order_id})
 
 
+def _stripe_to_dict(obj):
+    """Stripe SDK v15+ removed dict-style `.get()` from StripeObject; convert
+    to a plain dict by round-tripping through JSON (Stripe objects' __str__
+    emits canonical JSON) so the rest of the code can treat them as dicts."""
+    if obj is None or isinstance(obj, (str, int, float, bool, list)):
+        return obj
+    if isinstance(obj, dict):
+        return obj
+    try:
+        return json.loads(str(obj))
+    except (ValueError, TypeError):
+        return {}
+
+
+def _ensure_clean_png(job: str) -> Optional[Path]:
+    """Compose (once) and return the path to the clean print-resolution PNG for
+    `job`, or None if the job's inputs are missing or composition fails.
+
+    The expensive layout build is reused from the stored mask; only the photo is
+    re-derived and composited at print resolution. Idempotent: returns the
+    cached file if it already exists. Shared by the paid /download path and the
+    signed /printful-fetch art URL so both produce byte-identical output."""
+    recipe_path = PRIVATE_DIR / f"{job}.json"
+    src_path = PRIVATE_DIR / f"{job}.src"
+    if not recipe_path.exists() or not src_path.exists():
+        return None
+    path = PRIVATE_DIR / f"{job}.png"
+    if path.exists():
+        return path
+    try:
+        from .pipeline.tonal import compose_layered, render_layered_png
+        r = json.loads(recipe_path.read_text(encoding="utf-8"))
+        warns2 = WarningCollector()
+        an = analyze_image(src_path.read_bytes(), RenderConfig(), warns2)
+        mask_path = PRIVATE_DIR / f"{job}.mask.svg"
+        if mask_path.exists():
+            png_bytes = compose_layered(
+                mask_path.read_text(encoding="utf-8"), an,
+                r.get("ink", "navy"), bool(r.get("remove_bg", True)), DOWNLOAD_PNG_WIDTH,
+                light=bool(r.get("light", False)))
+        else:  # older jobs without a stored mask: full recompose
+            png_bytes, _, _, _ = render_layered_png(
+                an, r["text"], r.get("style", "words"), RenderConfig(), warns2,
+                ink=r.get("ink", "navy"), remove_bg=bool(r.get("remove_bg", True)),
+                light=bool(r.get("light", False)), out_width=DOWNLOAD_PNG_WIDTH, render_w=2600)
+        if not png_bytes:
+            return None
+        path.write_bytes(png_bytes)
+        return path
+    except Exception:  # noqa: BLE001
+        return None
+
+
 @app.get("/download")
 def download(job: str, session_id: str, fmt: str = "png"):
     """Serve the clean file only after verifying the Stripe payment for `job`."""
@@ -538,33 +593,10 @@ def download(job: str, session_id: str, fmt: str = "png"):
     src_path = PRIVATE_DIR / f"{job}.src"
     if not recipe_path.exists() or not src_path.exists():
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
-    path = PRIVATE_DIR / f"{job}.png"
-    if not path.exists():
-        # Compose the print-resolution layered PNG once. The layout build (the
-        # costly part) is reused from the stored mask; only the photo is
-        # re-derived and composited at print resolution.
-        try:
-            import json as _json
-            from .pipeline.tonal import compose_layered, render_layered_png
-            r = _json.loads(recipe_path.read_text(encoding="utf-8"))
-            warns2 = WarningCollector()
-            an = analyze_image(src_path.read_bytes(), RenderConfig(), warns2)
-            mask_path = PRIVATE_DIR / f"{job}.mask.svg"
-            if mask_path.exists():
-                png_bytes = compose_layered(
-                    mask_path.read_text(encoding="utf-8"), an,
-                    r.get("ink", "navy"), bool(r.get("remove_bg", True)), DOWNLOAD_PNG_WIDTH,
-                    light=bool(r.get("light", False)))
-            else:  # older jobs without a stored mask: full recompose
-                png_bytes, _, _, _ = render_layered_png(
-                    an, r["text"], r.get("style", "words"), RenderConfig(), warns2,
-                    ink=r.get("ink", "navy"), remove_bg=bool(r.get("remove_bg", True)),
-                    light=bool(r.get("light", False)), out_width=DOWNLOAD_PNG_WIDTH, render_w=2600)
-            if not png_bytes:
-                return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
-            path.write_bytes(png_bytes)
-        except Exception:  # noqa: BLE001
-            return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
+    # Compose the print-resolution layered PNG once (idempotent, cached on disk).
+    path = _ensure_clean_png(job)
+    if path is None:
+        return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
     # Drop a .paid marker so admin stats can count paid orders accurately
     # without re-querying Stripe per job. Idempotent.
     paid_marker = PRIVATE_DIR / f"{job}.paid"
@@ -575,6 +607,109 @@ def download(job: str, session_id: str, fmt: str = "png"):
         except OSError:
             pass
     return FileResponse(str(path), media_type="image/png", filename=f"typortrait-{job}.png")
+
+
+@app.get("/printful-fetch/{job}")
+def printful_fetch(job: str, exp: int, sig: str):
+    """One-time signed URL Printful fetches the clean PNG from.
+
+    The clean file lives in PRIVATE_DIR (paywalled, not statically mounted). For
+    physical orders Printful must download the art; we expose it through this
+    HMAC-signed, time-limited URL. The art is composed lazily here if it does not
+    already exist (our model only stores the recipe + mask, not the big PNG)."""
+    if not printful.verify_signed_url(job, exp, sig):
+        raise HTTPException(status_code=403, detail="invalid_or_expired_signature")
+    path = _ensure_clean_png(job)
+    if path is None:
+        raise HTTPException(status_code=404, detail="unknown_job")
+    return FileResponse(str(path), media_type="image/png")
+
+
+def _recipient_from_session(sess: dict) -> Optional[dict]:
+    """Map a Stripe Checkout Session's shipping_details to Printful's recipient
+    schema. Returns None when no address was collected (e.g. digital orders)."""
+    ship = sess.get("shipping_details") or sess.get("shipping") or {}
+    addr = (ship.get("address") or {}) if isinstance(ship, dict) else {}
+    if not addr:
+        return None
+    customer = sess.get("customer_details") or {}
+    return {
+        "name": ship.get("name") or customer.get("name") or "",
+        "address1": addr.get("line1") or "",
+        "address2": addr.get("line2") or "",
+        "city": addr.get("city") or "",
+        "state_code": addr.get("state") or "",
+        "country_code": addr.get("country") or "US",
+        "zip": addr.get("postal_code") or "",
+        "email": customer.get("email") or "",
+        "phone": customer.get("phone") or "",
+    }
+
+
+def _fulfill_with_printful(order_id: str, recipient: dict) -> None:
+    """Submit a paid physical order to Printful. Idempotent: noop unless the row
+    is in 'paid' state with a variant. Caller has just transitioned it to paid."""
+    o = orders_db.get(order_id)
+    if not o:
+        return
+    if o["status"] != "paid" or not o["variant_id"]:
+        return
+    try:
+        signed = printful.signed_print_url(o["job_id"])
+        placement = "front" if str(o["sku"]).startswith("tshirt") else "default"
+        res = printful.create_order(
+            recipient=recipient,
+            variant_id=o["variant_id"],
+            print_file_url=signed,
+            external_id=order_id,
+            retail_price_cents=o["price_cents"],
+            confirm=True,
+            placement=placement,
+        )
+        pf_id = res.get("id") if isinstance(res, dict) else None
+        orders_db.mark_fulfilling(order_id=order_id, printful_order_id=int(pf_id or 0), raw=res)
+    except Exception as e:  # noqa: BLE001
+        orders_db.mark_error(order_id=order_id, error_message=str(e))
+
+
+@app.post("/webhook/stripe")
+async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Header(None)):
+    """Stripe -> us. On checkout.session.completed for a physical order, mark the
+    order paid (idempotent) and submit it to Printful. Signature verified via
+    STRIPE_WEBHOOK_SECRET; without a secret the body is trusted (dev only)."""
+    payload = await request.body()
+    if STRIPE_WEBHOOK_SECRET:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        try:
+            event = _stripe_to_dict(stripe.Webhook.construct_event(
+                payload, stripe_signature or "", STRIPE_WEBHOOK_SECRET,
+            ))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"bad_signature: {e}")
+    else:
+        try:
+            event = json.loads(payload.decode("utf-8"))
+        except Exception:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail="bad_payload")
+
+    if event.get("type") != "checkout.session.completed":
+        return JSONResponse({"ok": True, "ignored": event.get("type")})
+
+    sess = (event.get("data") or {}).get("object") or {}
+    if sess.get("payment_status") != "paid":
+        return JSONResponse({"ok": True, "ignored": "not_paid"})
+
+    recipient = _recipient_from_session(sess)
+    transitioned = orders_db.mark_paid(
+        stripe_session_id=sess.get("id") or "",
+        payment_intent=sess.get("payment_intent"),
+        customer_email=(sess.get("customer_details") or {}).get("email"),
+        recipient=recipient,
+    )
+    if transitioned and recipient and transitioned.get("variant_id"):
+        _fulfill_with_printful(transitioned["id"], recipient)
+    return JSONResponse({"ok": True})
 
 
 def _session_paid(session_id: str, job: str) -> bool:
