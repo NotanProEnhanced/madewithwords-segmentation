@@ -21,12 +21,15 @@ Compose reads it automatically and persists previews + paid files via the
 the Download button reports that checkout isn't configured).
 
 ## 0. DNS (do this first so TLS can verify)
-At your DNS provider, point the domain at the VPS public IP. With a separate
-marketing page on the root, use a subdomain for the app:
+Both names live on **this same VPS**. Point an A record for each at the VPS
+public IP. The apex serves the **static marketing page**; the `app.` subdomain
+serves the **FastAPI studio**:
 ```
+A   typortrait.com       -> <VPS_IP>
+A   www.typortrait.com   -> <VPS_IP>
 A   app.typortrait.com   -> <VPS_IP>
 ```
-Wait for it to resolve (`dig +short typortrait.com`).
+Wait for them to resolve (`dig +short typortrait.com app.typortrait.com`).
 
 ## 1. Install Docker + nginx + certbot
 ```bash
@@ -45,26 +48,52 @@ curl -s http://127.0.0.1:8077/health     # -> {"ok": true, ...}
 The app now listens on 127.0.0.1:8077 and restarts automatically (reboot/crash).
 
 ## 3. Put nginx in front
+The conf defines **two vhosts**: the apex `typortrait.com` as a static site
+(root `/var/www/typortrait.com`) and `app.typortrait.com` as the reverse proxy
+to the app on `127.0.0.1:8077`.
 ```bash
+sudo mkdir -p /var/www/typortrait.com          # static marketing docroot
 sudo cp deploy/nginx-typortrait.conf /etc/nginx/sites-available/typortrait.conf
 sudo ln -sf /etc/nginx/sites-available/typortrait.conf /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 ```
-Visit http://typortrait.com — you should see the app.
+Visit http://app.typortrait.com — you should see the studio. The apex
+http://typortrait.com serves the marketing page once you deploy it (step 6).
 
 ## 4. Enable HTTPS (free, auto-renewing)
+Cover all three names (apex + www + app) in one cert:
 ```bash
-sudo certbot --nginx -d typortrait.com -d www.typortrait.com
+sudo certbot --nginx -d typortrait.com -d www.typortrait.com -d app.typortrait.com
 ```
-Certbot adds the 443 server block and an HTTP->HTTPS redirect, and sets up
-auto-renewal. Done — open **https://typortrait.com** on phone or desktop.
+Certbot adds the 443 server blocks and HTTP->HTTPS redirects, and sets up
+auto-renewal. Done — open **https://app.typortrait.com** (studio) and
+**https://typortrait.com** (marketing) on phone or desktop.
 
 ## Updating after code changes
 ```bash
 cd typortrait && git pull
 cd typography_engine && sudo docker compose up -d --build
 ```
+
+## 6. Deploy / update the marketing page (static, served by nginx)
+The apex site is plain static files in `/var/www/typortrait.com/` — **not** the
+app, and **not** any shared host. The canonical source is
+`typography_engine/marketing/_deploy/` in this repo. To publish (or update) it,
+copy that folder's contents into the docroot. From your **local machine**:
+```powershell
+# upload the staged files to the VPS
+scp -r typography_engine/marketing/_deploy <user>@<VPS_IP>:~/
+```
+Then on the **VPS**:
+```bash
+# back up the current page (instant rollback), then swap in the new files
+cp /var/www/typortrait.com/index.html /var/www/typortrait.com/index.backup.html
+cp ~/_deploy/* /var/www/typortrait.com/
+chown www-data:www-data /var/www/typortrait.com/*
+```
+Static files go live instantly — no nginx reload, no app rebuild. Roll back with
+`cp /var/www/typortrait.com/index.backup.html /var/www/typortrait.com/index.html`.
 
 ## 5. Admin review dashboard + email notifications (Phase C)
 
@@ -156,5 +185,7 @@ Then do steps **3 (nginx)** and **4 (certbot)** above. Update later with:
 - **Disk:** rendered SVG/PNG accumulate in the container's `outputs/`. For long
   runs, add a cron to prune old files, or mount `outputs/` as a volume with a
   cleanup job.
-- **Marketing page:** you can keep IONOS shared hosting for a static landing
-  page on a different host/subdomain if you ever want to separate them.
+- **Marketing page:** served as static files by nginx on this same VPS from
+  `/var/www/typortrait.com/` (apex), while the app runs on `app.typortrait.com`.
+  See step 6 for how to update it. (It does **not** live on IONOS shared hosting
+  — the apex A record points straight at the VPS.)
