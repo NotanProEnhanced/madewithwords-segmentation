@@ -926,7 +926,7 @@ def make_reel(
             "after":  str(portrait_path),
             "words":  words,
             "out":    str(gif_path),
-            "cta":    "Make yours  ·  typortrait.com",
+            "cta":    "Make yours free",
         })
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "reel_build_failed", "detail": str(e)}, status_code=500)

@@ -32,8 +32,11 @@ SANS    = _find_font(["arial.ttf","LiberationSans-Regular.ttf","DejaVuSans.ttf",
 W, H = 450, 800
 BG, INK, MUTED, LINE = (250,249,247), (13,27,58), (120,130,150), (40,30,20)
 SQ, IMG_X, IMG_Y = 340, 55, 200
-HOOK_END=2.4; P1_END=4.4; WORDS_IN=4.9; WORDS_DUR=1.7
-REVEAL0=7.3; REVEAL1=8.1; SLIDER_END=12.9; DUR=15.4; HOLD=3.0
+# Pacing — every content beat is scaled by SLOW so the reel breathes. Bump SLOW
+# in one place to lengthen/slow the whole thing (1.52 adds ~8s over the original).
+SLOW = 1.52
+HOOK_END=2.4*SLOW; P1_END=4.4*SLOW; WORDS_IN=4.9*SLOW; WORDS_DUR=1.7*SLOW
+REVEAL0=7.3*SLOW; REVEAL1=8.1*SLOW; SLIDER_END=12.9*SLOW; DUR=15.4*SLOW; HOLD=3.0
 
 def build_reel(cfg):
     if not (SERIF_B and SERIF and SANS):
@@ -42,7 +45,7 @@ def build_reel(cfg):
     after  = Image.open(cfg["after"]).convert("RGB").resize((SQ,SQ), Image.LANCZOS)
     words  = [w for w in (cfg.get("words") or ["love"]) if w]
     brand  = cfg.get("brand", "Typortrait")
-    cta    = cfg.get("cta", "Create yours free  ·  typortrait.com")
+    cta    = cfg.get("cta", "Create yours free")
     fps    = cfg.get("fps", 10)
     out    = cfg["out"]
     wordlist = " · ".join(words[:5])
@@ -50,23 +53,32 @@ def build_reel(cfg):
     def font(p,s): return ImageFont.truetype(p,s)
     f_brand=font(SERIF_B,38); f_hook=font(SERIF_B,29); f_tag=font(SERIF,22)
     f_cap=font(SERIF_B,28); f_cta=font(SANS,21); f_small=font(SANS,15); f_pill=font(SANS,13)
+    f_foot=font(SERIF_B,23)
     def ctext(d,cx,y,txt,fnt,fill):
         b=d.textbbox((0,0),txt,font=fnt); d.text((cx-(b[2]-b[0])/2,y),txt,font=fnt,fill=fill)
 
-    rnd = random.Random(7)
-    placements=[]
-    for i in range(34):
-        gx=rnd.random()+rnd.random()+rnd.random()-1.5
-        gy=rnd.random()+rnd.random()+rnd.random()-1.5
-        placements.append((words[i%len(words)].upper(), SQ*0.5+gx*SQ*0.30, SQ*0.5+gy*SQ*0.32,
-                           rnd.uniform(0.85,1.3), rnd.random()))
+    # The buyer's words, shown as a tidy centered block — uniform font, size and
+    # colour, no overlap, every word fully inside the frame. Greedy-wrapped into
+    # centred lines that fade in gently, one after another.
+    display_words = [w.upper() for w in dict.fromkeys(words) if w][:12]
     def words_layer(scale):
         layer=Image.new("RGBA",(SQ,SQ),(0,0,0,0)); d=ImageDraw.Draw(layer)
-        for word,x,y,sc,ph in placements:
-            a=int(max(0,min(1,scale-ph*0.25))*235)
+        fw=font(SERIF_B,22); sep="   ·   "; pad=20; maxw=SQ-2*pad
+        def measure(s):
+            b=d.textbbox((0,0),s,font=fw); return b[2]-b[0]
+        lines=[]; cur=""
+        for w in display_words:
+            cand = w if not cur else cur+sep+w
+            if measure(cand)>maxw and cur:
+                lines.append(cur); cur=w
+            else:
+                cur=cand
+        if cur: lines.append(cur)
+        lh=34; y0=(SQ-lh*len(lines))//2
+        for i,s in enumerate(lines):
+            a=int(max(0.0,min(1.0,scale-i*0.10))*235)
             if a<=0: continue
-            fw=font(SERIF_B,max(12,int(19*sc))); b=d.textbbox((0,0),word,font=fw)
-            d.text((x-(b[2]-b[0])/2,y-11),word,font=fw,fill=(13,27,58,a))
+            d.text((SQ/2-measure(s)/2, y0+i*lh), s, font=fw, fill=(13,27,58,a))
         return layer
 
     def pill(d,txt,x,y,left):
@@ -108,22 +120,29 @@ def build_reel(cfg):
     def frame(t):
         im=Image.new("RGB",(W,H),BG); d=ImageDraw.Draw(im)
         ctext(d,W/2,60,brand,f_brand,INK)
-        im.paste(img_for(t),(IMG_X,IMG_Y))
-        d.rectangle([IMG_X-3,IMG_Y-3,IMG_X+SQ+2,IMG_Y+SQ+2], outline=LINE, width=2)
+        # Present the rendering like a hung print: a navy frame with a wide
+        # white matt around it, to punctuate the reveal. Same outer footprint,
+        # so the rest of the layout is unchanged; the art insets to fit the matt.
+        FR, MT = 9, 16
+        inner = SQ - 2*(FR+MT)
+        ox, oy = IMG_X+FR+MT, IMG_Y+FR+MT
+        d.rectangle([IMG_X, IMG_Y, IMG_X+SQ-1, IMG_Y+SQ-1], fill=INK)                     # frame
+        d.rectangle([IMG_X+FR, IMG_Y+FR, IMG_X+SQ-1-FR, IMG_Y+SQ-1-FR], fill=(255,255,255))  # white matt
+        im.paste(img_for(t).resize((inner,inner), Image.LANCZOS), (ox,oy))                # the rendering
+        d.rectangle([ox-1, oy-1, ox+inner, oy+inner], outline=(206,201,192), width=1)     # matt opening edge
         cy=IMG_Y+SQ+26
-        if t < HOOK_END:
-            ctext(d,W/2,cy,"A portrait, written in your words.",f_hook,INK)
-            ctext(d,W/2,cy+46,"here's how  ↓",f_small,MUTED)
-        elif t < P1_END:  ctext(d,W/2,cy,"Start with a photo.",f_tag,MUTED)
+        if t < P1_END:    ctext(d,W/2,cy,"Start with a photo.",f_tag,MUTED)
         elif t < REVEAL0: ctext(d,W/2,cy,"Then, add the words that matter.",f_tag,MUTED)
         elif t < REVEAL1: pass
-        elif t < SLIDER_END: ctext(d,W/2,cy,"Drag to compare  ↔",f_tag,MUTED)
+        elif t < SLIDER_END: ctext(d,W/2,cy,"Your Typortrait is revealed!",f_tag,MUTED)
         else:
             ctext(d,W/2,cy,"Made from your words.",f_cap,MUTED)
             ctext(d,W/2,cy+52,wordlist,f_small,MUTED)
             b=d.textbbox((0,0),cta,font=f_cta); cw=b[2]-b[0]; px0=(W-cw)//2-22; py0=cy+96
             d.rounded_rectangle([px0,py0,px0+cw+44,py0+50], radius=25, fill=INK)
             d.text(((W-cw)//2,py0+13), cta, font=f_cta, fill=(250,249,247))
+        # Persistent brand watermark — centered along the bottom of every frame.
+        ctext(d,W/2,H-34,"Typortrait.com",f_foot,INK)
         return im
 
     n=int(DUR*fps)
