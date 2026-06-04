@@ -579,7 +579,7 @@ def build_tonal_portrait(
     # holds where detail matters.
     body_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 2.6)))
     mid_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 1.7)))
-    face_font = float(max(8.0, cfg.min_font_px * 0.85))
+    face_font = float(max(8.0, cfg.min_font_px * 1.0))
     eye_font = float(max(6.0, face_font * 0.62))
 
     # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
