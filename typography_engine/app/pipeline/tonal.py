@@ -56,6 +56,11 @@ _WORD_GAP = 2
 _WORD_GAP_MIN = 1
 _WORD_GAP_MAX = 3
 _RIVER_PHASE_CELLS = 5  # max random leading blank cells at the start of a row run
+# Silhouette edge feather. Cells within this many body-cell-widths of the mask
+# edge are thinned on a dither screen (densest drop right at the edge), so hard
+# boundaries -- especially wispy hair atop the head -- dissolve into stippled
+# letters that fade to the ground rather than rendering as a solid block.
+_EDGE_FEATHER_CELLS = 2.2
 
 # Ordered-dither (Bayer 8x8) thresholds in [0,1). Used by the optional
 # tone-density pass to thin the DEEPEST shadows into a regular halftone so the
@@ -560,6 +565,11 @@ def build_tonal_portrait(
         W, H = w0, h0
 
     mset = mask > 127
+    # Distance (px) from the silhouette edge, inward. Used to FEATHER the outer
+    # boundary: cells near the edge are dropped on a dither screen so a hard mask
+    # edge (e.g. wispy hair atop the head) dissolves into scattered letters that
+    # fade to the ground, instead of tiling into a solid block.
+    medge = cv2.distanceTransform(mset.astype(np.uint8), cv2.DIST_L2, 5)
     sharp = _sharpen(gray)
     dark = _tone_field(sharp, mask, gamma=gamma, floor=floor)
     if auto_tone:
@@ -577,8 +587,11 @@ def build_tonal_portrait(
     # in the eyes. The gentle steps read as a smooth large->mid->small gradient
     # (not a hard two-size seam), so the typography is legible AND the likeness
     # holds where detail matters.
-    body_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 2.6)))
-    mid_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 1.7)))
+    # Tier ratios kept close together so words step down GENTLY toward the face
+    # (body -> mid -> face), avoiding a harsh size discontinuity where the small
+    # face tier meets the larger hair/headwear tiers.
+    body_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 2.2)))
+    mid_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 1.45)))
     face_font = float(max(8.0, cfg.min_font_px * 1.0))
     eye_font = float(max(6.0, face_font * 0.62))
 
@@ -672,6 +685,11 @@ def build_tonal_portrait(
         # mean darkness of its whole cell (smooth gradients, not point noise).
         sub = cv2.resize(dark[by0:by1, bx0:bx1], (cols, rows), interpolation=cv2.INTER_AREA)
         mg = cv2.resize(mask[by0:by1, bx0:bx1], (cols, rows), interpolation=cv2.INTER_AREA)
+        # Min-pool the edge distance into the grid (INTER_AREA would blur the
+        # edge inward); each cell takes the SMALLEST distance it covers so a cell
+        # straddling the boundary is treated as an edge cell.
+        eg = cv2.resize(medge[by0:by1, bx0:bx1], (cols, rows), interpolation=cv2.INTER_NEAREST)
+        feather_px = font * _MONO_ADVANCE * _EDGE_FEATHER_CELLS
         csub = (cv2.resize(an.img.bgr[by0:by1, bx0:bx1], (cols, rows),
                            interpolation=cv2.INTER_AREA) if photo_ink else None)
         for r in range(rows):
@@ -699,6 +717,13 @@ def build_tonal_portrait(
                     # face emerges. Face/eye tiers are exempt (keep full detail).
                     keep = 1.0 - tone_density * (row[c] - _DENSITY_KNEE) / (1.0 - _DENSITY_KNEE)
                     if keep <= _BAYER8[r & 7, c & 7]:
+                        ink[c] = False
+                if ink[c] and region == "body" and feather_px > 0.0 and eg[r, c] < feather_px:
+                    # Silhouette-edge feather: keep-probability ramps 0 (at the
+                    # very edge) -> 1 (at the band's inner limit), dithered on the
+                    # Bayer screen, so hard mask edges (wispy hair) stipple out
+                    # into the ground instead of forming a blocky slab.
+                    if (eg[r, c] / feather_px) <= _BAYER8[r & 7, c & 7]:
                         ink[c] = False
             c = 0
             while c < cols:
