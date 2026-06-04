@@ -4,6 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Typortrait — someone you love, made from your words</title>
+<!-- Umami analytics (cookieless, no consent banner needed). Replace the
+     data-website-id with your Umami Cloud website ID. Until then it 404s
+     harmlessly and the tp_track() calls below silently no-op. -->
+<script defer src="https://cloud.umami.is/script.js" data-website-id="REPLACE_WITH_UMAMI_WEBSITE_ID"></script>
 <style>
   :root{
     --navy:#0d1b3a; --ink:#16203a; --paper:#faf9f7; --card:#ffffff;
@@ -319,6 +323,9 @@ function placeholderBg(col){
   return col;
 }
 const state = { file:null, ink:"mono", style:"words", fmt:"png", removeBg:true, light:false, sku:"digital", size:null };
+// Umami funnel event helper. No-ops silently if the script is blocked, still
+// loading, or unconfigured — analytics must never break the app.
+function tp_track(name, data){ try{ if(window.umami) window.umami.track(name, data||{}); }catch(e){} }
 function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
 // Show the price up front so it's never a surprise (single source: /pricing).
 fetch("/pricing").then(r=>r.json()).then(p=>{
@@ -368,7 +375,7 @@ $("#changePhoto").addEventListener("click", e=>{e.stopPropagation();fileInput.cl
 drop.addEventListener("drop", e=>{ if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
 fileInput.addEventListener("change", e=>{ if(e.target.files[0]) setFile(e.target.files[0]); });
 function setFile(f){ if(!f.type.startsWith("image/"))return; state.file=f; previewImg.src=URL.createObjectURL(f);
-  preview.style.display="block"; drop.style.display="none"; refreshCreate(); }
+  preview.style.display="block"; drop.style.display="none"; refreshCreate(); tp_track("photo_selected"); }
 
 /* ---------- swatch filmstrip (live thumbnails of THIS portrait per ink) ----- */
 const swatchEl=$("#swatches");
@@ -414,7 +421,7 @@ buy.addEventListener("click", async ()=>{
     fd.append("sku", state.sku||"digital");
     if(state.size) fd.append("size", state.size);
     const r=await fetch("/checkout",{method:"POST",body:fd}); const d=await r.json();
-    if(d.ok && d.url){ window.location.href=d.url; return; }
+    if(d.ok && d.url){ tp_track("checkout_start", {sku: state.sku||"digital", fmt: state.fmt}); window.location.href=d.url; return; }
     const msg = {
       payments_unconfigured: "Checkout isn’t set up yet (add your Stripe key).",
       fulfillment_unconfigured: "Print orders aren’t available right now — try the digital download.",
@@ -684,6 +691,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     cache[ink]={preview:data.preview, job:data.job, price:data.price_cents, currency:data.currency}; updateThumb(ink);
     if(background || ink!==state.ink) return;
     showImage(cache[ink]);   // watermarked preview (clean art is unlocked via Stripe)
+    if(!window._tpPreviewTracked){ window._tpPreviewTracked=true; tp_track("preview_ready", {style: state.style}); }
     prewarm();               // fill the other swatch thumbnails in the background
   }catch(e){ if(!background && !thumb){ errResult.textContent="Network error — please try again."; errResult.style.display="block"; stopAssembly(); busy.classList.add("hide"); } }
 }
@@ -859,6 +867,7 @@ function friendly(code){ return ({no_words:"Add a few words first.",
       const r=await fetch("/save-link",{method:"POST",body:fd});
       const d=await r.json().catch(()=>({}));
       if(r.ok && d.ok){
+        tp_track("save_capture");
         modal.querySelector(".savecard").classList.add("saveok");
         $("#saveTitle").textContent="Check your inbox.";
         form.style.display="none";

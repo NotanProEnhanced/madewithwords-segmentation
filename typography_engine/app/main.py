@@ -33,6 +33,9 @@ from .config import (
     STATIC_DIR,
     STRIPE_SECRET_KEY,
     STRIPE_WEBHOOK_SECRET,
+    UMAMI_HOST,
+    UMAMI_HOSTNAME,
+    UMAMI_WEBSITE_ID,
     WATERMARK_URL,
     RenderConfig,
 )
@@ -689,6 +692,34 @@ def _fulfill_with_printful(order_id: str, recipient: dict) -> None:
         orders_db.mark_error(order_id=order_id, error_message=str(e))
 
 
+def _umami_event(name: str, data: Optional[dict] = None) -> None:
+    """Fire a server-side Umami event (e.g. a confirmed purchase). Best-effort:
+    swallows every error so analytics can never break a payment/fulfillment path.
+    No-ops unless UMAMI_WEBSITE_ID is configured."""
+    if not UMAMI_WEBSITE_ID:
+        return
+    try:
+        import httpx
+        httpx.post(
+            f"{UMAMI_HOST}/api/send",
+            json={
+                "type": "event",
+                "payload": {
+                    "website": UMAMI_WEBSITE_ID,
+                    "hostname": UMAMI_HOSTNAME,
+                    "url": "/success",
+                    "name": name,
+                    "data": data or {},
+                },
+            },
+            # Umami's collector requires a User-Agent or it rejects the event.
+            headers={"User-Agent": "Typortrait-Server/1.0", "Content-Type": "application/json"},
+            timeout=4.0,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
 @app.post("/webhook/stripe")
 async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Header(None)):
     """Stripe -> us. On checkout.session.completed for a physical order, mark the
@@ -726,6 +757,15 @@ async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Hea
     )
     if transitioned and recipient and transitioned.get("variant_id"):
         _fulfill_with_printful(transitioned["id"], recipient)
+
+    # Reliable, ad-blocker-proof conversion event to Umami (best-effort: a
+    # failure here must never affect fulfillment or the webhook's 200 to Stripe).
+    meta = sess.get("metadata") or {}
+    _umami_event("purchase", {
+        "revenue": round((sess.get("amount_total") or 0) / 100.0, 2),
+        "currency": (sess.get("currency") or CURRENCY or "usd").lower(),
+        "sku": meta.get("sku") or ("print" if (transitioned or {}).get("variant_id") else "digital"),
+    })
     return JSONResponse({"ok": True})
 
 

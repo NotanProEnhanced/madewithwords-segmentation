@@ -38,6 +38,12 @@ services:
       # fulfillment). Set PRINTFUL_CONFIRM=false while testing so orders land
       # as deletable drafts (no charge, no print). See GO-LIVE.md.
       - PRINTFUL_CONFIRM=${PRINTFUL_CONFIRM:-true}
+      # Analytics (Umami Cloud). Optional: with no UMAMI_WEBSITE_ID the
+      # server-side purchase event is skipped (browser pageviews still work via
+      # the tracking script in the page <head>). Website ID is not a secret.
+      - UMAMI_WEBSITE_ID=${UMAMI_WEBSITE_ID:-}
+      - UMAMI_HOST=${UMAMI_HOST:-https://cloud.umami.is}
+      - UMAMI_HOSTNAME=${UMAMI_HOSTNAME:-app.typortrait.com}
     volumes:
       # Persist previews + paid clean files across restarts/rebuilds.
       - ./data/outputs:/app/outputs

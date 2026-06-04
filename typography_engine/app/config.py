@@ -75,6 +75,17 @@ def env_int(key: str, default: int) -> int:
 
 PORT = env_int("TYPO_PORT", 8077)
 
+# --- Analytics (Umami Cloud) ------------------------------------------------
+# Privacy-first, cookieless funnel analytics. The website ID is NOT secret (it
+# is exposed in the browser tracking script); it lives here only so the
+# server-side `purchase` conversion event (fired from the Stripe webhook, which
+# ad-blockers can't suppress) can attribute to the same site. With no
+# UMAMI_WEBSITE_ID set, the server-side event is silently skipped.
+UMAMI_WEBSITE_ID = os.environ.get("UMAMI_WEBSITE_ID", "")
+UMAMI_HOST = os.environ.get("UMAMI_HOST", "https://cloud.umami.is").rstrip("/")
+# Hostname Umami records the event under (should match your tracked domain).
+UMAMI_HOSTNAME = os.environ.get("UMAMI_HOSTNAME", "app.typortrait.com")
+
 # --- Freemium / payments ---------------------------------------------------
 # Clean (unwatermarked) renders are stored here and only served after payment;
 # this directory is NOT mounted as static.
