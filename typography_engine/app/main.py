@@ -729,6 +729,79 @@ async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Hea
     return JSONResponse({"ok": True})
 
 
+def _reel_maker_block(job: str, session_id: str) -> str:
+    """Self-contained 'Make a reel' card (HTML + scoped CSS + JS) for any paid
+    job. Identical dual-consent flow and /reel call as the digital success
+    page, so print buyers get the exact same reel ability and authorizations.
+    Portable: carries its own styles so it can drop into any page chrome."""
+    j = json.dumps(job)
+    s = json.dumps(session_id)
+    return (
+        '<style>'
+        '.rl-divider{height:1px;background:#ece9e3;margin:24px 0 18px}'
+        '.rl-h{font-family:Georgia,serif;color:#0d1b3a;font-size:19px;margin:0 0 6px}'
+        '.rl-sub{color:#6b7280;font-size:14px;line-height:1.5;margin:0 0 14px}'
+        '.rl-chk{display:flex;gap:9px;align-items:flex-start;font-size:13.5px;color:#16203a;'
+        'line-height:1.45;margin:10px 0;text-align:left;cursor:pointer}'
+        '.rl-chk input{margin-top:2px;width:17px;height:17px;flex:0 0 auto;accent-color:#0d1b3a}'
+        '.rl-chk a{color:#0d1b3a;font-weight:600}'
+        '.btn.ghost{background:#fff;color:#0d1b3a;border:1.5px solid #0d1b3a}'
+        '.btn:disabled{opacity:.7}'
+        '#mk,#rlOut .btn{display:block;width:100%;text-align:center;margin-top:10px}'
+        '.rl-spin{display:inline-block;width:14px;height:14px;margin-right:8px;border-radius:50%;'
+        'border:2px solid rgba(255,255,255,.4);border-top-color:#fff;vertical-align:-2px;animation:rlsp .8s linear infinite}'
+        '@keyframes rlsp{to{transform:rotate(360deg)}}'
+        '</style>'
+        '<div class="rl-divider"></div>'
+        '<h2 class="rl-h">Make a reel from your portrait</h2>'
+        '<p class="rl-sub">Turn it into a short 9:16 video — the dissolve, your words, and the '
+        'finished portrait — perfect for sharing.</p>'
+        '<label class="rl-chk"><input type="checkbox" id="cp"> '
+        '<span>Yes, I’ll share my reel for personal use.</span></label>'
+        '<label class="rl-chk"><input type="checkbox" id="ct"> '
+        '<span>Optional: Allow Typortrait to feature this reel on our own social channels '
+        '(<a href="/terms" target="_blank" rel="noopener">terms</a>). You can revoke any time by emailing us.</span></label>'
+        '<button class="btn" id="mk" disabled>Make my reel</button>'
+        '<div id="rlOut" style="display:none">'
+        '<p class="rl-sub" id="rlSub" style="margin-top:14px">Your reel is ready.</p>'
+        '<a class="btn" id="rlMp4" download="typortrait-reel.mp4" style="display:none">Download MP4</a>'
+        '<a class="btn ghost" id="rlGif" download="typortrait-reel.gif">Download GIF</a>'
+        '<button class="btn ghost" id="rlSh" style="display:none">Share reel</button>'
+        '</div>'
+        '<script>(function(){'
+        'var job=' + j + ',sid=' + s + ',o=location.origin;'
+        'var shareUrl=o+"/p/"+job;'
+        'var cp=document.getElementById("cp"),ct=document.getElementById("ct"),mk=document.getElementById("mk");'
+        'var rlOut=document.getElementById("rlOut"),rlSub=document.getElementById("rlSub");'
+        'var rlGif=document.getElementById("rlGif"),rlMp4=document.getElementById("rlMp4"),rlSh=document.getElementById("rlSh");'
+        'cp.onchange=function(){mk.disabled=!cp.checked;};'
+        'mk.onclick=function(){if(!cp.checked)return;'
+        'mk.disabled=true;mk.innerHTML=\'<span class="rl-spin"></span>Making your reel… (~30s)\';'
+        'var fd=new FormData();fd.append("job",job);fd.append("session_id",sid);'
+        'fd.append("personal_consent",cp.checked?"on":"");'
+        'fd.append("typortrait_consent",ct.checked?"on":"");'
+        'fetch("/reel",{method:"POST",body:fd}).then(function(r){return r.json();}).then(function(j){'
+        'if(!j||!j.ok){mk.disabled=false;mk.innerHTML="Make my reel";'
+        'rlSub.textContent="Sorry, that didn\\u2019t work: "+((j&&(j.detail||j.error))||"please try again.");'
+        'rlOut.style.display="block";return;}'
+        'mk.style.display="none";rlOut.style.display="block";'
+        'rlSub.textContent=j.typortrait_share?"Your reel is ready. Thanks \\u2014 we\\u2019ll review it before posting on our channels.":"Your reel is ready.";'
+        'rlGif.href=j.gif_url;'
+        'if(j.mp4_url){rlMp4.href=j.mp4_url;rlMp4.style.display="inline-block";}'
+        'var mob=(window.matchMedia&&matchMedia("(pointer:coarse)").matches)||/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");'
+        'if(mob&&navigator.canShare){rlSh.style.display="inline-block";rlSh.onclick=function(){'
+        'var u=j.mp4_url||j.gif_url;var nm=j.mp4_url?"typortrait-reel.mp4":"typortrait-reel.gif";'
+        'var mt=j.mp4_url?"video/mp4":"image/gif";'
+        'fetch(u).then(function(r){return r.blob();}).then(function(bl){'
+        'var f=new File([bl],nm,{type:mt});'
+        'if(navigator.canShare({files:[f]}))return navigator.share({title:"Typortrait",text:"Made from our words \\u2014 with Typortrait.",url:shareUrl,files:[f]});'
+        'throw 0;}).catch(function(){if(navigator.clipboard){navigator.clipboard.writeText(shareUrl);rlSh.textContent="Link copied";}});};}'
+        '}).catch(function(){mk.disabled=false;mk.innerHTML="Make my reel";'
+        'rlSub.textContent="Network error \\u2014 please try again.";rlOut.style.display="block";});};'
+        '})();</script>'
+    )
+
+
 @app.get("/order/{order_id}", response_class=HTMLResponse)
 def order_status(order_id: str, session_id: Optional[str] = None):
     """Customer-facing order status page (physical print orders land here from
@@ -796,6 +869,12 @@ def order_status(order_id: str, session_id: Optional[str] = None):
                 'Download your high-res file</a></p></div>'
             )
 
+    # Print buyers get the same reel ability + authorizations as digital buyers.
+    # /reel verifies this order's paid Stripe session, so the flow is identical.
+    reel_html = ""
+    if o["status"] in ("paid", "fulfilling", "shipped", "delivered") and session_id:
+        reel_html = _reel_maker_block(o["job_id"], session_id)
+
     body = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -824,6 +903,7 @@ def order_status(order_id: str, session_id: Optional[str] = None):
   <div class="status">{status_msg}</div>
   {tracking_html}
   {download_html}
+  {reel_html}
   <p class="muted" style="margin-top:24px">
     Bookmark this page to check on your order, or reply to your receipt email
     if anything looks off.
@@ -898,9 +978,15 @@ def make_reel(
     if not recipe_path.exists() or not src_path.exists():
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
     if not portrait_path.exists():
-        # The high-res PNG is composed lazily on the first paid /download
-        # request; the success page fetches it immediately, but if a user
-        # hits the reel button before that finishes we surface a clear retry.
+        # The high-res PNG is composed lazily on the first paid /download or
+        # Printful fetch. A print buyer can reach the reel maker before either
+        # has run, so compose it on demand here (idempotent). Only if that
+        # still fails do we surface a clear retry.
+        try:
+            _ensure_clean_png(job)
+        except Exception:  # noqa: BLE001
+            pass
+    if not portrait_path.exists():
         return JSONResponse(
             {"ok": False, "error": "portrait_not_ready",
              "detail": "Your portrait is still being prepared — please wait a few seconds and try again."},
