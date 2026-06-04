@@ -44,6 +44,18 @@ _MONO_ADVANCE = 0.6  # glyph advance as a fraction of em for monospace fonts
 _JITTER_X = 0.16
 _JITTER_Y = 0.10
 _WORD_GAP = 2
+# River control. A SUB-CELL jitter is not enough to break vertical "rivers" when
+# the input is a single word (or several equal-length words): every row repeats
+# the same word-length+gap period, so the blank gaps between words stack into
+# vertical channels. We desync the period two ways that DON'T move a glyph off
+# the tonal cell it samples (unlike the poster's large uniform x-shift): (1) a
+# random whole-cell leading phase per row, and (2) a variable blank gap between
+# words. Together the word boundaries fall at different x on every row, so even
+# one repeated word renders river-free while each letter still reflects its own
+# cell's tone.
+_WORD_GAP_MIN = 1
+_WORD_GAP_MAX = 3
+_RIVER_PHASE_CELLS = 5  # max random leading blank cells at the start of a row run
 
 # Ordered-dither (Bayer 8x8) thresholds in [0,1). Used by the optional
 # tone-density pass to thin the DEEPEST shadows into a regular halftone so the
@@ -567,7 +579,7 @@ def build_tonal_portrait(
     # holds where detail matters.
     body_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 2.6)))
     mid_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 1.7)))
-    face_font = float(max(8.0, cfg.min_font_px * 0.72))
+    face_font = float(max(8.0, cfg.min_font_px * 0.85))
     eye_font = float(max(6.0, face_font * 0.62))
 
     # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
@@ -697,12 +709,20 @@ def build_tonal_portrait(
                 while c < cols and ink[c]:
                     c += 1
                 end = c
-                pos = start
-                glyphs: List[str] = []
+                # Random whole-cell leading phase so the first word starts at a
+                # different x on each row -> word boundaries (and their gaps)
+                # don't stack into vertical rivers. Capped so a run always keeps
+                # room for at least the shortest word.
+                pad = int(rng.integers(0, _RIVER_PHASE_CELLS + 1))
+                pad = min(pad, max(0, (end - start) - shortest))
+                glyphs: List[str] = [" "] * pad
+                pos = start + pad
                 first = True
                 while True:
-                    need = 0 if first else _WORD_GAP  # blank cells between words
-                    avail = end - pos - need
+                    # Variable blank gap between words (not a fixed period) so the
+                    # inter-word channels desync row-to-row.
+                    gap = 0 if first else int(rng.integers(_WORD_GAP_MIN, _WORD_GAP_MAX + 1))
+                    avail = end - pos - gap
                     if avail < shortest:
                         break
                     # Random word order (seeded) so word-boundary spaces fall at
@@ -716,12 +736,12 @@ def build_tonal_portrait(
                     if chosen is None:
                         break
                     if not first:
-                        glyphs.extend([" "] * _WORD_GAP)
-                        pos += _WORD_GAP
+                        glyphs.extend([" "] * gap)
+                        pos += gap
                     glyphs.extend(chosen)
                     pos += len(chosen)
                     first = False
-                if not glyphs:
+                if not glyphs or all(g == " " for g in glyphs):
                     continue
                 spans = []
                 # Per-WORD jitter (not per-glyph): letters in a word share one
@@ -808,9 +828,12 @@ def build_tonal_portrait(
                     while c < cols_f and inkf[c]:
                         c += 1
                     end = c
-                    pos, glyphs, first = start, [], True
+                    pad = int(rng.integers(0, _RIVER_PHASE_CELLS + 1))
+                    pad = min(pad, max(0, (end - start) - shortest))
+                    glyphs, pos, first = [" "] * pad, start + pad, True
                     while True:
-                        avail = end - pos - (0 if first else _WORD_GAP)
+                        gap = 0 if first else int(rng.integers(_WORD_GAP_MIN, _WORD_GAP_MAX + 1))
+                        avail = end - pos - gap
                         if avail < shortest:
                             break
                         chosen = None
@@ -821,12 +844,12 @@ def build_tonal_portrait(
                         if chosen is None:
                             break
                         if not first:
-                            glyphs.extend([" "] * _WORD_GAP)
-                            pos += _WORD_GAP
+                            glyphs.extend([" "] * gap)
+                            pos += gap
                         glyphs.extend(chosen)
                         pos += len(chosen)
                         first = False
-                    if not glyphs:
+                    if not glyphs or all(g == " " for g in glyphs):
                         continue
                     spans = []
                     wx = (rng.random() - 0.5) * ecw * _JITTER_X
