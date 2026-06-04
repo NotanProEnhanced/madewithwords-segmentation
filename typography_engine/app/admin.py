@@ -180,6 +180,34 @@ def purge_reel_files(job: str) -> int:
     return n
 
 
+def delete_reel(job: str) -> dict:
+    """Delete a reel from the dashboard: always purge the reel artifacts and
+    the review record so the job disappears from the admin surface.
+
+    Compliance guard: if the reel was ever *posted* (its likeness used
+    publicly), the consent record is PRESERVED as proof of authorization —
+    you can still delete the video and de-list it, but the audit trail
+    survives. For every other state (queued / rejected / test / personal),
+    it's a full hard delete with no trace kept.
+
+    Returns {"files": <count removed>, "consent_kept": <bool>}."""
+    with _review_lock:
+        rec = read_review(job) or {}
+        posted = bool(rec.get("state") == "posted" or rec.get("ts_posted"))
+        n = purge_reel_files(job)
+        targets = [review_path(job)]
+        if not posted:
+            targets.append(consent_path(job))
+        for p in targets:
+            if p.exists():
+                try:
+                    p.unlink()
+                    n += 1
+                except OSError:
+                    pass
+    return {"files": n, "consent_kept": posted}
+
+
 def transition(job: str, new_state: str, **extra) -> dict:
     if new_state not in REEL_STATES:
         raise ValueError(f"unknown state: {new_state}")
@@ -644,7 +672,7 @@ def admin_orders(admin_session: Optional[str] = Cookie(None)):
 
 
 @router.get("/reels", response_class=HTMLResponse)
-def admin_list(filter: str = "all",
+def admin_list(filter: str = "all", msg: str = "",
                admin_session: Optional[str] = Cookie(None)):
     guard = _require_admin(admin_session)
     if guard is not None:
@@ -663,7 +691,10 @@ def admin_list(filter: str = "all",
         thumb = (f'<a href="/admin/reels/{je}">'
                  f'<img class="thumb" src="/outputs/{je}_before.jpg" '
                  f'onerror="this.style.display=\'none\'"></a>')
-        actions = f'<a class="btn ghost" href="/admin/reels/{je}">Open</a>'
+        actions = (f'<a class="btn ghost" href="/admin/reels/{je}">Open</a>'
+                   f'<form method="post" action="/admin/reels/{je}/delete" style="display:inline" '
+                   f'onsubmit="return confirm(\'Permanently delete this reel and ALL its records? This cannot be undone.\')">'
+                   f'<button class="btn danger" type="submit">Delete</button></form>')
         rows.append(
             f'<tr><td>{thumb}</td>'
             f'<td><a href="/admin/reels/{je}">{je}</a></td>'
@@ -673,6 +704,12 @@ def admin_list(filter: str = "all",
         )
     body = '<h1>Reels for review</h1>'
     body += _admin_nav(current=flt)
+    if msg == "deleted":
+        body += '<div class="msg ok">Reel permanently deleted — files and records removed.</div>'
+    elif msg == "deleted_kept":
+        body += ('<div class="msg ok">Reel deleted — video and review record removed. '
+                 'The consent record was <b>kept</b> as proof of authorization '
+                 '(this reel had been posted).</div>')
     try:
         body += _kpi_strip(compute_stats())
     except Exception as e:  # noqa: BLE001
@@ -864,6 +901,22 @@ def admin_detail(job: str, msg: str = "",
              f'onsubmit="return confirm(\'Re-queue this reel and trigger another notification email?\')">'
              f'<button class="btn ghost" type="submit">Re-send notification email</button></form>')
     body += '</div>'
+    # Permanent removal — separated into its own card so it reads as the
+    # destructive, irreversible action it is. Compliance guard: posted reels
+    # keep their consent record (proof the likeness use was authorized).
+    posted_likeness = st == "posted" or bool(rec.get("ts_posted"))
+    if posted_likeness:
+        danger_note = ('Removes the video and review record so this reel leaves the '
+                       'dashboard. Because it was posted, the <b>consent record is kept</b> '
+                       'as proof you were authorized to use this likeness. This cannot be undone.')
+    else:
+        danger_note = ('Permanently removes this reel — deletes the video, consent record, '
+                       'and review record. This cannot be undone and leaves no audit trail.')
+    body += ('<div class="card"><h2>Danger zone</h2>'
+             f'<p class="muted">{danger_note}</p>'
+             f'<form method="post" action="/admin/reels/{je}/delete" style="display:inline" '
+             f'onsubmit="return confirm(\'Permanently delete this reel? This cannot be undone.\')">'
+             f'<button class="btn danger" type="submit">Delete permanently</button></form></div>')
     body += ('<div class="card"><h2>Consent record</h2><pre>'
              + html.escape(json.dumps(consent, indent=2)) + '</pre></div>')
     body += ('<div class="card"><h2>Recipe</h2><pre>'
@@ -931,6 +984,22 @@ def admin_resend(job: str, admin_session: Optional[str] = Cookie(None)):
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
     write_review(job, state="queued", emailed_at=None)
     return RedirectResponse(url=f"/admin/reels/{job}?msg=resent", status_code=302)
+
+
+@router.post("/reels/{job}/delete")
+def admin_delete(job: str, admin_session: Optional[str] = Cookie(None)):
+    """Delete a reel from the dashboard: purge its files and review record.
+    Compliance guard — if the reel was ever posted, the consent record is
+    kept as proof of authorization (see delete_reel). Redirects to the list
+    since the detail page no longer exists."""
+    guard = _require_admin(admin_session)
+    if guard is not None:
+        return guard
+    if not read_review(job):
+        return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    res = delete_reel(job)
+    msg = "deleted_kept" if res["consent_kept"] else "deleted"
+    return RedirectResponse(url=f"/admin/reels?msg={msg}", status_code=302)
 
 
 @router.get("/email/{action}")
