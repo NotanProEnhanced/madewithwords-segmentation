@@ -251,6 +251,7 @@ def compute_stats():
         "paid_orders": 0,
         "reels_created": 0,
         "typortrait_consents": 0,
+        "saves_captured": 0,
         "states": {s: 0 for s in REEL_STATES},
         "inks": {},
         "styles": {},
@@ -337,6 +338,13 @@ def compute_stats():
                     stats["states"][st] += 1
             except Exception:  # noqa: BLE001
                 pass
+    except OSError:
+        pass
+
+    # Exit-intent "save my portrait" captures (owned remarketing contacts).
+    try:
+        for p in PRIVATE_DIR.glob("*.savecapture.json"):
+            stats["saves_captured"] += 1
     except OSError:
         pass
 
@@ -450,6 +458,69 @@ def send_review_email(job: str, words, consent: dict) -> bool:
         return False
 
 
+def save_capture_path(job: str) -> Path:
+    return PRIVATE_DIR / f"{job}.savecapture.json"
+
+
+def record_save_capture(job: str, email: str, emailed: bool = False) -> dict:
+    """Persist an exit-intent 'save my portrait' email capture as a sidecar.
+
+    Feeds the admin funnel (a recovered/owned remarketing contact) and keeps
+    a record of who asked us to hold their portrait. Idempotent per job: a
+    repeat capture just refreshes the timestamp / emailed flag.
+
+    The filename uses a dotted stem (`<job>.savecapture`) so compute_stats'
+    render glob skips it, exactly like the consent/review sidecars."""
+    rec = {"job": job, "email": email, "ts": int(time.time()), "emailed": bool(emailed)}
+    with _review_lock:
+        target = save_capture_path(job)
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        tmp.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+        tmp.replace(target)
+    return rec
+
+
+def send_save_link_email(job: str, to_email: str) -> bool:
+    """Customer-facing email: deliver a private link back to a portrait the
+    user previewed but didn't buy, so they can return before the ~RETENTION_DAYS
+    auto-delete. Reuses the same Gmail SMTP path as the admin mailer."""
+    if not smtp_configured():
+        _log(f"send_save_link_email skipped (smtp not configured): job={job}")
+        return False
+    link = f"{PUBLIC_BASE_URL}/resume/{html.escape(job)}"
+    body_html = f"""<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#16203a;max-width:520px">
+<h2 style="font-family:Georgia,'Times New Roman',serif;color:#0d1b3a;margin:0 0 6px">Your portrait is saved.</h2>
+<p style="color:#2b3550;font-size:15px;line-height:1.6">Here's your private link — open it anytime to come back, download your high-res file, or order a print.</p>
+<p style="margin:18px 0">
+  <a href="{link}" style="background:#0d1b3a;color:#fff;padding:13px 28px;border-radius:999px;text-decoration:none;display:inline-block;font-weight:700">Open my portrait</a>
+</p>
+<p style="color:#6b7280;font-size:13px;line-height:1.6">A heads-up: we automatically delete uploaded photos and generated files after about {RETENTION_DAYS} days, so don't wait too long. If this wasn't you, just ignore this email.</p>
+</div>"""
+    body_text = (
+        "Your Typortrait is saved.\n\n"
+        f"Open it anytime: {link}\n\n"
+        f"Heads-up: we auto-delete uploaded photos and generated files after about "
+        f"{RETENTION_DAYS} days, so don't wait too long.\n"
+        "If this wasn't you, just ignore this email.\n"
+    )
+    msg = EmailMessage()
+    msg["Subject"] = "Your Typortrait is saved — here's your link"
+    msg["From"] = SMTP_USER
+    msg["To"] = to_email
+    msg.set_content(body_text)
+    msg.add_alternative(body_html, subtype="html")
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
+            s.starttls()
+            s.login(SMTP_USER, SMTP_PASS)
+            s.send_message(msg)
+        _log(f"send_save_link_email ok: job={job} to={to_email}")
+        return True
+    except Exception as e:  # noqa: BLE001
+        _log(f"send_save_link_email FAILED: job={job} err={type(e).__name__}: {e}")
+        return False
+
+
 def _log(msg: str) -> None:
     """Surface admin/scanner events to docker compose logs typortrait."""
     import sys
@@ -558,6 +629,7 @@ def _kpi_strip(stats: dict) -> str:
         k("Renders", s["total_renders"]),
         k("Paid", s["paid_orders"]),
         k("Reels made", s["reels_created"]),
+        k("Saved (exit)", s.get("saves_captured", 0)),
         k("Shared w/ us", s["typortrait_consents"]),
         k("Queued", s["states"]["queued"], "/admin/reels?filter=queued"),
         k("Approved", s["states"]["approved"], "/admin/reels?filter=approved"),

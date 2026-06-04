@@ -1249,6 +1249,179 @@ def share_page(job: str):
     return HTMLResponse(page)
 
 
+@app.post("/save-link")
+async def save_link(email: str = Form(...), job: str = Form(...)) -> JSONResponse:
+    """Exit-intent capture: email a user their private /p/{job} link so they can
+    return to a portrait they previewed but didn't buy, before the ~RETENTION_DAYS
+    auto-delete. Stores the email as an owned remarketing contact (sidecar) and
+    sends the link via the existing SMTP path."""
+    import re as _re
+    job = _re.sub(r"[^a-zA-Z0-9]", "", job or "")[:40]
+    email = (email or "").strip()[:200]
+    # The portrait must actually exist (preview composed) for the link to work.
+    if not job or not (OUTPUTS_DIR / f"{job}_preview.png").exists():
+        return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    if not _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        return JSONResponse({"ok": False, "error": "bad_email"}, status_code=400)
+    sent = admin_mod.send_save_link_email(job, email)
+    admin_mod.record_save_capture(job, email, emailed=sent)
+    return JSONResponse({"ok": True, "emailed": sent})
+
+
+def _resume_expired_page() -> str:
+    """Shown when a saved link is opened after the portrait's files were purged
+    by the retention sweep (~RETENTION_DAYS) or the job never existed."""
+    return (
+        "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Portrait expired — Typortrait</title><style>"
+        "*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;"
+        "justify-content:center;background:#faf9f7;color:#16203a;font-family:-apple-system,BlinkMacSystemFont,"
+        "'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:24px;text-align:center}.w{max-width:440px}"
+        ".brand{font-family:Georgia,'Times New Roman',serif;font-size:26px;color:#0d1b3a;font-weight:700;margin:0 0 26px}"
+        "h1{font-family:Georgia,'Times New Roman',serif;color:#0d1b3a;font-size:24px;margin:0 0 8px}"
+        "p{color:#6b7280;font-size:15px;line-height:1.6;margin:0 0 22px}"
+        "a{display:inline-block;background:#0d1b3a;color:#fff;font-weight:700;text-decoration:none;"
+        "padding:14px 28px;border-radius:999px;font-size:16px}</style></head><body><div class='w'>"
+        "<div class='brand'>Typortrait</div>"
+        "<h1>This portrait has expired.</h1>"
+        f"<p>To keep storage private, we automatically delete uploaded photos and generated files "
+        f"after about {RETENTION_DAYS} days, so this saved link is no longer available. "
+        "It only takes a minute to make a new one.</p>"
+        "<a href='https://typortrait.com'>Make a new portrait &rarr;</a>"
+        "</div></body></html>"
+    )
+
+
+_RESUME_TPL = """<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Your saved portrait — Typortrait</title>
+<meta name='robots' content='noindex'>
+<style>
+:root{--navy:#0d1b3a;--ink:#16203a;--paper:#faf9f7;--card:#fff;--muted:#6b7280;--line:#ece9e3;
+--serif:"Georgia","Times New Roman",serif;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+.wrap{max-width:560px;margin:0 auto;padding:28px 20px 64px}
+.brand{font-family:var(--serif);font-size:26px;color:var(--navy);font-weight:700;text-align:center}
+.sub{color:var(--muted);font-size:14px;text-align:center;margin:6px 0 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:0 10px 30px rgba(13,27,58,.06);padding:18px;margin-top:22px}
+.shot{width:100%;border-radius:12px;display:block}
+.wm{color:var(--muted);font-size:12px;text-align:center;margin:10px 0 0}
+.t-lbl{font-weight:700;color:var(--navy);font-size:14px}
+.t-sub{color:var(--muted);font-size:12.5px;margin:2px 0 10px}
+.prod{display:flex;width:100%;text-align:left;gap:10px;align-items:center;justify-content:space-between;border:1.5px solid var(--line);background:#fff;border-radius:14px;padding:12px 14px;margin-top:8px;cursor:pointer;font-family:var(--sans)}
+.prod.on{border-color:var(--navy);box-shadow:0 0 0 1px var(--navy) inset}
+.pname{font-weight:700;color:var(--ink);font-size:14.5px}
+.ptag{display:inline-block;background:#f1e7d2;color:#6b5a2a;font-size:10.5px;font-weight:700;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle}
+.pblurb{color:var(--muted);font-size:12.5px;margin-top:2px}
+.pinc{color:var(--navy);font-size:11.5px;font-weight:600;margin-top:5px}
+.pprice{color:var(--navy);font-weight:700;font-size:15px;white-space:nowrap;text-align:right}
+.pship{color:var(--muted);font-size:11px;font-weight:500}
+.sizeRow{display:none;align-items:center;gap:10px;margin-top:12px}
+.sizeRow select{flex:1;border:1.5px solid var(--line);border-radius:10px;padding:10px;font-size:15px;font-family:var(--sans)}
+.btn{display:block;width:100%;text-align:center;background:var(--navy);color:#fff;border:none;border-radius:999px;padding:15px;font-size:16px;font-weight:700;font-family:var(--sans);cursor:pointer;margin-top:16px}
+.btn:disabled{opacity:.6;cursor:default}
+.note{color:var(--muted);font-size:12.5px;text-align:center;margin-top:10px;min-height:1em}
+.alt{display:block;text-align:center;color:var(--muted);font-size:13px;margin-top:16px;text-decoration:none}
+.alt:hover{color:var(--navy)}
+</style></head><body><div class="wrap">
+<div class="brand">Typortrait</div>
+<div class="sub">Welcome back &mdash; here&rsquo;s the portrait you saved.</div>
+<div class="card">
+<img class="shot" src="__IMG__" alt="Your saved portrait"/>
+<p class="wm">Preview is watermarked &middot; your download and prints are clean, full-resolution.</p>
+</div>
+<div class="card" id="shop">
+<div class="t-lbl" id="shopLbl">Choose your keepsake</div>
+<div class="t-sub" id="shopSub">Every print comes with the high-res digital file, free &mdash; keep it, reprint it, share it.</div>
+<div id="productList"></div>
+<div class="sizeRow" id="sizeRow"><label for="sizeSel" class="t-lbl">Size</label><select id="sizeSel"></select></div>
+<button class="btn" id="buy">Download</button>
+<p class="note" id="note"></p>
+</div>
+<a class="alt" href="https://typortrait.com">Start a new portrait &rarr;</a>
+</div>
+<script>
+const JOB="__JOB__";
+let CAT=[], sku="digital", size=null, busy=false;
+const buy=document.getElementById("buy"), note=document.getElementById("note"),
+      list=document.getElementById("productList"), sizeRow=document.getElementById("sizeRow"),
+      sizeSel=document.getElementById("sizeSel");
+function money(c){ return "$"+(c/100).toFixed(2); }
+function label(){ const p=CAT.find(x=>x.sku===sku); if(!p) return "Download"; return (p.physical?"Order — ":"Download — ")+money(p.price_cents); }
+function pick(s){
+  const p=CAT.find(x=>x.sku===s)||CAT.find(x=>x.sku==="digital"); if(!p) return;
+  sku=p.sku;
+  if(p.sizes && p.sizes.length){
+    sizeSel.innerHTML=p.sizes.map(x=>"<option>"+x+"</option>").join("");
+    if(p.sizes.indexOf(size)<0) size=p.sizes[0];
+    sizeSel.value=size; sizeRow.style.display="flex";
+  } else { size=null; sizeRow.style.display="none"; }
+  document.querySelectorAll(".prod").forEach(el=>el.classList.toggle("on",el.dataset.sku===sku));
+  buy.textContent=label();
+}
+sizeSel.addEventListener("change",e=>{ size=e.target.value; });
+function render(data){
+  CAT=(data.products||[]).map(p=>Object.assign({},p));
+  if(!data.fulfillment_configured){
+    document.getElementById("shopLbl").style.display="none";
+    document.getElementById("shopSub").style.display="none";
+    const d=CAT.find(x=>x.sku==="digital");
+    if(d){ sku="digital"; buy.textContent="Download — "+money(d.price_cents); }
+    return;
+  }
+  document.getElementById("shopLbl").style.display="";
+  document.getElementById("shopSub").style.display="";
+  const order=CAT.slice().sort((a,b)=>(a.physical?1:0)-(b.physical?1:0));
+  list.innerHTML="";
+  order.forEach(p=>{
+    const el=document.createElement("button");
+    el.type="button"; el.className="prod"+(p.sku===sku?" on":""); el.dataset.sku=p.sku;
+    const tag=p.tag?'<span class="ptag">'+p.tag+'</span>':"";
+    const ship=p.shipping_cents>0?'<div class="pship">+'+money(p.shipping_cents)+' ship</div>':"";
+    const inc=p.physical?'<div class="pinc">&#10003; High-res digital file included, free</div>':"";
+    el.innerHTML='<div><div class="pname">'+p.name+tag+'</div><div class="pblurb">'+p.blurb+'</div>'+inc+'</div>'+
+      '<div class="pprice">'+money(p.price_cents)+ship+'</div>';
+    el.addEventListener("click",()=>pick(p.sku));
+    list.appendChild(el);
+  });
+  pick("digital");
+}
+fetch("/products").then(r=>r.json()).then(render).catch(()=>{ note.textContent="Couldn’t load options — refresh to try again."; });
+buy.addEventListener("click", async ()=>{
+  if(busy) return; busy=true; const old=buy.textContent;
+  buy.disabled=true; buy.textContent="Opening secure checkout…"; note.textContent="";
+  try{
+    const fd=new FormData(); fd.append("job",JOB); fd.append("fmt","png");
+    fd.append("sku",sku||"digital"); if(size) fd.append("size",size);
+    const r=await fetch("/checkout",{method:"POST",body:fd}); const d=await r.json();
+    if(d.ok && d.url){ location.href=d.url; return; }
+    note.textContent=({payments_unconfigured:"Checkout isn’t set up yet.",fulfillment_unconfigured:"Print orders aren’t available right now — try the digital download.",missing_or_invalid_size:"Please pick a size first.",unknown_job:"This portrait has expired — start a new one."})[d.error]||"Couldn’t start checkout — please try again.";
+  }catch(e){ note.textContent="Network error — please try again."; }
+  busy=false; buy.disabled=false; buy.textContent=old;
+});
+</script></body></html>"""
+
+
+@app.get("/resume/{job}", response_class=HTMLResponse)
+def resume_page(job: str):
+    """Reopen a saved portrait with working Download + print options, wired to
+    the same /checkout contract as the studio. This is the target of the
+    exit-intent 'save your portrait' email link, so a returning user can buy the
+    exact portrait they previewed — without re-uploading or re-rendering. The
+    job's recipe + preview persist until the retention sweep; past that we show a
+    friendly expiry page."""
+    import re as _re
+    job = _re.sub(r"[^a-zA-Z0-9]", "", job or "")[:40]
+    recipe = PRIVATE_DIR / f"{job}.json"
+    preview = OUTPUTS_DIR / f"{job}_preview.png"
+    if not job or not recipe.exists() or not preview.exists():
+        return HTMLResponse(_resume_expired_page(), status_code=404)
+    page = _RESUME_TPL.replace("__JOB__", job).replace("__IMG__", f"/outputs/{job}_preview.png")
+    return HTMLResponse(page)
+
+
 _POLICY_CONTACT = "support@typortrait.com"
 _POLICY_UPDATED = "May 2026"
 

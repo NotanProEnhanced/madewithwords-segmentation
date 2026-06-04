@@ -274,6 +274,36 @@
   <img id="zoomImg" alt="your typortrait, up close" />
 </div>
 
+<div id="saveModal" class="savemodal" role="dialog" aria-modal="true" aria-labelledby="saveTitle">
+  <div class="savecard">
+    <button type="button" class="saveclose" id="saveClose" aria-label="Close">&times;</button>
+    <h2 id="saveTitle">Leaving? Don&rsquo;t lose your portrait.</h2>
+    <p class="savesub">We&rsquo;ll email you a private link so you can come back anytime &mdash; download your high-res file or order a print.</p>
+    <form id="saveForm" novalidate>
+      <input type="hidden" id="saveJob" name="job" value="">
+      <input type="email" id="saveEmail" name="email" inputmode="email" autocomplete="email" placeholder="you@email.com" aria-label="Your email" required>
+      <button type="submit" class="btn" id="saveSubmit">Save my portrait</button>
+    </form>
+    <p class="savefine" id="saveFine">Your photo is automatically deleted after about 30 days. One email, no spam.</p>
+  </div>
+</div>
+
+<style>
+.savemodal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(10,10,12,.55);padding:20px;opacity:0;transition:opacity .2s ease}
+.savemodal.on{opacity:1}
+.savecard{position:relative;background:var(--card);border-radius:18px;max-width:380px;width:100%;padding:26px 22px 20px;box-shadow:0 24px 70px rgba(0,0,0,.4);transform:translateY(10px);transition:transform .2s ease}
+.savemodal.on .savecard{transform:translateY(0)}
+.saveclose{position:absolute;top:8px;right:12px;border:none;background:none;font-size:26px;line-height:1;color:var(--muted);cursor:pointer}
+.savecard h2{font-family:var(--serif);color:var(--navy);font-size:21px;margin:2px 0 8px;padding-right:18px;line-height:1.25}
+.savesub{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 16px}
+.savecard input[type=email]{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:13px 14px;font-size:16px;font-family:var(--sans);color:var(--ink);margin-bottom:10px}
+.savecard input[type=email]:focus{outline:none;border-color:var(--navy)}
+.savecard .btn{display:block;width:100%;text-align:center}
+.savecard .btn:disabled{opacity:.6;cursor:default}
+.savefine{color:var(--muted);font-size:11.5px;line-height:1.5;margin:12px 0 0;text-align:center}
+.saveok h2{margin-bottom:6px}
+</style>
+
 <script>
 const $ = s => document.querySelector(s);
 const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -462,6 +492,7 @@ function selectInk(id){
 const overlay=$("#overlay");
 function setBuy(entry){
   currentJob = entry.job || null;
+  if(currentJob && window.armExitIntent) window.armExitIntent();
   buy.textContent = "Download — " + money(entry.price, entry.currency);
   // If the product picker is active, reflect the chosen product instead.
   if(CATALOG.length) updateBuyLabel();
@@ -761,6 +792,90 @@ sharePanel.addEventListener("click", async e=>{
 function friendly(code){ return ({no_words:"Add a few words first.",
   unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",
   empty_upload:"Please add a photo."})[code]; }
+
+/* ---- Exit-intent: "save your portrait" capture ----------------------------
+   Fires once, only after a free preview exists (currentJob set) and the result
+   view is showing. Desktop: pointer leaves toward the top chrome. Mobile (no
+   mouseleave): back-button gesture, a fast upward swipe near the top, or a
+   30s lull. Offers to email a private /p/{job} link before the ~30-day auto
+   delete — saving the work, not discounting it. Shown at most once per device. */
+(function(){
+  const KEY="tp_save_shown";
+  const modal=$("#saveModal"), form=$("#saveForm"), emailEl=$("#saveEmail"),
+        submitEl=$("#saveSubmit"), fineEl=$("#saveFine");
+  let armed=false, shown=false, lastY=null, lastT=0, idleTimer=null;
+  function already(){ try{ return localStorage.getItem(KEY)==="1"; }catch(e){ return false; } }
+  function mark(){ try{ localStorage.setItem(KEY,"1"); }catch(e){} }
+  function resultShowing(){ return resultView && resultView.style.display!=="none"; }
+  function canShow(){ return armed && !shown && !!currentJob && !already() && resultShowing(); }
+  function openModal(){
+    if(!canShow()) return;
+    shown=true; mark();
+    $("#saveJob").value=currentJob;
+    modal.style.display="flex";
+    requestAnimationFrame(()=>modal.classList.add("on"));
+    if(!IS_MOBILE) setTimeout(()=>{ try{ emailEl.focus(); }catch(e){} },140);
+  }
+  function closeModal(){ modal.classList.remove("on"); setTimeout(()=>{ modal.style.display="none"; },200); }
+  function resetIdle(){
+    if(!armed || IS_MOBILE===false) return;
+    clearTimeout(idleTimer);
+    idleTimer=setTimeout(()=>{ if(canShow()) openModal(); }, 30000);
+  }
+  window.armExitIntent=function(){
+    if(armed || already()) { armed=true; return; }
+    armed=true;
+    // Desktop: pointer exits past the top edge of the viewport.
+    document.addEventListener("mouseleave", e=>{ if((e.clientY||0)<=0) openModal(); });
+    // Mobile back-button trap: park one extra history entry to catch the gesture.
+    try{ history.pushState({tp:1},""); }catch(e){}
+    window.addEventListener("popstate", ()=>{
+      if(canShow()){ openModal(); try{ history.pushState({tp:1},""); }catch(e){} }
+    });
+    // Mobile: a quick flick upward while near the top of the page.
+    window.addEventListener("scroll", ()=>{
+      const y=window.scrollY||0, t=Date.now();
+      if(lastY!==null && y<40 && (lastY-y)>26 && (t-lastT)<350) openModal();
+      lastY=y; lastT=t;
+    }, {passive:true});
+    // Mobile: a 30s lull on the result view.
+    if(IS_MOBILE){
+      ["touchstart","scroll","keydown","click"].forEach(ev=>
+        window.addEventListener(ev, resetIdle, {passive:true}));
+      resetIdle();
+    }
+  };
+  $("#saveClose").addEventListener("click", closeModal);
+  modal.addEventListener("click", e=>{ if(e.target===modal) closeModal(); });
+  window.addEventListener("keydown", e=>{ if(e.key==="Escape" && modal.style.display==="flex") closeModal(); });
+  form.addEventListener("submit", async e=>{
+    e.preventDefault();
+    const email=(emailEl.value||"").trim();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ emailEl.focus(); emailEl.style.borderColor="#c0392b"; return; }
+    emailEl.style.borderColor="";
+    submitEl.disabled=true; submitEl.textContent="Saving…";
+    try{
+      const fd=new FormData(); fd.append("email",email); fd.append("job",currentJob||"");
+      const r=await fetch("/save-link",{method:"POST",body:fd});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok && d.ok){
+        modal.querySelector(".savecard").classList.add("saveok");
+        $("#saveTitle").textContent="Check your inbox.";
+        form.style.display="none";
+        fineEl.textContent = d.emailed
+          ? "We just emailed your private link. It opens your portrait anytime."
+          : "Saved. We’ll hold your portrait — your link is on its way.";
+        setTimeout(closeModal, 2600);
+      } else {
+        submitEl.disabled=false; submitEl.textContent="Save my portrait";
+        fineEl.textContent="Hmm, that didn’t go through. Try again in a moment.";
+      }
+    }catch(err){
+      submitEl.disabled=false; submitEl.textContent="Save my portrait";
+      fineEl.textContent="Network hiccup — please try again.";
+    }
+  });
+})();
 </script>
 </body>
 </html>
