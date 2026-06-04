@@ -147,6 +147,7 @@
   .prod .pinfo{flex:1}
   .prod .pname{font-weight:600;color:var(--ink);font-size:15px}
   .prod .pblurb{color:var(--muted);font-size:12.5px;margin-top:2px;line-height:1.4}
+  .prod .pinc{color:var(--navy);font-size:11.5px;font-weight:600;margin-top:5px;letter-spacing:.01em}
   .prod .pprice{font-weight:700;color:var(--navy);font-size:15px;white-space:nowrap;text-align:right}
   .prod .pship{font-weight:500;color:var(--muted);font-size:11px}
   .prod .ptag{display:inline-block;background:#0d1b3a;color:#fff;font-size:10px;font-weight:600;
@@ -240,7 +241,8 @@
          (a Printful token is set). Until then the studio stays digital-only and
          this block stays hidden, so the live checkout is unchanged. -->
     <div id="productPicker" class="opts" style="display:none;margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
-      <div class="t-lbl" style="margin-bottom:8px">Choose your keepsake</div>
+      <div class="t-lbl" style="margin-bottom:2px">Choose your keepsake</div>
+      <div class="t-sub" style="margin-bottom:10px">Every print comes with the high-res digital file, free — keep it, reprint it, share it.</div>
       <div id="productList" class="prodlist"></div>
       <div id="sizeRow" class="sizerow" style="display:none">
         <label class="t-sub" for="sizeSel" style="margin:0">Size</label>
@@ -428,8 +430,9 @@ function renderProducts(data){
     el.type="button"; el.className="prod"+(p.sku===state.sku?" on":""); el.dataset.sku=p.sku;
     const tag = p.tag ? `<span class="ptag">${p.tag}</span>` : "";
     const ship = p.shipping_cents>0 ? `<div class="pship">+${money(p.shipping_cents,cur)} ship</div>` : "";
+    const inc = p.physical ? `<div class="pinc">&#10003; High-res digital file included, free</div>` : "";
     el.innerHTML = `<div class="pinfo"><div class="pname">${p.name}${tag}</div>`+
-      `<div class="pblurb">${p.blurb}</div></div>`+
+      `<div class="pblurb">${p.blurb}</div>${inc}</div>`+
       `<div class="pprice">${money(p.price_cents,cur)}${ship}</div>`;
     el.addEventListener("click",()=>selectProduct(p.sku));
     list.appendChild(el);

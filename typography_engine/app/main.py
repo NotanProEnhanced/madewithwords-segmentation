@@ -778,11 +778,23 @@ def order_status(order_id: str, session_id: Optional[str] = None):
         )
 
     download_html = ""
-    if o["sku"] == "digital" and o["status"] in ("paid", "fulfilling") and session_id:
-        download_html = (
-            f'<p><a class="btn" href="/download?job={o["job_id"]}&fmt=png'
-            f'&session_id={session_id}">Download your PNG</a></p>'
-        )
+    if o["status"] in ("paid", "fulfilling", "shipped", "delivered") and session_id:
+        dl = f'/download?job={o["job_id"]}&fmt=png&session_id={session_id}'
+        if o["sku"] == "digital":
+            download_html = f'<p><a class="btn" href="{dl}">Download your PNG</a></p>'
+        else:
+            # Every print also comes with the high-res digital file — the same
+            # clean PNG we send to the press. The /download paywall already
+            # verifies this physical order's paid Stripe session, so no extra
+            # checkout is needed.
+            download_html = (
+                '<div class="status" style="margin-top:14px">'
+                '<strong>Your digital file is included — free.</strong><br>'
+                '<span class="muted">The same high-resolution, watermark-free image '
+                'we’re printing for you — yours to keep, reprint, or share.</span>'
+                f'<p style="margin-bottom:0"><a class="btn" href="{dl}">'
+                'Download your high-res file</a></p></div>'
+            )
 
     body = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
