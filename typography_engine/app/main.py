@@ -21,6 +21,7 @@ from . import orders as orders_db
 from . import printful, products
 from .config import (
     CURRENCY,
+    DATA_DIR,
     DOWNLOAD_PNG_WIDTH,
     DOWNLOAD_PRICE_CENTS,
     OUTPUTS_DIR,
@@ -720,6 +721,64 @@ def _umami_event(name: str, data: Optional[dict] = None) -> None:
         pass
 
 
+# Persistent dedupe markers so the `purchase` conversion fires exactly once per
+# Stripe session no matter which completion path confirms the sale first
+# (webhook, the /order/{id} polling fallback, or the digital /success page) and
+# no matter how many times those pages are reloaded. Lives under data/ (the
+# volume-mounted dir) so it survives restarts.
+_PURCHASE_TRACK_DIR = DATA_DIR / "purchase_events"
+
+
+def _track_purchase_once(
+    session_id: str,
+    *,
+    sku: Optional[str] = None,
+    amount_cents: Optional[int] = None,
+    currency: Optional[str] = None,
+) -> None:
+    """Fire the Umami `purchase` conversion exactly once for a Stripe session.
+
+    The browser funnel ends at checkout_start (the Stripe redirect); this is the
+    server-side conversion that closes it, and it's ad-blocker-proof. Sales can
+    complete through several paths, so every path calls this — the persisted
+    marker guarantees a single event. Any missing order detail is pulled from
+    Stripe. Best-effort: never raises into a payment/fulfillment path."""
+    if not UMAMI_WEBSITE_ID or not session_id:
+        return
+    try:
+        import hashlib
+        _PURCHASE_TRACK_DIR.mkdir(parents=True, exist_ok=True)
+        marker = _PURCHASE_TRACK_DIR / (
+            hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32] + ".txt"
+        )
+        if marker.exists():
+            return
+        # Fill in anything the caller didn't supply (e.g. the digital /success
+        # page only has the session id) straight from Stripe.
+        if amount_cents is None or sku is None or currency is None:
+            try:
+                import stripe
+                stripe.api_key = STRIPE_SECRET_KEY
+                sess = _stripe_to_dict(stripe.checkout.Session.retrieve(session_id))
+                if amount_cents is None:
+                    amount_cents = sess.get("amount_total")
+                if currency is None:
+                    currency = sess.get("currency")
+                if sku is None:
+                    sku = (sess.get("metadata") or {}).get("sku")
+            except Exception:  # noqa: BLE001
+                pass
+        # Claim the marker BEFORE emitting so a concurrent caller can't double-fire.
+        marker.write_text("1", encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        return
+    _umami_event("purchase", {
+        "revenue": round((amount_cents or 0) / 100.0, 2),
+        "currency": (currency or CURRENCY or "usd").lower(),
+        "sku": sku or "digital",
+    })
+
+
 @app.post("/webhook/stripe")
 async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Header(None)):
     """Stripe -> us. On checkout.session.completed for a physical order, mark the
@@ -758,14 +817,15 @@ async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Hea
     if transitioned and recipient and transitioned.get("variant_id"):
         _fulfill_with_printful(transitioned["id"], recipient)
 
-    # Reliable, ad-blocker-proof conversion event to Umami (best-effort: a
-    # failure here must never affect fulfillment or the webhook's 200 to Stripe).
+    # Reliable, ad-blocker-proof conversion event to Umami. Deduped against the
+    # synchronous /order and /success paths so the sale is counted exactly once.
     meta = sess.get("metadata") or {}
-    _umami_event("purchase", {
-        "revenue": round((sess.get("amount_total") or 0) / 100.0, 2),
-        "currency": (sess.get("currency") or CURRENCY or "usd").lower(),
-        "sku": meta.get("sku") or ("print" if (transitioned or {}).get("variant_id") else "digital"),
-    })
+    _track_purchase_once(
+        sess.get("id") or "",
+        sku=meta.get("sku") or ("print" if (transitioned or {}).get("variant_id") else "digital"),
+        amount_cents=sess.get("amount_total"),
+        currency=sess.get("currency"),
+    )
     return JSONResponse({"ok": True})
 
 
@@ -868,6 +928,16 @@ def order_status(order_id: str, session_id: Optional[str] = None):
                 )
                 if transitioned and recipient and transitioned.get("variant_id"):
                     _fulfill_with_printful(transitioned["id"], recipient)
+                # Conversion event: this synchronous path is what completes most
+                # physical sales when the webhook isn't delivered. Deduped so a
+                # later webhook can't double-count.
+                _track_purchase_once(
+                    sess.get("id") or session_id or "",
+                    sku=(sess.get("metadata") or {}).get("sku")
+                    or ("print" if (transitioned or {}).get("variant_id") else "digital"),
+                    amount_cents=sess.get("amount_total"),
+                    currency=sess.get("currency"),
+                )
                 o = orders_db.get(order_id)
         except Exception:  # noqa: BLE001
             pass
@@ -1131,6 +1201,10 @@ def success(job: str, session_id: str):
     jq, sq = quote(job, safe=""), quote(session_id, safe="")
     png_url = f"/download?job={jq}&fmt=png&session_id={sq}"
     if paid:
+        # Conversion event for digital sales (the primary revenue path, which
+        # completes here rather than via the webhook). Deduped + revenue/sku
+        # filled from Stripe, so a page refresh can't double-count.
+        _track_purchase_once(session_id, sku="digital")
         # Fetch the high-res file in the background (it's composed on first
         # request and can take a few seconds), showing a spinner, then hand the
         # user a ready, instant download instead of a hung button.
