@@ -614,14 +614,20 @@ def download(job: str, session_id: str, fmt: str = "png"):
     return FileResponse(str(path), media_type="image/png", filename=f"typortrait-{job}.png")
 
 
-@app.get("/printful-fetch/{job}")
+@app.api_route("/printful-fetch/{job}", methods=["GET", "HEAD"])
 def printful_fetch(job: str, exp: int, sig: str):
     """One-time signed URL Printful fetches the clean PNG from.
 
     The clean file lives in PRIVATE_DIR (paywalled, not statically mounted). For
     physical orders Printful must download the art; we expose it through this
     HMAC-signed, time-limited URL. The art is composed lazily here if it does not
-    already exist (our model only stores the recipe + mask, not the big PNG)."""
+    already exist (our model only stores the recipe + mask, not the big PNG).
+
+    HEAD is supported (same validation) because Printful's fetcher sends a HEAD
+    pre-flight to check the file before the GET; a 405 there can make stricter
+    fetchers abandon the download. Starlette's FileResponse answers HEAD with the
+    correct headers (Content-Type/Content-Length) and an empty body, and the
+    lazy compose warms the file so the follow-up GET is served from cache."""
     if not printful.verify_signed_url(job, exp, sig):
         raise HTTPException(status_code=403, detail="invalid_or_expired_signature")
     path = _ensure_clean_png(job)
