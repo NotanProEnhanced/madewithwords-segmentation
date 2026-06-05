@@ -148,6 +148,76 @@ Apply with `sudo docker compose up -d --build`. The scanner runs every
 If you skip the SMTP variables, the dashboard still works — you'll just
 need to check it manually instead of being notified.
 
+## 7. Analytics (Umami Cloud)
+
+Cookieless, privacy-first funnel analytics — **no consent banner required**.
+It's optional: with nothing configured the app runs exactly as before.
+
+### What's tracked
+- **Browser funnel** (from the tracking script in each page `<head>`):
+  `photo_selected → preview_ready → checkout_start`. Ordinary pageviews too.
+- **Server-side `purchase` conversion** — fired from the backend, so
+  **ad-blockers can't suppress it**. This is the revenue event that closes the
+  funnel.
+
+### One-time setup
+1. Create a free account at **https://cloud.umami.is**, **Add website**, and
+   enter the domain **`typortrait.com`** (one Website ID covers the apex
+   marketing site *and* the `app.` studio subdomain — both report together).
+2. Copy the **Website ID** (a UUID). It is **not a secret** — it's visible in
+   every visitor's page source.
+3. The ID is already baked into the browser tag in **two** files
+   (`static/index.html` and `marketing/_deploy/index.html`). If you ever rotate
+   it, replace the `data-website-id` value in both. The studio file goes live on
+   `git pull`; the marketing file goes live via the step-6 `cp` to
+   `/var/www/typortrait.com/`.
+4. To enable the **server-side `purchase` event**, add the ID to `.env` next to
+   `docker-compose.yml`:
+   ```
+   UMAMI_WEBSITE_ID=your-umami-website-id
+   # Optional overrides (defaults shown):
+   # UMAMI_HOST=https://cloud.umami.is
+   # UMAMI_HOSTNAME=app.typortrait.com
+   ```
+   Apply with `sudo docker compose up -d --build`. Without
+   `UMAMI_WEBSITE_ID` set the server-side event silently no-ops (browser
+   pageviews/funnel still work via the page script).
+
+### How the `purchase` event stays exactly-once (important)
+A sale can be confirmed by **three** different code paths, and the event fires
+from all of them so it's never missed:
+- `/webhook/stripe` — when the Stripe webhook is delivered;
+- `/order/{id}` — the synchronous polling fallback that completes **physical**
+  orders when the webhook hasn't arrived;
+- `/success` — completes **digital** orders (the primary revenue path; this one
+  does **not** go through the webhook at all).
+
+To avoid double-counting, `_track_purchase_once()` writes a per-session dedupe
+marker under **`data/purchase_events/`** (one tiny file per sale, on the mounted
+volume) *before* emitting, so a page refresh or a late webhook can't re-fire it.
+If you see those marker files, that's expected — one per completed sale.
+> Note: a registered Stripe webhook is **not required** for purchase tracking
+> (or for fulfillment) — the synchronous paths cover both. The webhook is a
+> faster-confirmation bonus when present.
+
+### Verify a deploy
+```bash
+# 1. Code is live in the container
+sudo docker compose exec typortrait printenv UMAMI_WEBSITE_ID   # echoes the UUID
+# 2. After a test purchase (Stripe test card 4242 4242 4242 4242), a marker appears
+sudo docker compose exec typortrait ls /app/data/purchase_events/
+# 3. Confirm Umami accepts events (200 + body {"beep":"boop"} = success)
+sudo docker compose exec -T typortrait python -c "import httpx,os;\
+r=httpx.post(os.environ.get('UMAMI_HOST','https://cloud.umami.is')+'/api/send',\
+json={'type':'event','payload':{'website':os.environ['UMAMI_WEBSITE_ID'],\
+'hostname':os.environ.get('UMAMI_HOSTNAME','app.typortrait.com'),'url':'/success',\
+'name':'purchase','data':{'revenue':9.0,'currency':'usd','sku':'digital'}}},\
+headers={'User-Agent':'Typortrait-Server/1.0'},timeout=10);print(r.status_code,r.text)"
+```
+In the Umami dashboard, server-side events appear in the **Events** report (set
+the date range to include now) — **not** the Realtime visitor feed, which only
+shows browser-side activity.
+
 ---
 
 ## Alternative: native install (no Docker), behind nginx
