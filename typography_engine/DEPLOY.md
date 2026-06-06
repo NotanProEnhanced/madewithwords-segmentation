@@ -220,6 +220,37 @@ shows browser-side activity.
 
 ---
 
+## 8. Site hygiene — one site, one app (legacy versions retired)
+
+The box once accumulated many parallel/old Typortrait builds (served from the
+apex docroot plus several systemd renderer services). The canonical setup is now
+exactly two surfaces:
+
+- **`typortrait.com`** — the static marketing site (`/var/www/typortrait.com`)
+- **`app.typortrait.com`** — the Dockerized FastAPI studio (`127.0.0.1:8077`)
+
+Everything else was retired **reversibly** — files/services were moved aside, not
+hard-deleted:
+
+- Stopped + disabled old renderer services: `typographic-renderer`,
+  `typortrait-api`, `typortrait-notan`, `typortrait-renderer-v1`.
+- Removed the `typortrait-renderer-v1` vhost from `sites-enabled`.
+- Moved old docroot apps/dirs out of `/var/www/typortrait.com` (`v4`–`v6`,
+  `notan`, `typographic`, `typortrait-stage1..3`) and the old
+  `/var/www/typography-app` app — archived under `~/docroot-old-versions-*`,
+  `~/typography-app-old-*`, `~/docroot-strays-*`.
+- Apex nginx now 301s every retired path to the canonical homepage (the
+  `location ~ ^/(v4|v5|...)` block in `deploy/nginx-typortrait.conf`), so stale
+  Google results and bookmarks consolidate to `https://typortrait.com/`.
+
+Unrelated projects on the same box (`api_color`, `lineforge`, `portraitsinblack`,
+`tokarz-*`) are independent (own ports 8001/8002/8020/3100) and were left intact.
+
+**To restore anything retired:** `systemctl enable --now <service>`, re-symlink the
+vhost into `sites-enabled`, or move a directory back from its `~/..._old-*` archive.
+
+---
+
 ## Alternative: native install (no Docker), behind nginx
 Prefer a lean install without Docker? This runs uvicorn under systemd; nginx +
 certbot (steps 3–4 above) are identical.
