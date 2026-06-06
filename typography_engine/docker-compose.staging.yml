@@ -1,29 +1,55 @@
-# Staging override — runs the mirror alongside production on the same VPS, fully
-# isolated. Use it together with the base compose file from a SEPARATE working
-# tree checked out to the `staging` branch (e.g. ~/typortrait-staging), via the
-# staging.sh helper:
+# Staging mirror — a COMPLETE, standalone compose file (not an override), so it
+# never inherits/merges prod's port and can't collide. Run it from a SEPARATE
+# working tree checked out to the `staging` branch (e.g. ~/typortrait-staging),
+# via the staging.sh helper:
 #
-#   ./staging.sh up -d --build      # build + start the staging container
+#   ./staging.sh up -d --build      # build + start staging
+#   ./staging.sh ps                 # status
 #   ./staging.sh logs -f            # tail logs
 #   ./staging.sh down               # stop
 #
-# (staging.sh just wraps:
-#   docker compose -f docker-compose.yml -f docker-compose.staging.yml \
-#                  -p typortrait-staging <args> )
+# (staging.sh wraps: docker compose -f docker-compose.staging.yml -p typortrait-staging <args>)
 #
-# What this override changes vs production, and why it stays isolated:
-#   • image:          typortrait-staging:latest  (never overwrites the prod image)
-#   • container_name: typortrait-staging         (no name clash with prod)
-#   • port:           127.0.0.1:8078             (prod is 8077)
-#   • data:           the ./data, ./private, ./outputs bind-mounts resolve
-#                     relative to THIS working tree, so staging's test data,
-#                     orders DB and files are physically separate from prod's.
-#   • secrets:        this tree's own .env (copy from .env.staging.example) holds
-#                     Stripe TEST keys, PRINTFUL_CONFIRM=false, no Umami, and a
-#                     distinct admin password / session secret.
+# Isolation vs production:
+#   * image typortrait-staging:latest  -> never overwrites the prod image
+#   * container typortrait-staging      -> no name clash
+#   * port 127.0.0.1:8078               -> prod is 8077
+#   * bind-mounts resolve inside THIS working tree -> separate data/orders/files
+#   * secrets come from THIS tree's .env (copy from .env.staging.example):
+#     Stripe TEST keys, PRINTFUL_CONFIRM=false, no Umami, distinct admin/secret.
 services:
   typortrait:
+    build: .
     image: typortrait-staging:latest
     container_name: typortrait-staging
+    restart: unless-stopped
     ports:
       - "127.0.0.1:8078:8077"
+    environment:
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - TYPO_PRICE_CENTS=${TYPO_PRICE_CENTS:-1499}
+      - TYPO_CURRENCY=${TYPO_CURRENCY:-usd}
+      - TYPO_PUBLIC_URL=${TYPO_PUBLIC_URL:-https://staging.typortrait.com}
+      - TYPO_ADMIN_PASSWORD=${TYPO_ADMIN_PASSWORD:-}
+      - TYPO_ADMIN_EMAIL=${TYPO_ADMIN_EMAIL:-}
+      - TYPO_SECRET_KEY=${TYPO_SECRET_KEY:-}
+      - TYPO_SMTP_HOST=${TYPO_SMTP_HOST:-smtp.gmail.com}
+      - TYPO_SMTP_PORT=${TYPO_SMTP_PORT:-587}
+      - TYPO_SMTP_USER=${TYPO_SMTP_USER:-}
+      - TYPO_SMTP_PASS=${TYPO_SMTP_PASS:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - PRINTFUL_API_TOKEN=${PRINTFUL_API_TOKEN:-}
+      - PRINTFUL_STORE_ID=${PRINTFUL_STORE_ID:-}
+      - PRINTFUL_API_BASE=${PRINTFUL_API_BASE:-https://api.printful.com}
+      - PRINT_URL_SECRET=${PRINT_URL_SECRET:-}
+      # Staging default is DRAFTS (no charge/print). Keep this false.
+      - PRINTFUL_CONFIRM=${PRINTFUL_CONFIRM:-false}
+      # Analytics off on staging unless explicitly set (leave UMAMI_WEBSITE_ID blank).
+      - UMAMI_WEBSITE_ID=${UMAMI_WEBSITE_ID:-}
+      - UMAMI_HOST=${UMAMI_HOST:-https://cloud.umami.is}
+      - UMAMI_HOSTNAME=${UMAMI_HOSTNAME:-staging.typortrait.com}
+    volumes:
+      - ./data/outputs:/app/outputs
+      - ./data/private:/app/private
+      - ./data:/app/data
+      - ./static:/app/static:ro
