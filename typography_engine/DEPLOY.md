@@ -288,17 +288,44 @@ sudo certbot --nginx -d staging.typortrait.com
 ```
 
 ### Day-to-day: develop → test on staging → promote to prod
-```bash
-# work on the staging branch, push, then on the server:
-cd ~/typortrait-staging/typography_engine
-git pull --ff-only
-./staging.sh up -d --build          # redeploy staging only
-# ...test at https://staging.typortrait.com (Stripe test card 4242 4242 4242 4242)...
 
-# happy? promote staging -> prod:
-git checkout claude/printful-integration && git merge staging && git push   # (or via PR)
-cd ~/typortrait/typography_engine && git pull --ff-only && docker compose up -d --build
+**1. Build & test on staging** (the `staging` worktree, `:8078`):
+```bash
+cd ~/typortrait-staging/typography_engine
+# edit code, then:
+git add -A && git commit -m "feat: my change" && git push   # or just commit locally
+./staging.sh up -d --build          # redeploy ONLY staging
+# ...test at https://staging.typortrait.com (Stripe test card 4242 4242 4242 4242)...
 ```
+
+**2. Promote to production** — one command from the prod tree:
+```bash
+cd ~/typortrait/typography_engine && ./promote.sh
+```
+`promote.sh` checks you're on the prod branch with a clean tree, shows the exact
+commits + files about to go live, asks for confirmation, then merges `staging`,
+pushes, and rebuilds the prod container (`:8077`). Nothing happens until you
+confirm.
+
+<details><summary>What promote.sh does, by hand (if you prefer manual / a PR)</summary>
+
+```bash
+cd ~/typortrait/typography_engine          # the PROD tree (branch claude/printful-integration)
+git fetch origin
+git merge staging                          # bring staging's commits into prod
+git push                                    # save prod branch to GitHub
+docker compose up -d --build               # rebuild + restart the PROD container
+```
+Or open a GitHub PR (`staging` → `claude/printful-integration`), review, merge,
+then on prod: `git pull --ff-only && docker compose up -d --build`.
+</details>
+
+**What moves vs. what stays put:** the merge carries code, `static/`, configs and
+the Dockerfile. It never touches each environment's git-ignored `.env` (prod =
+live Stripe keys; staging = test keys) or `data/` dir — so a promote can't leak
+test keys into prod or vice-versa. Static-only changes (`static/…`) go live on a
+plain `git pull` with no rebuild; Python/Dockerfile/dependency changes need
+`--build`.
 
 ### Isolation guarantees (why prod is safe)
 - **Different image + container + port** (`typortrait-staging:latest`, `:8078`) — never overwrites or restarts the prod stack.
