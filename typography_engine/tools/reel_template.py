@@ -13,7 +13,32 @@ cfg keys:
   fps    (int, default 10)
 """
 import os, math, random
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+def _cover_square(path, size):
+    """Load an image and center-crop it to a `size`x`size` square WITHOUT
+    distortion (a 'cover' fit: scale so the short side fills, then crop the
+    overflow off the long side), honoring EXIF rotation.
+
+    Applied to BOTH the photo 'before' and the rendered 'after' so the subject
+    lands at the same scale and position in each frame. The portrait inherits
+    the source photo's aspect ratio (the renderer never crops or pads), so a
+    tall/wide render forced into the square box with a plain resize() would be
+    squished AND shown at full-frame scale, while the 'before' is a tight 1:1
+    crop -- the two then drift out of register under the slider. A shared cover
+    crop keeps the head the same size and place on both sides of the wipe."""
+    im = Image.open(path)
+    im = ImageOps.exif_transpose(im).convert("RGB")
+    w, h = im.size
+    s = min(w, h)
+    if s <= 0:
+        return im.resize((size, size), Image.LANCZOS)
+    scale = size / float(s)
+    nw, nh = max(size, int(round(w * scale))), max(size, int(round(h * scale)))
+    im = im.resize((nw, nh), Image.LANCZOS)
+    left, top = (nw - size) // 2, (nh - size) // 2
+    return im.crop((left, top, left + size, top + size))
+
 
 def _find_font(names):
     dirs = ["C:/Windows/Fonts", "/usr/share/fonts/truetype/liberation",
@@ -41,8 +66,11 @@ REVEAL0=7.3*SLOW; REVEAL1=8.1*SLOW; SLIDER_END=12.9*SLOW; DUR=15.4*SLOW; HOLD=3.
 def build_reel(cfg):
     if not (SERIF_B and SERIF and SANS):
         raise RuntimeError("Fonts not found. Install 'fonts-liberation' or run where Georgia/Arial exist.")
-    before = Image.open(cfg["before"]).convert("RGB").resize((SQ,SQ), Image.LANCZOS)
-    after  = Image.open(cfg["after"]).convert("RGB").resize((SQ,SQ), Image.LANCZOS)
+    # Cover-crop both to the square display box so the subject sits at the SAME
+    # scale/position in each -- a plain resize() squishes a non-square render
+    # (the portrait keeps the photo's aspect) and breaks slider alignment.
+    before = _cover_square(cfg["before"], SQ)
+    after  = _cover_square(cfg["after"], SQ)
     words  = [w for w in (cfg.get("words") or ["love"]) if w]
     brand  = cfg.get("brand", "Typortrait")
     cta    = cfg.get("cta", "Create yours free")
