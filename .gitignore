@@ -6,3 +6,14 @@ __pycache__/
 typography_engine/.env
 typography_engine/data/
 typography_engine/private/
+
+# Old/reference versions outside the typography_engine project (not maintained;
+# backed up separately in typortrait-untracked-backup-*.zip)
+/server/
+/frontend/
+/stage1-ref/
+/renders/
+/typo-portrait.html
+/typo-portrait-generator.jsx
+/typortrait-stage1-clean.zip
+/.claude/

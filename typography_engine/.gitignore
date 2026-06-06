@@ -7,3 +7,19 @@ __pycache__/
 tests/fixtures/cache/
 reels_out/
 marketing/reel.gif
+marketing/reel.mp4
+
+# Dev scratch at engine root: render comparisons, tuning scripts, baselines
+# (anchored with a leading / so app/pipeline/__init__.py etc. are NOT matched)
+/_*.png
+/_*.py
+/_*.json
+/source.png
+/margot_baseline_ember.png
+/Margot-Source.JPG
+/marketing/index-org.html
+
+# Local timestamped backups — git history is the real backup
+*.bak
+*.bak-*
+*-backup-*.html
