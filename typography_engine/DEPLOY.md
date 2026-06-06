@@ -251,6 +251,66 @@ vhost into `sites-enabled`, or move a directory back from its `~/..._old-*` arch
 
 ---
 
+## 9. Staging mirror (staging.typortrait.com)
+
+A private, isolated copy of the app for testing Stripe and new code before it
+hits production. It runs as a **second container on `:8078`** from a **separate
+git worktree** on a `staging` branch, with its own `.env` (Stripe **test** keys,
+`PRINTFUL_CONFIRM=false`, no analytics) and its own data — so it can never touch
+real money, real print orders, prod data, or prod analytics. It's behind HTTP
+Basic Auth + `noindex` so it's never publicly reachable or crawled.
+
+### One-time setup
+```bash
+# 1. DNS: add an A record  staging.typortrait.com -> <server IP>
+
+# 2. Create a separate working tree on a new `staging` branch (off prod):
+cd ~/typortrait
+git fetch origin
+git worktree add -b staging ~/typortrait-staging origin/claude/printful-integration
+
+# 3. Staging secrets: copy the template and fill in TEST values
+cd ~/typortrait-staging/typography_engine
+cp .env.staging.example .env
+nano .env            # Stripe sk_test_..., PRINTFUL_CONFIRM=false, distinct admin pw, no Umami
+
+# 4. Build + start the staging container (helper always adds the override + project name)
+chmod +x staging.sh
+./staging.sh up -d --build          # -> 127.0.0.1:8078
+
+# 5. nginx vhost (private + noindex) + TLS
+sudo apt-get install -y apache2-utils
+sudo htpasswd -c /etc/nginx/.htpasswd-staging <username>     # you choose user+password
+sudo cp deploy/nginx-staging.conf /etc/nginx/sites-available/staging.typortrait.com
+sudo ln -s /etc/nginx/sites-available/staging.typortrait.com /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d staging.typortrait.com
+```
+
+### Day-to-day: develop → test on staging → promote to prod
+```bash
+# work on the staging branch, push, then on the server:
+cd ~/typortrait-staging/typography_engine
+git pull --ff-only
+./staging.sh up -d --build          # redeploy staging only
+# ...test at https://staging.typortrait.com (Stripe test card 4242 4242 4242 4242)...
+
+# happy? promote staging -> prod:
+git checkout claude/printful-integration && git merge staging && git push   # (or via PR)
+cd ~/typortrait/typography_engine && git pull --ff-only && docker compose up -d --build
+```
+
+### Isolation guarantees (why prod is safe)
+- **Different image + container + port** (`typortrait-staging:latest`, `:8078`) — never overwrites or restarts the prod stack.
+- **Separate data** — bind-mounts resolve inside `~/typortrait-staging`, so the orders DB, previews and uploads are physically distinct from prod.
+- **Test Stripe + `PRINTFUL_CONFIRM=false`** — no real charges; Printful orders are deletable drafts.
+- **No `UMAMI_WEBSITE_ID`** — staging traffic never appears in production analytics.
+- **Basic Auth + noindex** — only you can reach it; Google never indexes it. The
+  `/webhook/stripe` and `/printful-fetch/` paths are exempt from Basic Auth (they
+  carry their own signatures) so Stripe/Printful callbacks still work.
+
+---
+
 ## Alternative: native install (no Docker), behind nginx
 Prefer a lean install without Docker? This runs uvicorn under systemd; nginx +
 certbot (steps 3–4 above) are identical.
