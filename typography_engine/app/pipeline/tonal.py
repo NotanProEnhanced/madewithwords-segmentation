@@ -668,6 +668,11 @@ def build_tonal_portrait(
     # Seeded (reproducible) per-row jitter offsets break up the rigid column grid
     # so words don't form vertical "rivers" or horizontal banding.
     rng = np.random.default_rng(seed)
+    # Occupancy grid: pixels already covered by a placed glyph. The multi-scale
+    # gap-fill passes consult this so they pack smaller words ONLY into regions
+    # the larger tiers left blank -- filling the silhouette across the full size
+    # range with no empty black holes.
+    occ = np.zeros((H, W), dtype=bool)
 
     def emit(font: float, bx0: int, by0: int, bx1: int, by1: int, region: str, kind: str) -> None:
         """Lay one size tier of words over [bx0:bx1, by0:by1]. Every cell inside
@@ -699,10 +704,18 @@ def build_tonal_portrait(
             cy_nom = by0 + (r + 0.5) * rh
             row = sub[r]
             ink = mg[r] > 110
+            fill_mode = (region == "fill")
             for c in range(cols):
                 if not ink[c]:
                     continue
                 px = bx0 + (c + 0.5) * cw
+                if fill_mode:
+                    # Gap-fill: ink only where no larger pass already drew; leave
+                    # the dedicated eye pass region to that finer pass.
+                    yy = min(H - 1, max(0, int(cy_nom))); xx = min(W - 1, max(0, int(px)))
+                    if in_eyes(px, cy_nom) or occ[yy, xx]:
+                        ink[c] = False
+                    continue
                 if in_eyes(px, cy_nom):
                     ink[c] = False
                 elif region == "body" and in_mid(px, cy_nom):
@@ -788,6 +801,11 @@ def build_tonal_portrait(
                     gy = baseline + wy
                     fill = fill_for(tdark_of(row[cell]), csub[r, cell] if photo_ink else None, gy / H)
                     spans.append(f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="{fill}">{esc(ch)}</tspan>')
+                    # Record this glyph's cell so later fill passes don't overprint it.
+                    oy0 = max(0, int(cy_nom - rh * 0.5)); oy1 = min(H, int(cy_nom + rh * 0.5))
+                    oxa = max(0, int(bx0 + cell * cw)); oxb = min(W, int(bx0 + (cell + 1) * cw))
+                    if oxb > oxa and oy1 > oy0:
+                        occ[oy0:oy1, oxa:oxb] = True
                 if not spans:
                     continue
                 doc.add(
@@ -903,6 +921,19 @@ def build_tonal_portrait(
                     runs.append(TextRun(region="eye", path_id=f"eye{rf}_{start}",
                                         path_d="", text="".join(glyphs),
                                         font_size=round(fe, 2), kind="detail"))
+
+    # ---- Multi-scale gap fill -----------------------------------------------
+    # The single-size tiers leave blank holes wherever a word couldn't fit the
+    # available run (most visible at large sizes, where a big word needs many
+    # cells). Pack progressively smaller words into those gaps -- skipping any
+    # pixel a larger pass already inked -- so the portrait covers the full size
+    # range with no empty black regions, finer where big words never fit.
+    fill_font = body_font * 0.5
+    _fills = 0
+    while fill_font >= 8.0 and _fills < 6:
+        emit(fill_font, 0, 0, W, H, "fill", "fill")
+        fill_font *= 0.6
+        _fills += 1
 
     if not runs:
         warns.error("text", "no_runs", "Tonal fill produced no text (subject too bright or mask empty).")
