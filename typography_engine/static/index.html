@@ -37,6 +37,12 @@
   label.field{display:block;margin-top:18px}
   .field .lbl{font-weight:600;font-size:15px}
   .field .hint{color:var(--muted);font-size:13px;margin:2px 0 8px}
+  /* Labelled control group: a quiet label + one human line under each choice. */
+  .ctl{margin-top:20px}
+  .ctl-lbl{font-weight:600;font-size:15px;color:var(--ink);margin-bottom:8px}
+  .ctl-hint{color:var(--muted);font-size:13px;line-height:1.45;margin-top:8px}
+  .photo-note{margin-top:10px;padding:10px 12px;border-radius:10px;background:#f4f1e8;
+    border:1px solid #e7e1d2;color:#6a5b39;font-size:13px;line-height:1.45}
   textarea,input[type=text]{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:16px;font-family:var(--sans);resize:none;background:#fff;color:var(--ink)}
   textarea:focus,input:focus{outline:none;border-color:var(--navy)}
 
@@ -117,6 +123,9 @@
     text-align:center;color:var(--muted);font-size:13px;margin-top:10px;opacity:0;transition:opacity .2s}
   .thumb-status.on{opacity:1}
   .thumb-status .dot{width:12px;height:12px;border-radius:50%;border:2px solid #d9d6cf;border-top-color:var(--navy);animation:spin .9s linear infinite;flex:0 0 auto}
+  .sizefilm{margin-top:20px}
+  .film-lbl{font-weight:600;font-size:14px;color:var(--ink);margin-bottom:12px;text-align:center}
+  .sizestrip{justify-content:center}
 
   .keepsake{margin-top:18px}
   .toggle{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:14px}
@@ -184,16 +193,29 @@
       <div class="small">A clear head-and-shoulders shot works best. Tap to choose or take one.</div>
     </div>
     <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
+    <div id="photoNote" class="photo-note" style="display:none"></div>
     <input id="file" type="file" accept="image/*" hidden />
-    <div class="seg" id="styleSeg">
-      <button type="button" data-style="words" class="on">Words</button>
-      <button type="button" data-style="message">Message</button>
+    <div class="ctl">
+      <div class="seg" id="styleSeg">
+        <button type="button" data-style="words" class="on">Words</button>
+        <button type="button" data-style="message">Passage</button>
+      </div>
     </div>
     <label class="field">
       <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
       <span class="hint" id="wordsHint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
       <textarea id="words" rows="3" placeholder="GRACE, KIND, BRILLIANT, MOM, ALWAYS"></textarea>
     </label>
+    <div class="ctl" id="inputSizeCtl" style="display:none">
+      <div class="ctl-lbl">Word size</div>
+      <div class="seg" id="sizeSeg" aria-label="Word size">
+        <button type="button" data-mf="120">Giant</button>
+        <button type="button" data-mf="44">Large</button>
+        <button type="button" data-mf="20" class="on">Medium</button>
+        <button type="button" data-mf="13">Small</button>
+      </div>
+      <div class="ctl-hint">Larger words look bold and graphic; smaller words add fine detail.</div>
+    </div>
     <label class="consent" id="consentRow">
       <input type="checkbox" id="consent" />
       <span>I confirm I own or have rights to this image, it contains no copyrighted characters, celebrities or explicit material. I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Use</a>.</span>
@@ -231,11 +253,11 @@
       <button type="button" class="arrow right" id="arrowR" aria-label="More colours">&#8250;</button>
     </div>
     <div id="thumbStatus" class="thumb-status" aria-live="polite"></div>
+    <div class="sizefilm" id="sizeFilm">
+      <div class="film-lbl">Word size — tap to resize the type</div>
+      <div id="sizeStrip" class="swatches sizestrip"></div>
+    </div>
     <div class="opts">
-      <div id="lightRow" class="toggle" style="margin-top:14px">
-        <div><div class="t-lbl">Light background</div><div class="t-sub">Dark ink on paper, instead of bright type on black. Softer, more muted colour.</div></div>
-        <div id="lightSwitch" class="sw-switch"></div>
-      </div>
       <div id="bgRow" class="toggle" style="margin-top:14px;display:none">
         <div><div class="t-lbl">Remove background</div><div class="t-sub">Keep the words on the subject only, clean ground.</div></div>
         <div id="bgSwitch" class="sw-switch on"></div>
@@ -245,7 +267,7 @@
          (a Printful token is set). Until then the studio stays digital-only and
          this block stays hidden, so the live checkout is unchanged. -->
     <div id="productPicker" class="opts" style="display:none;margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
-      <div class="t-lbl" style="margin-bottom:2px">Choose your keepsake</div>
+      <div class="film-lbl">Choose your keepsake</div>
       <div class="t-sub" style="margin-bottom:10px">Every print comes with the high-res digital file, free — keep it, reprint it, share it.</div>
       <div id="productList" class="prodlist"></div>
       <div id="sizeRow" class="sizerow" style="display:none">
@@ -322,7 +344,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, ink:"mono", style:"words", fmt:"png", removeBg:true, light:false, sku:"digital", size:null };
+const state = { file:null, ink:"mono", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:20 };
 // Umami funnel event helper. No-ops silently if the script is blocked, still
 // loading, or unconfigured — analytics must never break the app.
 function tp_track(name, data){ try{ if(window.umami) window.umami.track(name, data||{}); }catch(e){} }
@@ -352,30 +374,87 @@ $("#styleSeg").addEventListener("click", e=>{
   state.style=b.dataset.style;
   [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
   const prose = state.style==="message";
-  wordsLbl.innerHTML = prose ? "Their message, in your words" : "The words that make them <em>them</em>";
+  wordsLbl.innerHTML = prose ? "A passage, in your words" : "The words that make them <em>them</em>";
   wordsHint.textContent = prose
-    ? "Paste a letter, lyrics, a story, a tribute — it becomes the portrait."
+    ? "A letter, lyrics, a poem, a tribute, your vows — it becomes the portrait."
     : "Their name, what you love, a date, an inside joke. Separate with commas.";
   words.rows = prose ? 5 : 3;
   words.placeholder = prose
     ? "You are the kindest soul I know. From the day you were born…"
     : "GRACE, KIND, BRILLIANT, MOM, ALWAYS";
-  bgRow.style.display = prose ? "flex" : "none";   // background toggle = Message only
+  bgRow.style.display = prose ? "flex" : "none";   // background toggle = Letter only
+  applySizes(null);                                // restock the size strip for this style
 });
+// Word-size scale: sets the floor font size; the body/mid/face/eye tiers all
+// scale from it, so "Giant" = bold/dramatic with fewer words, "Small" = fine and
+// detailed with many. (min_font_px is honored server-side by the render endpoint.)
+const sizeSeg=$("#sizeSeg");
+if(sizeSeg){ sizeSeg.addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  state.minFont=parseFloat(b.dataset.mf)||20;
+  [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
+}); }
 // Options now live on the result screen: toggling re-renders the current ink
 // (and re-warms the swatch thumbnails) so the change is immediate.
 function optionChanged(){ if(resultView.style.display==="block"){ invalidate(); render(state.ink,{animate:false}); } }
 bgSwitch.addEventListener("click", ()=>{ state.removeBg=!state.removeBg; bgSwitch.classList.toggle("on",state.removeBg); optionChanged(); });
-const lightSwitch=$("#lightSwitch");
-lightSwitch.addEventListener("click", ()=>{ state.light=!state.light; lightSwitch.classList.toggle("on",state.light); optionChanged(); });
 drop.addEventListener("click", ()=>fileInput.click());
 $("#changePhoto").addEventListener("click", e=>{e.stopPropagation();fileInput.click();});
 ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
 ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));
 drop.addEventListener("drop", e=>{ if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
 fileInput.addEventListener("change", e=>{ if(e.target.files[0]) setFile(e.target.files[0]); });
-function setFile(f){ if(!f.type.startsWith("image/"))return; state.file=f; previewImg.src=URL.createObjectURL(f);
-  preview.style.display="block"; drop.style.display="none"; refreshCreate(); tp_track("photo_selected"); }
+const MAX_UPLOAD_BYTES=25*1024*1024;   // keep in step with TYPO_MAX_UPLOAD_BYTES on the server
+function setFile(f){
+  if(!f.type.startsWith("image/")){ inputErr("That file isn't an image — please choose a JPG, PNG or HEIC photo."); return; }
+  if(f.size>MAX_UPLOAD_BYTES){ inputErr("That photo is too large (max 25 MB). Try a smaller image or a screenshot."); return; }
+  if(previewImg.src && previewImg.src.indexOf("blob:")===0) URL.revokeObjectURL(previewImg.src);   // free the prior upload
+  state.file=f; previewImg.src=URL.createObjectURL(f);
+  preview.style.display="block"; drop.style.display="none"; setPhotoNote("");
+  refreshCreate(); tp_track("photo_selected");
+  measureSubject(f);
+}
+
+// Offer only the word sizes that stay readable for THIS photo's framing: small
+// type on a far/small subject is unreadable, so the server measures the face
+// size and tells us which sizes to enable. Disabled sizes grey out.
+let measuredSizes=null;                       // last /measure word-size gate (Words values)
+function applySizes(allowed){
+  if(allowed) measuredSizes=allowed;
+  const gate=new Set((measuredSizes||[120,44,20,13]).map(Number));
+  const full=sizesForStyle().map(s=>Number(s[0]));
+  // Words honors the /measure readability gate (small WORDS on a far subject are
+  // unreadable). Letter is prose read up close, so every fine size forms a face.
+  let usable=(state.style==="message") ? full : full.filter(mf=>gate.has(mf));
+  if(!usable.length) usable=[full[0]];
+  allowedMf=usable.slice().sort((a,b)=>b-a);
+  if(!allowedMf.includes(Number(state.minFont))){     // current pick invalid -> re-default
+    const def=(state.style==="message") ? 13
+              : ([20,44,120].find(v=>allowedMf.includes(v))||allowedMf[0]);   // Medium, else largest
+    state.minFont=allowedMf.includes(def)?def:allowedMf[0];
+  }
+  // Keep the hidden Words segment in rough sync (cosmetic; state.minFont rules).
+  document.querySelectorAll('#sizeSeg button').forEach(b=>{
+    const mf=parseFloat(b.dataset.mf);
+    b.style.display=gate.has(mf)?"":"none";
+    b.classList.toggle("on",mf===Number(state.minFont));
+  });
+  buildSizeStrip();
+}
+function setPhotoNote(msg){
+  const el=document.getElementById("photoNote"); if(!el) return;
+  if(msg){ el.textContent=msg; el.style.display=""; } else { el.style.display="none"; el.textContent=""; }
+}
+function measureSubject(f){
+  applySizes(null);                          // optimistic: all enabled while measuring
+  const fd=new FormData(); fd.append("image",f);
+  fetch("/measure",{method:"POST",body:fd}).then(r=>r.json())
+    .then(d=>{ if(d&&d.ok){
+        applySizes(d.sizes);
+        setPhotoNote((d.faces||0)>=2 ? "More than one face detected — we'll feature the largest. Crop to one person for the sharpest portrait." : "");
+      } })
+    .catch(()=>applySizes([120,44,20]));     // network failure: be conservative (skip unreadable Small)
+}
 
 /* ---------- swatch filmstrip (live thumbnails of THIS portrait per ink) ----- */
 const swatchEl=$("#swatches");
@@ -406,6 +485,93 @@ function updateThumb(ink){
   }
 }
 function resetThumbs(){ swatchEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.remove("loading"); }); }
+
+/* ---------- word-size filmstrip (live previews of THIS portrait per size) ----
+   Mirrors the ink-swatch mechanism: each chip is a fast, coarse render of the
+   user's own photo at that word size, in the currently-selected ink. Tapping a
+   chip re-renders the main portrait at that size. Only the sizes that stay
+   readable for this photo's framing (from /measure) get a chip. */
+// Word size means different things per style. Words is a tonal mosaic that
+// forms a face at any scale, so it gets the full dramatic range. Letter is the
+// user's prose laid in rows, which only resolves into a face with enough rows
+// (fine type) -- so it gets a finer set; Giant/Large would be a wall of text.
+const WORD_SIZES=[[120,"Giant"],[44,"Large"],[20,"Medium"],[13,"Small"]];
+const LETTER_SIZES=[[20,"Readable"],[13,"Balanced"],[10,"Fine"]];
+function sizesForStyle(){ return state.style==="message" ? LETTER_SIZES : WORD_SIZES; }
+const sizeStripEl=$("#sizeStrip"), sizeFilmEl=$("#sizeFilm");
+let allowedMf=[120,44,20,13];
+let sizeThumbCache={};                 // coarse renders of the CURRENT ink, keyed by size
+function buildSizeStrip(){
+  if(!sizeStripEl) return;
+  sizeStripEl.innerHTML="";
+  const set=new Set(allowedMf.map(Number));
+  sizesForStyle().forEach(([mf,label])=>{
+    if(!set.has(Number(mf))) return;
+    const el=document.createElement("button"); el.type="button";
+    el.className="thumb"+(Number(mf)===Number(state.minFont)?" sel":""); el.dataset.mf=mf;
+    const pic=document.createElement("div"); pic.className="pic"; pic.dataset.mf=mf;
+    pic.style.backgroundColor="#ece9e2";
+    const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
+    el.append(pic,nm); el.addEventListener("click",()=>selectSize(mf)); sizeStripEl.append(el);
+  });
+  const lbl=sizeFilmEl && sizeFilmEl.querySelector(".film-lbl");
+  if(lbl) lbl.textContent=(state.style==="message"?"Text size":"Word size")+" — tap to resize the type";
+  // Nothing to choose between -> hide the strip (one usable size for this photo).
+  if(sizeFilmEl) sizeFilmEl.style.display=(sizeStripEl.children.length>1)?"":"none";
+}
+function markSizeSel(){
+  if(!sizeStripEl) return;
+  [...sizeStripEl.children].forEach(c=>c.classList.toggle("sel",Number(c.dataset.mf)===Number(state.minFont)));
+}
+function updateSizeThumb(mf){
+  if(!sizeStripEl) return;
+  const pic=sizeStripEl.querySelector(`.pic[data-mf="${mf}"]`); if(!pic) return;
+  // The selected size IS the main view -> reuse its full preview (no extra render).
+  let src=sizeThumbCache[mf];
+  if(Number(mf)===Number(state.minFont)) src=(cache[state.ink]&&cache[state.ink].preview)||src;
+  if(src){ pic.style.backgroundImage=`url(${src})`; pic.style.backgroundSize="cover"; pic.style.backgroundPosition="center"; pic.classList.remove("loading"); }
+}
+function refreshSizeStrip(){ markSizeSel(); allowedMf.forEach(mf=>updateSizeThumb(mf)); }
+function resetSizeThumbs(){ if(sizeStripEl) sizeStripEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.remove("loading"); }); }
+async function renderSizeThumb(mf){
+  if(!state.file) return;
+  const myGen=gen;
+  const fd=new FormData();
+  fd.append("image",state.file); fd.append("words",words.value.trim());
+  fd.append("ink",state.ink); fd.append("style",state.style); fd.append("message",words.value.trim());
+  fd.append("remove_bg", state.removeBg?"true":"false");
+  fd.append("min_font_px", String(mf));
+  fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
+  try{
+    const r=await fetchWithTimeout("/render",{method:"POST",body:fd}, RENDER_TIMEOUT_MS); const data=await r.json();
+    if(myGen!==gen) return;                       // photo/words/ink/size changed -> drop
+    if(!r.ok||!data.ok) return;
+    sizeThumbCache[mf]=data.preview; updateSizeThumb(mf);
+  }catch(e){}
+}
+let prewarmingSizes=false;
+async function prewarmSizes(){
+  if(prewarmingSizes || resultView.style.display!=="block") return;
+  prewarmingSizes=true;
+  const myGen=gen;
+  for(const mf of allowedMf){
+    if(gen!==myGen) break;
+    if(Number(mf)===Number(state.minFont)){ updateSizeThumb(mf); continue; }   // selected = main preview
+    if(sizeThumbCache[mf]){ updateSizeThumb(mf); continue; }
+    const pic=sizeStripEl&&sizeStripEl.querySelector(`.pic[data-mf="${mf}"]`); if(pic) pic.classList.add("loading");
+    await renderSizeThumb(mf);
+  }
+  prewarmingSizes=false;
+}
+function selectSize(mf){
+  mf=Number(mf); if(mf===Number(state.minFont)) return;
+  state.minFont=mf;
+  // keep the hidden input segment in sync (drives downloads / recipe)
+  document.querySelectorAll('#sizeSeg button').forEach(b=>b.classList.toggle("on",Number(b.dataset.mf)===mf));
+  markSizeSel();
+  // word size feeds the whole layout -> every ink render at the old size is stale.
+  invalidate(); render(state.ink,{animate:false});
+}
 
 
 
@@ -481,7 +647,7 @@ function renderProducts(data){
 fetch("/products").then(r=>r.json()).then(renderProducts).catch(()=>{});
 createBtn.addEventListener("click", ()=>{
   if(!state.file){ inputErr("Add a photo to start — a clear head-and-shoulders shot works best."); drop.scrollIntoView({behavior:"smooth",block:"center"}); return; }
-  if(!words.value.trim()){ inputErr(state.style==="message" ? "Add their message first — a letter, lyrics, or a tribute." : "Add a few words first — a name, traits, a date."); words.focus(); return; }
+  if(!words.value.trim()){ inputErr(state.style==="message" ? "Add the passage first — a letter, lyrics, a poem, or a tribute." : "Add a few words first — a name, traits, a date."); words.focus(); return; }
   if(!consent.checked){ inputErr("Please confirm you have the rights to this photo and agree to the Terms."); document.getElementById("consentRow").scrollIntoView({behavior:"smooth",block:"center"}); return; }
   errInput.style.display="none";
   inputView.style.display="none"; resultView.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
@@ -492,8 +658,10 @@ function invalidate(){ gen++; cache={}; thumbCache={}; resetThumbs(); }
 
 function selectInk(id){
   if(id===state.ink) return; state.ink=id; markSel();
+  sizeThumbCache={}; resetSizeThumbs();        // size chips show the current ink -> now stale
   if(cache[id]) showImage(cache[id], true);    // instant crossfade
   else { const pic=swatchEl.querySelector(`.pic[data-ink="${id}"]`); if(pic) pic.classList.add("loading"); render(id,{animate:false}); }
+  refreshSizeStrip(); prewarmSizes();          // reflect new ink in the size strip
 }
 
 const overlay=$("#overlay");
@@ -669,7 +837,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   fd.append("image",state.file); fd.append("words",words.value.trim());
   fd.append("ink",ink); fd.append("style",state.style); fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false");
-  fd.append("light", state.light?"true":"false");
+  fd.append("min_font_px", String(state.minFont||20));
   if(thumb){
     // A 74px chip needs only the colour and rough likeness; a small canvas
     // renders fast even on a slow single core.
@@ -678,7 +846,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     fd.append("png_width","1500");
   }
   try{
-    const r=await fetch("/render",{method:"POST",body:fd}); const data=await r.json();
+    const r=await fetchWithTimeout("/render",{method:"POST",body:fd}, RENDER_TIMEOUT_MS); const data=await r.json();
     if(myGen!==gen) return;                 // photo/words/poster changed mid-render -> drop
     if(!r.ok||!data.ok){
       if(background || thumb) return;
@@ -693,7 +861,16 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     showImage(cache[ink]);   // watermarked preview (clean art is unlocked via Stripe)
     if(!window._tpPreviewTracked){ window._tpPreviewTracked=true; tp_track("preview_ready", {style: state.style}); }
     prewarm();               // fill the other swatch thumbnails in the background
-  }catch(e){ if(!background && !thumb){ errResult.textContent="Network error — please try again."; errResult.style.display="block"; stopAssembly(); busy.classList.add("hide"); } }
+    refreshSizeStrip();      // reflect this preview in the selected size chip
+    prewarmSizes();          // fill the other size chips for this ink in the background
+  }catch(e){ if(!background && !thumb){
+      const m=(e&&e.name==="AbortError") ? "This is taking longer than usual — please try again." : "Network error — please try again.";
+      // On a first render with no portrait yet, surface on the input screen
+      // (mirrors the server-error path) rather than an empty result frame.
+      if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; errInput.textContent=m; errInput.style.display="block"; }
+      else { errResult.textContent=m; errResult.style.display="block"; }
+      stopAssembly(); busy.classList.add("hide");
+    } }
 }
 /* Fill each swatch with a fast, coarse thumbnail of THIS portrait in that ink,
    one at a time, without blocking the selected view. Tapping a swatch renders it
@@ -799,7 +976,17 @@ sharePanel.addEventListener("click", async e=>{
 
 function friendly(code){ return ({no_words:"Add a few words first.",
   unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",
+  could_not_decode_image:"We couldn't read that image — please try a JPG or PNG.",
+  file_too_large:"That photo is too large (max 25 MB). Try a smaller image or a screenshot.",
   empty_upload:"Please add a photo."})[code]; }
+// Bound every render so a stuck request can't spin forever. Renders are a few
+// seconds; first-ever render may fetch face models, so the ceiling is generous.
+const RENDER_TIMEOUT_MS=90000;
+function fetchWithTimeout(url, opts, ms){
+  if(typeof AbortController==="undefined") return fetch(url, opts);   // very old browsers: no timeout
+  const ac=new AbortController(), t=setTimeout(()=>ac.abort(), ms);
+  return fetch(url, Object.assign({}, opts, {signal:ac.signal})).finally(()=>clearTimeout(t));
+}
 
 /* ---- Exit-intent: "save your portrait" capture ----------------------------
    Fires once, only after a free preview exists (currentJob set) and the result

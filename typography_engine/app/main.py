@@ -24,6 +24,7 @@ from .config import (
     DATA_DIR,
     DOWNLOAD_PNG_WIDTH,
     DOWNLOAD_PRICE_CENTS,
+    MAX_UPLOAD_BYTES,
     OUTPUTS_DIR,
     PREVIEW_PNG_WIDTH,
     PRINTFUL_API_TOKEN,
@@ -266,6 +267,49 @@ async def debug_regions(image: UploadFile = File(...)) -> JSONResponse:
     )
 
 
+def _allowed_size_mf(face_frac):
+    """Which word-size options (as min_font_px values) stay readable for a given
+    subject framing. Small/fine type on a small or far face is unreadable, so the
+    studio offers only sizes whose smallest tier still reads at this face size.
+    Giant + Large are always offered; Medium needs a reasonably-sized face;
+    Small needs a close-up. Thresholds tuned against real renders."""
+    allow = [120.0, 44.0]                       # Giant, Large -- always
+    if face_frac is None or face_frac >= 0.16:  # Medium
+        allow.append(20.0)
+    if face_frac is None or face_frac >= 0.28:  # Small (close-up only)
+        allow.append(13.0)
+    return sorted(allow, reverse=True)
+
+
+@app.post("/measure")
+async def measure(image: UploadFile = File(...)) -> JSONResponse:
+    """Lightweight pre-render check: detect the subject's face and return its
+    width as a fraction of the photo, plus the word sizes that stay readable for
+    that framing. The studio calls this on upload so it can grey out size options
+    (e.g. Small) that would produce unreadable type for a far/small subject."""
+    data = await image.read()
+    if not data:
+        return JSONResponse({"ok": False, "error": "empty_upload"}, status_code=400)
+    if len(data) > MAX_UPLOAD_BYTES:
+        return JSONResponse({"ok": False, "error": "file_too_large"}, status_code=413)
+    warns = WarningCollector()
+    try:
+        from .pipeline.preprocess import load_and_normalize
+        from .pipeline.landmarks import detect_faces, haar_face_bbox
+        cfg = RenderConfig()
+        img = load_and_normalize(data, cfg.work_max_dim, warns)
+        faces = detect_faces(img, warns)
+        bbox = faces[0].bbox if faces else haar_face_bbox(img, warns)
+        w = float(img.gray.shape[1]) or 1.0
+        face_frac = round(float(bbox[2]) / w, 4) if bbox else None
+        n_faces = len(faces)            # 0/1 via haar fallback; >=2 only when MediaPipe sees a group
+    except Exception as e:  # noqa: BLE001
+        # On any failure, allow all sizes (the renderer's floor still protects).
+        return JSONResponse({"ok": True, "face_frac": None, "faces": 0, "sizes": _allowed_size_mf(None)})
+    return JSONResponse({"ok": True, "face_frac": face_frac, "faces": n_faces,
+                         "sizes": _allowed_size_mf(face_frac)})
+
+
 @app.post("/render")
 async def render(
     image: UploadFile = File(...),
@@ -291,6 +335,12 @@ async def render(
     img_bytes = await image.read()
     if not img_bytes:
         return JSONResponse({"ok": False, "error": "empty_upload"}, status_code=400)
+    if len(img_bytes) > MAX_UPLOAD_BYTES:
+        return JSONResponse(
+            {"ok": False, "error": "file_too_large",
+             "detail": "That image is too large — please use one under 25 MB."},
+            status_code=413,
+        )
 
     word_list = _parse_words(words, words_json)
     if not word_list:
@@ -371,6 +421,7 @@ async def render(
         (PRIVATE_DIR / f"{job_id}.json").write_text(json.dumps({
             "style": style_choice, "ink": ink_choice, "remove_bg": bool(remove_bg),
             "light": bool(light), "text": text, "uppercase": bool(uppercase),
+            "min_font_px": float(cfg.min_font_px),
         }), encoding="utf-8")
 
     return JSONResponse(
@@ -563,9 +614,17 @@ def _ensure_clean_png(job: str) -> Optional[Path]:
                 mask_path.read_text(encoding="utf-8"), an,
                 r.get("ink", "navy"), bool(r.get("remove_bg", True)), DOWNLOAD_PNG_WIDTH,
                 light=bool(r.get("light", False)))
-        else:  # older jobs without a stored mask: full recompose
+        else:  # no stored mask (e.g. light/engraving renders) or older jobs:
+            # recompose at print size. Reuse the chosen word size so the paid
+            # download matches the preview (light mode has no baked mask).
+            cfg2 = RenderConfig()
+            try:
+                if r.get("min_font_px"):
+                    cfg2.min_font_px = float(r["min_font_px"])
+            except (TypeError, ValueError):
+                pass
             png_bytes, _, _, _ = render_layered_png(
-                an, r["text"], r.get("style", "words"), RenderConfig(), warns2,
+                an, r["text"], r.get("style", "words"), cfg2, warns2,
                 ink=r.get("ink", "navy"), remove_bg=bool(r.get("remove_bg", True)),
                 light=bool(r.get("light", False)), out_width=DOWNLOAD_PNG_WIDTH, render_w=2600)
         if not png_bytes:
@@ -1453,7 +1512,7 @@ html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sa
 <p class="wm">Preview is watermarked &middot; your download and prints are clean, full-resolution.</p>
 </div>
 <div class="card" id="shop">
-<div class="t-lbl" id="shopLbl">Choose your keepsake</div>
+<div class="t-lbl" id="shopLbl" style="text-align:center;margin-bottom:12px">Choose your keepsake</div>
 <div class="t-sub" id="shopSub">Every print comes with the high-res digital file, free &mdash; keep it, reprint it, share it.</div>
 <div id="productList"></div>
 <div class="sizeRow" id="sizeRow"><label for="sizeSel" class="t-lbl">Size</label><select id="sizeSel"></select></div>

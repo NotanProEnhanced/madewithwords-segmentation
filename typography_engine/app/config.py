@@ -42,7 +42,12 @@ class RenderConfig:
 
     # Readability guards.
     min_font_px: float = 20.0          # never emit text below this
-    max_font_px: float = 120.0
+    # Ceiling for the largest (body) tier. Raised so the "Giant" word-size option
+    # can produce very-large body letters; the per-region tiers (body->mid->face
+    # ->eye) still scale down from min_font_px, so facial features stay finer.
+    # Default renders (min_font_px=20 -> body ~44px) are well under this, so the
+    # standard look is unchanged; only the large end benefits.
+    max_font_px: float = 280.0
     primary_font_family: str = "Arial, Helvetica, sans-serif"
     font_weight: str = "bold"
     letter_spacing_px: float = 0.0
@@ -74,6 +79,12 @@ def env_int(key: str, default: int) -> int:
 
 
 PORT = env_int("TYPO_PORT", 8077)
+
+# Largest upload we accept. Normal phone photos are a few MB; this caps the
+# pathological (40MP+ files) that would slow a render or exhaust memory on the
+# single worker. The frontend rejects oversize before upload; the server
+# enforces the same limit as defense-in-depth.
+MAX_UPLOAD_BYTES = env_int("TYPO_MAX_UPLOAD_BYTES", 25 * 1024 * 1024)   # 25 MB
 
 # --- Analytics (Umami Cloud) ------------------------------------------------
 # Privacy-first, cookieless funnel analytics. The website ID is NOT secret (it

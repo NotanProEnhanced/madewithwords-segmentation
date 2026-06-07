@@ -534,6 +534,8 @@ def build_tonal_portrait(
     pivot: float = 0.34,
     ink: str = "mono",
     tone_density: float = 0.0,
+    gap_fill: bool = True,
+    gap_fill_passes: int = 12,
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
     if not approved:
@@ -590,9 +592,21 @@ def build_tonal_portrait(
     # Tier ratios kept close together so words step down GENTLY toward the face
     # (body -> mid -> face), avoiding a harsh size discontinuity where the small
     # face tier meets the larger hair/headwear tiers.
-    body_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 2.2)))
-    mid_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 1.45)))
-    face_font = float(max(8.0, cfg.min_font_px * 1.0))
+    # Subject-relative type scale: size the words to the face's SHARE of the
+    # frame, so a close-up and a far/loosely-cropped shot of the same person
+    # render with consistent word density and recognisability. The size control
+    # (min_font_px) is the MULTIPLIER on this subject-normalised base, not an
+    # absolute pixel size -- so "Giant" is reliably giant relative to the person
+    # on every photo. face_frac is the face width as a fraction of the source;
+    # ref_frac is a typical head-and-shoulders framing (norm = 1.0 there).
+    ref_frac = 0.42
+    face_frac = (float(an.face_bbox[2]) / float(w0)
+                 if (getattr(an, "face_bbox", None) and w0 > 0) else ref_frac)
+    norm = float(np.clip(face_frac / ref_frac, 0.45, 2.2))
+    base = cfg.min_font_px * norm
+    body_font = float(min(cfg.max_font_px, max(12.0, base * 2.2)))
+    mid_font = float(min(cfg.max_font_px, max(10.0, base * 1.45)))
+    face_font = float(max(8.0, base * 1.0))
     eye_font = float(max(6.0, face_font * 0.62))
 
     # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
@@ -668,6 +682,11 @@ def build_tonal_portrait(
     # Seeded (reproducible) per-row jitter offsets break up the rigid column grid
     # so words don't form vertical "rivers" or horizontal banding.
     rng = np.random.default_rng(seed)
+    # Occupancy grid: pixels already covered by a placed glyph. The multi-scale
+    # gap-fill passes consult this so they pack smaller words ONLY into regions
+    # the larger tiers left blank -- filling the silhouette across the full size
+    # range with no empty black holes.
+    occ = np.zeros((H, W), dtype=bool)
 
     def emit(font: float, bx0: int, by0: int, bx1: int, by1: int, region: str, kind: str) -> None:
         """Lay one size tier of words over [bx0:bx1, by0:by1]. Every cell inside
@@ -699,10 +718,18 @@ def build_tonal_portrait(
             cy_nom = by0 + (r + 0.5) * rh
             row = sub[r]
             ink = mg[r] > 110
+            fill_mode = (region == "fill")
             for c in range(cols):
                 if not ink[c]:
                     continue
                 px = bx0 + (c + 0.5) * cw
+                if fill_mode:
+                    # Gap-fill: ink only where no larger pass already drew; leave
+                    # the dedicated eye pass region to that finer pass.
+                    yy = min(H - 1, max(0, int(cy_nom))); xx = min(W - 1, max(0, int(px)))
+                    if in_eyes(px, cy_nom) or occ[yy, xx]:
+                        ink[c] = False
+                    continue
                 if in_eyes(px, cy_nom):
                     ink[c] = False
                 elif region == "body" and in_mid(px, cy_nom):
@@ -788,6 +815,11 @@ def build_tonal_portrait(
                     gy = baseline + wy
                     fill = fill_for(tdark_of(row[cell]), csub[r, cell] if photo_ink else None, gy / H)
                     spans.append(f'<tspan x="{gx:.1f}" y="{gy:.1f}" fill="{fill}">{esc(ch)}</tspan>')
+                    # Record this glyph's cell so later fill passes don't overprint it.
+                    oy0 = max(0, int(cy_nom - rh * 0.5)); oy1 = min(H, int(cy_nom + rh * 0.5))
+                    oxa = max(0, int(bx0 + cell * cw)); oxb = min(W, int(bx0 + (cell + 1) * cw))
+                    if oxb > oxa and oy1 > oy0:
+                        occ[oy0:oy1, oxa:oxb] = True
                 if not spans:
                     continue
                 doc.add(
@@ -903,6 +935,23 @@ def build_tonal_portrait(
                     runs.append(TextRun(region="eye", path_id=f"eye{rf}_{start}",
                                         path_d="", text="".join(glyphs),
                                         font_size=round(fe, 2), kind="detail"))
+
+    # ---- Multi-scale gap fill -----------------------------------------------
+    # The single-size tiers leave blank holes wherever a word couldn't fit the
+    # available run (most visible at large sizes, where a big word needs many
+    # cells). Pack progressively smaller words into those gaps -- skipping any
+    # pixel a larger pass already inked -- so the portrait covers the full size
+    # range with no empty black regions, finer where big words never fit.
+    # Start the cascade just below the body size and step DOWN gently (each pass
+    # ~78% of the previous), so the sizes form a smooth gradient instead of a few
+    # stark jumps -- the intermediate sizes capture the detail that big->small
+    # steps were skipping. More, smaller steps = smoother transition + more detail.
+    fill_font = body_font * 0.78
+    _fills = 0
+    while gap_fill and fill_font >= 8.0 and _fills < gap_fill_passes:
+        emit(fill_font, 0, 0, W, H, "fill", "fill")
+        fill_font *= 0.78
+        _fills += 1
 
     if not runs:
         warns.error("text", "no_runs", "Tonal fill produced no text (subject too bright or mask empty).")
@@ -1106,8 +1155,19 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         tip = np.clip(g + (rgb - g) * 1.5, 0.0, 255.0)      # +50% saturation
     else:
         tip = np.array(_hex_to_rgb(ink_hex), dtype=np.float32)
-    # Dark ground: brightness drives ink. Light paper: darkness drives ink.
-    v = lum if not light else (1.0 - lum)
+    # Dark ground: brightness drives ink. Light paper: darkness drives ink
+    # (engraving). In light mode push highlights hard toward white (gamma<1) so
+    # the lit face stays white paper even under dense gap-fill -- only shadows and
+    # features pick up ink, so the portrait reads instead of becoming a gray mass.
+    if not light:
+        v = lum
+    else:
+        # Engraving: keep the lightest areas as faint near-white (small 0.08
+        # floor, so the brightest skin isn't pure blank paper) but push mids and
+        # shadows DARKER (1.25 gain) so the visible words are bold, not washed
+        # out. With the sparser light-mode fill this reads as a crisp engraving
+        # with white space, not a faint gray jumble.
+        v = np.clip(0.08 + 1.25 * (1.0 - np.clip(lum ** 0.8, 0.0, 1.0)), 0.0, 1.0)
     out = ground + (tip - ground) * v[..., None]
     if remove_bg:
         m = an.silhouette.mask
@@ -1135,12 +1195,36 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
                        out_width: int = 1400, render_w: int = 2200, tone_density: float = 0.6):
     """Layered portrait -> PNG bytes. style='message' = poster rows; else Words
     (mosaic) layout. Returns (png_bytes, runs, ground_hex, mask_svg)."""
+    # --- Dedicated light/engraving renderer (Words style) --------------------
+    # On white paper, compositing the photo through a text mask washes out or
+    # jumbles. Instead, draw the tonally-shaded words DIRECTLY on the paper: each
+    # glyph is coloured by the tone it sits on (faint near-white in highlights,
+    # bold/dark in shadows), which reads as a clean engraving. This is a separate
+    # path from the dark/photo-composite renderer. No mask is returned, so the
+    # paid high-res download re-renders through here.
+    if light and style != "message":
+        from .portrait import build_portrait
+        from .raster import svg_to_png_bytes
+        ewords = [w for w in re.split(r"[\s,]+", text) if w]
+        eng_ink = ink if ink in ("navy", "sepia", "burgundy", "forest", "mono") else "navy"
+        eres = build_portrait(an, ewords, cfg, warns, uppercase=True, ink=eng_ink,
+                              render_w=render_w, gap_fill=True, gap_fill_passes=12)
+        eground = _PALETTES.get(eng_ink, _PALETTES["mono"])[2]
+        if not eres.svg:
+            return b"", eres.runs, eground, ""
+        return svg_to_png_bytes(eres.svg, output_width=out_width), eres.runs, eground, ""
+
     # The layout only needs glyph POSITIONS (we whiten them into a mask); the
     # colour/ink is applied separately by _tint_photo. Build the layout with a
     # neutral ink so the ink choice never touches the layout (and we avoid the
     # mosaic's photo-ink colour path, which isn't needed here).
     if style == "message":
-        colored, runs = build_poster(an, text, cfg, warns, render_w=render_w, ink="mono", remove_bg=remove_bg)
+        # Message/prose is a single uniform text size (no face tiers), so the
+        # word-size control maps straight to the poster font size. Clamp to a
+        # sane readable band; default min_font_px=20 reproduces the prior look.
+        msg_font = float(min(cfg.max_font_px, max(12.0, cfg.min_font_px)))
+        colored, runs = build_poster(an, text, cfg, warns, render_w=render_w,
+                                     font_px=msg_font, ink="mono", remove_bg=remove_bg)
     else:
         from .portrait import build_portrait
         words = [w for w in re.split(r"[\s,]+", text) if w]
@@ -1149,8 +1233,15 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         # becomes white (sparse, invisible non-face areas), so disable it in light
         # mode and keep full dark-ink-on-paper shadows (the engraving look).
         eff_density = 0.0 if light else tone_density
+        # Multi-scale gap-fill packs the full size range into the silhouette in
+        # both modes. In light/engraving mode the lit face is pushed to white
+        # (see _tint_photo), so the dense fill there renders as white paper and
+        # only shadows/features take ink -- full range without a gray jumble.
+        # Dark ground wants the full dense fill (the hero look). Light/engraving
+        # wants white space, so use far fewer fill passes -- sparser + cleaner.
         res = build_portrait(an, words, cfg, warns, uppercase=True, ink="mono",
-                             render_w=render_w, tone_density=eff_density)
+                             render_w=render_w, tone_density=eff_density,
+                             gap_fill=True, gap_fill_passes=12)
         colored, runs = res.svg, res.runs
     ground_hex = _ground_hex(ink, light)
     if not colored:
