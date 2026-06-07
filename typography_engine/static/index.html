@@ -121,6 +121,9 @@
     text-align:center;color:var(--muted);font-size:13px;margin-top:10px;opacity:0;transition:opacity .2s}
   .thumb-status.on{opacity:1}
   .thumb-status .dot{width:12px;height:12px;border-radius:50%;border:2px solid #d9d6cf;border-top-color:var(--navy);animation:spin .9s linear infinite;flex:0 0 auto}
+  .sizefilm{margin-top:20px}
+  .film-lbl{font-weight:600;font-size:14px;color:var(--ink);margin-bottom:12px;text-align:center}
+  .sizestrip{justify-content:center}
 
   .keepsake{margin-top:18px}
   .toggle{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:14px}
@@ -202,7 +205,7 @@
       <span class="hint" id="wordsHint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
       <textarea id="words" rows="3" placeholder="GRACE, KIND, BRILLIANT, MOM, ALWAYS"></textarea>
     </label>
-    <div class="ctl">
+    <div class="ctl" id="inputSizeCtl" style="display:none">
       <div class="ctl-lbl">Word size</div>
       <div class="seg" id="sizeSeg" aria-label="Word size">
         <button type="button" data-mf="120">Giant</button>
@@ -249,6 +252,10 @@
       <button type="button" class="arrow right" id="arrowR" aria-label="More colours">&#8250;</button>
     </div>
     <div id="thumbStatus" class="thumb-status" aria-live="polite"></div>
+    <div class="sizefilm" id="sizeFilm">
+      <div class="film-lbl">Word size — tap to resize the type</div>
+      <div id="sizeStrip" class="swatches sizestrip"></div>
+    </div>
     <div class="opts">
       <div id="bgRow" class="toggle" style="margin-top:14px;display:none">
         <div><div class="t-lbl">Remove background</div><div class="t-sub">Keep the words on the subject only, clean ground.</div></div>
@@ -417,6 +424,8 @@ function applySizes(allowed){
     btns.forEach(b=>{ const on=parseFloat(b.dataset.mf)===prefer;
       b.classList.toggle("on",on); if(on) state.minFont=prefer; });
   }
+  allowedMf=[...set].sort((a,b)=>b-a);       // feed the result-screen size filmstrip
+  buildSizeStrip();
 }
 function measureSubject(f){
   applySizes(null);                          // optimistic: all enabled while measuring
@@ -454,6 +463,85 @@ function updateThumb(ink){
   }
 }
 function resetThumbs(){ swatchEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.remove("loading"); }); }
+
+/* ---------- word-size filmstrip (live previews of THIS portrait per size) ----
+   Mirrors the ink-swatch mechanism: each chip is a fast, coarse render of the
+   user's own photo at that word size, in the currently-selected ink. Tapping a
+   chip re-renders the main portrait at that size. Only the sizes that stay
+   readable for this photo's framing (from /measure) get a chip. */
+const SIZES=[[120,"Giant"],[44,"Large"],[20,"Medium"],[13,"Small"]];
+const sizeStripEl=$("#sizeStrip"), sizeFilmEl=$("#sizeFilm");
+let allowedMf=[120,44,20,13];
+let sizeThumbCache={};                 // coarse renders of the CURRENT ink, keyed by size
+function buildSizeStrip(){
+  if(!sizeStripEl) return;
+  sizeStripEl.innerHTML="";
+  const set=new Set(allowedMf.map(Number));
+  SIZES.forEach(([mf,label])=>{
+    if(!set.has(Number(mf))) return;
+    const el=document.createElement("button"); el.type="button";
+    el.className="thumb"+(Number(mf)===Number(state.minFont)?" sel":""); el.dataset.mf=mf;
+    const pic=document.createElement("div"); pic.className="pic"; pic.dataset.mf=mf;
+    pic.style.backgroundColor="#ece9e2";
+    const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
+    el.append(pic,nm); el.addEventListener("click",()=>selectSize(mf)); sizeStripEl.append(el);
+  });
+  // Nothing to choose between -> hide the strip (one usable size for this photo).
+  if(sizeFilmEl) sizeFilmEl.style.display=(sizeStripEl.children.length>1)?"":"none";
+}
+function markSizeSel(){
+  if(!sizeStripEl) return;
+  [...sizeStripEl.children].forEach(c=>c.classList.toggle("sel",Number(c.dataset.mf)===Number(state.minFont)));
+}
+function updateSizeThumb(mf){
+  if(!sizeStripEl) return;
+  const pic=sizeStripEl.querySelector(`.pic[data-mf="${mf}"]`); if(!pic) return;
+  // The selected size IS the main view -> reuse its full preview (no extra render).
+  let src=sizeThumbCache[mf];
+  if(Number(mf)===Number(state.minFont)) src=(cache[state.ink]&&cache[state.ink].preview)||src;
+  if(src){ pic.style.backgroundImage=`url(${src})`; pic.style.backgroundSize="cover"; pic.style.backgroundPosition="center"; pic.classList.remove("loading"); }
+}
+function refreshSizeStrip(){ markSizeSel(); allowedMf.forEach(mf=>updateSizeThumb(mf)); }
+function resetSizeThumbs(){ if(sizeStripEl) sizeStripEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.remove("loading"); }); }
+async function renderSizeThumb(mf){
+  if(!state.file) return;
+  const myGen=gen;
+  const fd=new FormData();
+  fd.append("image",state.file); fd.append("words",words.value.trim());
+  fd.append("ink",state.ink); fd.append("style",state.style); fd.append("message",words.value.trim());
+  fd.append("remove_bg", state.removeBg?"true":"false");
+  fd.append("min_font_px", String(mf));
+  fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
+  try{
+    const r=await fetch("/render",{method:"POST",body:fd}); const data=await r.json();
+    if(myGen!==gen) return;                       // photo/words/ink/size changed -> drop
+    if(!r.ok||!data.ok) return;
+    sizeThumbCache[mf]=data.preview; updateSizeThumb(mf);
+  }catch(e){}
+}
+let prewarmingSizes=false;
+async function prewarmSizes(){
+  if(prewarmingSizes || resultView.style.display!=="block") return;
+  prewarmingSizes=true;
+  const myGen=gen;
+  for(const mf of allowedMf){
+    if(gen!==myGen) break;
+    if(Number(mf)===Number(state.minFont)){ updateSizeThumb(mf); continue; }   // selected = main preview
+    if(sizeThumbCache[mf]){ updateSizeThumb(mf); continue; }
+    const pic=sizeStripEl&&sizeStripEl.querySelector(`.pic[data-mf="${mf}"]`); if(pic) pic.classList.add("loading");
+    await renderSizeThumb(mf);
+  }
+  prewarmingSizes=false;
+}
+function selectSize(mf){
+  mf=Number(mf); if(mf===Number(state.minFont)) return;
+  state.minFont=mf;
+  // keep the hidden input segment in sync (drives downloads / recipe)
+  document.querySelectorAll('#sizeSeg button').forEach(b=>b.classList.toggle("on",Number(b.dataset.mf)===mf));
+  markSizeSel();
+  // word size feeds the whole layout -> every ink render at the old size is stale.
+  invalidate(); render(state.ink,{animate:false});
+}
 
 
 
@@ -540,8 +628,10 @@ function invalidate(){ gen++; cache={}; thumbCache={}; resetThumbs(); }
 
 function selectInk(id){
   if(id===state.ink) return; state.ink=id; markSel();
+  sizeThumbCache={}; resetSizeThumbs();        // size chips show the current ink -> now stale
   if(cache[id]) showImage(cache[id], true);    // instant crossfade
   else { const pic=swatchEl.querySelector(`.pic[data-ink="${id}"]`); if(pic) pic.classList.add("loading"); render(id,{animate:false}); }
+  refreshSizeStrip(); prewarmSizes();          // reflect new ink in the size strip
 }
 
 const overlay=$("#overlay");
@@ -741,6 +831,8 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     showImage(cache[ink]);   // watermarked preview (clean art is unlocked via Stripe)
     if(!window._tpPreviewTracked){ window._tpPreviewTracked=true; tp_track("preview_ready", {style: state.style}); }
     prewarm();               // fill the other swatch thumbnails in the background
+    refreshSizeStrip();      // reflect this preview in the selected size chip
+    prewarmSizes();          // fill the other size chips for this ink in the background
   }catch(e){ if(!background && !thumb){ errResult.textContent="Network error — please try again."; errResult.style.display="block"; stopAssembly(); busy.classList.add("hide"); } }
 }
 /* Fill each swatch with a fast, coarse thumbnail of THIS portrait in that ink,
