@@ -534,6 +534,7 @@ def build_tonal_portrait(
     pivot: float = 0.34,
     ink: str = "mono",
     tone_density: float = 0.0,
+    gap_fill: bool = True,
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
     if not approved:
@@ -934,7 +935,7 @@ def build_tonal_portrait(
     # steps were skipping. More, smaller steps = smoother transition + more detail.
     fill_font = body_font * 0.78
     _fills = 0
-    while fill_font >= 8.0 and _fills < 12:
+    while gap_fill and fill_font >= 8.0 and _fills < 12:
         emit(fill_font, 0, 0, W, H, "fill", "fill")
         fill_font *= 0.78
         _fills += 1
@@ -1141,14 +1142,10 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         tip = np.clip(g + (rgb - g) * 1.5, 0.0, 255.0)      # +50% saturation
     else:
         tip = np.array(_hex_to_rgb(ink_hex), dtype=np.float32)
-    # Dark ground: brightness drives ink. Light paper: darkness drives ink.
-    if not light:
-        v = lum
-    else:
-        # Engraving on white paper: floor the ink so brightly-lit skin/highlights
-        # still carry a faint visible gray instead of washing out to blank paper
-        # (which left bright faces nearly empty). Darks still reach full ink.
-        v = 0.26 + 0.74 * (1.0 - lum)
+    # Dark ground: brightness drives ink. Light paper: darkness drives ink
+    # (engraving) -- highlights stay near white paper so the lit face reads as
+    # white space; the gap-fill is disabled in light mode so that space survives.
+    v = lum if not light else (1.0 - lum)
     out = ground + (tip - ground) * v[..., None]
     if remove_bg:
         m = an.silhouette.mask
@@ -1195,8 +1192,12 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         # becomes white (sparse, invisible non-face areas), so disable it in light
         # mode and keep full dark-ink-on-paper shadows (the engraving look).
         eff_density = 0.0 if light else tone_density
+        # Multi-scale gap-fill densely packs the silhouette (great on a dark
+        # ground). In light/engraving mode the lit face must stay as white paper,
+        # so dense fill turns it into a jumble -- disable gap-fill in light mode.
         res = build_portrait(an, words, cfg, warns, uppercase=True, ink="mono",
-                             render_w=render_w, tone_density=eff_density)
+                             render_w=render_w, tone_density=eff_density,
+                             gap_fill=not light)
         colored, runs = res.svg, res.runs
     ground_hex = _ground_hex(ink, light)
     if not colored:

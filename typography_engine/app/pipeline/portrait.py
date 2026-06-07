@@ -32,10 +32,12 @@ def build_portrait(
     ink: str = "navy",
     render_w: int = 2600,
     tone_density: float = 0.0,
+    gap_fill: bool = True,
 ) -> PortraitResult:
     cfg.validate()
     svg, runs = build_tonal_portrait(an, words, cfg, warns, uppercase=uppercase, ink=ink,
-                                     render_w=render_w, tone_density=tone_density)
+                                     render_w=render_w, tone_density=tone_density,
+                                     gap_fill=gap_fill)
     if svg:
         validate_svg(svg)
     return PortraitResult(svg=svg, runs=runs)
