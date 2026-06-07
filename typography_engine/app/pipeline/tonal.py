@@ -1149,7 +1149,11 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     if not light:
         v = lum
     else:
-        v = 1.0 - np.clip(lum ** 0.55, 0.0, 1.0)
+        # gamma<1 keeps the lit face light; the small 0.12 floor stops the
+        # BRIGHTEST areas from going fully white (= blank paper). The lightest
+        # skin keeps a faint gray so the form/edges read and the transitional
+        # fill words stay visible there, while darks still reach full ink.
+        v = 0.12 + 0.88 * (1.0 - np.clip(lum ** 0.55, 0.0, 1.0))
     out = ground + (tip - ground) * v[..., None]
     if remove_bg:
         m = an.silhouette.mask
