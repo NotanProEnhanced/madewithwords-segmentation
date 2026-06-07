@@ -592,9 +592,21 @@ def build_tonal_portrait(
     # Tier ratios kept close together so words step down GENTLY toward the face
     # (body -> mid -> face), avoiding a harsh size discontinuity where the small
     # face tier meets the larger hair/headwear tiers.
-    body_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 2.2)))
-    mid_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 1.45)))
-    face_font = float(max(8.0, cfg.min_font_px * 1.0))
+    # Subject-relative type scale: size the words to the face's SHARE of the
+    # frame, so a close-up and a far/loosely-cropped shot of the same person
+    # render with consistent word density and recognisability. The size control
+    # (min_font_px) is the MULTIPLIER on this subject-normalised base, not an
+    # absolute pixel size -- so "Giant" is reliably giant relative to the person
+    # on every photo. face_frac is the face width as a fraction of the source;
+    # ref_frac is a typical head-and-shoulders framing (norm = 1.0 there).
+    ref_frac = 0.42
+    face_frac = (float(an.face_bbox[2]) / float(w0)
+                 if (getattr(an, "face_bbox", None) and w0 > 0) else ref_frac)
+    norm = float(np.clip(face_frac / ref_frac, 0.45, 2.2))
+    base = cfg.min_font_px * norm
+    body_font = float(min(cfg.max_font_px, max(12.0, base * 2.2)))
+    mid_font = float(min(cfg.max_font_px, max(10.0, base * 1.45)))
+    face_font = float(max(8.0, base * 1.0))
     eye_font = float(max(6.0, face_font * 0.62))
 
     # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
