@@ -23,6 +23,48 @@ from .warnings import WarningCollector
 _SEG_LOCK = Lock()
 _SEGMENTER = None
 _SEG_INIT_ERROR: Optional[str] = None
+# Lazily-created rembg session for the general (non-person) foreground matte.
+_MATTE_SESSION = None
+_MATTE_INIT_ERROR: Optional[str] = None
+
+
+def _general_matte(img: LoadedImage, warns: WarningCollector) -> Optional[np.ndarray]:
+    """Subject-agnostic foreground matte via rembg (pets/objects, and people too).
+
+    Used for non-person subjects, where the human selfie segmenter fails. Returns
+    a cleaned 0/255 mask, or None to fall through to GrabCut. rembg/onnxruntime
+    are imported lazily so the person path never depends on them."""
+    global _MATTE_SESSION, _MATTE_INIT_ERROR
+    if _MATTE_INIT_ERROR is not None:
+        return None
+    try:
+        from rembg import new_session, remove
+    except Exception as e:  # noqa: BLE001
+        _MATTE_INIT_ERROR = str(e)
+        warns.warn("silhouette", "rembg_unavailable",
+                   f"General matte unavailable (rembg not installed): {e}")
+        return None
+    try:
+        from ..config import REMBG_MODEL
+        with _SEG_LOCK:
+            if _MATTE_SESSION is None:
+                _MATTE_SESSION = new_session(REMBG_MODEL)
+        rgb = cv2.cvtColor(img.bgr, cv2.COLOR_BGR2RGB)
+        out = remove(rgb, session=_MATTE_SESSION, only_mask=True)
+        alpha = np.asarray(out)
+        if alpha.ndim == 3:                       # some backends return HxWx1/4
+            alpha = alpha[..., -1]
+        h, w = img.bgr.shape[:2]
+        if alpha.shape[:2] != (h, w):
+            alpha = cv2.resize(alpha, (w, h), interpolation=cv2.INTER_LINEAR)
+        fg = (alpha > 127).astype(np.uint8) * 255
+        coverage = float((fg > 127).sum()) / float(h * w)
+        if coverage < 0.02 or coverage > 0.99:    # implausible matte; let GrabCut try
+            return None
+        return _clean_mask(fg)
+    except Exception as e:  # noqa: BLE001
+        warns.warn("silhouette", "matte_failed", f"General matte error: {e}")
+        return None
 
 
 def _ensure_seg_model(warns: WarningCollector) -> bool:
@@ -159,16 +201,20 @@ def extract_silhouette(
     warns: WarningCollector,
     face_bbox: tuple | None = None,
     iters: int = 5,
+    subject: str = "person",
 ) -> Silhouette:
     h, w = img.bgr.shape[:2]
 
-    # Primary: MediaPipe selfie segmentation (clean person/background cut).
-    selfie = _selfie_mask(img, warns)
-    if selfie is not None:
-        bbox = _bbox_of(selfie)
-        coverage = float((selfie > 127).sum()) / float(h * w)
-        conf = max(0.85, _confidence(selfie, bbox, coverage))
-        return Silhouette(mask=selfie, bbox=bbox, coverage=coverage, confidence=conf)
+    # Primary cut: for a person, MediaPipe selfie segmentation; for a pet/other
+    # subject, a general foreground matte (rembg). Either way, GrabCut below is
+    # the deterministic fallback if the primary method is unavailable/implausible.
+    person = (subject or "person").strip().lower() in ("", "person", "people", "human")
+    primary = _selfie_mask(img, warns) if person else _general_matte(img, warns)
+    if primary is not None:
+        bbox = _bbox_of(primary)
+        coverage = float((primary > 127).sum()) / float(h * w)
+        conf = max(0.85, _confidence(primary, bbox, coverage))
+        return Silhouette(mask=primary, bbox=bbox, coverage=coverage, confidence=conf)
 
     # Fallback: deterministic GrabCut seeded by the face box.
     gc_mask = np.full((h, w), cv2.GC_PR_BGD, dtype=np.uint8)

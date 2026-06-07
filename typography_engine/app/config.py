@@ -86,6 +86,17 @@ UMAMI_HOST = os.environ.get("UMAMI_HOST", "https://cloud.umami.is").rstrip("/")
 # Hostname Umami records the event under (should match your tracked domain).
 UMAMI_HOSTNAME = os.environ.get("UMAMI_HOSTNAME", "app.typortrait.com")
 
+# --- Subject modes (experimental: pet / non-human support) ------------------
+# "person" (default) keeps the human selfie segmenter + face-landmark passes,
+# unchanged. Any other subject ("pet"/"other") routes to a general foreground
+# matte (rembg) and skips the human-face passes. The matte model is loaded
+# lazily only when a non-person subject is rendered, so the person path carries
+# no extra cost and works even if rembg/onnxruntime are absent.
+SUBJECT_DEFAULT = os.environ.get("TYPO_SUBJECT_DEFAULT", "person")
+# rembg model name (isnet-general-use = good quality/size balance; u2netp =
+# tiny/faster/lower quality; birefnet-general = highest quality/heaviest).
+REMBG_MODEL = os.environ.get("TYPO_REMBG_MODEL", "isnet-general-use")
+
 # --- Freemium / payments ---------------------------------------------------
 # Clean (unwatermarked) renders are stored here and only served after payment;
 # this directory is NOT mounted as static.

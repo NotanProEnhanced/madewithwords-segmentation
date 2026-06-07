@@ -33,29 +33,32 @@ def assess_portrait_input(an: Analysis) -> List[Issue]:
         _, _, bw, bh = an.face_bbox
         face_frac = (bw * bh) / area
 
-    if an.face_source == "none":
-        issues.append(Issue(
-            "error", "no_face",
-            "We couldn't find a face. Upload a clear, front-facing "
-            "head-and-shoulders photo of one person.",
-        ))
-        return issues
-
-    if an.face_source != "mediapipe":
-        # MediaPipe (the precise detector) found no face; only the crude Haar
-        # fallback did. A tiny such box means this isn't really a portrait.
-        if face_frac < 0.05:
+    # Human-face checks apply only to person subjects. Pet/other subjects have no
+    # human face by definition, so only the coverage sanity checks below run.
+    if getattr(an, "subject", "person") == "person":
+        if an.face_source == "none":
             issues.append(Issue(
-                "error", "no_clear_portrait",
-                "We couldn't find a clear face to work from. This looks like a "
-                "scene or a distant subject -- try a close head-and-shoulders photo.",
+                "error", "no_face",
+                "We couldn't find a face. Upload a clear, front-facing "
+                "head-and-shoulders photo of one person.",
             ))
             return issues
-        issues.append(Issue(
-            "warn", "low_confidence",
-            "We couldn't lock onto the face precisely, so the likeness may be "
-            "rough. A clear, front-facing, well-lit photo works best.",
-        ))
+
+        if an.face_source != "mediapipe":
+            # MediaPipe (the precise detector) found no face; only the crude Haar
+            # fallback did. A tiny such box means this isn't really a portrait.
+            if face_frac < 0.05:
+                issues.append(Issue(
+                    "error", "no_clear_portrait",
+                    "We couldn't find a clear face to work from. This looks like a "
+                    "scene or a distant subject -- try a close head-and-shoulders photo.",
+                ))
+                return issues
+            issues.append(Issue(
+                "warn", "low_confidence",
+                "We couldn't lock onto the face precisely, so the likeness may be "
+                "rough. A clear, front-facing, well-lit photo works best.",
+            ))
 
     if cov < 0.08:
         issues.append(Issue(

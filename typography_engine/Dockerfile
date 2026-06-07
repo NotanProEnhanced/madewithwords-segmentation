@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libgl1 libgles2 libegl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
       fonts-dejavu-core fonts-liberation \
       ffmpeg \
+      libgomp1 \
       curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 

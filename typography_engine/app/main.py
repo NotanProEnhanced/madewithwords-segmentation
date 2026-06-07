@@ -285,6 +285,7 @@ async def render(
     render_w: int = Form(2600),
     remove_bg: bool = Form(True),
     light: bool = Form(False),
+    subject: str = Form("person"),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
@@ -309,7 +310,7 @@ async def render(
         return JSONResponse({"ok": False, "error": "bad_config", "detail": str(e)}, status_code=400)
 
     try:
-        an = analyze_image(img_bytes, cfg, warns)
+        an = analyze_image(img_bytes, cfg, warns, subject=subject)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
 
@@ -371,6 +372,7 @@ async def render(
         (PRIVATE_DIR / f"{job_id}.json").write_text(json.dumps({
             "style": style_choice, "ink": ink_choice, "remove_bg": bool(remove_bg),
             "light": bool(light), "text": text, "uppercase": bool(uppercase),
+            "subject": an.subject,
         }), encoding="utf-8")
 
     return JSONResponse(
@@ -556,7 +558,8 @@ def _ensure_clean_png(job: str) -> Optional[Path]:
         from .pipeline.tonal import compose_layered, render_layered_png
         r = json.loads(recipe_path.read_text(encoding="utf-8"))
         warns2 = WarningCollector()
-        an = analyze_image(src_path.read_bytes(), RenderConfig(), warns2)
+        an = analyze_image(src_path.read_bytes(), RenderConfig(), warns2,
+                           subject=r.get("subject", "person"))
         mask_path = PRIVATE_DIR / f"{job}.mask.svg"
         if mask_path.exists():
             png_bytes = compose_layered(
