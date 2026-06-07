@@ -189,6 +189,10 @@
       <button type="button" data-style="words" class="on">Words</button>
       <button type="button" data-style="message">Message</button>
     </div>
+    <div class="seg" id="subjectSeg">
+      <button type="button" data-subject="person" class="on">Person</button>
+      <button type="button" data-subject="pet">Pet</button>
+    </div>
     <label class="field">
       <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
       <span class="hint" id="wordsHint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
@@ -322,7 +326,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, ink:"mono", style:"words", fmt:"png", removeBg:true, light:false, sku:"digital", size:null };
+const state = { file:null, ink:"mono", style:"words", fmt:"png", removeBg:true, light:false, sku:"digital", size:null, subject:"person" };
 // Umami funnel event helper. No-ops silently if the script is blocked, still
 // loading, or unconfigured — analytics must never break the app.
 function tp_track(name, data){ try{ if(window.umami) window.umami.track(name, data||{}); }catch(e){} }
@@ -362,6 +366,13 @@ $("#styleSeg").addEventListener("click", e=>{
     : "GRACE, KIND, BRILLIANT, MOM, ALWAYS";
   bgRow.style.display = prose ? "flex" : "none";   // background toggle = Message only
 });
+// Subject toggle: Person (human face passes) vs Pet (general matte, no face passes).
+const subjectSeg=$("#subjectSeg");
+if(subjectSeg){ subjectSeg.addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  state.subject=b.dataset.subject;
+  [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
+}); }
 // Options now live on the result screen: toggling re-renders the current ink
 // (and re-warms the swatch thumbnails) so the change is immediate.
 function optionChanged(){ if(resultView.style.display==="block"){ invalidate(); render(state.ink,{animate:false}); } }
@@ -670,6 +681,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   fd.append("ink",ink); fd.append("style",state.style); fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false");
   fd.append("light", state.light?"true":"false");
+  fd.append("subject", state.subject||"person");
   if(thumb){
     // A 74px chip needs only the colour and rough likeness; a small canvas
     // renders fast even on a slow single core.
