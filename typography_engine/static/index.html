@@ -384,7 +384,32 @@ $("#changePhoto").addEventListener("click", e=>{e.stopPropagation();fileInput.cl
 drop.addEventListener("drop", e=>{ if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
 fileInput.addEventListener("change", e=>{ if(e.target.files[0]) setFile(e.target.files[0]); });
 function setFile(f){ if(!f.type.startsWith("image/"))return; state.file=f; previewImg.src=URL.createObjectURL(f);
-  preview.style.display="block"; drop.style.display="none"; refreshCreate(); tp_track("photo_selected"); }
+  preview.style.display="block"; drop.style.display="none"; refreshCreate(); tp_track("photo_selected");
+  measureSubject(f); }
+
+// Offer only the word sizes that stay readable for THIS photo's framing: small
+// type on a far/small subject is unreadable, so the server measures the face
+// size and tells us which sizes to enable. Disabled sizes grey out.
+function applySizes(allowed){
+  const set=new Set((allowed||[120,44,20,13]).map(Number));
+  const btns=[...document.querySelectorAll('#sizeSeg button')];
+  let cur=null;
+  btns.forEach(b=>{ const mf=parseFloat(b.dataset.mf), ok=set.has(mf);
+    b.disabled=!ok; b.style.opacity=ok?"":"0.32"; b.style.cursor=ok?"":"not-allowed";
+    b.title=ok?"":"This size needs a closer head-and-shoulders photo";
+    if(b.classList.contains("on")) cur=mf; });
+  if(cur===null || !set.has(cur)){           // current pick no longer valid -> re-default
+    const prefer=[20,44,120].find(v=>set.has(v)) || 120;   // Medium if allowed, else largest
+    btns.forEach(b=>{ const on=parseFloat(b.dataset.mf)===prefer;
+      b.classList.toggle("on",on); if(on) state.minFont=prefer; });
+  }
+}
+function measureSubject(f){
+  applySizes(null);                          // optimistic: all enabled while measuring
+  const fd=new FormData(); fd.append("image",f);
+  fetch("/measure",{method:"POST",body:fd}).then(r=>r.json())
+    .then(d=>{ if(d&&d.ok) applySizes(d.sizes); }).catch(()=>{});
+}
 
 /* ---------- swatch filmstrip (live thumbnails of THIS portrait per ink) ----- */
 const swatchEl=$("#swatches");

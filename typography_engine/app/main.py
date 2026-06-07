@@ -266,6 +266,45 @@ async def debug_regions(image: UploadFile = File(...)) -> JSONResponse:
     )
 
 
+def _allowed_size_mf(face_frac):
+    """Which word-size options (as min_font_px values) stay readable for a given
+    subject framing. Small/fine type on a small or far face is unreadable, so the
+    studio offers only sizes whose smallest tier still reads at this face size.
+    Giant + Large are always offered; Medium needs a reasonably-sized face;
+    Small needs a close-up. Thresholds tuned against real renders."""
+    allow = [120.0, 44.0]                       # Giant, Large -- always
+    if face_frac is None or face_frac >= 0.16:  # Medium
+        allow.append(20.0)
+    if face_frac is None or face_frac >= 0.28:  # Small (close-up only)
+        allow.append(13.0)
+    return sorted(allow, reverse=True)
+
+
+@app.post("/measure")
+async def measure(image: UploadFile = File(...)) -> JSONResponse:
+    """Lightweight pre-render check: detect the subject's face and return its
+    width as a fraction of the photo, plus the word sizes that stay readable for
+    that framing. The studio calls this on upload so it can grey out size options
+    (e.g. Small) that would produce unreadable type for a far/small subject."""
+    data = await image.read()
+    if not data:
+        return JSONResponse({"ok": False, "error": "empty_upload"}, status_code=400)
+    warns = WarningCollector()
+    try:
+        from .pipeline.preprocess import load_and_normalize
+        from .pipeline.landmarks import detect_faces, haar_face_bbox
+        cfg = RenderConfig()
+        img = load_and_normalize(data, cfg.work_max_dim, warns)
+        faces = detect_faces(img, warns)
+        bbox = faces[0].bbox if faces else haar_face_bbox(img, warns)
+        w = float(img.gray.shape[1]) or 1.0
+        face_frac = round(float(bbox[2]) / w, 4) if bbox else None
+    except Exception as e:  # noqa: BLE001
+        # On any failure, allow all sizes (the renderer's floor still protects).
+        return JSONResponse({"ok": True, "face_frac": None, "sizes": _allowed_size_mf(None)})
+    return JSONResponse({"ok": True, "face_frac": face_frac, "sizes": _allowed_size_mf(face_frac)})
+
+
 @app.post("/render")
 async def render(
     image: UploadFile = File(...),
