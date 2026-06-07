@@ -525,7 +525,7 @@ async function renderSizeThumb(mf){
   fd.append("min_font_px", String(mf));
   fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
   try{
-    const r=await fetch("/render",{method:"POST",body:fd}); const data=await r.json();
+    const r=await fetchWithTimeout("/render",{method:"POST",body:fd}, RENDER_TIMEOUT_MS); const data=await r.json();
     if(myGen!==gen) return;                       // photo/words/ink/size changed -> drop
     if(!r.ok||!data.ok) return;
     sizeThumbCache[mf]=data.preview; updateSizeThumb(mf);
@@ -828,7 +828,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     fd.append("png_width","1500");
   }
   try{
-    const r=await fetch("/render",{method:"POST",body:fd}); const data=await r.json();
+    const r=await fetchWithTimeout("/render",{method:"POST",body:fd}, RENDER_TIMEOUT_MS); const data=await r.json();
     if(myGen!==gen) return;                 // photo/words/poster changed mid-render -> drop
     if(!r.ok||!data.ok){
       if(background || thumb) return;
@@ -845,7 +845,14 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     prewarm();               // fill the other swatch thumbnails in the background
     refreshSizeStrip();      // reflect this preview in the selected size chip
     prewarmSizes();          // fill the other size chips for this ink in the background
-  }catch(e){ if(!background && !thumb){ errResult.textContent="Network error — please try again."; errResult.style.display="block"; stopAssembly(); busy.classList.add("hide"); } }
+  }catch(e){ if(!background && !thumb){
+      const m=(e&&e.name==="AbortError") ? "This is taking longer than usual — please try again." : "Network error — please try again.";
+      // On a first render with no portrait yet, surface on the input screen
+      // (mirrors the server-error path) rather than an empty result frame.
+      if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; errInput.textContent=m; errInput.style.display="block"; }
+      else { errResult.textContent=m; errResult.style.display="block"; }
+      stopAssembly(); busy.classList.add("hide");
+    } }
 }
 /* Fill each swatch with a fast, coarse thumbnail of THIS portrait in that ink,
    one at a time, without blocking the selected view. Tapping a swatch renders it
@@ -951,7 +958,16 @@ sharePanel.addEventListener("click", async e=>{
 
 function friendly(code){ return ({no_words:"Add a few words first.",
   unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",
+  could_not_decode_image:"We couldn't read that image — please try a JPG or PNG.",
   empty_upload:"Please add a photo."})[code]; }
+// Bound every render so a stuck request can't spin forever. Renders are a few
+// seconds; first-ever render may fetch face models, so the ceiling is generous.
+const RENDER_TIMEOUT_MS=90000;
+function fetchWithTimeout(url, opts, ms){
+  if(typeof AbortController==="undefined") return fetch(url, opts);   // very old browsers: no timeout
+  const ac=new AbortController(), t=setTimeout(()=>ac.abort(), ms);
+  return fetch(url, Object.assign({}, opts, {signal:ac.signal})).finally(()=>clearTimeout(t));
+}
 
 /* ---- Exit-intent: "save your portrait" capture ----------------------------
    Fires once, only after a free preview exists (currentJob set) and the result
