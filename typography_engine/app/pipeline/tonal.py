@@ -1142,7 +1142,13 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     else:
         tip = np.array(_hex_to_rgb(ink_hex), dtype=np.float32)
     # Dark ground: brightness drives ink. Light paper: darkness drives ink.
-    v = lum if not light else (1.0 - lum)
+    if not light:
+        v = lum
+    else:
+        # Engraving on white paper: floor the ink so brightly-lit skin/highlights
+        # still carry a faint visible gray instead of washing out to blank paper
+        # (which left bright faces nearly empty). Darks still reach full ink.
+        v = 0.26 + 0.74 * (1.0 - lum)
     out = ground + (tip - ground) * v[..., None]
     if remove_bg:
         m = an.silhouette.mask
