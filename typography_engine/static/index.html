@@ -195,7 +195,7 @@
         <button type="button" data-style="words" class="on">Words</button>
         <button type="button" data-style="message">Letter</button>
       </div>
-      <div class="ctl-hint" id="styleHint">Their name and the traits you love, scattered into the portrait.</div>
+      <div class="ctl-hint" id="styleHint">Single words and short phrases, scattered to form the face.</div>
     </div>
     <label class="field">
       <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
@@ -368,7 +368,7 @@ $("#styleSeg").addEventListener("click", e=>{
   const prose = state.style==="message";
   if(styleHint) styleHint.textContent = prose
     ? "A whole note, message, or passage — written as the face."
-    : "Their name and the traits you love, scattered into the portrait.";
+    : "Single words and short phrases, scattered to form the face.";
   wordsLbl.innerHTML = prose ? "Their letter, in your words" : "The words that make them <em>them</em>";
   wordsHint.textContent = prose
     ? "Paste a letter, lyrics, a story, a tribute — it becomes the portrait."
