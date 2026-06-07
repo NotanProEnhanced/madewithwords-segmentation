@@ -1140,7 +1140,12 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
     # neutral ink so the ink choice never touches the layout (and we avoid the
     # mosaic's photo-ink colour path, which isn't needed here).
     if style == "message":
-        colored, runs = build_poster(an, text, cfg, warns, render_w=render_w, ink="mono", remove_bg=remove_bg)
+        # Message/prose is a single uniform text size (no face tiers), so the
+        # word-size control maps straight to the poster font size. Clamp to a
+        # sane readable band; default min_font_px=20 reproduces the prior look.
+        msg_font = float(min(cfg.max_font_px, max(12.0, cfg.min_font_px)))
+        colored, runs = build_poster(an, text, cfg, warns, render_w=render_w,
+                                     font_px=msg_font, ink="mono", remove_bg=remove_bg)
     else:
         from .portrait import build_portrait
         words = [w for w in re.split(r"[\s,]+", text) if w]
