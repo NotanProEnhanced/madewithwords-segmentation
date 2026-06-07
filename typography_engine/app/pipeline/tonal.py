@@ -1143,9 +1143,13 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     else:
         tip = np.array(_hex_to_rgb(ink_hex), dtype=np.float32)
     # Dark ground: brightness drives ink. Light paper: darkness drives ink
-    # (engraving) -- highlights stay near white paper so the lit face reads as
-    # white space; the gap-fill is disabled in light mode so that space survives.
-    v = lum if not light else (1.0 - lum)
+    # (engraving). In light mode push highlights hard toward white (gamma<1) so
+    # the lit face stays white paper even under dense gap-fill -- only shadows and
+    # features pick up ink, so the portrait reads instead of becoming a gray mass.
+    if not light:
+        v = lum
+    else:
+        v = 1.0 - np.clip(lum ** 0.55, 0.0, 1.0)
     out = ground + (tip - ground) * v[..., None]
     if remove_bg:
         m = an.silhouette.mask
@@ -1192,12 +1196,13 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         # becomes white (sparse, invisible non-face areas), so disable it in light
         # mode and keep full dark-ink-on-paper shadows (the engraving look).
         eff_density = 0.0 if light else tone_density
-        # Multi-scale gap-fill densely packs the silhouette (great on a dark
-        # ground). In light/engraving mode the lit face must stay as white paper,
-        # so dense fill turns it into a jumble -- disable gap-fill in light mode.
+        # Multi-scale gap-fill packs the full size range into the silhouette in
+        # both modes. In light/engraving mode the lit face is pushed to white
+        # (see _tint_photo), so the dense fill there renders as white paper and
+        # only shadows/features take ink -- full range without a gray jumble.
         res = build_portrait(an, words, cfg, warns, uppercase=True, ink="mono",
                              render_w=render_w, tone_density=eff_density,
-                             gap_fill=not light)
+                             gap_fill=True)
         colored, runs = res.svg, res.runs
     ground_hex = _ground_hex(ink, light)
     if not colored:
