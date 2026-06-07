@@ -80,6 +80,12 @@ def env_int(key: str, default: int) -> int:
 
 PORT = env_int("TYPO_PORT", 8077)
 
+# Largest upload we accept. Normal phone photos are a few MB; this caps the
+# pathological (40MP+ files) that would slow a render or exhaust memory on the
+# single worker. The frontend rejects oversize before upload; the server
+# enforces the same limit as defense-in-depth.
+MAX_UPLOAD_BYTES = env_int("TYPO_MAX_UPLOAD_BYTES", 25 * 1024 * 1024)   # 25 MB
+
 # --- Analytics (Umami Cloud) ------------------------------------------------
 # Privacy-first, cookieless funnel analytics. The website ID is NOT secret (it
 # is exposed in the browser tracking script); it lives here only so the

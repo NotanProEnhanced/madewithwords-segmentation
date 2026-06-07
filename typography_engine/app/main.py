@@ -24,6 +24,7 @@ from .config import (
     DATA_DIR,
     DOWNLOAD_PNG_WIDTH,
     DOWNLOAD_PRICE_CENTS,
+    MAX_UPLOAD_BYTES,
     OUTPUTS_DIR,
     PREVIEW_PNG_WIDTH,
     PRINTFUL_API_TOKEN,
@@ -289,6 +290,8 @@ async def measure(image: UploadFile = File(...)) -> JSONResponse:
     data = await image.read()
     if not data:
         return JSONResponse({"ok": False, "error": "empty_upload"}, status_code=400)
+    if len(data) > MAX_UPLOAD_BYTES:
+        return JSONResponse({"ok": False, "error": "file_too_large"}, status_code=413)
     warns = WarningCollector()
     try:
         from .pipeline.preprocess import load_and_normalize
@@ -299,10 +302,12 @@ async def measure(image: UploadFile = File(...)) -> JSONResponse:
         bbox = faces[0].bbox if faces else haar_face_bbox(img, warns)
         w = float(img.gray.shape[1]) or 1.0
         face_frac = round(float(bbox[2]) / w, 4) if bbox else None
+        n_faces = len(faces)            # 0/1 via haar fallback; >=2 only when MediaPipe sees a group
     except Exception as e:  # noqa: BLE001
         # On any failure, allow all sizes (the renderer's floor still protects).
-        return JSONResponse({"ok": True, "face_frac": None, "sizes": _allowed_size_mf(None)})
-    return JSONResponse({"ok": True, "face_frac": face_frac, "sizes": _allowed_size_mf(face_frac)})
+        return JSONResponse({"ok": True, "face_frac": None, "faces": 0, "sizes": _allowed_size_mf(None)})
+    return JSONResponse({"ok": True, "face_frac": face_frac, "faces": n_faces,
+                         "sizes": _allowed_size_mf(face_frac)})
 
 
 @app.post("/render")
@@ -330,6 +335,12 @@ async def render(
     img_bytes = await image.read()
     if not img_bytes:
         return JSONResponse({"ok": False, "error": "empty_upload"}, status_code=400)
+    if len(img_bytes) > MAX_UPLOAD_BYTES:
+        return JSONResponse(
+            {"ok": False, "error": "file_too_large",
+             "detail": "That image is too large — please use one under 25 MB."},
+            status_code=413,
+        )
 
     word_list = _parse_words(words, words_json)
     if not word_list:

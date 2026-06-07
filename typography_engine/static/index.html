@@ -41,6 +41,8 @@
   .ctl{margin-top:20px}
   .ctl-lbl{font-weight:600;font-size:15px;color:var(--ink);margin-bottom:8px}
   .ctl-hint{color:var(--muted);font-size:13px;line-height:1.45;margin-top:8px}
+  .photo-note{margin-top:10px;padding:10px 12px;border-radius:10px;background:#f4f1e8;
+    border:1px solid #e7e1d2;color:#6a5b39;font-size:13px;line-height:1.45}
   textarea,input[type=text]{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:16px;font-family:var(--sans);resize:none;background:#fff;color:var(--ink)}
   textarea:focus,input:focus{outline:none;border-color:var(--navy)}
 
@@ -191,6 +193,7 @@
       <div class="small">A clear head-and-shoulders shot works best. Tap to choose or take one.</div>
     </div>
     <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
+    <div id="photoNote" class="photo-note" style="display:none"></div>
     <input id="file" type="file" accept="image/*" hidden />
     <div class="ctl">
       <div class="seg" id="styleSeg">
@@ -401,9 +404,16 @@ $("#changePhoto").addEventListener("click", e=>{e.stopPropagation();fileInput.cl
 ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));
 drop.addEventListener("drop", e=>{ if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
 fileInput.addEventListener("change", e=>{ if(e.target.files[0]) setFile(e.target.files[0]); });
-function setFile(f){ if(!f.type.startsWith("image/"))return; state.file=f; previewImg.src=URL.createObjectURL(f);
-  preview.style.display="block"; drop.style.display="none"; refreshCreate(); tp_track("photo_selected");
-  measureSubject(f); }
+const MAX_UPLOAD_BYTES=25*1024*1024;   // keep in step with TYPO_MAX_UPLOAD_BYTES on the server
+function setFile(f){
+  if(!f.type.startsWith("image/")){ inputErr("That file isn't an image — please choose a JPG, PNG or HEIC photo."); return; }
+  if(f.size>MAX_UPLOAD_BYTES){ inputErr("That photo is too large (max 25 MB). Try a smaller image or a screenshot."); return; }
+  if(previewImg.src && previewImg.src.indexOf("blob:")===0) URL.revokeObjectURL(previewImg.src);   // free the prior upload
+  state.file=f; previewImg.src=URL.createObjectURL(f);
+  preview.style.display="block"; drop.style.display="none"; setPhotoNote("");
+  refreshCreate(); tp_track("photo_selected");
+  measureSubject(f);
+}
 
 // Offer only the word sizes that stay readable for THIS photo's framing: small
 // type on a far/small subject is unreadable, so the server measures the face
@@ -431,11 +441,19 @@ function applySizes(allowed){
   });
   buildSizeStrip();
 }
+function setPhotoNote(msg){
+  const el=document.getElementById("photoNote"); if(!el) return;
+  if(msg){ el.textContent=msg; el.style.display=""; } else { el.style.display="none"; el.textContent=""; }
+}
 function measureSubject(f){
   applySizes(null);                          // optimistic: all enabled while measuring
   const fd=new FormData(); fd.append("image",f);
   fetch("/measure",{method:"POST",body:fd}).then(r=>r.json())
-    .then(d=>{ if(d&&d.ok) applySizes(d.sizes); }).catch(()=>{});
+    .then(d=>{ if(d&&d.ok){
+        applySizes(d.sizes);
+        setPhotoNote((d.faces||0)>=2 ? "More than one face detected — we'll feature the largest. Crop to one person for the sharpest portrait." : "");
+      } })
+    .catch(()=>applySizes([120,44,20]));     // network failure: be conservative (skip unreadable Small)
 }
 
 /* ---------- swatch filmstrip (live thumbnails of THIS portrait per ink) ----- */
@@ -959,6 +977,7 @@ sharePanel.addEventListener("click", async e=>{
 function friendly(code){ return ({no_words:"Add a few words first.",
   unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",
   could_not_decode_image:"We couldn't read that image — please try a JPG or PNG.",
+  file_too_large:"That photo is too large (max 25 MB). Try a smaller image or a screenshot.",
   empty_upload:"Please add a photo."})[code]; }
 // Bound every render so a stuck request can't spin forever. Renders are a few
 // seconds; first-ever render may fetch face models, so the ceiling is generous.
