@@ -1148,7 +1148,11 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         # That only reads on a dark ground; on light paper a thinned shadow cell
         # becomes white (sparse, invisible non-face areas), so disable it in light
         # mode and keep full dark-ink-on-paper shadows (the engraving look).
-        eff_density = 0.0 if light else tone_density
+        # Pets are often large solid-dark regions (a black coat/mask); the same
+        # thinning that lifts a human face off the ground instead erodes those
+        # markings into specks, so disable it for non-person subjects too.
+        is_pet = getattr(an, "subject", "person") != "person"
+        eff_density = 0.0 if (light or is_pet) else tone_density
         res = build_portrait(an, words, cfg, warns, uppercase=True, ink="mono",
                              render_w=render_w, tone_density=eff_density)
         colored, runs = res.svg, res.runs
