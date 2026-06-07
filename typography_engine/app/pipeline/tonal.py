@@ -535,6 +535,7 @@ def build_tonal_portrait(
     ink: str = "mono",
     tone_density: float = 0.0,
     gap_fill: bool = True,
+    gap_fill_passes: int = 12,
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
     if not approved:
@@ -592,18 +593,9 @@ def build_tonal_portrait(
     # (body -> mid -> face), avoiding a harsh size discontinuity where the small
     # face tier meets the larger hair/headwear tiers.
     body_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 2.2)))
-    # Face/eye tiers are CAPPED so the face (and especially the features) stay
-    # small and detail-resolving even when the body is Giant -- a strong
-    # large-body -> small-face gradient. The cap is inactive at Medium/Small
-    # (min_font <= 36), so the default look is unchanged; only large settings
-    # shrink the face relative to the big body. The small, dense face tier also
-    # claims its area first, so the big gap-fill words can't fit there and skip
-    # it -- keeping the face small while the body/hair stay large.
-    face_font = float(min(36.0, max(10.0, cfg.min_font_px)))
-    eye_font = float(max(7.0, face_font * 0.58))
-    # Mid is the smooth bridge between the big body and the small face (geometric
-    # mean), so words step body -> mid -> face -> eye without a stark jump.
-    mid_font = float(min(cfg.max_font_px, max(face_font * 1.3, (body_font * face_font) ** 0.5)))
+    mid_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 1.45)))
+    face_font = float(max(8.0, cfg.min_font_px * 1.0))
+    eye_font = float(max(6.0, face_font * 0.62))
 
     # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
     # the source photo. Mono keeps the existing gray ramp untouched.
@@ -944,7 +936,7 @@ def build_tonal_portrait(
     # steps were skipping. More, smaller steps = smoother transition + more detail.
     fill_font = body_font * 0.78
     _fills = 0
-    while gap_fill and fill_font >= 8.0 and _fills < 12:
+    while gap_fill and fill_font >= 8.0 and _fills < gap_fill_passes:
         emit(fill_font, 0, 0, W, H, "fill", "fill")
         fill_font *= 0.78
         _fills += 1
@@ -1158,11 +1150,12 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     if not light:
         v = lum
     else:
-        # gamma<1 keeps the lit face light; the small 0.12 floor stops the
-        # BRIGHTEST areas from going fully white (= blank paper). The lightest
-        # skin keeps a faint gray so the form/edges read and the transitional
-        # fill words stay visible there, while darks still reach full ink.
-        v = 0.12 + 0.88 * (1.0 - np.clip(lum ** 0.55, 0.0, 1.0))
+        # Engraving: keep the lightest areas as faint near-white (small 0.08
+        # floor, so the brightest skin isn't pure blank paper) but push mids and
+        # shadows DARKER (1.25 gain) so the visible words are bold, not washed
+        # out. With the sparser light-mode fill this reads as a crisp engraving
+        # with white space, not a faint gray jumble.
+        v = np.clip(0.08 + 1.25 * (1.0 - np.clip(lum ** 0.8, 0.0, 1.0)), 0.0, 1.0)
     out = ground + (tip - ground) * v[..., None]
     if remove_bg:
         m = an.silhouette.mask
@@ -1213,9 +1206,11 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         # both modes. In light/engraving mode the lit face is pushed to white
         # (see _tint_photo), so the dense fill there renders as white paper and
         # only shadows/features take ink -- full range without a gray jumble.
+        # Dark ground wants the full dense fill (the hero look). Light/engraving
+        # wants white space, so use far fewer fill passes -- sparser + cleaner.
         res = build_portrait(an, words, cfg, warns, uppercase=True, ink="mono",
                              render_w=render_w, tone_density=eff_density,
-                             gap_fill=True)
+                             gap_fill=True, gap_fill_passes=(4 if light else 12))
         colored, runs = res.svg, res.runs
     ground_hex = _ground_hex(ink, light)
     if not colored:
