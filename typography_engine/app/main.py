@@ -1512,7 +1512,7 @@ html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sa
 <p class="wm">Preview is watermarked &middot; your download and prints are clean, full-resolution.</p>
 </div>
 <div class="card" id="shop">
-<div class="t-lbl" id="shopLbl">Choose your keepsake</div>
+<div class="t-lbl" id="shopLbl" style="text-align:center;margin-bottom:12px">Choose your keepsake</div>
 <div class="t-sub" id="shopSub">Every print comes with the high-res digital file, free &mdash; keep it, reprint it, share it.</div>
 <div id="productList"></div>
 <div class="sizeRow" id="sizeRow"><label for="sizeSel" class="t-lbl">Size</label><select id="sizeSel"></select></div>
