@@ -395,9 +395,8 @@ function applySizes(allowed){
   const btns=[...document.querySelectorAll('#sizeSeg button')];
   let cur=null;
   btns.forEach(b=>{ const mf=parseFloat(b.dataset.mf), ok=set.has(mf);
-    b.disabled=!ok; b.style.opacity=ok?"":"0.32"; b.style.cursor=ok?"":"not-allowed";
-    b.title=ok?"":"This size needs a closer head-and-shoulders photo";
-    if(b.classList.contains("on")) cur=mf; });
+    b.style.display=ok?"":"none";              // hide sizes that aren't usable for this photo
+    if(b.classList.contains("on")){ cur=mf; if(!ok) b.classList.remove("on"); } });
   if(cur===null || !set.has(cur)){           // current pick no longer valid -> re-default
     const prefer=[20,44,120].find(v=>set.has(v)) || 120;   // Medium if allowed, else largest
     btns.forEach(b=>{ const on=parseFloat(b.dataset.mf)===prefer;
