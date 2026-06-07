@@ -193,12 +193,10 @@
     <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
     <input id="file" type="file" accept="image/*" hidden />
     <div class="ctl">
-      <div class="ctl-lbl">Style</div>
       <div class="seg" id="styleSeg">
         <button type="button" data-style="words" class="on">Words</button>
         <button type="button" data-style="message">Letter</button>
       </div>
-      <div class="ctl-hint" id="styleHint">Single words and short phrases, scattered to form the face.</div>
     </div>
     <label class="field">
       <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
@@ -366,16 +364,13 @@ function refreshCreate(){ if(state.file && words.value.trim() && consent.checked
 words.addEventListener("input", refreshCreate);
 consent.addEventListener("change", refreshCreate);
 // Style toggle: word mosaic vs continuous-prose story.
-const wordsLbl=$("#wordsLbl"), wordsHint=$("#wordsHint"), styleHint=$("#styleHint");
+const wordsLbl=$("#wordsLbl"), wordsHint=$("#wordsHint");
 const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch");
 $("#styleSeg").addEventListener("click", e=>{
   const b=e.target.closest("button"); if(!b) return;
   state.style=b.dataset.style;
   [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
   const prose = state.style==="message";
-  if(styleHint) styleHint.textContent = prose
-    ? "A whole note, message, or passage — written as the face."
-    : "Single words and short phrases, scattered to form the face.";
   wordsLbl.innerHTML = prose ? "Their letter, in your words" : "The words that make them <em>them</em>";
   wordsHint.textContent = prose
     ? "Paste a letter, lyrics, a story, a tribute — it becomes the portrait."
