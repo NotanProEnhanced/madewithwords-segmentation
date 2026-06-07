@@ -592,9 +592,18 @@ def build_tonal_portrait(
     # (body -> mid -> face), avoiding a harsh size discontinuity where the small
     # face tier meets the larger hair/headwear tiers.
     body_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 2.2)))
-    mid_font = float(min(cfg.max_font_px, max(cfg.min_font_px, cfg.min_font_px * 1.45)))
-    face_font = float(max(8.0, cfg.min_font_px * 1.0))
-    eye_font = float(max(6.0, face_font * 0.62))
+    # Face/eye tiers are CAPPED so the face (and especially the features) stay
+    # small and detail-resolving even when the body is Giant -- a strong
+    # large-body -> small-face gradient. The cap is inactive at Medium/Small
+    # (min_font <= 36), so the default look is unchanged; only large settings
+    # shrink the face relative to the big body. The small, dense face tier also
+    # claims its area first, so the big gap-fill words can't fit there and skip
+    # it -- keeping the face small while the body/hair stay large.
+    face_font = float(min(36.0, max(10.0, cfg.min_font_px)))
+    eye_font = float(max(7.0, face_font * 0.58))
+    # Mid is the smooth bridge between the big body and the small face (geometric
+    # mean), so words step body -> mid -> face -> eye without a stark jump.
+    mid_font = float(min(cfg.max_font_px, max(face_font * 1.3, (body_font * face_font) ** 0.5)))
 
     # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
     # the source photo. Mono keeps the existing gray ramp untouched.
