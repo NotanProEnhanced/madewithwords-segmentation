@@ -371,6 +371,7 @@ async def render(
         (PRIVATE_DIR / f"{job_id}.json").write_text(json.dumps({
             "style": style_choice, "ink": ink_choice, "remove_bg": bool(remove_bg),
             "light": bool(light), "text": text, "uppercase": bool(uppercase),
+            "min_font_px": float(cfg.min_font_px),
         }), encoding="utf-8")
 
     return JSONResponse(
@@ -563,9 +564,17 @@ def _ensure_clean_png(job: str) -> Optional[Path]:
                 mask_path.read_text(encoding="utf-8"), an,
                 r.get("ink", "navy"), bool(r.get("remove_bg", True)), DOWNLOAD_PNG_WIDTH,
                 light=bool(r.get("light", False)))
-        else:  # older jobs without a stored mask: full recompose
+        else:  # no stored mask (e.g. light/engraving renders) or older jobs:
+            # recompose at print size. Reuse the chosen word size so the paid
+            # download matches the preview (light mode has no baked mask).
+            cfg2 = RenderConfig()
+            try:
+                if r.get("min_font_px"):
+                    cfg2.min_font_px = float(r["min_font_px"])
+            except (TypeError, ValueError):
+                pass
             png_bytes, _, _, _ = render_layered_png(
-                an, r["text"], r.get("style", "words"), RenderConfig(), warns2,
+                an, r["text"], r.get("style", "words"), cfg2, warns2,
                 ink=r.get("ink", "navy"), remove_bg=bool(r.get("remove_bg", True)),
                 light=bool(r.get("light", False)), out_width=DOWNLOAD_PNG_WIDTH, render_w=2600)
         if not png_bytes:

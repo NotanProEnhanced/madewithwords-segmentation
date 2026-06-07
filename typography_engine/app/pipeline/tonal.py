@@ -1183,6 +1183,25 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
                        out_width: int = 1400, render_w: int = 2200, tone_density: float = 0.6):
     """Layered portrait -> PNG bytes. style='message' = poster rows; else Words
     (mosaic) layout. Returns (png_bytes, runs, ground_hex, mask_svg)."""
+    # --- Dedicated light/engraving renderer (Words style) --------------------
+    # On white paper, compositing the photo through a text mask washes out or
+    # jumbles. Instead, draw the tonally-shaded words DIRECTLY on the paper: each
+    # glyph is coloured by the tone it sits on (faint near-white in highlights,
+    # bold/dark in shadows), which reads as a clean engraving. This is a separate
+    # path from the dark/photo-composite renderer. No mask is returned, so the
+    # paid high-res download re-renders through here.
+    if light and style != "message":
+        from .portrait import build_portrait
+        from .raster import svg_to_png_bytes
+        ewords = [w for w in re.split(r"[\s,]+", text) if w]
+        eng_ink = ink if ink in ("navy", "sepia", "burgundy", "forest", "mono") else "navy"
+        eres = build_portrait(an, ewords, cfg, warns, uppercase=True, ink=eng_ink,
+                              render_w=render_w, gap_fill=True, gap_fill_passes=12)
+        eground = _PALETTES.get(eng_ink, _PALETTES["mono"])[2]
+        if not eres.svg:
+            return b"", eres.runs, eground, ""
+        return svg_to_png_bytes(eres.svg, output_width=out_width), eres.runs, eground, ""
+
     # The layout only needs glyph POSITIONS (we whiten them into a mask); the
     # colour/ink is applied separately by _tint_photo. Build the layout with a
     # neutral ink so the ink choice never touches the layout (and we avoid the
@@ -1210,7 +1229,7 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         # wants white space, so use far fewer fill passes -- sparser + cleaner.
         res = build_portrait(an, words, cfg, warns, uppercase=True, ink="mono",
                              render_w=render_w, tone_density=eff_density,
-                             gap_fill=True, gap_fill_passes=(4 if light else 12))
+                             gap_fill=True, gap_fill_passes=12)
         colored, runs = res.svg, res.runs
     ground_hex = _ground_hex(ink, light)
     if not colored:
