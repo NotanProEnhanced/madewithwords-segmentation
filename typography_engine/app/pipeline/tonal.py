@@ -928,11 +928,15 @@ def build_tonal_portrait(
     # cells). Pack progressively smaller words into those gaps -- skipping any
     # pixel a larger pass already inked -- so the portrait covers the full size
     # range with no empty black regions, finer where big words never fit.
-    fill_font = body_font * 0.5
+    # Start the cascade just below the body size and step DOWN gently (each pass
+    # ~78% of the previous), so the sizes form a smooth gradient instead of a few
+    # stark jumps -- the intermediate sizes capture the detail that big->small
+    # steps were skipping. More, smaller steps = smoother transition + more detail.
+    fill_font = body_font * 0.78
     _fills = 0
-    while fill_font >= 8.0 and _fills < 6:
+    while fill_font >= 8.0 and _fills < 12:
         emit(fill_font, 0, 0, W, H, "fill", "fill")
-        fill_font *= 0.6
+        fill_font *= 0.78
         _fills += 1
 
     if not runs:
