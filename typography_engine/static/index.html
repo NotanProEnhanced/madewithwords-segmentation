@@ -37,6 +37,10 @@
   label.field{display:block;margin-top:18px}
   .field .lbl{font-weight:600;font-size:15px}
   .field .hint{color:var(--muted);font-size:13px;margin:2px 0 8px}
+  /* Labelled control group: a quiet label + one human line under each choice. */
+  .ctl{margin-top:20px}
+  .ctl-lbl{font-weight:600;font-size:15px;color:var(--ink);margin-bottom:8px}
+  .ctl-hint{color:var(--muted);font-size:13px;line-height:1.45;margin-top:8px}
   textarea,input[type=text]{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:16px;font-family:var(--sans);resize:none;background:#fff;color:var(--ink)}
   textarea:focus,input:focus{outline:none;border-color:var(--navy)}
 
@@ -185,21 +189,29 @@
     </div>
     <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
     <input id="file" type="file" accept="image/*" hidden />
-    <div class="seg" id="styleSeg">
-      <button type="button" data-style="words" class="on">Words</button>
-      <button type="button" data-style="message">Message</button>
-    </div>
-    <div class="seg" id="sizeSeg" aria-label="Word size">
-      <button type="button" data-mf="120">Giant</button>
-      <button type="button" data-mf="44">Large</button>
-      <button type="button" data-mf="20" class="on">Medium</button>
-      <button type="button" data-mf="13">Small</button>
+    <div class="ctl">
+      <div class="ctl-lbl">Style</div>
+      <div class="seg" id="styleSeg">
+        <button type="button" data-style="words" class="on">Words</button>
+        <button type="button" data-style="message">Letter</button>
+      </div>
+      <div class="ctl-hint" id="styleHint">Their name and the traits you love, scattered into the portrait.</div>
     </div>
     <label class="field">
       <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
       <span class="hint" id="wordsHint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
       <textarea id="words" rows="3" placeholder="GRACE, KIND, BRILLIANT, MOM, ALWAYS"></textarea>
     </label>
+    <div class="ctl">
+      <div class="ctl-lbl">Word size</div>
+      <div class="seg" id="sizeSeg" aria-label="Word size">
+        <button type="button" data-mf="120">Giant</button>
+        <button type="button" data-mf="44">Large</button>
+        <button type="button" data-mf="20" class="on">Medium</button>
+        <button type="button" data-mf="13">Small</button>
+      </div>
+      <div class="ctl-hint">Larger words look bold and graphic; smaller words add fine detail.</div>
+    </div>
     <label class="consent" id="consentRow">
       <input type="checkbox" id="consent" />
       <span>I confirm I own or have rights to this image, it contains no copyrighted characters, celebrities or explicit material. I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Use</a>.</span>
@@ -347,14 +359,17 @@ function refreshCreate(){ if(state.file && words.value.trim() && consent.checked
 words.addEventListener("input", refreshCreate);
 consent.addEventListener("change", refreshCreate);
 // Style toggle: word mosaic vs continuous-prose story.
-const wordsLbl=$("#wordsLbl"), wordsHint=$("#wordsHint");
+const wordsLbl=$("#wordsLbl"), wordsHint=$("#wordsHint"), styleHint=$("#styleHint");
 const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch");
 $("#styleSeg").addEventListener("click", e=>{
   const b=e.target.closest("button"); if(!b) return;
   state.style=b.dataset.style;
   [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
   const prose = state.style==="message";
-  wordsLbl.innerHTML = prose ? "Their message, in your words" : "The words that make them <em>them</em>";
+  if(styleHint) styleHint.textContent = prose
+    ? "A whole note, message, or passage — written as the face."
+    : "Their name and the traits you love, scattered into the portrait.";
+  wordsLbl.innerHTML = prose ? "Their letter, in your words" : "The words that make them <em>them</em>";
   wordsHint.textContent = prose
     ? "Paste a letter, lyrics, a story, a tribute — it becomes the portrait."
     : "Their name, what you love, a date, an inside joke. Separate with commas.";
@@ -362,7 +377,7 @@ $("#styleSeg").addEventListener("click", e=>{
   words.placeholder = prose
     ? "You are the kindest soul I know. From the day you were born…"
     : "GRACE, KIND, BRILLIANT, MOM, ALWAYS";
-  bgRow.style.display = prose ? "flex" : "none";   // background toggle = Message only
+  bgRow.style.display = prose ? "flex" : "none";   // background toggle = Letter only
 });
 // Word-size scale: sets the floor font size; the body/mid/face/eye tiers all
 // scale from it, so "Giant" = bold/dramatic with fewer words, "Small" = fine and
