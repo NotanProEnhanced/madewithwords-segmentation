@@ -195,7 +195,7 @@
     <div class="ctl">
       <div class="seg" id="styleSeg">
         <button type="button" data-style="words" class="on">Words</button>
-        <button type="button" data-style="message">Letter</button>
+        <button type="button" data-style="message">Passage</button>
       </div>
     </div>
     <label class="field">
@@ -371,9 +371,9 @@ $("#styleSeg").addEventListener("click", e=>{
   state.style=b.dataset.style;
   [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
   const prose = state.style==="message";
-  wordsLbl.innerHTML = prose ? "Their letter, in your words" : "The words that make them <em>them</em>";
+  wordsLbl.innerHTML = prose ? "A passage, in your words" : "The words that make them <em>them</em>";
   wordsHint.textContent = prose
-    ? "Paste a letter, lyrics, a story, a tribute — it becomes the portrait."
+    ? "A letter, lyrics, a poem, a tribute, your vows — it becomes the portrait."
     : "Their name, what you love, a date, an inside joke. Separate with commas.";
   words.rows = prose ? 5 : 3;
   words.placeholder = prose
@@ -629,7 +629,7 @@ function renderProducts(data){
 fetch("/products").then(r=>r.json()).then(renderProducts).catch(()=>{});
 createBtn.addEventListener("click", ()=>{
   if(!state.file){ inputErr("Add a photo to start — a clear head-and-shoulders shot works best."); drop.scrollIntoView({behavior:"smooth",block:"center"}); return; }
-  if(!words.value.trim()){ inputErr(state.style==="message" ? "Add their message first — a letter, lyrics, or a tribute." : "Add a few words first — a name, traits, a date."); words.focus(); return; }
+  if(!words.value.trim()){ inputErr(state.style==="message" ? "Add the passage first — a letter, lyrics, a poem, or a tribute." : "Add a few words first — a name, traits, a date."); words.focus(); return; }
   if(!consent.checked){ inputErr("Please confirm you have the rights to this photo and agree to the Terms."); document.getElementById("consentRow").scrollIntoView({behavior:"smooth",block:"center"}); return; }
   errInput.style.display="none";
   inputView.style.display="none"; resultView.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
