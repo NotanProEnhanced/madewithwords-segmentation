@@ -385,6 +385,7 @@ $("#styleSeg").addEventListener("click", e=>{
     ? "You are the kindest soul I know. From the day you were born…"
     : "GRACE, KIND, BRILLIANT, MOM, ALWAYS";
   bgRow.style.display = prose ? "flex" : "none";   // background toggle = Letter only
+  applySizes(null);                                // restock the size strip for this style
 });
 // Word-size scale: sets the floor font size; the body/mid/face/eye tiers all
 // scale from it, so "Giant" = bold/dramatic with fewer words, "Small" = fine and
@@ -412,19 +413,27 @@ function setFile(f){ if(!f.type.startsWith("image/"))return; state.file=f; previ
 // Offer only the word sizes that stay readable for THIS photo's framing: small
 // type on a far/small subject is unreadable, so the server measures the face
 // size and tells us which sizes to enable. Disabled sizes grey out.
+let measuredSizes=null;                       // last /measure word-size gate (Words values)
 function applySizes(allowed){
-  const set=new Set((allowed||[120,44,20,13]).map(Number));
-  const btns=[...document.querySelectorAll('#sizeSeg button')];
-  let cur=null;
-  btns.forEach(b=>{ const mf=parseFloat(b.dataset.mf), ok=set.has(mf);
-    b.style.display=ok?"":"none";              // hide sizes that aren't usable for this photo
-    if(b.classList.contains("on")){ cur=mf; if(!ok) b.classList.remove("on"); } });
-  if(cur===null || !set.has(cur)){           // current pick no longer valid -> re-default
-    const prefer=[20,44,120].find(v=>set.has(v)) || 120;   // Medium if allowed, else largest
-    btns.forEach(b=>{ const on=parseFloat(b.dataset.mf)===prefer;
-      b.classList.toggle("on",on); if(on) state.minFont=prefer; });
+  if(allowed) measuredSizes=allowed;
+  const gate=new Set((measuredSizes||[120,44,20,13]).map(Number));
+  const full=sizesForStyle().map(s=>Number(s[0]));
+  // Words honors the /measure readability gate (small WORDS on a far subject are
+  // unreadable). Letter is prose read up close, so every fine size forms a face.
+  let usable=(state.style==="message") ? full : full.filter(mf=>gate.has(mf));
+  if(!usable.length) usable=[full[0]];
+  allowedMf=usable.slice().sort((a,b)=>b-a);
+  if(!allowedMf.includes(Number(state.minFont))){     // current pick invalid -> re-default
+    const def=(state.style==="message") ? 13
+              : ([20,44,120].find(v=>allowedMf.includes(v))||allowedMf[0]);   // Medium, else largest
+    state.minFont=allowedMf.includes(def)?def:allowedMf[0];
   }
-  allowedMf=[...set].sort((a,b)=>b-a);       // feed the result-screen size filmstrip
+  // Keep the hidden Words segment in rough sync (cosmetic; state.minFont rules).
+  document.querySelectorAll('#sizeSeg button').forEach(b=>{
+    const mf=parseFloat(b.dataset.mf);
+    b.style.display=gate.has(mf)?"":"none";
+    b.classList.toggle("on",mf===Number(state.minFont));
+  });
   buildSizeStrip();
 }
 function measureSubject(f){
@@ -469,7 +478,13 @@ function resetThumbs(){ swatchEl.querySelectorAll(".pic").forEach(p=>{ p.style.b
    user's own photo at that word size, in the currently-selected ink. Tapping a
    chip re-renders the main portrait at that size. Only the sizes that stay
    readable for this photo's framing (from /measure) get a chip. */
-const SIZES=[[120,"Giant"],[44,"Large"],[20,"Medium"],[13,"Small"]];
+// Word size means different things per style. Words is a tonal mosaic that
+// forms a face at any scale, so it gets the full dramatic range. Letter is the
+// user's prose laid in rows, which only resolves into a face with enough rows
+// (fine type) -- so it gets a finer set; Giant/Large would be a wall of text.
+const WORD_SIZES=[[120,"Giant"],[44,"Large"],[20,"Medium"],[13,"Small"]];
+const LETTER_SIZES=[[20,"Readable"],[13,"Balanced"],[10,"Fine"]];
+function sizesForStyle(){ return state.style==="message" ? LETTER_SIZES : WORD_SIZES; }
 const sizeStripEl=$("#sizeStrip"), sizeFilmEl=$("#sizeFilm");
 let allowedMf=[120,44,20,13];
 let sizeThumbCache={};                 // coarse renders of the CURRENT ink, keyed by size
@@ -477,7 +492,7 @@ function buildSizeStrip(){
   if(!sizeStripEl) return;
   sizeStripEl.innerHTML="";
   const set=new Set(allowedMf.map(Number));
-  SIZES.forEach(([mf,label])=>{
+  sizesForStyle().forEach(([mf,label])=>{
     if(!set.has(Number(mf))) return;
     const el=document.createElement("button"); el.type="button";
     el.className="thumb"+(Number(mf)===Number(state.minFont)?" sel":""); el.dataset.mf=mf;
@@ -486,6 +501,8 @@ function buildSizeStrip(){
     const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
     el.append(pic,nm); el.addEventListener("click",()=>selectSize(mf)); sizeStripEl.append(el);
   });
+  const lbl=sizeFilmEl && sizeFilmEl.querySelector(".film-lbl");
+  if(lbl) lbl.textContent=(state.style==="message"?"Text size":"Word size")+" — tap to resize the type";
   // Nothing to choose between -> hide the strip (one usable size for this photo).
   if(sizeFilmEl) sizeFilmEl.style.display=(sizeStripEl.children.length>1)?"":"none";
 }
