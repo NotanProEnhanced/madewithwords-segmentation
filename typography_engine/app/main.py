@@ -329,6 +329,7 @@ async def render(
     render_w: int = Form(2600),
     remove_bg: bool = Form(True),
     light: bool = Form(False),
+    ground: str = Form("navy"),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
@@ -378,22 +379,33 @@ async def render(
 
     from .pipeline.tonal import _PALETTES, _GRADIENTS, render_layered_png
     ink_choice = ink if (ink in _PALETTES or ink in _GRADIENTS or ink == "photo") else "navy"
-    # Two user-facing styles: "message" = poster rows; anything else = "words"
-    # (the scattered mosaic). Both use the layered photo-through-text renderer.
-    style_choice = "message" if style in ("message", "poster", "story") else "words"
+    # User-facing styles: "displacement" = type-follows-the-form portrait (its own
+    # raster renderer + ground choice); "message" = poster rows; anything else =
+    # "words" (the scattered mosaic). Words/Passage share the layered renderer.
+    is_displacement = (style == "displacement")
+    ground_choice = ground if ground in ("paper", "navy", "black") else "navy"
+    style_choice = "displacement" if is_displacement else (
+        "message" if style in ("message", "poster", "story") else "words")
     render_w_eff = max(700, min(3000, int(render_w)))
     is_thumb = int(png_width) < 600         # small png_width => a swatch chip render
-    if style_choice == "words":
-        text = " ".join(word_list) or (message or "").strip()
-    else:
+    if style_choice == "message":
         text = (message or "").strip() or " ".join(word_list)
+    else:
+        text = " ".join(word_list) or (message or "").strip()
 
     try:
         preview_w = min(int(png_width), PREVIEW_PNG_WIDTH)
-        png_bytes, runs, ground_hex, mask_svg = render_layered_png(
-            an, text, style_choice, cfg, warns,
-            ink=ink_choice, remove_bg=remove_bg, light=light,
-            out_width=max(320, preview_w), render_w=render_w_eff)
+        if is_displacement:
+            from .pipeline.displacement import render_displacement_portrait
+            disp_words = word_list or text.split()
+            png_bytes = render_displacement_portrait(
+                an, disp_words, ground=ground_choice, out_width=max(320, preview_w))
+            runs, ground_hex, mask_svg = [], None, None
+        else:
+            png_bytes, runs, ground_hex, mask_svg = render_layered_png(
+                an, text, style_choice, cfg, warns,
+                ink=ink_choice, remove_bg=remove_bg, light=light,
+                out_width=max(320, preview_w), render_w=render_w_eff)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
     except Exception as e:  # noqa: BLE001
@@ -421,7 +433,7 @@ async def render(
         (PRIVATE_DIR / f"{job_id}.json").write_text(json.dumps({
             "style": style_choice, "ink": ink_choice, "remove_bg": bool(remove_bg),
             "light": bool(light), "text": text, "uppercase": bool(uppercase),
-            "min_font_px": float(cfg.min_font_px),
+            "min_font_px": float(cfg.min_font_px), "ground": ground_choice,
         }), encoding="utf-8")
 
     return JSONResponse(
@@ -432,6 +444,7 @@ async def render(
             "faces": len(an.faces),
             "ink": ink_choice,
             "style": style_choice,
+            "ground": ground_choice,
             "words_used": word_list,
             "text_runs": [
                 {"region": r.region, "font_size": r.font_size, "kind": r.kind, "chars": len(r.text)}
@@ -608,6 +621,15 @@ def _ensure_clean_png(job: str) -> Optional[Path]:
         r = json.loads(recipe_path.read_text(encoding="utf-8"))
         warns2 = WarningCollector()
         an = analyze_image(src_path.read_bytes(), RenderConfig(), warns2)
+        if r.get("style") == "displacement":
+            from .pipeline.displacement import render_displacement_portrait
+            png_bytes = render_displacement_portrait(
+                an, (r.get("text", "") or "").split(),
+                ground=r.get("ground", "navy"), out_width=DOWNLOAD_PNG_WIDTH)
+            if not png_bytes:
+                return None
+            path.write_bytes(png_bytes)
+            return path
         mask_path = PRIVATE_DIR / f"{job}.mask.svg"
         if mask_path.exists():
             png_bytes = compose_layered(

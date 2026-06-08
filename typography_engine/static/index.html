@@ -199,6 +199,7 @@
       <div class="seg" id="styleSeg">
         <button type="button" data-style="words" class="on">Words</button>
         <button type="button" data-style="message">Passage</button>
+        <button type="button" data-style="displacement">Relief</button>
       </div>
     </div>
     <label class="field">
@@ -345,6 +346,14 @@ function placeholderBg(col){
   return col;
 }
 const state = { file:null, ink:"mono", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:20 };
+// The Displacement style uses 3 "grounds" instead of the 9 inks; they ride the
+// same swatch filmstrip. Ground ids are prefixed (g_*) so they never collide
+// with ink ids. state.ink holds the active variant id (an ink name, or g_*).
+const GROUNDS_SW=[["g_navy","#0d1b3a","Navy"],["g_black","#111317","Black"],["g_paper","#efe9da","Paper"]];
+function currentSwatches(){ return state.style==="displacement" ? GROUNDS_SW : INKS; }
+function variantPost(id){ return state.style==="displacement"
+  ? {ink:"navy", style:"displacement", ground:(id||"g_navy").replace("g_","")}
+  : {ink:id, style:state.style, ground:"navy"}; }
 // Umami funnel event helper. No-ops silently if the script is blocked, still
 // loading, or unconfigured — analytics must never break the app.
 function tp_track(name, data){ try{ if(window.umami) window.umami.track(name, data||{}); }catch(e){} }
@@ -371,19 +380,24 @@ const wordsLbl=$("#wordsLbl"), wordsHint=$("#wordsHint");
 const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch");
 $("#styleSeg").addEventListener("click", e=>{
   const b=e.target.closest("button"); if(!b) return;
+  const wasDisp = state.style==="displacement";
   state.style=b.dataset.style;
   [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
   const prose = state.style==="message";
-  wordsLbl.innerHTML = prose ? "A passage, in your words" : "The words that make them <em>them</em>";
-  wordsHint.textContent = prose
-    ? "A letter, lyrics, a poem, a tribute, your vows — it becomes the portrait."
+  const disp  = state.style==="displacement";
+  wordsLbl.innerHTML = disp ? "The words to weave into the face"
+    : prose ? "A passage, in your words" : "The words that make them <em>them</em>";
+  wordsHint.textContent = disp
+    ? "Their name and the traits you love — woven across the face and draped over its form. Separate with commas."
+    : prose ? "A letter, lyrics, a poem, a tribute, your vows — it becomes the portrait."
     : "Their name, what you love, a date, an inside joke. Separate with commas.";
   words.rows = prose ? 5 : 3;
   words.placeholder = prose
     ? "You are the kindest soul I know. From the day you were born…"
     : "GRACE, KIND, BRILLIANT, MOM, ALWAYS";
-  bgRow.style.display = prose ? "flex" : "none";   // background toggle = Letter only
-  applySizes(null);                                // restock the size strip for this style
+  bgRow.style.display = prose ? "flex" : "none";   // background toggle = Passage only
+  if(disp !== wasDisp) rebuildSwatches();          // swap the swatch strip: inks <-> grounds
+  applySizes(null);                                // restock/hide the size strip for this style
 });
 // Word-size scale: sets the floor font size; the body/mid/face/eye tiers all
 // scale from it, so "Giant" = bold/dramatic with fewer words, "Small" = fine and
@@ -456,20 +470,31 @@ function measureSubject(f){
     .catch(()=>applySizes([120,44,20]));     // network failure: be conservative (skip unreadable Small)
 }
 
-/* ---------- swatch filmstrip (live thumbnails of THIS portrait per ink) ----- */
+/* ---------- swatch filmstrip (live thumbnails per ink, or per ground for
+   the Displacement style — same machinery, different items) ---------------- */
 const swatchEl=$("#swatches");
-INKS.forEach(([id,col,label])=>{
-  const el=document.createElement("button"); el.type="button";
-  el.className="thumb"+(id===state.ink?" sel":""); el.dataset.ink=id;
-  const pic=document.createElement("div"); pic.className="pic"; pic.dataset.ink=id;
-  // Set the colour/gradient placeholder on its own longhand -- the `background`
-  // shorthand would reset background-size to auto and break the cover crop when
-  // the thumbnail image is applied later.
-  const ph=placeholderBg(col);
-  if(ph.indexOf("gradient")>=0) pic.style.backgroundImage=ph; else pic.style.backgroundColor=ph;
-  const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
-  el.append(pic,nm); el.addEventListener("click", ()=>selectInk(id)); swatchEl.append(el);
-});
+function buildSwatches(){
+  swatchEl.innerHTML="";
+  currentSwatches().forEach(([id,col,label])=>{
+    const el=document.createElement("button"); el.type="button";
+    el.className="thumb"+(id===state.ink?" sel":""); el.dataset.ink=id;
+    const pic=document.createElement("div"); pic.className="pic"; pic.dataset.ink=id;
+    // Set the colour/gradient placeholder on its own longhand -- the `background`
+    // shorthand would reset background-size to auto and break the cover crop when
+    // the thumbnail image is applied later.
+    const ph=placeholderBg(col);
+    if(ph.indexOf("gradient")>=0) pic.style.backgroundImage=ph; else pic.style.backgroundColor=ph;
+    const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
+    el.append(pic,nm); el.addEventListener("click", ()=>selectInk(id)); swatchEl.append(el);
+  });
+}
+buildSwatches();
+function rebuildSwatches(){
+  const ids=currentSwatches().map(s=>s[0]);
+  if(!ids.includes(state.ink)) state.ink = (state.style==="displacement" ? "g_navy" : "mono");
+  invalidate();            // renders depend on style+variant -> drop stale caches
+  buildSwatches();
+}
 function markSel(){
   [...swatchEl.children].forEach(c=>c.classList.toggle("sel",c.dataset.ink===state.ink));
   const sel=swatchEl.querySelector(".thumb.sel");
@@ -503,6 +528,7 @@ let allowedMf=[120,44,20,13];
 let sizeThumbCache={};                 // coarse renders of the CURRENT ink, keyed by size
 function buildSizeStrip(){
   if(!sizeStripEl) return;
+  if(state.style==="displacement"){ if(sizeFilmEl) sizeFilmEl.style.display="none"; return; }  // auto-scaled; no size control
   sizeStripEl.innerHTML="";
   const set=new Set(allowedMf.map(Number));
   sizesForStyle().forEach(([mf,label])=>{
@@ -538,7 +564,7 @@ async function renderSizeThumb(mf){
   const myGen=gen;
   const fd=new FormData();
   fd.append("image",state.file); fd.append("words",words.value.trim());
-  fd.append("ink",state.ink); fd.append("style",state.style); fd.append("message",words.value.trim());
+  const vp=variantPost(state.ink); fd.append("ink",vp.ink); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false");
   fd.append("min_font_px", String(mf));
   fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
@@ -551,7 +577,7 @@ async function renderSizeThumb(mf){
 }
 let prewarmingSizes=false;
 async function prewarmSizes(){
-  if(prewarmingSizes || resultView.style.display!=="block") return;
+  if(prewarmingSizes || resultView.style.display!=="block" || state.style==="displacement") return;
   prewarmingSizes=true;
   const myGen=gen;
   for(const mf of allowedMf){
@@ -686,7 +712,10 @@ const FRAMES={
   gold_noir:{fr:"#1b1d23",hi:"#d9bd6e",lo:"#0b0c10",mat:"#15171c"},
   spectrum: {fr:"#20212f",hi:"#363852",lo:"#101019",mat:"#f7f6f4"},
   aurora:   {fr:"#16202e",hi:"#274057",lo:"#0a121c",mat:"#f4f7fa"},
-  mono:     {fr:"#3a3a3a",hi:"#585858",lo:"#1c1c1c",mat:"#f6f5f3"}
+  mono:     {fr:"#3a3a3a",hi:"#585858",lo:"#1c1c1c",mat:"#f6f5f3"},
+  g_navy:   {fr:"#2b3559",hi:"#46537e",lo:"#141b30",mat:"#0d1b3a"},
+  g_black:  {fr:"#262626",hi:"#3f3f3f",lo:"#0c0c0c",mat:"#111317"},
+  g_paper:  {fr:"#6b5b3a",hi:"#8f7c52",lo:"#3f3525",mat:"#efe9da"}
 };
 const frameEl=$("#frame");
 function applyFrame(ink){
@@ -835,7 +864,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   if(!background && !thumb) showBusy(animate);
   const fd=new FormData();
   fd.append("image",state.file); fd.append("words",words.value.trim());
-  fd.append("ink",ink); fd.append("style",state.style); fd.append("message",words.value.trim());
+  const vp=variantPost(ink); fd.append("ink",vp.ink); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false");
   fd.append("min_font_px", String(state.minFont||20));
   if(thumb){
@@ -886,7 +915,7 @@ async function prewarm(){
   if(prewarming) return;
   prewarming=true;
   const myGen=gen;
-  for(const [id, , label] of INKS){
+  for(const [id, , label] of currentSwatches()){
     if(gen!==myGen) break;
     if(id===state.ink || cache[id] || thumbCache[id]){ updateThumb(id); continue; }
     const pic=swatchEl.querySelector(`.pic[data-ink="${id}"]`); if(pic) pic.classList.add("loading");
