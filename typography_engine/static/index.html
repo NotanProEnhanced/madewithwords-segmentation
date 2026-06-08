@@ -349,7 +349,7 @@ const state = { file:null, ink:"mono", style:"words", fmt:"png", removeBg:true, 
 // The Displacement style uses 3 "grounds" instead of the 9 inks; they ride the
 // same swatch filmstrip. Ground ids are prefixed (g_*) so they never collide
 // with ink ids. state.ink holds the active variant id (an ink name, or g_*).
-const GROUNDS_SW=[["g_navy","#0d1b3a","Navy"],["g_black","#111317","Black"],["g_paper","#efe9da","Paper"]];
+const GROUNDS_SW=[["g_navy","#0d1b3a","Navy"],["g_black","#111317","Black"]];
 function currentSwatches(){ return state.style==="displacement" ? GROUNDS_SW : INKS; }
 function variantPost(id){ return state.style==="displacement"
   ? {ink:"navy", style:"displacement", ground:(id||"g_navy").replace("g_","")}
