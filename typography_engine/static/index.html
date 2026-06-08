@@ -1006,6 +1006,7 @@ sharePanel.addEventListener("click", async e=>{
 function friendly(code){ return ({no_words:"Add a few words first.",
   unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",
   could_not_decode_image:"We couldn't read that image — please try a JPG or PNG.",
+  displacement_needs_face:"The Relief style needs a clear, front-facing face — try another photo, or pick Words or Passage.",
   file_too_large:"That photo is too large (max 25 MB). Try a smaller image or a screenshot.",
   empty_upload:"Please add a photo."})[code]; }
 // Bound every render so a stuck request can't spin forever. Renders are a few
