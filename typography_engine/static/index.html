@@ -248,6 +248,14 @@
       <div class="compose-bar"></div>
     </div>
     <button type="button" id="zoomBtn" class="zoomlink">&#128269; View up close</button>
+    <div class="ctl" style="margin-top:6px">
+      <div class="film-lbl">Style</div>
+      <div class="seg" id="styleSegResult" aria-label="Style">
+        <button type="button" data-style="words" class="on">Words</button>
+        <button type="button" data-style="message">Passage</button>
+        <button type="button" data-style="displacement">Relief</button>
+      </div>
+    </div>
     <div class="carousel">
       <button type="button" class="arrow left" id="arrowL" aria-label="Previous colours">&#8249;</button>
       <div id="swatches" class="swatches"></div>
@@ -378,13 +386,14 @@ consent.addEventListener("change", refreshCreate);
 // Style toggle: word mosaic vs continuous-prose story.
 const wordsLbl=$("#wordsLbl"), wordsHint=$("#wordsHint");
 const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch");
-$("#styleSeg").addEventListener("click", e=>{
-  const b=e.target.closest("button"); if(!b) return;
+// Shared style switcher — used by the style control on BOTH the input screen and
+// the result screen (the result one re-renders in place). Keeps both segments in sync.
+function setStyle(newStyle, rerender){
   const wasDisp = state.style==="displacement";
-  state.style=b.dataset.style;
-  [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
-  const prose = state.style==="message";
-  const disp  = state.style==="displacement";
+  state.style=newStyle;
+  document.querySelectorAll('#styleSeg button, #styleSegResult button')
+    .forEach(c=>c.classList.toggle("on", c.dataset.style===newStyle));
+  const prose = newStyle==="message", disp = newStyle==="displacement";
   wordsLbl.innerHTML = disp ? "The words to weave into the face"
     : prose ? "A passage, in your words" : "The words that make them <em>them</em>";
   wordsHint.textContent = disp
@@ -398,7 +407,10 @@ $("#styleSeg").addEventListener("click", e=>{
   bgRow.style.display = prose ? "flex" : "none";   // background toggle = Passage only
   if(disp !== wasDisp) rebuildSwatches();          // swap the swatch strip: inks <-> grounds
   applySizes(null);                                // restock/hide the size strip for this style
-});
+  if(rerender && resultView.style.display==="block" && state.file){ invalidate(); render(state.ink,{animate:false}); }
+}
+$("#styleSeg").addEventListener("click", e=>{ const b=e.target.closest("button"); if(b) setStyle(b.dataset.style, false); });
+$("#styleSegResult").addEventListener("click", e=>{ const b=e.target.closest("button"); if(b) setStyle(b.dataset.style, true); });
 // Word-size scale: sets the floor font size; the body/mid/face/eye tiers all
 // scale from it, so "Giant" = bold/dramatic with fewer words, "Small" = fine and
 // detailed with many. (min_font_px is honored server-side by the render endpoint.)
