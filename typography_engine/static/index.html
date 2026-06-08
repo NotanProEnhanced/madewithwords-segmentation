@@ -214,8 +214,8 @@
       <div class="ctl-lbl">Word size</div>
       <div class="seg" id="sizeSeg" aria-label="Word size">
         <button type="button" data-mf="120">Giant</button>
-        <button type="button" data-mf="44">Large</button>
-        <button type="button" data-mf="20" class="on">Medium</button>
+        <button type="button" data-mf="57">Large</button>
+        <button type="button" data-mf="27" class="on">Medium</button>
         <button type="button" data-mf="13">Small</button>
       </div>
       <div class="ctl-hint">Larger words look bold and graphic; smaller words add fine detail.</div>
@@ -450,7 +450,7 @@ function setFile(f){
 let measuredSizes=null;                       // last /measure word-size gate (Words values)
 function applySizes(allowed){
   if(allowed) measuredSizes=allowed;
-  const gate=new Set((measuredSizes||[120,44,20,13]).map(Number));
+  const gate=new Set((measuredSizes||[120,57,27,13]).map(Number));
   const full=sizesForStyle().map(s=>Number(s[0]));
   // Words honors the /measure readability gate (small WORDS on a far subject are
   // unreadable). Letter is prose read up close, so every fine size forms a face.
@@ -459,7 +459,7 @@ function applySizes(allowed){
   allowedMf=usable.slice().sort((a,b)=>b-a);
   if(!allowedMf.includes(Number(state.minFont))){     // current pick invalid -> re-default
     const def=(state.style==="message") ? 13
-              : ([20,44,120].find(v=>allowedMf.includes(v))||allowedMf[0]);   // Medium, else largest
+              : ([27,57,120].find(v=>allowedMf.includes(v))||allowedMf[0]);   // Medium, else largest
     state.minFont=allowedMf.includes(def)?def:allowedMf[0];
   }
   // Keep the hidden Words segment in rough sync (cosmetic; state.minFont rules).
@@ -482,7 +482,7 @@ function measureSubject(f){
         applySizes(d.sizes);
         setPhotoNote((d.faces||0)>=2 ? "More than one face detected — we'll feature the largest. Crop to one person for the sharpest portrait." : "");
       } })
-    .catch(()=>applySizes([120,44,20]));     // network failure: be conservative (skip unreadable Small)
+    .catch(()=>applySizes([120,57,27]));     // network failure: be conservative (skip unreadable Small)
 }
 
 /* ---------- swatch filmstrip (live thumbnails per ink, or per ground for
@@ -537,11 +537,11 @@ function resetThumbs(){ swatchEl.querySelectorAll(".pic").forEach(p=>{ p.style.b
 // forms a face at any scale, so it gets the full dramatic range. Letter is the
 // user's prose laid in rows, which only resolves into a face with enough rows
 // (fine type) -- so it gets a finer set; Giant/Large would be a wall of text.
-const WORD_SIZES=[[120,"Giant"],[44,"Large"],[20,"Medium"],[13,"Small"]];
+const WORD_SIZES=[[120,"Giant"],[57,"Large"],[27,"Medium"],[13,"Small"]];
 const LETTER_SIZES=[[20,"Readable"],[13,"Balanced"],[10,"Fine"]];
 function sizesForStyle(){ return state.style==="message" ? LETTER_SIZES : WORD_SIZES; }
 const sizeStripEl=$("#sizeStrip"), sizeFilmEl=$("#sizeFilm");
-let allowedMf=[120,44,20,13];
+let allowedMf=[120,57,27,13];
 let sizeThumbCache={};                 // coarse renders of the CURRENT ink, keyed by size
 function buildSizeStrip(){
   if(!sizeStripEl) return;

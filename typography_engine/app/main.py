@@ -273,9 +273,9 @@ def _allowed_size_mf(face_frac):
     studio offers only sizes whose smallest tier still reads at this face size.
     Giant + Large are always offered; Medium needs a reasonably-sized face;
     Small needs a close-up. Thresholds tuned against real renders."""
-    allow = [120.0, 44.0]                       # Giant, Large -- always
+    allow = [120.0, 57.0]                       # Giant, Large -- always
     if face_frac is None or face_frac >= 0.16:  # Medium
-        allow.append(20.0)
+        allow.append(27.0)
     if face_frac is None or face_frac >= 0.28:  # Small (close-up only)
         allow.append(13.0)
     return sorted(allow, reverse=True)
