@@ -1077,6 +1077,7 @@ def order_status(order_id: str, session_id: Optional[str] = None):
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Typortrait — Order {order_id}</title>
 <style>
+  *{{box-sizing:border-box}}
   body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
        background:#faf9f7;color:#16203a;margin:0;padding:24px;display:flex;justify-content:center}}
   .card{{background:#fff;border:1px solid #ece9e3;border-radius:20px;
