@@ -119,6 +119,9 @@
     display:flex;align-items:center;justify-content:center;color:var(--navy);font-size:18px;font-weight:700;padding:0}
   .arrow.left{left:-6px}.arrow.right{right:-6px}
   @media(hover:none){.arrow{display:none}}
+  /* Relief has only 2 grounds -> centre them, no scroll arrows */
+  .carousel.relief .arrow{display:none}
+  .carousel.relief .swatches{justify-content:center}
   .thumb-status{display:flex;align-items:center;justify-content:center;gap:8px;min-height:18px;
     text-align:center;color:var(--muted);font-size:13px;margin-top:10px;opacity:0;transition:opacity .2s}
   .thumb-status.on{opacity:1}
@@ -485,7 +488,9 @@ function measureSubject(f){
 /* ---------- swatch filmstrip (live thumbnails per ink, or per ground for
    the Displacement style — same machinery, different items) ---------------- */
 const swatchEl=$("#swatches");
+const carouselEl=document.querySelector(".carousel");
 function buildSwatches(){
+  if(carouselEl) carouselEl.classList.toggle("relief", state.style==="displacement");  // centre + no arrows for Relief
   swatchEl.innerHTML="";
   currentSwatches().forEach(([id,col,label])=>{
     const el=document.createElement("button"); el.type="button";
