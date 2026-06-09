@@ -35,6 +35,33 @@ from .warnings import WarningCollector
 _MONO_FAMILY = "'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', monospace"
 _MONO_ADVANCE = 0.6  # glyph advance as a fraction of em for monospace fonts
 
+# Supersampling: rasterize the text mask + composite at N× the output width, then
+# Lanczos-downsample to the final size. This is higher-quality anti-aliasing for
+# small/fine type than rasterizing straight to the output resolution. Set to 1 to
+# disable (exact prior behavior). Gated by _SS_MAX_RENDER_W so already-large
+# download renders don't multiply memory — only the smaller preview is supersampled.
+_SUPERSAMPLE = 2
+_SS_MAX_RENDER_W = 3200
+
+
+def _eff_supersample(out_width: int) -> int:
+    """Effective supersample factor for this output width (1 = off). Drops to 1
+    when N× would exceed the render-width cap, so big downloads stay cheap."""
+    ss = max(1, int(_SUPERSAMPLE))
+    while ss > 1 and out_width * ss > _SS_MAX_RENDER_W:
+        ss -= 1
+    return ss
+
+
+def _lanczos_down(img, out_width: int):
+    """Downsample a PIL image to out_width (preserving aspect) with Lanczos."""
+    from PIL import Image
+    W, H = img.size
+    if W <= out_width:
+        return img
+    target_h = max(1, int(round(H * (out_width / float(W)))))
+    return img.resize((out_width, target_h), Image.LANCZOS)
+
 # Legibility/texture controls. Per-word jitter (fraction of cell/row) scatters
 # whole words to break the grid without wobbling letters within a word; word gap
 # is the blank cells between words (clearer separation reads better).
@@ -1212,7 +1239,13 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         eground = _PALETTES.get(eng_ink, _PALETTES["mono"])[2]
         if not eres.svg:
             return b"", eres.runs, eground, ""
-        return svg_to_png_bytes(eres.svg, output_width=out_width), eres.runs, eground, ""
+        ss = _eff_supersample(out_width)
+        epng = svg_to_png_bytes(eres.svg, output_width=out_width * ss)
+        if ss > 1:                   # supersampled -> Lanczos down to final size
+            from PIL import Image
+            eimg = _lanczos_down(Image.open(io.BytesIO(epng)).convert("RGB"), out_width)
+            ebuf = io.BytesIO(); eimg.save(ebuf, format="PNG"); epng = ebuf.getvalue()
+        return epng, eres.runs, eground, ""
 
     # The layout only needs glyph POSITIONS (we whiten them into a mask); the
     # colour/ink is applied separately by _tint_photo. Build the layout with a
@@ -1259,13 +1292,18 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     from .raster import svg_to_png_bytes
     if not mask_svg:
         return b""
-    mpng = svg_to_png_bytes(mask_svg, output_width=out_width)
+    ss = _eff_supersample(out_width)
+    render_w = out_width * ss
+    mpng = svg_to_png_bytes(mask_svg, output_width=render_w)
     mask = np.asarray(Image.open(io.BytesIO(mpng)).convert("L"))
     H, W = mask.shape[:2]
     photo = _tint_photo(an, W, H, ink, remove_bg, light=light).astype(np.float32)
     ground = np.array(_hex_to_rgb(_ground_hex(ink, light)), dtype=np.float32)
     m = (mask.astype(np.float32) / 255.0)[..., None]
     out = (ground + (photo - ground) * m).clip(0, 255).astype(np.uint8)
+    img = Image.fromarray(out)
+    if ss > 1:                       # supersampled -> Lanczos down to final size
+        img = _lanczos_down(img, out_width)
     buf = io.BytesIO()
-    Image.fromarray(out).save(buf, format="PNG")
+    img.save(buf, format="PNG")
     return buf.getvalue()
