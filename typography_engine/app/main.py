@@ -399,13 +399,14 @@ async def render(
             from .pipeline.displacement import render_displacement_portrait
             disp_words = word_list or text.split()
             png_bytes = render_displacement_portrait(
-                an, disp_words, ground=ground_choice, out_width=max(320, preview_w))
+                an, disp_words, ground=ground_choice, out_width=max(320, preview_w),
+                uppercase=uppercase)
             runs, ground_hex, mask_svg = [], None, None
         else:
             png_bytes, runs, ground_hex, mask_svg = render_layered_png(
                 an, text, style_choice, cfg, warns,
                 ink=ink_choice, remove_bg=remove_bg, light=light,
-                out_width=max(320, preview_w), render_w=render_w_eff)
+                out_width=max(320, preview_w), render_w=render_w_eff, uppercase=uppercase)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
     except Exception as e:  # noqa: BLE001
@@ -625,7 +626,8 @@ def _ensure_clean_png(job: str) -> Optional[Path]:
             from .pipeline.displacement import render_displacement_portrait
             png_bytes = render_displacement_portrait(
                 an, (r.get("text", "") or "").split(),
-                ground=r.get("ground", "navy"), out_width=DOWNLOAD_PNG_WIDTH)
+                ground=r.get("ground", "navy"), out_width=DOWNLOAD_PNG_WIDTH,
+                uppercase=bool(r.get("uppercase", True)))
             if not png_bytes:
                 return None
             path.write_bytes(png_bytes)
@@ -648,7 +650,8 @@ def _ensure_clean_png(job: str) -> Optional[Path]:
             png_bytes, _, _, _ = render_layered_png(
                 an, r["text"], r.get("style", "words"), cfg2, warns2,
                 ink=r.get("ink", "navy"), remove_bg=bool(r.get("remove_bg", True)),
-                light=bool(r.get("light", False)), out_width=DOWNLOAD_PNG_WIDTH, render_w=2600)
+                light=bool(r.get("light", False)), out_width=DOWNLOAD_PNG_WIDTH, render_w=2600,
+                uppercase=bool(r.get("uppercase", True)))
         if not png_bytes:
             return None
         path.write_bytes(png_bytes)

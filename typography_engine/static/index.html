@@ -281,6 +281,13 @@
       <div class="film-lbl">Word size — tap to resize the type</div>
       <div id="sizeStrip" class="swatches sizestrip"></div>
     </div>
+    <div class="ctl" id="caseCtl" style="margin-top:16px">
+      <div class="ctl-lbl">Letter case</div>
+      <div class="seg" id="caseSeg" aria-label="Letter case">
+        <button type="button" data-uc="1" class="on">ALL CAPS</button>
+        <button type="button" data-uc="0">As typed</button>
+      </div>
+    </div>
     <div class="opts">
       <div id="bgRow" class="toggle" style="margin-top:14px;display:none">
         <div><div class="t-lbl">Remove background</div><div class="t-sub">Keep the words on the subject only, clean ground.</div></div>
@@ -368,7 +375,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, ink:"mono", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:20 };
+const state = { file:null, ink:"mono", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:20, uppercase:true };
 // The Displacement style uses 3 "grounds" instead of the 9 inks; they ride the
 // same swatch filmstrip. Ground ids are prefixed (g_*) so they never collide
 // with ink ids. state.ink holds the active variant id (an ink name, or g_*).
@@ -452,6 +459,14 @@ if(sizeSeg){ sizeSeg.addEventListener("click", e=>{
 // (and re-warms the swatch thumbnails) so the change is immediate.
 function optionChanged(){ if(resultView.style.display==="block"){ invalidate(); render(state.ink,{animate:false}); } }
 bgSwitch.addEventListener("click", ()=>{ state.removeBg=!state.removeBg; bgSwitch.classList.toggle("on",state.removeBg); optionChanged(); });
+// Letter case: render the words ALL CAPS, or exactly as the user typed them.
+const caseSeg=$("#caseSeg");
+if(caseSeg){ caseSeg.addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  state.uppercase = b.dataset.uc==="1";
+  [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
+  optionChanged();
+}); }
 drop.addEventListener("click", ()=>fileInput.click());
 $("#changePhoto").addEventListener("click", e=>{e.stopPropagation();fileInput.click();});
 ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
@@ -607,7 +622,7 @@ async function renderSizeThumb(mf){
   const fd=new FormData();
   fd.append("image",state.file); fd.append("words",words.value.trim());
   const vp=variantPost(state.ink); fd.append("ink",vp.ink); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
-  fd.append("remove_bg", state.removeBg?"true":"false");
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false");
   fd.append("min_font_px", String(mf));
   fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
   try{
@@ -907,7 +922,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   const fd=new FormData();
   fd.append("image",state.file); fd.append("words",words.value.trim());
   const vp=variantPost(ink); fd.append("ink",vp.ink); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
-  fd.append("remove_bg", state.removeBg?"true":"false");
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false");
   fd.append("min_font_px", String(state.minFont||20));
   if(thumb){
     // A 74px chip needs only the colour and rough likeness; a small canvas

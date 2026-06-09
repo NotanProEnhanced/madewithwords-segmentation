@@ -1219,7 +1219,8 @@ def _ground_hex(ink: str, light: bool) -> str:
 
 def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: WarningCollector,
                        ink: str = "mono", remove_bg: bool = True, light: bool = False,
-                       out_width: int = 1400, render_w: int = 2200, tone_density: float = 0.6):
+                       out_width: int = 1400, render_w: int = 2200, tone_density: float = 0.6,
+                       uppercase: bool = True):
     """Layered portrait -> PNG bytes. style='message' = poster rows; else Words
     (mosaic) layout. Returns (png_bytes, runs, ground_hex, mask_svg)."""
     # --- Dedicated light/engraving renderer (Words style) --------------------
@@ -1234,7 +1235,7 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         from .raster import svg_to_png_bytes
         ewords = [w for w in re.split(r"[\s,]+", text) if w]
         eng_ink = ink if ink in ("navy", "sepia", "burgundy", "forest", "mono") else "navy"
-        eres = build_portrait(an, ewords, cfg, warns, uppercase=True, ink=eng_ink,
+        eres = build_portrait(an, ewords, cfg, warns, uppercase=uppercase, ink=eng_ink,
                               render_w=render_w, gap_fill=True, gap_fill_passes=12)
         eground = _PALETTES.get(eng_ink, _PALETTES["mono"])[2]
         if not eres.svg:
@@ -1272,7 +1273,7 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         # only shadows/features take ink -- full range without a gray jumble.
         # Dark ground wants the full dense fill (the hero look). Light/engraving
         # wants white space, so use far fewer fill passes -- sparser + cleaner.
-        res = build_portrait(an, words, cfg, warns, uppercase=True, ink="mono",
+        res = build_portrait(an, words, cfg, warns, uppercase=uppercase, ink="mono",
                              render_w=render_w, tone_density=eff_density,
                              gap_fill=True, gap_fill_passes=12)
         colored, runs = res.svg, res.runs

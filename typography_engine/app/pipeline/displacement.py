@@ -73,13 +73,14 @@ def _font(sz: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
-def _normalize_words(words: Sequence[str]) -> List[str]:
+def _normalize_words(words: Sequence[str], uppercase: bool = True) -> List[str]:
     out: List[str] = []
     for w in words:
-        t = "".join(ch for ch in str(w).upper() if ch.isalnum() or ch in "-'")
+        s = str(w).upper() if uppercase else str(w)
+        t = "".join(ch for ch in s if ch.isalnum() or ch in "-'")
         if t:
             out.append(t)
-    return out or ["LOVE"]
+    return out or (["LOVE"] if uppercase else ["love"])
 
 
 def render_displacement_portrait(
@@ -89,6 +90,7 @@ def render_displacement_portrait(
     out_width: int = 1400,
     supersample: int = 2,
     seed: int = 7,
+    uppercase: bool = True,
 ) -> bytes:
     """Render a displacement typographic portrait to PNG bytes.
 
@@ -101,7 +103,7 @@ def render_displacement_portrait(
 
     g = GROUNDS.get(ground, GROUNDS["navy"])
     rng = random.Random(seed)
-    vocab = _normalize_words(words)
+    vocab = _normalize_words(words, uppercase)
 
     g0 = an.img.gray.astype(np.float32)
     m0 = (an.silhouette.mask > 127).astype(np.float32)
@@ -122,9 +124,9 @@ def render_displacement_portrait(
         d = ImageDraw.Draw(im)
         y = 0
         while y < H + fs:
-            wl = vocab[:]
-            rng.shuffle(wl)
-            line = (" ".join(wl) + " ") * (W // max(1, int(fs * 3)) + 18)
+            # Keep the words in the order they were entered (a sentence stays a
+            # sentence); only the row's horizontal start is jittered for variety.
+            line = (" ".join(vocab) + " ") * (W // max(1, int(fs * 3)) + 18)
             d.text((-rng.randint(0, int(fs * 6)), y), line, font=f, fill=0)
             y += max(6, int(fs))
         return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
