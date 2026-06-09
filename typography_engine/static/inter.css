@@ -1,0 +1,12 @@
+/* Self-hosted Inter — the open-source San Francisco stand-in (Apple's UI font).
+   Linked by the app-served pages (order, receipt, product picker, admin, etc.)
+   so they render in the same Apple-style typeface as the studio. Font files live
+   in /static/fonts/ (one variable file per style covers all weights 100-900). */
+@font-face{
+  font-family:'Inter';font-style:normal;font-weight:100 900;
+  font-display:swap;src:url('/static/fonts/InterVariable.woff2') format('woff2');
+}
+@font-face{
+  font-family:'Inter';font-style:italic;font-weight:100 900;
+  font-display:swap;src:url('/static/fonts/InterVariable-Italic.woff2') format('woff2');
+}

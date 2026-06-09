@@ -926,7 +926,7 @@ def _reel_maker_block(job: str, session_id: str) -> str:
     return (
         '<style>'
         '.rl-divider{height:1px;background:#ece9e3;margin:24px 0 18px}'
-        '.rl-h{font-family:Georgia,serif;color:#0d1b3a;font-size:19px;margin:0 0 6px}'
+        '.rl-h{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;color:#0d1b3a;font-size:19px;margin:0 0 6px}'
         '.rl-sub{color:#6b7280;font-size:14px;line-height:1.5;margin:0 0 14px}'
         '.rl-chk{display:flex;gap:9px;align-items:flex-start;font-size:13.5px;color:#16203a;'
         'line-height:1.45;margin:10px 0;text-align:left;cursor:pointer}'
@@ -1076,13 +1076,14 @@ def order_status(order_id: str, session_id: Optional[str] = None):
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Typortrait — Order {order_id}</title>
+<link rel="stylesheet" href="/static/inter.css">
 <style>
   *{{box-sizing:border-box}}
-  body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  body{{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
        background:#faf9f7;color:#16203a;margin:0;padding:24px;display:flex;justify-content:center}}
   .card{{background:#fff;border:1px solid #ece9e3;border-radius:20px;
         box-shadow:0 10px 40px rgba(20,30,60,.10);padding:28px;max-width:520px;width:100%}}
-  h1{{font-family:Georgia,serif;color:#0d1b3a;margin:0 0 4px}}
+  h1{{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0d1b3a;margin:0 0 4px}}
   .muted{{color:#6b7280;font-size:14px}}
   dl{{margin:18px 0;display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:15px}}
   dt{{color:#6b7280}}
@@ -1379,14 +1380,14 @@ def success(job: str, session_id: str):
     page = (
         "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>Typortrait — your download</title><style>"
+        "<title>Typortrait — your download</title><link rel='stylesheet' href='/static/inter.css'><style>"
         ":root{--navy:#0d1b3a;--muted:#6b7280;--line:#ece9e3}"
         "*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;"
-        "background:#faf9f7;color:#16203a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:24px}"
+        "background:#faf9f7;color:#16203a;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:24px}"
         ".card{background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:0 10px 40px rgba(20,30,60,.10);"
         "max-width:440px;width:100%;padding:34px 28px;text-align:center}"
         ".check{width:54px;height:54px;border-radius:50%;background:#0d1b3a;color:#fff;font-size:28px;line-height:54px;margin:0 auto 14px}"
-        "h1{font-family:Georgia,'Times New Roman',serif;color:var(--navy);font-size:26px;margin:6px 0 8px}"
+        "h1{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:var(--navy);font-size:26px;margin:6px 0 8px}"
         ".sub{color:var(--muted);font-size:15px;line-height:1.5;margin:0 0 22px}"
         ".btn{display:inline-block;min-width:240px;border-radius:999px;background:var(--navy);color:#fff;font-size:16px;font-weight:600;"
         "padding:14px 28px;margin:10px auto;text-decoration:none;border:none;cursor:pointer}"
@@ -1398,7 +1399,7 @@ def success(job: str, session_id: str):
         "border:2px solid rgba(255,255,255,.4);border-top-color:#fff;vertical-align:-2px;animation:sp .8s linear infinite}"
         "@keyframes sp{to{transform:rotate(360deg)}}"
         ".divider{height:1px;background:var(--line);margin:24px -4px 18px}"
-        ".reel-h{font-family:Georgia,'Times New Roman',serif;color:var(--navy);font-size:20px;margin:4px 0 6px}"
+        ".reel-h{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:var(--navy);font-size:20px;margin:4px 0 6px}"
         ".reel-sub{margin-bottom:14px}"
         ".chk{display:flex;align-items:flex-start;gap:10px;text-align:left;color:#16203a;font-size:13.5px;line-height:1.45;margin:8px 4px}"
         ".chk input{margin-top:3px;flex-shrink:0}"
@@ -1434,11 +1435,11 @@ def share_page(job: str):
         f"<meta name='twitter:title' content=\"{html.escape(title)}\">"
         f"<meta name='twitter:description' content=\"{html.escape(desc)}\">"
         f"<meta name='twitter:image' content=\"{html.escape(img)}\">"
-        "<style>*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;"
-        "justify-content:center;background:#0a0a0c;color:#f5f3ec;font-family:-apple-system,BlinkMacSystemFont,"
+        "<link rel='stylesheet' href='/static/inter.css'><style>*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;"
+        "justify-content:center;background:#0a0a0c;color:#f5f3ec;font-family:Inter,-apple-system,BlinkMacSystemFont,"
         "'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:24px;text-align:center}"
         ".w{max-width:520px;width:100%}img{width:100%;border-radius:14px;box-shadow:0 16px 50px rgba(0,0,0,.5)}"
-        "h1{font-family:Georgia,'Times New Roman',serif;font-size:24px;margin:22px 0 6px}"
+        "h1{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:24px;margin:22px 0 6px}"
         "p{color:#b9b6ae;font-size:15px;margin:0 0 20px}"
         "a{display:inline-block;background:#f5f3ec;color:#0a0a0c;font-weight:700;text-decoration:none;"
         "padding:14px 28px;border-radius:999px;font-size:16px}</style></head><body><div class='w'>"
@@ -1476,12 +1477,12 @@ def _resume_expired_page() -> str:
     return (
         "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>Portrait expired — Typortrait</title><style>"
+        "<title>Portrait expired — Typortrait</title><link rel='stylesheet' href='/static/inter.css'><style>"
         "*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;"
-        "justify-content:center;background:#faf9f7;color:#16203a;font-family:-apple-system,BlinkMacSystemFont,"
+        "justify-content:center;background:#faf9f7;color:#16203a;font-family:Inter,-apple-system,BlinkMacSystemFont,"
         "'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:24px;text-align:center}.w{max-width:440px}"
-        ".brand{font-family:Georgia,'Times New Roman',serif;font-size:26px;color:#0d1b3a;font-weight:700;margin:0 0 26px}"
-        "h1{font-family:Georgia,'Times New Roman',serif;color:#0d1b3a;font-size:24px;margin:0 0 8px}"
+        ".brand{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:26px;color:#0d1b3a;font-weight:700;margin:0 0 26px}"
+        "h1{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0d1b3a;font-size:24px;margin:0 0 8px}"
         "p{color:#6b7280;font-size:15px;line-height:1.6;margin:0 0 22px}"
         "a{display:inline-block;background:#0d1b3a;color:#fff;font-weight:700;text-decoration:none;"
         "padding:14px 28px;border-radius:999px;font-size:16px}</style></head><body><div class='w'>"
@@ -1499,9 +1500,10 @@ _RESUME_TPL = """<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
 <title>Your saved portrait — Typortrait</title>
 <meta name='robots' content='noindex'>
+<link rel="stylesheet" href="/static/inter.css">
 <style>
 :root{--navy:#0d1b3a;--ink:#16203a;--paper:#faf9f7;--card:#fff;--muted:#6b7280;--line:#ece9e3;
---serif:"Georgia","Times New Roman",serif;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+--serif:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;--sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
 .wrap{max-width:560px;margin:0 auto;padding:28px 20px 64px}
@@ -1633,11 +1635,11 @@ def _policy_page(title: str, blocks) -> HTMLResponse:
     page = (
         "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>{title} — Typortrait</title><style>"
-        "body{margin:0;background:#faf9f7;color:#16203a;font-family:-apple-system,BlinkMacSystemFont,"
+        f"<title>{title} — Typortrait</title><link rel='stylesheet' href='/static/inter.css'><style>"
+        "body{margin:0;background:#faf9f7;color:#16203a;font-family:Inter,-apple-system,BlinkMacSystemFont,"
         "'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.6}"
         ".wrap{max-width:760px;margin:0 auto;padding:40px 22px 80px}"
-        "h1{font-family:Georgia,'Times New Roman',serif;color:#0d1b3a;font-size:30px;margin:0 0 4px}"
+        "h1{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0d1b3a;font-size:30px;margin:0 0 4px}"
         "h2{font-size:18px;color:#0d1b3a;margin:28px 0 6px}.upd{color:#6b7280;font-size:14px;margin:0 0 8px}"
         "p,li{font-size:15px;color:#2b3550}ul{margin:6px 0 0;padding-left:20px}"
         "a{color:#0d1b3a}.back{display:inline-block;margin-bottom:18px;color:#6b7280;text-decoration:none;font-size:14px}"

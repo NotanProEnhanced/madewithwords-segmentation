@@ -560,9 +560,9 @@ def start_scanner() -> None:
 def _admin_chrome(title: str, body: str) -> str:
     return f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(title)} · Typortrait admin</title><style>
-*{{box-sizing:border-box}}body{{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#faf9f7;color:#16203a;padding:24px}}
-.wrap{{max-width:1100px;margin:0 auto}}h1{{font-family:Georgia,serif;color:#0d1b3a;font-size:24px;margin:0 0 16px}}h2{{font-size:18px;margin:24px 0 8px}}
+<title>{html.escape(title)} · Typortrait admin</title><link rel="stylesheet" href="/static/inter.css"><style>
+*{{box-sizing:border-box}}body{{margin:0;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#faf9f7;color:#16203a;padding:24px}}
+.wrap{{max-width:1100px;margin:0 auto}}h1{{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0d1b3a;font-size:24px;margin:0 0 16px}}h2{{font-size:18px;margin:24px 0 8px}}
 nav{{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;align-items:center}}nav a{{color:#0d1b3a;text-decoration:none;padding:6px 12px;border:1px solid #ece9e3;border-radius:999px;font-size:13px;background:#fff}}
 nav a.cur{{background:#0d1b3a;color:#fff;border-color:#0d1b3a}}nav .gap{{flex:1}}nav form{{display:inline}}
 table{{width:100%;border-collapse:collapse;background:#fff;border:1px solid #ece9e3;border-radius:10px;overflow:hidden}}
@@ -581,14 +581,14 @@ img.thumb{{max-width:80px;border-radius:6px;display:block}}
 a{{color:#0d1b3a}}
 .kpis{{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 18px}}
 .kpi{{background:#fff;border:1px solid #ece9e3;border-radius:10px;padding:10px 14px;min-width:88px;flex:1}}
-.kpi-v{{font-family:Georgia,serif;font-size:22px;color:#0d1b3a;line-height:1.1}}
+.kpi-v{{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:22px;color:#0d1b3a;line-height:1.1}}
 .kpi-v a{{text-decoration:none}}
 .kpi-l{{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-top:3px}}
 .bar{{display:inline-block;height:10px;background:#0d1b3a;border-radius:4px;vertical-align:middle;margin-right:6px}}
 .row-num{{text-align:right;font-variant-numeric:tabular-nums;color:#6b7280}}
 .funnel-step{{display:flex;align-items:baseline;gap:14px;padding:8px 0;border-top:1px solid #f1eee8}}
 .funnel-step:first-child{{border-top:0}}
-.funnel-num{{font-family:Georgia,serif;font-size:20px;color:#0d1b3a;min-width:70px}}
+.funnel-num{{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:20px;color:#0d1b3a;min-width:70px}}
 .funnel-pct{{color:#6b7280;font-size:12px;min-width:80px}}
 .muted{{color:#6b7280;font-size:12px}}
 </style></head><body><div class="wrap">{body}</div></body></html>"""
