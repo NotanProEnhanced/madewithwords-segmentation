@@ -9,19 +9,31 @@
      harmlessly and the tp_track() calls below silently no-op. -->
 <script defer src="https://cloud.umami.is/script.js" data-website-id="b9cb9a2d-2145-426f-b71b-a23cf218ada7"></script>
 <style>
+  /* Self-hosted Inter — the open-source San Francisco stand-in (Apple's UI font).
+     One variable file covers every weight 100–900; served from /static/fonts/. */
+  @font-face{
+    font-family:'Inter';font-style:normal;font-weight:100 900;
+    font-display:swap;src:url('/static/fonts/InterVariable.woff2') format('woff2');
+  }
+  @font-face{
+    font-family:'Inter';font-style:italic;font-weight:100 900;
+    font-display:swap;src:url('/static/fonts/InterVariable-Italic.woff2') format('woff2');
+  }
   :root{
     --navy:#0d1b3a; --ink:#16203a; --paper:#faf9f7; --card:#ffffff;
     --muted:#6b7280; --line:#ece9e3; --radius:20px;
     --shadow:0 10px 40px rgba(20,30,60,.10);
-    --serif:"Georgia","Times New Roman",serif;
-    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    /* All-sans, Apple style. --serif kept as a name for headings but now points
+       to Inter so every headline/brand renders in the Apple typeface. */
+    --serif:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-optical-sizing:auto;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
   body{min-height:100dvh;display:flex;flex-direction:column;align-items:center}
   .wrap{width:100%;max-width:560px;padding:24px 20px 64px;flex:1;display:flex;flex-direction:column}
   header{text-align:center;padding:18px 0 8px}
-  .brand{font-family:var(--serif);font-size:30px;letter-spacing:.5px;color:var(--navy);font-weight:700}
+  .brand{font-family:var(--serif);font-size:30px;letter-spacing:-.02em;color:var(--navy);font-weight:700}
   .tag{color:var(--muted);font-size:15px;margin-top:6px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-top:22px}
 
@@ -138,9 +150,14 @@
   .sw-switch.on{background:var(--navy)}.sw-switch.on::after{transform:translateX(20px)}
   .keepfields{display:none;margin-top:6px}.keepfields.show{display:block}
 
-  .seg{display:flex;gap:6px;background:#f1efe9;border-radius:999px;padding:4px;margin:4px auto 0;width:max-content;max-width:100%}
-  .seg button{flex:0 0 auto;min-width:104px;border:none;background:none;border-radius:999px;padding:8px 22px;font-size:14px;font-weight:600;color:var(--muted);font-family:var(--sans);cursor:pointer}
+  /* iOS-style segmented control: full width, equal segments, so every option
+     reads as the same kind of choice (no clipping / cramped last item). */
+  .seg{display:flex;gap:4px;background:#f1efe9;border-radius:999px;padding:4px;margin:8px auto 0;width:100%}
+  .seg button{flex:1 1 0;min-width:0;border:none;background:none;border-radius:999px;padding:9px 6px;font-size:13.5px;font-weight:600;color:var(--muted);font-family:var(--sans);cursor:pointer;white-space:nowrap;letter-spacing:-.01em;transition:background .18s ease,color .18s ease}
   .seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  /* Quiet text link (e.g. switch to writing a message) — not a loud button. */
+  .linklike{display:inline-block;background:none;border:none;color:var(--navy);font-family:var(--sans);font-size:13.5px;font-weight:600;padding:10px 2px 2px;margin:0;cursor:pointer;letter-spacing:-.01em}
+  .linklike:hover{opacity:.75}
   .actions{display:flex;gap:12px;margin-top:16px}.actions .btn{margin-top:0}
   .btn.secondary{margin-top:12px}
   .sharepanel{display:none;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px}
@@ -198,18 +215,12 @@
     <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
     <div id="photoNote" class="photo-note" style="display:none"></div>
     <input id="file" type="file" accept="image/*" hidden />
-    <div class="ctl">
-      <div class="seg" id="styleSeg">
-        <button type="button" data-style="words" class="on">Words</button>
-        <button type="button" data-style="message">Passage</button>
-        <button type="button" data-style="displacement">Sculpted</button>
-      </div>
-    </div>
     <label class="field">
       <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
       <span class="hint" id="wordsHint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
       <textarea id="words" rows="3" placeholder="GRACE, KIND, BRILLIANT, MOM, ALWAYS"></textarea>
     </label>
+    <button type="button" id="contentToggle" class="linklike">Writing a letter or a message instead? &rarr;</button>
     <div class="ctl" id="inputSizeCtl" style="display:none">
       <div class="ctl-lbl">Word size</div>
       <div class="seg" id="sizeSeg" aria-label="Word size">
@@ -225,7 +236,7 @@
       <span>I confirm I own or have rights to this image, it contains no copyrighted characters, celebrities or explicit material. I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Use</a>.</span>
     </label>
     <button id="create" class="btn">Create portrait</button>
-    <p id="freenote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Free to create &amp; preview — keep yours anytime.</p>
+    <p id="freenote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Free to create &amp; preview.</p>
     <div id="errInput" class="err"></div>
   </section>
 
@@ -251,13 +262,14 @@
       <div class="compose-bar"></div>
     </div>
     <button type="button" id="zoomBtn" class="zoomlink">&#128269; View up close</button>
-    <div class="ctl" style="margin-top:6px">
-      <div class="film-lbl">Style</div>
-      <div class="seg" id="styleSegResult" aria-label="Style">
+    <div class="ctl" id="styleGallery" style="margin-top:6px">
+      <div class="ctl-lbl">Choose your style</div>
+      <div class="seg" id="styleSegResult" aria-label="Choose your style">
         <button type="button" data-style="words" class="on">Words</button>
-        <button type="button" data-style="message">Passage</button>
+        <button type="button" data-style="message">Message</button>
         <button type="button" data-style="displacement">Sculpted</button>
       </div>
+      <div class="ctl-hint" id="styleCaption">Words you love, scattered to form their face.</div>
     </div>
     <div class="carousel">
       <button type="button" class="arrow left" id="arrowL" aria-label="Previous colours">&#8249;</button>
@@ -369,11 +381,11 @@ function variantPost(id){ return state.style==="displacement"
 // loading, or unconfigured — analytics must never break the app.
 function tp_track(name, data){ try{ if(window.umami) window.umami.track(name, data||{}); }catch(e){} }
 function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
-// Show the price up front so it's never a surprise (single source: /pricing).
-fetch("/pricing").then(r=>r.json()).then(p=>{
+// Free to create & preview (no price shown up front).
+(function(){
   const fn=document.getElementById("freenote");
-  if(fn) fn.textContent = "Free to create & preview — keep yours for " + money(p.price_cents,p.currency) + " (full resolution, no watermark).";
-}).catch(()=>{});
+  if(fn) fn.textContent = "Free to create & preview.";
+})();
 let cache = {};
 let thumbCache = {};  // coarse, fast renders just for the 74px swatch chips
 let gen = 0;          // bumped whenever photo/words/poster change, to drop stale renders
@@ -408,11 +420,24 @@ function setStyle(newStyle, rerender){
     ? "You are the kindest soul I know. From the day you were born…"
     : "GRACE, KIND, BRILLIANT, MOM, ALWAYS";
   bgRow.style.display = prose ? "flex" : "none";   // background toggle = Passage only
+  // Input-screen content link reflects the current mode.
+  const ct=document.getElementById("contentToggle");
+  if(ct) ct.innerHTML = prose ? "&larr; Use a few words instead" : "Writing a letter or a message instead? &rarr;";
+  // Result-screen gallery caption — plain-language description of the chosen look.
+  const cap=document.getElementById("styleCaption");
+  if(cap) cap.textContent = disp ? "Words sculpted along the face's contours — a dimensional, carved look."
+    : prose ? "A whole message, letter, or story — shaped into their portrait."
+    : "Words you love, scattered to form their face.";
   if(disp !== wasDisp) rebuildSwatches();          // swap the swatch strip: inks <-> grounds
   applySizes(null);                                // restock/hide the size strip for this style
   if(rerender && resultView.style.display==="block" && state.file){ invalidate(); render(state.ink,{animate:false}); }
 }
-$("#styleSeg").addEventListener("click", e=>{ const b=e.target.closest("button"); if(b) setStyle(b.dataset.style, false); });
+// Input screen: a quiet link to switch between a few words and a written message.
+// No context-free style toggle here — style exploration happens on the result gallery.
+const contentToggle=$("#contentToggle");
+if(contentToggle){ contentToggle.addEventListener("click", ()=>{
+  setStyle(state.style==="message" ? "words" : "message", false);
+}); }
 $("#styleSegResult").addEventListener("click", e=>{ const b=e.target.closest("button"); if(b) setStyle(b.dataset.style, true); });
 // Word-size scale: sets the floor font size; the body/mid/face/eye tiers all
 // scale from it, so "Giant" = bold/dramatic with fewer words, "Small" = fine and
