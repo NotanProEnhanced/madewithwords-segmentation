@@ -61,12 +61,17 @@ def init_db() -> None:
                 printful_order_id INTEGER,
                 printful_raw_json TEXT,         -- last response from Printful
                 tracking_url TEXT,
-                error_message TEXT
+                error_message TEXT,
+                ref TEXT                        -- referral/source tag (partner attribution)
             )
             """
         )
         c.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at DESC)")
+        # Migration: `ref` was added later, so existing DBs need the column appended.
+        cols = {r[1] for r in c.execute("PRAGMA table_info(orders)").fetchall()}
+        if "ref" not in cols:
+            c.execute("ALTER TABLE orders ADD COLUMN ref TEXT")
 
 
 def create_pending(
@@ -80,6 +85,7 @@ def create_pending(
     price_cents: int,
     shipping_cents: int,
     currency: str,
+    ref: Optional[str] = None,
 ) -> None:
     now = time.time()
     with _LOCK, _conn() as c:
@@ -87,11 +93,11 @@ def create_pending(
             """
             INSERT INTO orders (
                 id, created_at, updated_at, stripe_session_id, job_id,
-                sku, size, variant_id, price_cents, shipping_cents, currency, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment')
+                sku, size, variant_id, price_cents, shipping_cents, currency, status, ref
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?)
             """,
             (order_id, now, now, stripe_session_id, job_id, sku, size,
-             variant_id, price_cents, shipping_cents, currency),
+             variant_id, price_cents, shipping_cents, currency, ref or None),
         )
 
 

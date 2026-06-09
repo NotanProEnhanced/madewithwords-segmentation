@@ -731,13 +731,15 @@ def admin_orders(admin_session: Optional[str] = Cookie(None)):
                       if track else "—")
         email = html.escape(o.get("customer_email") or "—")
         err = html.escape(o.get("error_message") or "")
+        ref_tag = html.escape(o.get("ref") or "—")
         trs.append(
             f'<tr><td><a href="/order/{html.escape(o["id"])}">{html.escape(o["id"])}</a></td>'
+            f'<td>{ref_tag}</td>'
             f'<td>{item}</td><td>${total:.2f} {cur}</td>'
             f'<td>{pill}</td><td>{email}</td><td>{pf_id}</td>'
             f'<td>{track_html}</td><td class="muted">{err}</td></tr>'
         )
-    body += ('<table><tr><th>Order</th><th>Item</th><th>Total</th><th>Status</th>'
+    body += ('<table><tr><th>Order</th><th>Source</th><th>Item</th><th>Total</th><th>Status</th>'
              '<th>Email</th><th>Printful</th><th>Track</th><th>Error</th></tr>'
              + "".join(trs) + '</table>')
     return HTMLResponse(_admin_chrome("Orders", body))

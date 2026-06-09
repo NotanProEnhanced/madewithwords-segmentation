@@ -330,9 +330,11 @@ async def render(
     remove_bg: bool = Form(True),
     light: bool = Form(False),
     ground: str = Form("navy"),
+    ref: str = Form(""),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
+    ref_clean = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40]   # referral/source tag
     img_bytes = await image.read()
     if not img_bytes:
         return JSONResponse({"ok": False, "error": "empty_upload"}, status_code=400)
@@ -435,6 +437,7 @@ async def render(
             "style": style_choice, "ink": ink_choice, "remove_bg": bool(remove_bg),
             "light": bool(light), "text": text, "uppercase": bool(uppercase),
             "min_font_px": float(cfg.min_font_px), "ground": ground_choice,
+            "ref": ref_clean,
         }), encoding="utf-8")
 
     return JSONResponse(
@@ -504,6 +507,10 @@ def checkout(
     # composed from them lazily at download / fulfillment time.
     if not (PRIVATE_DIR / f"{job}.json").exists():
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    try:  # referral/source tag captured at render time (partner attribution)
+        ref = str(json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("ref", ""))[:40]
+    except Exception:  # noqa: BLE001
+        ref = ""
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
 
@@ -520,7 +527,7 @@ def checkout(
                         "product_data": {"name": "Typortrait — high-resolution download"},
                     },
                 }],
-                metadata={"job": job},
+                metadata={"job": job, "ref": ref},
                 success_url=f"{PUBLIC_BASE_URL}/success?job={job}&session_id={{CHECKOUT_SESSION_ID}}",
                 cancel_url=f"{PUBLIC_BASE_URL}/static/index.html?canceled=1",
             )
@@ -562,7 +569,7 @@ def checkout(
         session = stripe.checkout.Session.create(
             mode="payment",
             line_items=line_items,
-            metadata={"job": job, "sku": sku, "size": size or "", "order_id": order_id, "fmt": ext},
+            metadata={"job": job, "sku": sku, "size": size or "", "order_id": order_id, "fmt": ext, "ref": ref},
             shipping_address_collection={"allowed_countries": ["US"]},
             phone_number_collection={"enabled": True},
             success_url=f"{PUBLIC_BASE_URL}/order/{order_id}?session_id={{CHECKOUT_SESSION_ID}}",
@@ -581,6 +588,7 @@ def checkout(
             price_cents=product.price_cents,
             shipping_cents=product.shipping_cents,
             currency=CURRENCY,
+            ref=ref,
         )
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "order_persist_failed", "detail": str(e)},
