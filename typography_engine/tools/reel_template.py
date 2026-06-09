@@ -40,6 +40,21 @@ def _cover_square(path, size):
     return im.crop((left, top, left + size, top + size))
 
 
+def _fit_box(sw, sh, max_w, max_h):
+    """Largest (w, h) preserving the source aspect that fits inside (max_w, max_h)."""
+    if sw <= 0 or sh <= 0:
+        return max_w, max_h
+    sc = min(max_w / float(sw), max_h / float(sh))
+    return max(1, int(round(sw * sc))), max(1, int(round(sh * sc)))
+
+
+def _load_fit(path, iw, ih):
+    """EXIF-correct load resized to exactly iw x ih. The box is computed to match
+    the source aspect, so this preserves the ORIGINAL framing with no crop."""
+    im = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
+    return im.resize((iw, ih), Image.LANCZOS)
+
+
 def _find_font(names):
     dirs = ["C:/Windows/Fonts", "/usr/share/fonts/truetype/liberation",
             "/usr/share/fonts/truetype/dejavu", "/usr/share/fonts/truetype/freefont",
@@ -66,17 +81,45 @@ REVEAL0=7.3*SLOW; REVEAL1=8.1*SLOW; SLIDER_END=12.9*SLOW; DUR=15.4*SLOW; HOLD=3.
 def build_reel(cfg):
     if not (SERIF_B and SERIF and SANS):
         raise RuntimeError("Fonts not found. Install 'fonts-liberation' or run where Georgia/Arial exist.")
-    # Cover-crop both to the square display box so the subject sits at the SAME
-    # scale/position in each -- a plain resize() squishes a non-square render
-    # (the portrait keeps the photo's aspect) and breaks slider alignment.
-    before = _cover_square(cfg["before"], SQ)
-    after  = _cover_square(cfg["after"], SQ)
+    # Display modes:
+    #  aspect="square" (default) -> the original 1:1 box (Typortrait marketing reels).
+    #  aspect="source"           -> keep the photo/portrait's REAL aspect ratio
+    #                               (the customer's personal reel).
+    #  minimal=True              -> personal reel: no CTA, no tutorial captions,
+    #                               no top brand header; just a discreet credit.
+    aspect  = (cfg.get("aspect") or "square").lower()
+    minimal = bool(cfg.get("minimal", False))
+    if aspect == "source":
+        _ref = ImageOps.exif_transpose(Image.open(cfg["after"])).convert("RGB")
+        IW, IH = _fit_box(_ref.size[0], _ref.size[1], 360, 560)
+        before = _load_fit(cfg["before"], IW, IH)
+        after  = _load_fit(cfg["after"], IW, IH)
+        IMG_X = (W - IW) // 2
+        top = 56 if minimal else 96
+        IMG_Y = top + max(0, ((H - top - 120) - IH) // 2)   # centre in the free band
+    else:
+        # Cover-crop both to the square box so the subject sits at the SAME
+        # scale/position in each (a plain resize squishes a non-square render).
+        IW = IH = SQ
+        before = _cover_square(cfg["before"], SQ)
+        after  = _cover_square(cfg["after"], SQ)
+        IMG_X, IMG_Y = 55, 200
     words  = [w for w in (cfg.get("words") or ["love"]) if w]
     brand  = cfg.get("brand", "Typortrait")
-    cta    = cfg.get("cta", "Create yours free")
+    cta    = "" if minimal else cfg.get("cta", "Create yours free")
     fps    = cfg.get("fps", 10)
     out    = cfg["out"]
     wordlist = " · ".join(words[:5])
+    # Pacing. Personal reels follow social best practice — hook in the first
+    # second, reveal the portrait by ~3s, keep the whole clip ~12s — so the music
+    # never plays over a frozen photo. Marketing reels keep the slower, caption-led
+    # timeline. These locals shadow the module defaults for the nested frame fns.
+    if minimal:
+        HOOK_END=0.6; P1_END=1.0; WORDS_IN=1.0; WORDS_DUR=1.5
+        REVEAL0=2.7; REVEAL1=3.5; SLIDER_END=8.0; DUR=10.0; HOLD=2.5
+    else:
+        HOOK_END=2.4*SLOW; P1_END=4.4*SLOW; WORDS_IN=4.9*SLOW; WORDS_DUR=1.7*SLOW
+        REVEAL0=7.3*SLOW; REVEAL1=8.1*SLOW; SLIDER_END=12.9*SLOW; DUR=15.4*SLOW; HOLD=3.0
 
     def font(p,s): return ImageFont.truetype(p,s)
     f_brand=font(SERIF_B,38); f_hook=font(SERIF_B,29); f_tag=font(SERIF,22)
@@ -90,8 +133,8 @@ def build_reel(cfg):
     # centred lines that fade in gently, one after another.
     display_words = [w.upper() for w in dict.fromkeys(words) if w][:12]
     def words_layer(scale):
-        layer=Image.new("RGBA",(SQ,SQ),(0,0,0,0)); d=ImageDraw.Draw(layer)
-        fw=font(SERIF_B,22); sep="   ·   "; pad=20; maxw=SQ-2*pad
+        layer=Image.new("RGBA",(IW,IH),(0,0,0,0)); d=ImageDraw.Draw(layer)
+        fw=font(SERIF_B,22); sep="   ·   "; pad=20; maxw=IW-2*pad
         def measure(s):
             b=d.textbbox((0,0),s,font=fw); return b[2]-b[0]
         lines=[]; cur=""
@@ -102,11 +145,11 @@ def build_reel(cfg):
             else:
                 cur=cand
         if cur: lines.append(cur)
-        lh=34; y0=(SQ-lh*len(lines))//2
+        lh=34; y0=(IH-lh*len(lines))//2
         for i,s in enumerate(lines):
             a=int(max(0.0,min(1.0,scale-i*0.10))*235)
             if a<=0: continue
-            d.text((SQ/2-measure(s)/2, y0+i*lh), s, font=fw, fill=(13,27,58,a))
+            d.text((IW/2-measure(s)/2, y0+i*lh), s, font=fw, fill=(13,27,58,a))
         return layer
 
     def pill(d,txt,x,y,left):
@@ -115,16 +158,16 @@ def build_reel(cfg):
         d.rounded_rectangle([x0,y,x0+w+2*pad,y+22], radius=8, fill=(13,27,58,235))
         d.text((x0+pad,y+3), txt, font=f_pill, fill=(250,249,247,255))
     def slider(frac, pulse):
-        x=int(max(0.07,min(0.93,frac))*SQ); cy=SQ//2
+        x=int(max(0.07,min(0.93,frac))*IW); cy=IH//2
         base=after.convert("RGBA")
-        if x>0: base.paste(before.crop((0,0,x,SQ)).convert("RGBA"),(0,0))
+        if x>0: base.paste(before.crop((0,0,x,IH)).convert("RGBA"),(0,0))
         d=ImageDraw.Draw(base,"RGBA")
-        d.line([(x,0),(x,SQ)], fill=(255,255,255,255), width=3)
+        d.line([(x,0),(x,IH)], fill=(255,255,255,255), width=3)
         rr=20+int(9*pulse); d.ellipse([x-rr,cy-rr,x+rr,cy+rr], outline=(13,27,58,110), width=3)
         d.ellipse([x-17,cy-17,x+17,cy+17], fill=(255,255,255,255))
         d.line([(x-4,cy-7),(x-10,cy),(x-4,cy+7)], fill=(13,27,58,255), width=2)
         d.line([(x+4,cy-7),(x+10,cy),(x+4,cy+7)], fill=(13,27,58,255), width=2)
-        pill(d,"PHOTO",10,10,True); pill(d,"TYPORTRAIT",SQ-10,10,False)
+        pill(d,"PHOTO",10,10,True); pill(d,("WORDS" if minimal else "TYPORTRAIT"),IW-10,10,False)
         return base.convert("RGB")
 
     def img_for(t):
@@ -132,13 +175,13 @@ def build_reel(cfg):
         if t < REVEAL0:
             b=before.convert("RGBA"); wa=min(1.0,(t-WORDS_IN)/WORDS_DUR) if t>WORDS_IN else 0.0
             if wa>0:
-                b=Image.alpha_composite(b,Image.new("RGBA",(SQ,SQ),(250,249,247,int(150*wa))))
+                b=Image.alpha_composite(b,Image.new("RGBA",(IW,IH),(250,249,247,int(150*wa))))
                 b=Image.alpha_composite(b,words_layer(wa))
             return b.convert("RGB")
         if t < REVEAL1:
             k=(t-REVEAL0)/(REVEAL1-REVEAL0)
             b=Image.alpha_composite(Image.alpha_composite(before.convert("RGBA"),
-              Image.new("RGBA",(SQ,SQ),(250,249,247,150))), words_layer(1.0)).convert("RGB")
+              Image.new("RGBA",(IW,IH),(250,249,247,150))), words_layer(1.0)).convert("RGB")
             return Image.blend(b,after,k)
         if t < SLIDER_END:
             u=(t-REVEAL1)/(SLIDER_END-REVEAL1)
@@ -147,30 +190,37 @@ def build_reel(cfg):
 
     def frame(t):
         im=Image.new("RGB",(W,H),BG); d=ImageDraw.Draw(im)
-        ctext(d,W/2,60,brand,f_brand,INK)
-        # Present the rendering like a hung print: a navy frame with a wide
-        # white matt around it, to punctuate the reveal. Same outer footprint,
-        # so the rest of the layout is unchanged; the art insets to fit the matt.
+        if not minimal:
+            ctext(d,W/2,60,brand,f_brand,INK)
+        # Present the rendering like a hung print: a navy frame with a wide white
+        # matt around it. Sized to the image box (square, or the source aspect).
         FR, MT = 9, 16
-        inner = SQ - 2*(FR+MT)
+        inner_w, inner_h = IW-2*(FR+MT), IH-2*(FR+MT)
         ox, oy = IMG_X+FR+MT, IMG_Y+FR+MT
-        d.rectangle([IMG_X, IMG_Y, IMG_X+SQ-1, IMG_Y+SQ-1], fill=INK)                     # frame
-        d.rectangle([IMG_X+FR, IMG_Y+FR, IMG_X+SQ-1-FR, IMG_Y+SQ-1-FR], fill=(255,255,255))  # white matt
-        im.paste(img_for(t).resize((inner,inner), Image.LANCZOS), (ox,oy))                # the rendering
-        d.rectangle([ox-1, oy-1, ox+inner, oy+inner], outline=(206,201,192), width=1)     # matt opening edge
-        cy=IMG_Y+SQ+26
-        if t < P1_END:    ctext(d,W/2,cy,"Start with a photo.",f_tag,MUTED)
-        elif t < REVEAL0: ctext(d,W/2,cy,"Then, add the words that matter.",f_tag,MUTED)
-        elif t < REVEAL1: pass
-        elif t < SLIDER_END: ctext(d,W/2,cy,"Your Typortrait is revealed!",f_tag,MUTED)
+        d.rectangle([IMG_X, IMG_Y, IMG_X+IW-1, IMG_Y+IH-1], fill=INK)                       # frame
+        d.rectangle([IMG_X+FR, IMG_Y+FR, IMG_X+IW-1-FR, IMG_Y+IH-1-FR], fill=(255,255,255)) # white matt
+        im.paste(img_for(t).resize((inner_w,inner_h), Image.LANCZOS), (ox,oy))              # the rendering
+        d.rectangle([ox-1, oy-1, ox+inner_w, oy+inner_h], outline=(206,201,192), width=1)   # matt opening edge
+        cy=IMG_Y+IH+26
+        if minimal:
+            # Personal reel: no tutorial captions, no CTA. Reveal the buyer's own
+            # words at the end; only a discreet credit sits at the very bottom.
+            if t >= SLIDER_END:
+                ctext(d,W/2,cy,wordlist,f_small,MUTED)
+            ctext(d,W/2,H-30,"Typortrait.com",f_small,MUTED)
         else:
-            ctext(d,W/2,cy,"Made from your words.",f_cap,MUTED)
-            ctext(d,W/2,cy+52,wordlist,f_small,MUTED)
-            b=d.textbbox((0,0),cta,font=f_cta); cw=b[2]-b[0]; px0=(W-cw)//2-22; py0=cy+96
-            d.rounded_rectangle([px0,py0,px0+cw+44,py0+50], radius=25, fill=INK)
-            d.text(((W-cw)//2,py0+13), cta, font=f_cta, fill=(250,249,247))
-        # Persistent brand watermark — centered along the bottom of every frame.
-        ctext(d,W/2,H-34,"Typortrait.com",f_foot,INK)
+            if t < P1_END:    ctext(d,W/2,cy,"Start with a photo.",f_tag,MUTED)
+            elif t < REVEAL0: ctext(d,W/2,cy,"Then, add the words that matter.",f_tag,MUTED)
+            elif t < REVEAL1: pass
+            elif t < SLIDER_END: ctext(d,W/2,cy,"Your Typortrait is revealed!",f_tag,MUTED)
+            else:
+                ctext(d,W/2,cy,"Made from your words.",f_cap,MUTED)
+                ctext(d,W/2,cy+52,wordlist,f_small,MUTED)
+                b=d.textbbox((0,0),cta,font=f_cta); cw=b[2]-b[0]; px0=(W-cw)//2-22; py0=cy+96
+                d.rounded_rectangle([px0,py0,px0+cw+44,py0+50], radius=25, fill=INK)
+                d.text(((W-cw)//2,py0+13), cta, font=f_cta, fill=(250,249,247))
+            # Persistent brand watermark — centered along the bottom of every frame.
+            ctext(d,W/2,H-34,"Typortrait.com",f_foot,INK)
         return im
 
     n=int(DUR*fps)

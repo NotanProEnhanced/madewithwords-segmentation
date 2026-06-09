@@ -1205,10 +1205,6 @@ def make_reel(
     if not words:
         return JSONResponse({"ok": False, "error": "no_words"}, status_code=400)
 
-    before_path = OUTPUTS_DIR / f"{job}_before.jpg"
-    if not before_path.exists():
-        if not _make_square_crop_jpeg(src_path, before_path):
-            return JSONResponse({"ok": False, "error": "crop_failed"}, status_code=500)
     gif_path = OUTPUTS_DIR / f"{job}_reel.gif"
     mp4_path = OUTPUTS_DIR / f"{job}_reel.mp4"
 
@@ -1222,11 +1218,12 @@ def make_reel(
 
     try:
         build_reel({
-            "before": str(before_path),
+            "before": str(src_path),       # original photo, kept at its real aspect ratio
             "after":  str(portrait_path),
             "words":  words,
             "out":    str(gif_path),
-            "cta":    "Make yours free",
+            "aspect": "source",            # personal reel preserves the original aspect ratio
+            "minimal": True,               # no CTA / promo captions — just a discreet credit
         })
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "reel_build_failed", "detail": str(e)}, status_code=500)
