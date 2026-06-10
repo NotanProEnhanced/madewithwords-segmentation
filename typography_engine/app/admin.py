@@ -348,36 +348,57 @@ def compute_stats():
     except OSError:
         pass
 
-    # Referral sales ledger: one JSON record per completed sale (written by the
-    # app's purchase tracker), grouped by source so partner referrals (e.g.
-    # everloved) are countable at a glance — digital AND physical. Older markers
-    # held just "1" (no detail); those are skipped. NOT bounded by RETENTION_DAYS.
-    referred = {}                       # source -> {"count": n, "revenue_cents": x}
-    sales_count = 0
-    sales_revenue_cents = 0
+    stats["by_day"] = [(d, by_day[d]) for d in sorted(by_day.keys(), reverse=True)]
+    return stats
+
+
+def referral_funnel(since_ts: int = 0):
+    """Per-source funnel — renders -> sales -> revenue — grouped by the `?ref`
+    tag, for events at or after `since_ts` (epoch seconds; 0 = all time).
+
+    Renders come from the recipe sidecars (so they're bounded by the retention
+    sweep); sales + revenue come from the purchase ledger (all-time). Empty/absent
+    ref counts as "direct". Best-effort: never raises."""
+    src = {}   # source -> {"renders": n, "sales": n, "revenue_cents": x}
+
+    def slot(name: str) -> dict:
+        return src.setdefault(name or "direct",
+                              {"renders": 0, "sales": 0, "revenue_cents": 0})
+
+    # Renders (recipe sidecars), filtered by file mtime.
+    try:
+        for p in PRIVATE_DIR.glob("*.json"):
+            if "." in p.stem:                      # skip .consent / .review sidecars
+                continue
+            try:
+                if since_ts and p.stat().st_mtime < since_ts:
+                    continue
+                r = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            slot(str(r.get("ref") or "direct"))["renders"] += 1
+    except OSError:
+        pass
+
+    # Sales (purchase ledger), filtered by record ts. Older "1" markers (no
+    # detail) won't parse as a dict and are skipped.
     try:
         for p in (DATA_DIR / "purchase_events").glob("*.txt"):
             try:
                 rec = json.loads(p.read_text(encoding="utf-8"))
             except Exception:  # noqa: BLE001
-                continue                # legacy "1" marker -> no detail
+                continue
             if not isinstance(rec, dict):
                 continue
-            src = str(rec.get("source") or "direct")
-            amt = int(rec.get("amount_cents") or 0)
-            slot = referred.setdefault(src, {"count": 0, "revenue_cents": 0})
-            slot["count"] += 1
-            slot["revenue_cents"] += amt
-            sales_count += 1
-            sales_revenue_cents += amt
+            if since_ts and int(rec.get("ts") or 0) < since_ts:
+                continue
+            sl = slot(str(rec.get("source") or "direct"))
+            sl["sales"] += 1
+            sl["revenue_cents"] += int(rec.get("amount_cents") or 0)
     except OSError:
         pass
-    stats["referred"] = referred
-    stats["sales_count"] = sales_count
-    stats["sales_revenue_cents"] = sales_revenue_cents
 
-    stats["by_day"] = [(d, by_day[d]) for d in sorted(by_day.keys(), reverse=True)]
-    return stats
+    return src
 
 
 def _pct(num: float, den: float) -> str:
@@ -829,7 +850,7 @@ def admin_list(filter: str = "all", msg: str = "",
 
 
 @router.get("/stats", response_class=HTMLResponse)
-def admin_stats(admin_session: Optional[str] = Cookie(None)):
+def admin_stats(window: str = "30", admin_session: Optional[str] = Cookie(None)):
     guard = _require_admin(admin_session)
     if guard is not None:
         return guard
@@ -863,31 +884,50 @@ def admin_stats(admin_session: Optional[str] = Cookie(None)):
     body += f'<p class="muted" style="margin-top:14px">Window: last {s["retention_days"]} days (file retention).</p>'
     body += '</div>'
 
-    # --- Referral sales (partner attribution: everloved etc.) -------------
-    referred = s.get("referred", {})
-    body += '<div class="card"><h2>Referral sales</h2>'
-    if not referred:
-        body += ('<p class="muted">No sales recorded yet. Partner-referred sales '
-                 '(e.g. <code>everloved</code>) appear here once they convert — split '
-                 'by source, digital and print.</p>')
+    # --- Referral funnel (renders -> sales -> revenue, per ?ref source) ---
+    _WINDOWS = [("7", "7 days"), ("30", "30 days"), ("90", "90 days"),
+                ("365", "1 year"), ("all", "All time")]
+    sel = window if window in dict(_WINDOWS) else "30"
+    days = None if sel == "all" else int(sel)
+    since_ts = 0 if days is None else int(time.time()) - days * 86400
+    fsrc = referral_funnel(since_ts)
+    body += '<div class="card"><h2>Referral funnel</h2>'
+    picks = [(f'<b>{html.escape(lbl)}</b>' if val == sel
+              else f'<a href="/admin/stats?window={val}">{html.escape(lbl)}</a>')
+             for val, lbl in _WINDOWS]
+    body += '<p class="muted" style="margin-bottom:12px">Range: ' + " &middot; ".join(picks) + '</p>'
+    if not fsrc:
+        body += '<p class="muted">No activity in this range yet.</p>'
     else:
+        def _rk(item):
+            name, agg = item
+            return (name == "direct", -agg["sales"], -agg["renders"])
         rows = []
-        for src, agg in sorted(referred.items(), key=lambda kv: kv[1]["revenue_cents"], reverse=True):
-            rev = agg["revenue_cents"] / 100.0
-            partner = src != "direct"
-            label = "Direct (no referral)" if src == "direct" else src
-            name = f"<b>{html.escape(label)}</b>" if partner else html.escape(label)
-            rows.append(f'<tr><td>{name}</td><td class="row-num">{agg["count"]}</td>'
-                        f'<td class="row-num">${rev:,.2f}</td></tr>')
-        total_rev = s.get("sales_revenue_cents", 0) / 100.0
-        body += ('<table><thead><tr><th>Source</th><th class="row-num">Sales</th>'
+        tot = {"renders": 0, "sales": 0, "revenue_cents": 0}
+        for name, agg in sorted(fsrc.items(), key=_rk):
+            for kk in tot:
+                tot[kk] += agg[kk]
+            partner = name != "direct"
+            label = "Direct (no referral)" if name == "direct" else name
+            disp = f"<b>{html.escape(label)}</b>" if partner else html.escape(label)
+            conv = f'{100 * agg["sales"] / agg["renders"]:.0f}%' if agg["renders"] else "—"
+            rows.append(f'<tr><td>{disp}</td><td class="row-num">{agg["renders"]}</td>'
+                        f'<td class="row-num">{agg["sales"]}</td>'
+                        f'<td class="row-num">{conv}</td>'
+                        f'<td class="row-num">${agg["revenue_cents"] / 100:,.2f}</td></tr>')
+        tconv = f'{100 * tot["sales"] / tot["renders"]:.0f}%' if tot["renders"] else "—"
+        body += ('<table><thead><tr><th>Source</th><th class="row-num">Renders</th>'
+                 '<th class="row-num">Sales</th><th class="row-num">Conv.</th>'
                  '<th class="row-num">Revenue</th></tr></thead><tbody>'
                  + "".join(rows)
-                 + f'<tr><td><b>Total</b></td><td class="row-num"><b>{s.get("sales_count", 0)}</b></td>'
-                   f'<td class="row-num"><b>${total_rev:,.2f}</b></td></tr></tbody></table>')
-        body += ('<p class="muted" style="margin-top:10px">Source = the <code>?ref</code> tag '
-                 'captured at render time (e.g. a partner landing). Digital + print; all-time '
-                 '(not bounded by the retention window).</p>')
+                 + f'<tr><td><b>Total</b></td><td class="row-num"><b>{tot["renders"]}</b></td>'
+                   f'<td class="row-num"><b>{tot["sales"]}</b></td>'
+                   f'<td class="row-num"><b>{tconv}</b></td>'
+                   f'<td class="row-num"><b>${tot["revenue_cents"] / 100:,.2f}</b></td></tr>'
+                 '</tbody></table>')
+    body += (f'<p class="muted" style="margin-top:10px">Source = the <code>?ref</code> tag captured at '
+             f'render. Renders are limited to the {s["retention_days"]}-day retention window; sales + '
+             f'revenue are recorded all-time. Conv. = sales &divide; renders.</p>')
     body += '</div>'
 
     # --- Choice popularity (style + ink + word count + toggles) -----------
