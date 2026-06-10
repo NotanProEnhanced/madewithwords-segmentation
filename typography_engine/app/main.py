@@ -852,6 +852,7 @@ def _track_purchase_once(
     sku: Optional[str] = None,
     amount_cents: Optional[int] = None,
     currency: Optional[str] = None,
+    source: Optional[str] = None,
 ) -> None:
     """Fire the Umami `purchase` conversion exactly once for a Stripe session.
 
@@ -872,17 +873,20 @@ def _track_purchase_once(
             return
         # Fill in anything the caller didn't supply (e.g. the digital /success
         # page only has the session id) straight from Stripe.
-        if amount_cents is None or sku is None or currency is None:
+        if amount_cents is None or sku is None or currency is None or source is None:
             try:
                 import stripe
                 stripe.api_key = STRIPE_SECRET_KEY
                 sess = _stripe_to_dict(stripe.checkout.Session.retrieve(session_id))
+                meta = sess.get("metadata") or {}
                 if amount_cents is None:
                     amount_cents = sess.get("amount_total")
                 if currency is None:
                     currency = sess.get("currency")
                 if sku is None:
-                    sku = (sess.get("metadata") or {}).get("sku")
+                    sku = meta.get("sku")
+                if source is None:
+                    source = meta.get("ref")        # referral/source tag (e.g. everloved)
             except Exception:  # noqa: BLE001
                 pass
         # Claim the marker BEFORE emitting so a concurrent caller can't double-fire.
@@ -893,6 +897,7 @@ def _track_purchase_once(
         "revenue": round((amount_cents or 0) / 100.0, 2),
         "currency": (currency or CURRENCY or "usd").lower(),
         "sku": sku or "digital",
+        "source": (source or "direct"),            # so referred sales (any sku) are countable
     })
 
 
@@ -942,6 +947,7 @@ async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Hea
         sku=meta.get("sku") or ("print" if (transitioned or {}).get("variant_id") else "digital"),
         amount_cents=sess.get("amount_total"),
         currency=sess.get("currency"),
+        source=meta.get("ref"),
     )
     return JSONResponse({"ok": True})
 
@@ -1054,6 +1060,7 @@ def order_status(order_id: str, session_id: Optional[str] = None):
                     or ("print" if (transitioned or {}).get("variant_id") else "digital"),
                     amount_cents=sess.get("amount_total"),
                     currency=sess.get("currency"),
+                    source=(sess.get("metadata") or {}).get("ref"),
                 )
                 o = orders_db.get(order_id)
         except Exception:  # noqa: BLE001
