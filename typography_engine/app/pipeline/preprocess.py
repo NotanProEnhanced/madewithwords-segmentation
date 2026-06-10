@@ -60,6 +60,32 @@ def decode_image(img_bytes: bytes, warns: WarningCollector) -> np.ndarray:
     raise ValueError("could_not_decode_image")
 
 
+def _auto_expose(bgr: np.ndarray, warns: WarningCollector) -> np.ndarray:
+    """Lift dark / underexposed photos toward a usable tonal range so the portrait
+    isn't murky. ADAPTIVE: acceptably-lit photos (mean luminance >= 75) are returned
+    untouched, so good inputs never regress. Only clearly-underexposed photos get a
+    gamma lift (stronger the darker they are) toward a ~120 target mean, then a
+    gentle luminance range-stretch. The same curve is applied to all channels, so
+    colour is preserved."""
+    g = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    mean = float(g.mean())
+    if mean >= 75.0:
+        return bgr                                   # acceptably lit -> leave it
+    out = bgr.astype(np.float32)
+    m = max(8.0, mean)
+    gamma = float(np.clip(np.log(m / 255.0) / np.log(120.0 / 255.0), 1.0, 2.6))
+    if gamma > 1.01:
+        out = np.power(out / 255.0, 1.0 / gamma) * 255.0
+    g2 = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32)
+    lo, hi = (float(x) for x in np.percentile(g2, [1.0, 99.0]))
+    if hi - lo > 1.0:
+        out = (out - lo) * (255.0 / (hi - lo))
+    if mean < 45.0:
+        warns.warn("preprocess", "dark_photo",
+                   "This photo is quite dark; a brighter, well-lit photo will render sharper.")
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
 def load_and_normalize(img_bytes: bytes, max_dim: int, warns: WarningCollector) -> LoadedImage:
     bgr_full = decode_image(img_bytes, warns)
     oh, ow = bgr_full.shape[:2]
@@ -80,6 +106,8 @@ def load_and_normalize(img_bytes: bytes, max_dim: int, warns: WarningCollector) 
             "small_image",
             f"Working image is small ({bgr.shape[1]}x{bgr.shape[0]}); detail may be poor.",
         )
+
+    bgr = _auto_expose(bgr, warns)   # lift dark photos; well-lit ones untouched
 
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
