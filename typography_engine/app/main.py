@@ -503,6 +503,35 @@ def list_products() -> JSONResponse:
     })
 
 
+# Per-brand checkout presentation. A ?brand front-end (e.g. lovedinwords) sets the
+# attribution source (stored as the recipe "ref"), which here drives the card
+# STATEMENT DESCRIPTOR and the line-item name — so the payment moment and the bank
+# statement match the brand the customer came from, not "Typortrait". Unknown or
+# empty source falls back to the Typortrait defaults (unchanged behavior).
+_CHECKOUT_BRANDS = {
+    "lovedinwords": {"name": "Loved in Words", "descriptor": "LOVEDINWORDS"},
+}
+
+
+def _checkout_brand(ref: str) -> dict:
+    return _CHECKOUT_BRANDS.get((ref or "").strip().lower(),
+                                {"name": "Typortrait", "descriptor": None})
+
+
+def _create_session_with_descriptor(stripe, descriptor, **params):
+    """Create a Stripe Checkout Session, applying a per-brand card statement
+    descriptor when one is set. If the account rejects the descriptor (e.g. it
+    requires a suffix instead), retry once WITHOUT it so a descriptor issue can
+    never break checkout — the charge simply falls back to the account default."""
+    if descriptor:
+        try:
+            return stripe.checkout.Session.create(
+                payment_intent_data={"statement_descriptor": descriptor}, **params)
+        except Exception:  # noqa: BLE001
+            pass
+    return stripe.checkout.Session.create(**params)
+
+
 @app.post("/checkout")
 def checkout(
     job: str = Form(...),
@@ -530,18 +559,20 @@ def checkout(
         ref = ""
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
+    brand = _checkout_brand(ref)   # per-brand statement descriptor + line-item name
 
     # --- Digital download: unchanged from the live synchronous-verify flow ----
     if not product.physical:
         try:
-            session = stripe.checkout.Session.create(
+            session = _create_session_with_descriptor(
+                stripe, brand["descriptor"],
                 mode="payment",
                 line_items=[{
                     "quantity": 1,
                     "price_data": {
                         "currency": CURRENCY,
                         "unit_amount": DOWNLOAD_PRICE_CENTS,
-                        "product_data": {"name": "Typortrait — high-resolution download"},
+                        "product_data": {"name": f"{brand['name']} — high-resolution download"},
                     },
                 }],
                 metadata={"job": job, "ref": ref},
@@ -570,7 +601,7 @@ def checkout(
         "price_data": {
             "currency": CURRENCY,
             "unit_amount": product.price_cents,
-            "product_data": {"name": f"Typortrait — {product.name}{label_size}"},
+            "product_data": {"name": f"{brand['name']} — {product.name}{label_size}"},
         },
     }]
     if product.shipping_cents > 0:
@@ -583,7 +614,8 @@ def checkout(
             },
         })
     try:
-        session = stripe.checkout.Session.create(
+        session = _create_session_with_descriptor(
+            stripe, brand["descriptor"],
             mode="payment",
             line_items=line_items,
             metadata={"job": job, "sku": sku, "size": size or "", "order_id": order_id, "fmt": ext, "ref": ref},
