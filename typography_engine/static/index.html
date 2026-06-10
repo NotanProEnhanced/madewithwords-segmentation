@@ -410,22 +410,36 @@ function placeholderBg(col){
   return col;
 }
 const state = { file:null, ink:"photo", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true };
-// Referral/source tag (?ref=everloved) AND brand skin (?brand=lovedinwords).
-// The brand skin re-dresses this same engine as a partner/brand identity (name +
-// tagline); the source rides every render -> recipe -> order into the admin
-// Referral funnel, so each brand/partner's sales are attributable.
+// Referral/source tag (?ref=everloved) AND brand skin. A brand re-dresses this
+// same engine as a partner identity (name + tagline). The brand is resolved from
+// the ?brand param FIRST (reliable, and it persists in this single-page URL),
+// with the REFERRING DOMAIN as a fallback (e.g. arriving from lovedinwords.com
+// without the param). Referrer is best-effort — browsers often strip it and it's
+// lost on a refresh — so the ?brand param stays on the storefront links as the
+// source of truth. The resolved source rides every render -> recipe -> order into
+// the admin Referral funnel, so each brand/partner's sales are attributable.
 const _qp=new URLSearchParams(location.search);
-// Brand skin is URL-only — it never sticks to a later direct visit. The studio
-// is a single page, so ?brand stays in the URL for the whole session anyway.
-const BRAND_ID=(_qp.get("brand")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
-// Attribution source: an explicit ?ref wins; else the current ?brand; else the
-// persisted last-touch tag.
+// Registry of brand front-ends — same engine, different face. `host` lets the
+// studio also recognize the brand from the referring domain. Add partners here.
+const BRANDS={
+  lovedinwords:{ name:"Loved in Words", tag:"A portrait of a life, in the words that describe them.", title:"Loved in Words — a remembrance portrait made from words", host:"lovedinwords.com" }
+};
+function _brandFromReferrer(){
+  try{
+    if(!document.referrer) return "";
+    const h=new URL(document.referrer).hostname.replace(/^www\./,"");
+    for(const id in BRANDS){ if(BRANDS[id].host===h) return id; }
+  }catch(e){}
+  return "";
+}
+// Brand id: explicit ?brand param first (reliable + survives refresh in the URL),
+// else the referring brand domain. Skin is URL/referrer-driven only — it never
+// sticks to a later direct visit.
+const BRAND_ID=((_qp.get("brand")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40)) || _brandFromReferrer();
+// Attribution source: an explicit ?ref wins; else the brand; else the persisted
+// last-touch tag.
 const REF=(_qp.get("ref")||BRAND_ID||localStorage.getItem("typo_ref")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
 if(REF){ try{ localStorage.setItem("typo_ref", REF); }catch(e){} }
-// Registry of brand front-ends — same engine, different face. Add partners here.
-const BRANDS={
-  lovedinwords:{ name:"Loved in Words", tag:"A portrait of a life, in the words that describe them.", title:"Loved in Words — a remembrance portrait made from words" }
-};
 const BRAND=BRANDS[BRAND_ID]||null;
 if(BRAND){
   try{
