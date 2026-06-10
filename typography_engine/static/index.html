@@ -410,10 +410,30 @@ function placeholderBg(col){
   return col;
 }
 const state = { file:null, ink:"photo", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true };
-// Referral/source tag (e.g. a partner landing's ?ref=everloved). Captured once,
-// persisted, and sent with the render so it lands on the recipe + the order.
-const REF=(new URLSearchParams(location.search).get("ref")||localStorage.getItem("typo_ref")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
+// Referral/source tag (?ref=everloved) AND brand skin (?brand=lovedinwords).
+// The brand skin re-dresses this same engine as a partner/brand identity (name +
+// tagline); the source rides every render -> recipe -> order into the admin
+// Referral funnel, so each brand/partner's sales are attributable.
+const _qp=new URLSearchParams(location.search);
+// Brand skin is URL-only — it never sticks to a later direct visit. The studio
+// is a single page, so ?brand stays in the URL for the whole session anyway.
+const BRAND_ID=(_qp.get("brand")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
+// Attribution source: an explicit ?ref wins; else the current ?brand; else the
+// persisted last-touch tag.
+const REF=(_qp.get("ref")||BRAND_ID||localStorage.getItem("typo_ref")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
 if(REF){ try{ localStorage.setItem("typo_ref", REF); }catch(e){} }
+// Registry of brand front-ends — same engine, different face. Add partners here.
+const BRANDS={
+  lovedinwords:{ name:"Loved in Words", tag:"A portrait of a life, in the words that describe them.", title:"Loved in Words — a remembrance portrait made from words" }
+};
+const BRAND=BRANDS[BRAND_ID]||null;
+if(BRAND){
+  try{
+    document.title=BRAND.title||BRAND.name;
+    const _bn=document.querySelector("header .brand"); if(_bn) _bn.textContent=BRAND.name;
+    const _tg=document.querySelector("header .tag"); if(_tg) _tg.textContent=BRAND.tag;
+  }catch(e){}
+}
 // Every render is presented as a framed keepsake in a room: a portrait shot
 // drops into a real framed photo on a desk (candle + plant); a square/landscape
 // one sits on a soft greenery backdrop. It reads as a real product rather than a
