@@ -289,13 +289,12 @@ _CLOSEUP_FRAC = 0.42
 
 
 def _recommended_size_mf(face_frac):
-    """The DEFAULT word size to pre-select for this framing, so the first render
-    suits the photo: Large for tight close-ups, Medium otherwise (clamped to the
-    sizes that stay readable at this face size)."""
+    """The DEFAULT word size to pre-select for this framing. We default every
+    framing to Large (57): it's the most legible, lands the likeness cleanly, and
+    avoids the wall-of-tiny-words look of smaller tiers. Users can still step down
+    to Medium for more detail. Large is always an offered size."""
     allowed = _allowed_size_mf(face_frac)
-    if face_frac is not None and face_frac >= _CLOSEUP_FRAC and 57.0 in allowed:
-        return 57.0                                  # Large
-    return 27.0 if 27.0 in allowed else allowed[-1]  # Medium (or smallest readable = most detail)
+    return 57.0 if 57.0 in allowed else allowed[0]   # Large (always offered)
 
 
 @app.post("/measure")
@@ -660,10 +659,12 @@ def _ensure_clean_png(job: str) -> Optional[Path]:
             return path
         mask_path = PRIVATE_DIR / f"{job}.mask.svg"
         if mask_path.exists():
+            from .pipeline.tonal import _MSG_BOOST
+            dl_boost = _MSG_BOOST if r.get("style") == "message" else 0.0
             png_bytes = compose_layered(
                 mask_path.read_text(encoding="utf-8"), an,
                 r.get("ink", "navy"), bool(r.get("remove_bg", True)), DOWNLOAD_PNG_WIDTH,
-                light=bool(r.get("light", False)))
+                light=bool(r.get("light", False)), boost=dl_boost)
         else:  # no stored mask (e.g. light/engraving renders) or older jobs:
             # recompose at print size. Reuse the chosen word size so the paid
             # download matches the preview (light mode has no baked mask).

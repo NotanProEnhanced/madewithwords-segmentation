@@ -376,7 +376,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, ink:"photo", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:20, uppercase:true };
+const state = { file:null, ink:"photo", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true };
 // Referral/source tag (e.g. a partner landing's ?ref=everloved). Captured once,
 // persisted, and sent with the render so it lands on the recipe + the order.
 const REF=(new URLSearchParams(location.search).get("ref")||localStorage.getItem("typo_ref")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
@@ -508,8 +508,8 @@ function applySizes(allowed, recommended){
   if(recommended!=null && state.style!=="message" && allowedMf.includes(Number(recommended))){
     state.minFont=Number(recommended);                 // framing-based default (close-up -> Large)
   } else if(!allowedMf.includes(Number(state.minFont))){   // current pick invalid -> re-default
-    const def=(state.style==="message") ? 13
-              : ([27,57,120].find(v=>allowedMf.includes(v))||allowedMf[0]);   // Medium, else largest
+    const def=(state.style==="message") ? 20
+              : ([57,27,120].find(v=>allowedMf.includes(v))||allowedMf[0]);   // Large, else Medium
     state.minFont=allowedMf.includes(def)?def:allowedMf[0];
   }
   // Keep the hidden Words segment in rough sync (cosmetic; state.minFont rules).
@@ -595,7 +595,9 @@ let allowedMf=[120,57,27,13];
 let sizeThumbCache={};                 // coarse renders of the CURRENT ink, keyed by size
 function buildSizeStrip(){
   if(!sizeStripEl) return;
-  if(state.style==="displacement"){ if(sizeFilmEl) sizeFilmEl.style.display="none"; return; }  // auto-scaled; no size control
+  // Sculpted is auto-scaled; Message auto-sizes from text length (build_poster
+  // repeats to fill, so the type size is the renderer's call, not the user's).
+  if(state.style==="displacement" || state.style==="message"){ if(sizeFilmEl) sizeFilmEl.style.display="none"; return; }  // no size control
   sizeStripEl.innerHTML="";
   const set=new Set(allowedMf.map(Number));
   sizesForStyle().forEach(([mf,label])=>{
@@ -644,7 +646,7 @@ async function renderSizeThumb(mf){
 }
 let prewarmingSizes=false;
 async function prewarmSizes(){
-  if(prewarmingSizes || resultView.style.display!=="block" || state.style==="displacement") return;
+  if(prewarmingSizes || resultView.style.display!=="block" || state.style==="displacement" || state.style==="message") return;
   prewarmingSizes=true;
   const myGen=gen;
   for(const mf of allowedMf){

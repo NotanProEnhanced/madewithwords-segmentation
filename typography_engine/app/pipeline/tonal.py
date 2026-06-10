@@ -121,6 +121,26 @@ _DENSITY_KNEE = 0.60
 _SHADE_LIGHT = 172
 _SHADE_DARK = 0
 
+# Message/prose renders read darker than Words: uniform rows of text over the
+# photo leave large shadow-toned bands that crush to near-black. This gamma lift
+# (applied to the finished Message composite only, before vibrance) opens the
+# shadows/midtones toward life while leaving highlights near-white. 0 disables.
+_MSG_BOOST = 0.5
+
+
+def _auto_message_font(text: str) -> float:
+    """Pick the Message/prose font size from message length. build_poster repeats
+    the message to fill the silhouette, so size is purely a legibility<->density
+    trade: a short note renders bold and readable (the phrase reads as a unit); a
+    long letter goes finer so more of it shows before the phrase cycles. Smooth
+    log falloff, clamped to a readable band [13, 25]px. No manual knob."""
+    import math
+    n = len(str(text).strip())
+    if n <= 1:
+        return 24.0
+    f = 24.0 - 3.5 * math.log2(max(n, 24) / 24.0)
+    return float(max(13.0, min(25.0, f)))
+
 # Named ink treatments. Each duotone is (light_end, dark_end): the colour at the
 # brightest tone and at the darkest. Light end is near the background so
 # highlights melt into it; dark end carries the features. "photo" samples the
@@ -1258,10 +1278,11 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
     # neutral ink so the ink choice never touches the layout (and we avoid the
     # mosaic's photo-ink colour path, which isn't needed here).
     if style == "message":
-        # Message/prose is a single uniform text size (no face tiers), so the
-        # word-size control maps straight to the poster font size. Clamp to a
-        # sane readable band; default min_font_px=20 reproduces the prior look.
-        msg_font = float(min(cfg.max_font_px, max(12.0, cfg.min_font_px)))
+        # Message/prose has no manual size knob: build_poster repeats the message
+        # to fill the face, so size never affects fit — only legibility vs density.
+        # Auto-size from message length: a short note reads bold and clear; a long
+        # letter goes finer so more of it is visible before the phrase cycles.
+        msg_font = _auto_message_font(text)
         colored, runs = build_poster(an, text, cfg, warns, render_w=render_w,
                                      font_px=msg_font, ink="mono", remove_bg=remove_bg)
     else:
@@ -1286,14 +1307,17 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
     if not colored:
         return b"", runs, ground_hex, ""
     mask_svg = _mask_svg(colored)
-    png = compose_layered(mask_svg, an, ink, remove_bg, out_width, light=light)
+    boost = _MSG_BOOST if style == "message" else 0.0
+    png = compose_layered(mask_svg, an, ink, remove_bg, out_width, light=light, boost=boost)
     return png, runs, ground_hex, mask_svg
 
 
-def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int, light: bool = False) -> bytes:
+def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int,
+                    light: bool = False, boost: float = 0.0) -> bytes:
     """Composite the tinted photo through a prebuilt white-text mask SVG. Reused
     at download from the stored mask, so the costly layout build runs only once
-    (at render), not again per sale."""
+    (at render), not again per sale. `boost` (>0) gamma-lifts the finished
+    composite's shadows/midtones — used to brighten Message/prose renders."""
     from PIL import Image
     from .raster import svg_to_png_bytes
     if not mask_svg:
@@ -1307,6 +1331,9 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     ground = np.array(_hex_to_rgb(_ground_hex(ink, light)), dtype=np.float32)
     m = (mask.astype(np.float32) / 255.0)[..., None]
     out = (ground + (photo - ground) * m).clip(0, 255).astype(np.uint8)
+    if boost and boost > 0.0:        # lift dark Message renders (shadows/midtones)
+        f = (out.astype(np.float32) / 255.0) ** (1.0 / (1.0 + float(boost)))
+        out = (f * 255.0).clip(0, 255).astype(np.uint8)
     if not light:                    # vibrance gives life to the dark/photo composite
         from .preprocess import apply_vibrance
         out = apply_vibrance(out, bgr=False)
