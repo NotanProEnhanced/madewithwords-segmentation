@@ -95,6 +95,28 @@
   .spin{width:30px;height:30px;border-radius:50%;border:3px solid #d9d6cf;border-top-color:var(--navy);animation:spin .9s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
   .msg{font-family:var(--serif);color:var(--navy);font-size:16px}
+  /* ---- Ever Loved keepsake presentation (only when ?ref=everloved) ----------
+     The finished portrait is shown in-situ as a memorial keepsake: a vertical
+     portrait sits in a real framed photo on a desk (lit candle + green plant); a
+     square/landscape one sits on a soft eucalyptus backdrop with leaves peeking
+     around the frame. PREVIEW ONLY -- the file the customer downloads/prints is
+     the clean portrait, untouched. Gated entirely by the kp-* class on #result. */
+  #result.kp-desk .frame{position:relative;margin-top:16px;padding:0;border-radius:6px;overflow:hidden;
+    aspect-ratio:960/1200;background:#efe9e1 url('/static/everloved/scene-desk.jpg') center/cover no-repeat;
+    box-shadow:0 22px 54px rgba(20,30,60,.20)}
+  #result.kp-desk .mat{position:absolute;top:18.2%;left:21.9%;right:22.7%;bottom:21.5%;
+    padding:0;border-radius:0;background:#0d0d0f;box-shadow:none;display:flex;align-items:center;justify-content:center}
+  #result.kp-desk .stage{width:100%;height:100%;min-height:0;border:none;background:#0d0d0f}
+  #result.kp-desk .compare{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+  #result.kp-desk #portrait{width:100%;height:100%;object-fit:contain}
+  #result.kp-desk .before-wrap,#result.kp-desk .cmp-tag,#result.kp-desk .cmp-handle{display:none}
+  #result.kp-leaf{position:relative;margin-top:16px;padding:30px 26px;border-radius:16px;overflow:hidden;
+    background:radial-gradient(125% 120% at 50% 0%,#eef2e9 0%,#dde6d2 52%,#c8d5b7 100%)}
+  #result.kp-leaf::before,#result.kp-leaf::after{content:"";position:absolute;width:150px;height:330px;
+    background:url('/static/everloved/leaf-sprig.png') center/contain no-repeat;mix-blend-mode:multiply;opacity:.92;z-index:1;pointer-events:none}
+  #result.kp-leaf::before{top:-28px;left:-24px;transform:scaleX(-1) rotate(-8deg)}
+  #result.kp-leaf::after{bottom:-32px;right:-22px;transform:rotate(6deg)}
+  #result.kp-leaf .frame{position:relative;z-index:2;margin-top:0;max-width:86%;margin-left:auto;margin-right:auto}
   /* Animated "composing from your words" loader: words drift in over the dimmed
      photo on the #assembly canvas, instead of a generic spinner. */
   .busy.anim{background:transparent}
@@ -381,6 +403,11 @@ const state = { file:null, ink:"photo", style:"words", fmt:"png", removeBg:true,
 // persisted, and sent with the render so it lands on the recipe + the order.
 const REF=(new URLSearchParams(location.search).get("ref")||localStorage.getItem("typo_ref")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
 if(REF){ try{ localStorage.setItem("typo_ref", REF); }catch(e){} }
+// Ever Loved visitors see the finished portrait as a memorial keepsake (framed
+// on a desk with candle + plant for portrait shots, or on a soft greenery
+// backdrop otherwise). Presentation only -- the downloaded/printed file is the
+// clean portrait. Everyone else sees the standard gallery frame.
+const KEEPSAKE = (REF==="everloved");
 // The Displacement style uses 3 "grounds" instead of the 9 inks; they ride the
 // same swatch filmstrip. Ground ids are prefixed (g_*) so they never collide
 // with ink ids. state.ink holds the active variant id (an ink name, or g_*).
@@ -674,6 +701,16 @@ function selectSize(mf){
 const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy");
 const canvas=$("#assembly"), buy=$("#buy"), buynote=$("#buynote"), errResult=$("#errResult"), errInput=$("#errInput");
 let currentJob=null, priceLabel="";
+// Pick the keepsake presentation from the rendered portrait's shape: a clearly
+// vertical portrait drops into the framed desk scene (3:4 opening); square or
+// landscape falls back to the greenery card so nothing gets cropped awkwardly.
+function applyKeepsake(){
+  if(!KEEPSAKE) return;
+  resultView.classList.remove("kp-desk","kp-leaf");
+  const w=portrait.naturalWidth||0, h=portrait.naturalHeight||0;
+  if(!w||!h) return;
+  resultView.classList.add((w/h)<=0.85 ? "kp-desk" : "kp-leaf");
+}
 buy.addEventListener("click", async ()=>{
   if(!currentJob) return;
   buy.disabled=true; const old=buy.textContent; buy.textContent="Opening secure checkout…";
@@ -815,7 +852,7 @@ function revealPlain(entry, crossfade){
     overlay.src=url; busy.classList.add("hide");
   } else {
     portrait.classList.remove("shown");
-    portrait.onload=()=>{ portrait.classList.add("shown"); busy.classList.add("hide"); };
+    portrait.onload=()=>{ portrait.classList.add("shown"); busy.classList.add("hide"); applyKeepsake(); };
     portrait.src=url;
   }
 }
@@ -829,7 +866,7 @@ function revealFromAssembly(entry){
   const url = entry.preview + "?t=" + Date.now();
   const im=new Image();
   im.onload=()=>{
-    portrait.onload=null; portrait.src=url; portrait.classList.add("shown");
+    portrait.onload=null; portrait.src=url; portrait.classList.add("shown"); applyKeepsake();
     canvas.style.transition="opacity .5s ease"; canvas.style.opacity="0";
     busy.classList.add("hide"); stopComposeStatus();
     setTimeout(()=>{ stopAssembly(); canvas.style.opacity=""; canvas.style.transition=""; }, 540);
@@ -929,6 +966,7 @@ function showBusy(animate){
 }
 async function render(ink,{animate=false,background=false,thumb=false}={}){
   if(!state.file) return;
+  if(KEEPSAKE) animate=false;   // keepsake shows the portrait in a scene; skip the canvas fly-in
   const myGen=gen;
   if(!background && !thumb) showBusy(animate);
   const fd=new FormData();
