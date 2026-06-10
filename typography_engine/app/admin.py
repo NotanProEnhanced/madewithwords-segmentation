@@ -32,7 +32,7 @@ from typing import Optional
 from fastapi import APIRouter, Cookie, Form, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .config import OUTPUTS_DIR, PRIVATE_DIR, PUBLIC_BASE_URL, RETENTION_DAYS
+from .config import DATA_DIR, OUTPUTS_DIR, PRIVATE_DIR, PUBLIC_BASE_URL, RETENTION_DAYS
 
 
 # --- Configuration --------------------------------------------------------
@@ -347,6 +347,34 @@ def compute_stats():
             stats["saves_captured"] += 1
     except OSError:
         pass
+
+    # Referral sales ledger: one JSON record per completed sale (written by the
+    # app's purchase tracker), grouped by source so partner referrals (e.g.
+    # everloved) are countable at a glance — digital AND physical. Older markers
+    # held just "1" (no detail); those are skipped. NOT bounded by RETENTION_DAYS.
+    referred = {}                       # source -> {"count": n, "revenue_cents": x}
+    sales_count = 0
+    sales_revenue_cents = 0
+    try:
+        for p in (DATA_DIR / "purchase_events").glob("*.txt"):
+            try:
+                rec = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                continue                # legacy "1" marker -> no detail
+            if not isinstance(rec, dict):
+                continue
+            src = str(rec.get("source") or "direct")
+            amt = int(rec.get("amount_cents") or 0)
+            slot = referred.setdefault(src, {"count": 0, "revenue_cents": 0})
+            slot["count"] += 1
+            slot["revenue_cents"] += amt
+            sales_count += 1
+            sales_revenue_cents += amt
+    except OSError:
+        pass
+    stats["referred"] = referred
+    stats["sales_count"] = sales_count
+    stats["sales_revenue_cents"] = sales_revenue_cents
 
     stats["by_day"] = [(d, by_day[d]) for d in sorted(by_day.keys(), reverse=True)]
     return stats
@@ -833,6 +861,33 @@ def admin_stats(admin_session: Optional[str] = Cookie(None)):
                  f'<span><b>{html.escape(label)}</b><br>'
                  f'<span class="muted">{html.escape(hint)}</span></span></div>')
     body += f'<p class="muted" style="margin-top:14px">Window: last {s["retention_days"]} days (file retention).</p>'
+    body += '</div>'
+
+    # --- Referral sales (partner attribution: everloved etc.) -------------
+    referred = s.get("referred", {})
+    body += '<div class="card"><h2>Referral sales</h2>'
+    if not referred:
+        body += ('<p class="muted">No sales recorded yet. Partner-referred sales '
+                 '(e.g. <code>everloved</code>) appear here once they convert — split '
+                 'by source, digital and print.</p>')
+    else:
+        rows = []
+        for src, agg in sorted(referred.items(), key=lambda kv: kv[1]["revenue_cents"], reverse=True):
+            rev = agg["revenue_cents"] / 100.0
+            partner = src != "direct"
+            label = "Direct (no referral)" if src == "direct" else src
+            name = f"<b>{html.escape(label)}</b>" if partner else html.escape(label)
+            rows.append(f'<tr><td>{name}</td><td class="row-num">{agg["count"]}</td>'
+                        f'<td class="row-num">${rev:,.2f}</td></tr>')
+        total_rev = s.get("sales_revenue_cents", 0) / 100.0
+        body += ('<table><thead><tr><th>Source</th><th class="row-num">Sales</th>'
+                 '<th class="row-num">Revenue</th></tr></thead><tbody>'
+                 + "".join(rows)
+                 + f'<tr><td><b>Total</b></td><td class="row-num"><b>{s.get("sales_count", 0)}</b></td>'
+                   f'<td class="row-num"><b>${total_rev:,.2f}</b></td></tr></tbody></table>')
+        body += ('<p class="muted" style="margin-top:10px">Source = the <code>?ref</code> tag '
+                 'captured at render time (e.g. a partner landing). Digital + print; all-time '
+                 '(not bounded by the retention window).</p>')
     body += '</div>'
 
     # --- Choice popularity (style + ink + word count + toggles) -----------

@@ -854,17 +854,23 @@ def _track_purchase_once(
     currency: Optional[str] = None,
     source: Optional[str] = None,
 ) -> None:
-    """Fire the Umami `purchase` conversion exactly once for a Stripe session.
+    """Record a completed sale exactly once, deduped per Stripe session.
 
-    The browser funnel ends at checkout_start (the Stripe redirect); this is the
-    server-side conversion that closes it, and it's ad-blocker-proof. Sales can
-    complete through several paths, so every path calls this — the persisted
-    marker guarantees a single event. Any missing order detail is pulled from
-    Stripe. Best-effort: never raises into a payment/fulfillment path."""
-    if not UMAMI_WEBSITE_ID or not session_id:
+    Two things happen here, both idempotent via a single persisted marker:
+      1. The sale is written to our own ledger (data/purchase_events/<hash>.txt as
+         a small JSON record: ts, sku, amount, currency, source). This powers the
+         admin "Referral sales" report — owned by us, independent of analytics.
+      2. The ad-blocker-proof Umami `purchase` conversion is fired, if configured.
+
+    Sales complete through several paths (webhook, /order poll, digital /success),
+    so every path calls this; the marker guarantees a single record + event. Any
+    missing detail is pulled from Stripe. Best-effort: never raises into a
+    payment/fulfillment path."""
+    if not session_id:
         return
     try:
         import hashlib
+        import time as _time
         _PURCHASE_TRACK_DIR.mkdir(parents=True, exist_ok=True)
         marker = _PURCHASE_TRACK_DIR / (
             hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32] + ".txt"
@@ -889,16 +895,25 @@ def _track_purchase_once(
                     source = meta.get("ref")        # referral/source tag (e.g. everloved)
             except Exception:  # noqa: BLE001
                 pass
+        rec = {
+            "ts": int(_time.time()),
+            "sku": sku or "digital",
+            "amount_cents": int(amount_cents or 0),
+            "currency": (currency or CURRENCY or "usd").lower(),
+            "source": (source or "direct"),
+        }
         # Claim the marker BEFORE emitting so a concurrent caller can't double-fire.
-        marker.write_text("1", encoding="utf-8")
+        # The JSON record doubles as the dedup marker (older markers held just "1").
+        marker.write_text(json.dumps(rec), encoding="utf-8")
     except Exception:  # noqa: BLE001
         return
-    _umami_event("purchase", {
-        "revenue": round((amount_cents or 0) / 100.0, 2),
-        "currency": (currency or CURRENCY or "usd").lower(),
-        "sku": sku or "digital",
-        "source": (source or "direct"),            # so referred sales (any sku) are countable
-    })
+    if UMAMI_WEBSITE_ID:
+        _umami_event("purchase", {
+            "revenue": round(rec["amount_cents"] / 100.0, 2),
+            "currency": rec["currency"],
+            "sku": rec["sku"],
+            "source": rec["source"],               # so referred sales (any sku) are countable
+        })
 
 
 @app.post("/webhook/stripe")
