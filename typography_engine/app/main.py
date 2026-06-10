@@ -504,32 +504,19 @@ def list_products() -> JSONResponse:
 
 
 # Per-brand checkout presentation. A ?brand front-end (e.g. lovedinwords) sets the
-# attribution source (stored as the recipe "ref"), which here drives the card
-# STATEMENT DESCRIPTOR and the line-item name — so the payment moment and the bank
-# statement match the brand the customer came from, not "Typortrait". Unknown or
-# empty source falls back to the Typortrait defaults (unchanged behavior).
+# attribution source (stored as the recipe "ref"), which here drives the
+# checkout/receipt line-item NAME so it matches the brand the customer came from.
+# The card STATEMENT DESCRIPTOR is handled account-wide in Stripe (a single neutral
+# descriptor that suits every brand), so we do NOT set a per-charge descriptor —
+# a per-charge override would fight the account-wide value. Unknown/empty source
+# falls back to the Typortrait name.
 _CHECKOUT_BRANDS = {
-    "lovedinwords": {"name": "Loved in Words", "descriptor": "LOVEDINWORDS"},
+    "lovedinwords": {"name": "Loved in Words"},
 }
 
 
 def _checkout_brand(ref: str) -> dict:
-    return _CHECKOUT_BRANDS.get((ref or "").strip().lower(),
-                                {"name": "Typortrait", "descriptor": None})
-
-
-def _create_session_with_descriptor(stripe, descriptor, **params):
-    """Create a Stripe Checkout Session, applying a per-brand card statement
-    descriptor when one is set. If the account rejects the descriptor (e.g. it
-    requires a suffix instead), retry once WITHOUT it so a descriptor issue can
-    never break checkout — the charge simply falls back to the account default."""
-    if descriptor:
-        try:
-            return stripe.checkout.Session.create(
-                payment_intent_data={"statement_descriptor": descriptor}, **params)
-        except Exception:  # noqa: BLE001
-            pass
-    return stripe.checkout.Session.create(**params)
+    return _CHECKOUT_BRANDS.get((ref or "").strip().lower(), {"name": "Typortrait"})
 
 
 @app.post("/checkout")
@@ -564,8 +551,7 @@ def checkout(
     # --- Digital download: unchanged from the live synchronous-verify flow ----
     if not product.physical:
         try:
-            session = _create_session_with_descriptor(
-                stripe, brand["descriptor"],
+            session = stripe.checkout.Session.create(
                 mode="payment",
                 line_items=[{
                     "quantity": 1,
@@ -614,8 +600,7 @@ def checkout(
             },
         })
     try:
-        session = _create_session_with_descriptor(
-            stripe, brand["descriptor"],
+        session = stripe.checkout.Session.create(
             mode="payment",
             line_items=line_items,
             metadata={"job": job, "sku": sku, "size": size or "", "order_id": order_id, "fmt": ext, "ref": ref},
