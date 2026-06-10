@@ -109,6 +109,11 @@
   #result.kp-desk .stage{width:100%;height:100%;min-height:0;border:none;background:#0d0d0f}
   #result.kp-desk .compare{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
   #result.kp-desk #portrait{width:100%;height:100%;object-fit:contain}
+  /* Placeholder shown in the empty mat while composing: dark like the art ground
+     (no cream flash), with a calm light message about what's taking shape. */
+  #result.kp-desk .busy{background:#0d0d0f}
+  #result.kp-desk .busy .msg{color:#f3efe8;font-size:13.5px;line-height:1.5;padding:0 16px;text-align:center}
+  #result.kp-desk .busy .spin{border-color:rgba(255,255,255,.22);border-top-color:#fff}
   /* Before/after slider works inside the mat: the "before" photo letterboxes the
      same way the render does (shared aspect), so the two line up pixel-for-pixel. */
   #result.kp-desk #beforeImg{object-fit:contain}
@@ -708,15 +713,19 @@ function selectSize(mf){
 const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy");
 const canvas=$("#assembly"), buy=$("#buy"), buynote=$("#buynote"), errResult=$("#errResult"), errInput=$("#errInput");
 let currentJob=null, priceLabel="";
-// Pick the keepsake presentation from the rendered portrait's shape: a clearly
-// vertical portrait drops into the framed desk scene (3:4 opening); square or
-// landscape falls back to the greenery card so nothing gets cropped awkwardly.
-function applyKeepsake(){
+// Pick the keepsake presentation from the subject's shape: a clearly vertical
+// portrait drops into the framed desk scene (3:4 opening); square or landscape
+// falls back to the greenery card so nothing gets cropped awkwardly. Called
+// preliminarily at Create (from the uploaded PHOTO's aspect) so the frame shows
+// instantly while composing, then again on reveal (from the RENDER's aspect).
+function sceneFor(w,h){ return (w&&h&&(w/h)<=0.85) ? "kp-desk" : "kp-leaf"; }
+function applyKeepsake(prelim){
   if(!KEEPSAKE) return;
+  const src = prelim ? previewImg : portrait;
+  const w=src.naturalWidth||0, h=src.naturalHeight||0;
   resultView.classList.remove("kp-desk","kp-leaf");
-  const w=portrait.naturalWidth||0, h=portrait.naturalHeight||0;
-  if(!w||!h) return;
-  resultView.classList.add((w/h)<=0.85 ? "kp-desk" : "kp-leaf");
+  if(!w||!h){ if(prelim) resultView.classList.add("kp-desk"); return; }   // unknown -> default desk
+  resultView.classList.add(sceneFor(w,h));
 }
 buy.addEventListener("click", async ()=>{
   if(!currentJob) return;
@@ -790,6 +799,7 @@ createBtn.addEventListener("click", ()=>{
   if(!consent.checked){ inputErr("Please confirm you have the rights to this photo and agree to the Terms."); document.getElementById("consentRow").scrollIntoView({behavior:"smooth",block:"center"}); return; }
   errInput.style.display="none";
   inputView.style.display="none"; resultView.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
+  applyKeepsake(true);                 // show the framed desk/greenery scene instantly while composing
   invalidate(); render(state.ink,{animate:true}); });
 $("#restart").addEventListener("click", ()=>{ resultView.style.display="none"; inputView.style.display="block";
   invalidate(); portrait.src=""; portrait.className=""; stopAssembly(); });
@@ -964,12 +974,16 @@ function startComposeStatus(){
 }
 function stopComposeStatus(){ clearInterval(msgTimer); msgTimer=0; const cs=document.getElementById("composeStatus"); if(cs) cs.classList.remove("on"); }
 function showBusy(animate){
-  errResult.style.display="none"; $(".msg").textContent="Composing from your words…";
+  errResult.style.display="none";
+  // In the framed presentation the empty mat shows a calm line about what's
+  // taking shape on the desk; the classic frame keeps the shorter status.
+  $(".msg").textContent = KEEPSAKE ? "Composing your portrait, woven from your words…"
+                                   : "Composing from your words…";
   busy.classList.remove("hide");
   // Show the word-assembly for the first Create — meaningful progress feedback,
   // played for everyone (it's brief and on-brand, not gratuitous motion).
   if(animate){ busy.classList.add("anim"); compareEl.classList.add("hide-cmp"); startComposeStatus(); startAssembly(); }
-  else { stopAssembly(); }
+  else { stopAssembly(); if(KEEPSAKE) compareEl.classList.add("hide-cmp"); }   // no stray slider handle over the placeholder
 }
 async function render(ink,{animate=false,background=false,thumb=false}={}){
   if(!state.file) return;
