@@ -420,7 +420,7 @@ async def render(
             disp_words = word_list or text.split()
             png_bytes = render_displacement_portrait(
                 an, disp_words, ground=ground_choice, out_width=max(320, preview_w),
-                uppercase=uppercase)
+                uppercase=uppercase, ink=ink_choice)
             runs, ground_hex, mask_svg = [], None, None
         else:
             png_bytes, runs, ground_hex, mask_svg = render_layered_png(
@@ -653,7 +653,7 @@ def _ensure_clean_png(job: str) -> Optional[Path]:
             png_bytes = render_displacement_portrait(
                 an, (r.get("text", "") or "").split(),
                 ground=r.get("ground", "navy"), out_width=DOWNLOAD_PNG_WIDTH,
-                uppercase=bool(r.get("uppercase", True)))
+                uppercase=bool(r.get("uppercase", True)), ink=r.get("ink"))
             if not png_bytes:
                 return None
             path.write_bytes(png_bytes)

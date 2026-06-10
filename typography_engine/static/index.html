@@ -375,7 +375,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, ink:"mono", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:20, uppercase:true };
+const state = { file:null, ink:"photo", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:20, uppercase:true };
 // Referral/source tag (e.g. a partner landing's ?ref=everloved). Captured once,
 // persisted, and sent with the render so it lands on the recipe + the order.
 const REF=(new URLSearchParams(location.search).get("ref")||localStorage.getItem("typo_ref")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
@@ -384,9 +384,12 @@ if(REF){ try{ localStorage.setItem("typo_ref", REF); }catch(e){} }
 // same swatch filmstrip. Ground ids are prefixed (g_*) so they never collide
 // with ink ids. state.ink holds the active variant id (an ink name, or g_*).
 const GROUNDS_SW=[["g_navy","#0d1b3a","Navy"],["g_black","#111317","Black"]];
-function currentSwatches(){ return state.style==="displacement" ? GROUNDS_SW : INKS; }
+// Sculpted now uses the same ink palette as Words/Passage (minus the gradient
+// inks, which don't drape cleanly over the form): Photo + solid/duotone tints.
+const SCULPT_INKS=INKS.filter(s=>s[0]!=="spectrum" && s[0]!=="aurora");
+function currentSwatches(){ return state.style==="displacement" ? SCULPT_INKS : INKS; }
 function variantPost(id){ return state.style==="displacement"
-  ? {ink:"navy", style:"displacement", ground:(id||"g_navy").replace("g_","")}
+  ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
   : {ink:id, style:state.style, ground:"navy"}; }
 // Umami funnel event helper. No-ops silently if the script is blocked, still
 // loading, or unconfigured — analytics must never break the app.
@@ -536,7 +539,7 @@ function measureSubject(f){
 const swatchEl=$("#swatches");
 const carouselEl=document.querySelector(".carousel");
 function buildSwatches(){
-  if(carouselEl) carouselEl.classList.toggle("relief", state.style==="displacement");  // centre + no arrows for Relief
+  if(carouselEl) carouselEl.classList.toggle("relief", false);  // Sculpted now uses the full ink carousel
   swatchEl.innerHTML="";
   currentSwatches().forEach(([id,col,label])=>{
     const el=document.createElement("button"); el.type="button";
@@ -554,7 +557,7 @@ function buildSwatches(){
 buildSwatches();
 function rebuildSwatches(){
   const ids=currentSwatches().map(s=>s[0]);
-  if(!ids.includes(state.ink)) state.ink = (state.style==="displacement" ? "g_navy" : "mono");
+  if(!ids.includes(state.ink)) state.ink = (ids.includes("photo") ? "photo" : (state.style==="displacement" ? "g_navy" : "mono"));
   invalidate();            // renders depend on style+variant -> drop stale caches
   buildSwatches();
 }

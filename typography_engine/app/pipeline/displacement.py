@@ -34,6 +34,19 @@ GROUNDS = {
     "black": {"bg": (14, 14, 14),    "ink": (248, 248, 248), "tone": "light"},  # white on black
 }
 
+# Sculpted ink colours: the WORD colour (BGR) draped on the dark ground. These are
+# light/bright tints (mirroring the studio's ink swatches) so they read on navy.
+# "photo" is handled separately (per-pixel from the source). Keeps Sculpted's
+# light-on-dark aesthetic while giving it the same palette as Words/Passage.
+_SCULPT_INK = {
+    "mono":      (248, 248, 248),   # Noir   — near-white
+    "navy":      (241, 228, 219),   # Navy   — pale blue
+    "sepia":     (182, 217, 234),   # Sepia  — warm cream
+    "burgundy":  (211, 210, 236),   # Rose   — soft rose
+    "forest":    (216, 227, 212),   # Sage   — pale green
+    "gold_noir": (106, 198, 232),   # Ember  — gold
+}
+
 # MediaPipe FaceMesh landmark groups (subset rings) used for feature detail +
 # anchoring. Indices <= 467 are stable across the 468/478-point variants.
 _GROUPS = {
@@ -91,6 +104,7 @@ def render_displacement_portrait(
     supersample: int = 2,
     seed: int = 7,
     uppercase: bool = True,
+    ink: Optional[str] = None,
 ) -> bytes:
     """Render a displacement typographic portrait to PNG bytes.
 
@@ -223,7 +237,19 @@ def render_displacement_portrait(
         a = np.clip(a + 0.70 * anchor, 0, 1)    # dark feature lines = more dark ink on paper
 
     al = a[..., None]
-    out = np.array(g["bg"], np.float32) * (1 - al) + np.array(g["ink"], np.float32) * al
+    if ink == "photo":
+        # Words take the photo's OWN colours, draped over the form, on the ground.
+        bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+        hsv = cv2.cvtColor(np.clip(bgr_full, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
+        hsv[..., 1] = np.clip(hsv[..., 1] * 1.25, 0, 255)          # lift saturation
+        hsv[..., 2] = np.clip(hsv[..., 2] * 1.18 + 18, 0, 255)      # lift value vs dark ground
+        ink_col = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
+        out = np.array(g["bg"], np.float32) * (1 - al) + ink_col * al
+    elif ink in _SCULPT_INK:
+        word = np.array(_SCULPT_INK[ink], np.float32)
+        out = np.array(g["bg"], np.float32) * (1 - al) + word * al
+    else:
+        out = np.array(g["bg"], np.float32) * (1 - al) + np.array(g["ink"], np.float32) * al
     oh = max(1, int(out_width * h0 / w0))
     out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
     ok, buf = cv2.imencode(".png", np.clip(out, 0, 255).astype(np.uint8))
