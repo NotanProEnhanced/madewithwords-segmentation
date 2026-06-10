@@ -281,6 +281,22 @@ def _allowed_size_mf(face_frac):
     return sorted(allow, reverse=True)
 
 
+# Faces filling >= this share of the frame are "close-ups": they carry bold
+# Large type cleanly (fewer, more-readable words = less overlap). Looser/mid
+# framings default to Medium for more words and finer detail. Tunable.
+_CLOSEUP_FRAC = 0.42
+
+
+def _recommended_size_mf(face_frac):
+    """The DEFAULT word size to pre-select for this framing, so the first render
+    suits the photo: Large for tight close-ups, Medium otherwise (clamped to the
+    sizes that stay readable at this face size)."""
+    allowed = _allowed_size_mf(face_frac)
+    if face_frac is not None and face_frac >= _CLOSEUP_FRAC and 57.0 in allowed:
+        return 57.0                                  # Large
+    return 27.0 if 27.0 in allowed else allowed[-1]  # Medium (or smallest readable = most detail)
+
+
 @app.post("/measure")
 async def measure(image: UploadFile = File(...)) -> JSONResponse:
     """Lightweight pre-render check: detect the subject's face and return its
@@ -305,9 +321,10 @@ async def measure(image: UploadFile = File(...)) -> JSONResponse:
         n_faces = len(faces)            # 0/1 via haar fallback; >=2 only when MediaPipe sees a group
     except Exception as e:  # noqa: BLE001
         # On any failure, allow all sizes (the renderer's floor still protects).
-        return JSONResponse({"ok": True, "face_frac": None, "faces": 0, "sizes": _allowed_size_mf(None)})
+        return JSONResponse({"ok": True, "face_frac": None, "faces": 0,
+                             "sizes": _allowed_size_mf(None), "default": _recommended_size_mf(None)})
     return JSONResponse({"ok": True, "face_frac": face_frac, "faces": n_faces,
-                         "sizes": _allowed_size_mf(face_frac)})
+                         "sizes": _allowed_size_mf(face_frac), "default": _recommended_size_mf(face_frac)})
 
 
 @app.post("/render")

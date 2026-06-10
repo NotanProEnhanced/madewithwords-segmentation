@@ -492,7 +492,7 @@ function setFile(f){
 // type on a far/small subject is unreadable, so the server measures the face
 // size and tells us which sizes to enable. Disabled sizes grey out.
 let measuredSizes=null;                       // last /measure word-size gate (Words values)
-function applySizes(allowed){
+function applySizes(allowed, recommended){
   if(allowed) measuredSizes=allowed;
   const gate=new Set((measuredSizes||[120,57,27,13]).map(Number));
   const full=sizesForStyle().map(s=>Number(s[0]));
@@ -501,7 +501,9 @@ function applySizes(allowed){
   let usable=(state.style==="message") ? full : full.filter(mf=>gate.has(mf));
   if(!usable.length) usable=[full[0]];
   allowedMf=usable.slice().sort((a,b)=>b-a);
-  if(!allowedMf.includes(Number(state.minFont))){     // current pick invalid -> re-default
+  if(recommended!=null && state.style!=="message" && allowedMf.includes(Number(recommended))){
+    state.minFont=Number(recommended);                 // framing-based default (close-up -> Large)
+  } else if(!allowedMf.includes(Number(state.minFont))){   // current pick invalid -> re-default
     const def=(state.style==="message") ? 13
               : ([27,57,120].find(v=>allowedMf.includes(v))||allowedMf[0]);   // Medium, else largest
     state.minFont=allowedMf.includes(def)?def:allowedMf[0];
@@ -523,7 +525,7 @@ function measureSubject(f){
   const fd=new FormData(); fd.append("image",f);
   fetch("/measure",{method:"POST",body:fd}).then(r=>r.json())
     .then(d=>{ if(d&&d.ok){
-        applySizes(d.sizes);
+        applySizes(d.sizes, d.default);
         setPhotoNote((d.faces||0)>=2 ? "More than one face detected — we'll feature the largest. Crop to one person for the sharpest portrait." : "");
       } })
     .catch(()=>applySizes([120,57,27]));     // network failure: be conservative (skip unreadable Small)
