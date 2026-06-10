@@ -109,7 +109,9 @@
   #result.kp-desk .stage{width:100%;height:100%;min-height:0;border:none;background:#0d0d0f}
   #result.kp-desk .compare{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
   #result.kp-desk #portrait{width:100%;height:100%;object-fit:contain}
-  #result.kp-desk .before-wrap,#result.kp-desk .cmp-tag,#result.kp-desk .cmp-handle{display:none}
+  /* Before/after slider works inside the mat: the "before" photo letterboxes the
+     same way the render does (shared aspect), so the two line up pixel-for-pixel. */
+  #result.kp-desk #beforeImg{object-fit:contain}
   #result.kp-leaf{position:relative;margin-top:16px;padding:30px 26px;border-radius:16px;overflow:hidden;
     background:radial-gradient(125% 120% at 50% 0%,#eef2e9 0%,#dde6d2 52%,#c8d5b7 100%)}
   #result.kp-leaf::before,#result.kp-leaf::after{content:"";position:absolute;width:150px;height:330px;
