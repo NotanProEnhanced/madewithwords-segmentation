@@ -587,8 +587,8 @@ function resetThumbs(){ swatchEl.querySelectorAll(".pic").forEach(p=>{ p.style.b
 // forms a face at any scale, so it gets the full dramatic range. Letter is the
 // user's prose laid in rows, which only resolves into a face with enough rows
 // (fine type) -- so it gets a finer set; Giant/Large would be a wall of text.
-const WORD_SIZES=[[120,"Giant"],[57,"Large"],[27,"Medium"],[13,"Small"]];
-const LETTER_SIZES=[[20,"Readable"],[13,"Balanced"],[10,"Fine"]];
+const WORD_SIZES=[[120,"Giant"],[57,"Large"],[27,"Medium"]];
+const LETTER_SIZES=[[20,"Readable"],[13,"Balanced"]];
 function sizesForStyle(){ return state.style==="message" ? LETTER_SIZES : WORD_SIZES; }
 const sizeStripEl=$("#sizeStrip"), sizeFilmEl=$("#sizeFilm");
 let allowedMf=[120,57,27,13];
