@@ -86,6 +86,34 @@ def _auto_expose(bgr: np.ndarray, warns: WarningCollector) -> np.ndarray:
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
+# Vibrance: a post-render "give it life" pass — clarity (local contrast) + a soft
+# highlight glow + a saturation nudge. Applied to the FINISHED render, so the words
+# are already placed (typography untouched) and the dark ground stays dark (the glow
+# rolls off at low luminance). Strength ~0.65 is a tasteful lift; 0 disables.
+_VIBRANCE = 0.65
+
+
+def apply_vibrance(img: np.ndarray, strength: float = _VIBRANCE, bgr: bool = False) -> np.ndarray:
+    """Lift a rendered image's luminosity/clarity/saturation. `bgr` selects the
+    channel order (renderers vary). Returns a uint8 array in the same order."""
+    if strength is None or strength <= 0:
+        return img
+    s = float(strength)
+    src = np.clip(img, 0, 255).astype(np.uint8)
+    to_lab = cv2.COLOR_BGR2LAB if bgr else cv2.COLOR_RGB2LAB
+    from_lab = cv2.COLOR_LAB2BGR if bgr else cv2.COLOR_LAB2RGB
+    lab = cv2.cvtColor(src, to_lab).astype(np.float32)
+    L, A, B = lab[..., 0], lab[..., 1], lab[..., 2]
+    blur = cv2.GaussianBlur(L, (0, 0), sigmaX=max(2.0, src.shape[1] * 0.012))
+    L = L + (0.5 * s) * (L - blur)                              # clarity / local contrast
+    n = np.clip(L, 0, 255) / 255.0
+    L = np.clip(L, 0, 255) + (0.35 * s * 255.0) * (n * n) * (1.0 - n)   # highlight glow, soft roll-off
+    A = 128.0 + (A - 128.0) * (1.0 + 0.30 * s)                  # saturation
+    B = 128.0 + (B - 128.0) * (1.0 + 0.30 * s)
+    out = np.stack([np.clip(L, 0, 255), np.clip(A, 0, 255), np.clip(B, 0, 255)], -1).astype(np.uint8)
+    return cv2.cvtColor(out, from_lab)
+
+
 def load_and_normalize(img_bytes: bytes, max_dim: int, warns: WarningCollector) -> LoadedImage:
     bgr_full = decode_image(img_bytes, warns)
     oh, ow = bgr_full.shape[:2]

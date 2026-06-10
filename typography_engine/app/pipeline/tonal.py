@@ -1307,6 +1307,9 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     ground = np.array(_hex_to_rgb(_ground_hex(ink, light)), dtype=np.float32)
     m = (mask.astype(np.float32) / 255.0)[..., None]
     out = (ground + (photo - ground) * m).clip(0, 255).astype(np.uint8)
+    if not light:                    # vibrance gives life to the dark/photo composite
+        from .preprocess import apply_vibrance
+        out = apply_vibrance(out, bgr=False)
     img = Image.fromarray(out)
     if ss > 1:                       # supersampled -> Lanczos down to final size
         img = _lanczos_down(img, out_width)

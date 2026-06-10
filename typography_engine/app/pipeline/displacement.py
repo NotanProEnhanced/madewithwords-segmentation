@@ -252,6 +252,8 @@ def render_displacement_portrait(
         out = np.array(g["bg"], np.float32) * (1 - al) + np.array(g["ink"], np.float32) * al
     oh = max(1, int(out_width * h0 / w0))
     out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
+    from .preprocess import apply_vibrance
+    out = apply_vibrance(out, bgr=True)       # give the render life (clarity/glow/saturation)
     ok, buf = cv2.imencode(".png", np.clip(out, 0, 255).astype(np.uint8))
     if not ok:
         raise ValueError("encode_failed")
