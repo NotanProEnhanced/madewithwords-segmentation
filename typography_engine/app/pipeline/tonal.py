@@ -34,6 +34,11 @@ from .warnings import WarningCollector
 
 _MONO_FAMILY = "'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', monospace"
 _MONO_ADVANCE = 0.6  # glyph advance as a fraction of em for monospace fonts
+# Row pitch as a fraction of the font size. Lower packs rows tighter (denser, more
+# vertical overlap); higher gives cleaner separation but opens black bands when the
+# pitch exceeds the glyph height. 0.88 ≈ the glyph height: rows clear the overlap of
+# the original 0.80 pack while still fully covering (no gaps). Words/Passage only.
+_ROW_HEIGHT_FRAC = 0.88
 
 # Supersampling: rasterize the text mask + composite at N× the output width, then
 # Lanczos-downsample to the final size. This is higher-quality anti-aliasing for
@@ -720,7 +725,7 @@ def build_tonal_portrait(
         the silhouette is inked (highlights -> faint glyphs, so the form stays
         continuous); the body tier skips the face, the face tier skips the eyes."""
         cw = font * _MONO_ADVANCE
-        rh = font * 0.80
+        rh = font * _ROW_HEIGHT_FRAC
         bx0 = int(max(0, bx0)); by0 = int(max(0, by0))
         bx1 = int(min(W, bx1)); by1 = int(min(H, by1))
         cols = int((bx1 - bx0) / cw)
