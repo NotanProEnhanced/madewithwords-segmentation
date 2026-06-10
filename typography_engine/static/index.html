@@ -119,6 +119,9 @@
   #result.kp-leaf::before{top:-28px;left:-24px;transform:scaleX(-1) rotate(-8deg)}
   #result.kp-leaf::after{bottom:-32px;right:-22px;transform:rotate(6deg)}
   #result.kp-leaf .frame{position:relative;z-index:2;margin-top:0;max-width:86%;margin-left:auto;margin-right:auto}
+  /* Quiet caption beneath the frame: tells the customer the room/frame is a
+     preview and the file they receive is the artwork itself. */
+  .frame-note{margin-top:11px;text-align:center;font-size:12.5px;line-height:1.45;color:var(--muted);letter-spacing:.005em;padding:0 16px}
   /* Animated "composing from your words" loader: words drift in over the dimmed
      photo on the #assembly canvas, instead of a generic spinner. */
   .busy.anim{background:transparent}
@@ -282,6 +285,7 @@
         </div>
       </div>
     </div>
+    <div class="frame-note" id="frameNote">Shown framed for preview — your download is the print‑ready artwork.</div>
     <div id="composeStatus" class="compose-status" aria-live="polite">
       <div class="cs-line"><span class="dot"></span><span id="composeMsg">Finding the face&hellip;</span></div>
       <div class="compose-bar"></div>
@@ -405,11 +409,12 @@ const state = { file:null, ink:"photo", style:"words", fmt:"png", removeBg:true,
 // persisted, and sent with the render so it lands on the recipe + the order.
 const REF=(new URLSearchParams(location.search).get("ref")||localStorage.getItem("typo_ref")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
 if(REF){ try{ localStorage.setItem("typo_ref", REF); }catch(e){} }
-// Ever Loved visitors see the finished portrait as a memorial keepsake (framed
-// on a desk with candle + plant for portrait shots, or on a soft greenery
-// backdrop otherwise). Presentation only -- the downloaded/printed file is the
-// clean portrait. Everyone else sees the standard gallery frame.
-const KEEPSAKE = (REF==="everloved");
+// Every render is presented as a framed keepsake in a room: a portrait shot
+// drops into a real framed photo on a desk (candle + plant); a square/landscape
+// one sits on a soft greenery backdrop. It reads as a real product rather than a
+// synthetic gradient frame. Presentation ONLY -- the downloaded/printed file is
+// always the clean portrait. (REF is still captured for partner attribution.)
+const KEEPSAKE = true;
 // The Displacement style uses 3 "grounds" instead of the 9 inks; they ride the
 // same swatch filmstrip. Ground ids are prefixed (g_*) so they never collide
 // with ink ids. state.ink holds the active variant id (an ink name, or g_*).
