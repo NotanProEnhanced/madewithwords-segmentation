@@ -96,6 +96,13 @@ h2{font-weight:800; letter-spacing:-.03em; font-size:clamp(22px,3.6vw,30px); col
 .step h3{margin:0 0 6px; font-size:16.5px; color:var(--navy); font-weight:700; letter-spacing:-.01em}
 .step p{margin:0; color:var(--muted); font-size:14.5px}
 
+/* Examples gallery */
+.gallery{display:grid; gap:16px; margin:0}
+@media(min-width:640px){.gallery{grid-template-columns:repeat(3,1fr)}}
+.gcard{margin:0; background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden; box-shadow:var(--shadow)}
+.gcard img{width:100%; display:block; aspect-ratio:1/1; object-fit:cover}
+.gcard figcaption{padding:13px 16px; color:var(--muted); font-size:13.5px; text-align:center; font-style:italic; line-height:1.45}
+
 /* Plainly stated */
 .facts{display:flex; flex-wrap:wrap; justify-content:center; gap:10px 18px; color:var(--ink); font-size:15px; text-align:center}
 .facts b{color:var(--navy)}
@@ -137,6 +144,18 @@ footer .by{display:block; margin-top:8px; font-size:12px; color:var(--muted); op
       <div class="ba-grip" id="baGrip">&#8596;</div>
       <span class="ba-tag l">their photo</span>
       <span class="ba-tag r">in their words</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>A few remembrances</h2>
+    <p class="lede">Each one is made entirely from the words a family chose — a name, the dates, the way they were loved.</p>
+    <!-- PLACEHOLDER IMAGES: replace example-1/2/3.jpg (keep the filenames) with
+         higher-quality renders before publishing this gallery. -->
+    <div class="gallery">
+      <figure class="gcard"><img src="example-1.jpg" loading="lazy" alt="A memorial word-portrait of a woman, formed from words like grace, beloved and radiant" /><figcaption>Grace, beloved, radiant — the words that described her.</figcaption></figure>
+      <figure class="gcard"><img src="example-2.jpg" loading="lazy" alt="A memorial word-portrait in warm tones, made from a loved one's traits" /><figcaption>Her warmth, in every word.</figcaption></figure>
+      <figure class="gcard"><img src="example-3.jpg" loading="lazy" alt="A memorial word-portrait of a man, formed from a written tribute" /><figcaption>A whole tribute, woven into his likeness.</figcaption></figure>
     </div>
   </section>
 
