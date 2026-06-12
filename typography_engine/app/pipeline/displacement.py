@@ -17,7 +17,7 @@ from __future__ import annotations
 import glob
 import random
 from functools import lru_cache
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -132,6 +132,21 @@ def render_displacement_portrait(
     face_frac = (fbb[2] / w0) if fbb else 0.55
     s = float(np.clip(face_frac / 0.47, 0.5, 1.3))   # subject-relative scale (hero anchor = 0.47)
 
+    # --- Living eyes: true iris geometry from MediaPipe's iris landmarks ------
+    # (centre + 4-point ring per eye, 478-point mesh only). Drives a round pupil,
+    # an iris-scaled text tier, a real catchlight, and -- separately gated -- the
+    # person's true eye colour. Both irises must resolve large enough to carry
+    # structure; otherwise every step below falls back to the legacy behavior.
+    irises: List[Tuple[float, float, float]] = []
+    if len(pts) >= 478:
+        for ic, ring in ((468, (469, 470, 471, 472)), (473, (474, 475, 476, 477))):
+            icx, icy = float(pts[ic][0]), float(pts[ic][1])
+            ir = float(np.mean([np.hypot(pts[i][0] - icx, pts[i][1] - icy) for i in ring]))
+            if ir >= 8.0:
+                irises.append((icx, icy, ir))
+    if len(irises) < 2:
+        irises = []
+
     def rows(fs: float) -> np.ndarray:
         f = _font(fs)
         im = Image.new("L", (W, H), 255)
@@ -148,6 +163,10 @@ def render_displacement_portrait(
     # Four size tiers blended *continuously* (below) so the type eases from large
     # to small instead of snapping between discrete sizes.
     t_large, t_mid, t_fine, t_micro = rows(64 * s), rows(40 * s), rows(26 * s), rows(16 * s)
+    # Fifth tier, scaled to the EYE rather than the face: even "micro" type spans
+    # a whole iris on a close-up, so the iris gets rows proportional to its own
+    # radius -- typography that fits inside the eye.
+    t_iris = rows(max(7.0, float(np.mean([r for _, _, r in irises])) * 0.45)) if irises else None
 
     def mask_of(keys, dil, sig) -> np.ndarray:
         mm = np.zeros((H, W), np.uint8)
@@ -192,6 +211,17 @@ def render_displacement_portrait(
         warped = np.where((df >= a) & (df < b), ia * (1 - bt) + ib * bt, warped)
     warped = np.where(df >= 1.0, wMi, warped)
 
+    # Iris circles take the eye-scaled tier (feathered edge); iris_m is reused
+    # below for the colour blend.
+    iris_m = None
+    if irises and t_iris is not None:
+        iris_m = np.zeros((H, W), np.float32)
+        ir_mean = float(np.mean([r for _, _, r in irises]))
+        for icx, icy, ir in irises:
+            cv2.circle(iris_m, (int(round(icx)), int(round(icy))), int(round(ir)), 1.0, -1, cv2.LINE_AA)
+        iris_m = np.clip(cv2.GaussianBlur(iris_m, (0, 0), sigmaX=max(1.0, ir_mean * 0.18)), 0, 1)
+        warped = warped * (1.0 - iris_m) + R(t_iris) * iris_m
+
     # Tonal field: percentile-stretch within the subject.
     vals = gray[mask01 > 0]
     if vals.size == 0:
@@ -223,9 +253,13 @@ def render_displacement_portrait(
         p = np.array([pts[i] for i in _GROUPS[k] if i < len(pts)], np.int32)
         if len(p) >= 3:
             cv2.polylines(anchor, [cv2.convexHull(p)], True, 1.0, th, cv2.LINE_AA)
-    for k in ["Leye", "Reye"]:
-        c = np.mean([pts[i] for i in _GROUPS[k]], 0).astype(int)
-        cv2.circle(anchor, tuple(c), max(2, int(fw * 0.020)), 1.0, -1, cv2.LINE_AA)
+    if not irises:
+        # Legacy eye presence: an ink blob at the lid centroid. Only used when the
+        # iris landmarks can't resolve -- with real irises the round pupil and
+        # catchlight below model the eye properly instead.
+        for k in ["Leye", "Reye"]:
+            c = np.mean([pts[i] for i in _GROUPS[k]], 0).astype(int)
+            cv2.circle(anchor, tuple(c), max(2, int(fw * 0.020)), 1.0, -1, cv2.LINE_AA)
     for i in (98, 327, 2):
         if i < len(pts):
             cv2.circle(anchor, (int(pts[i][0]), int(pts[i][1])), max(1, int(fw * 0.012)), 1.0, -1, cv2.LINE_AA)
@@ -235,6 +269,36 @@ def render_displacement_portrait(
         a = a * (1.0 - 0.65 * anchor)          # dark feature lines = less light ink (ground shows)
     else:
         a = np.clip(a + 0.70 * anchor, 0, 1)    # dark feature lines = more dark ink on paper
+
+    # Round pupil + catchlight from the true iris geometry. The pupil is a
+    # feathered DISC at the iris centre (not the blocky gap the text rows happen
+    # to leave), and the catchlight sits at the eye's real brightest pixel inside
+    # the iris -- the glint that makes the portrait look back at you.
+    if irises:
+        pup = np.zeros((H, W), np.float32)
+        glint = np.zeros((H, W), np.float32)
+        for icx, icy, ir in irises:
+            cv2.circle(pup, (int(round(icx)), int(round(icy))),
+                       max(2, int(round(ir * 0.42))), 1.0, -1, cv2.LINE_AA)
+            gx0, gx1 = int(max(0, icx - ir)), int(min(W, icx + ir + 1))
+            gy0, gy1 = int(max(0, icy - ir)), int(min(H, icy + ir + 1))
+            win = gray[gy0:gy1, gx0:gx1]
+            if win.size:
+                wyy, wxx = np.ogrid[gy0:gy1, gx0:gx1]
+                inside = ((wxx - icx) ** 2 + (wyy - icy) ** 2) <= ir * ir
+                bright = np.where(inside, win, -1.0)
+                by, bx = np.unravel_index(int(np.argmax(bright)), bright.shape)
+                cv2.circle(glint, (gx0 + bx, gy0 + by),
+                           max(1, int(round(ir * 0.18))), 1.0, -1, cv2.LINE_AA)
+        ir_mean = float(np.mean([r for _, _, r in irises]))
+        pup = np.clip(cv2.GaussianBlur(pup, (0, 0), sigmaX=max(1.0, ir_mean * 0.10)), 0, 1)
+        glint = np.clip(cv2.GaussianBlur(glint, (0, 0), sigmaX=max(1.0, ir_mean * 0.10)), 0, 1)
+        if g["tone"] == "light":                  # light ink on a dark ground
+            a = a * (1.0 - 0.88 * pup)            # pupil: round, dark (ground shows)
+            a = np.clip(a + 0.85 * glint, 0, 1)   # catchlight: bright glint
+        else:                                     # dark ink on light paper
+            a = np.clip(a + 0.80 * pup, 0, 1)     # pupil: round dark ink
+            a = a * (1.0 - 0.85 * glint)          # catchlight: paper shows
 
     al = a[..., None]
     if ink == "photo":
@@ -250,6 +314,19 @@ def render_displacement_portrait(
         out = np.array(g["bg"], np.float32) * (1 - al) + word * al
     else:
         out = np.array(g["bg"], np.float32) * (1 - al) + np.array(g["ink"], np.float32) * al
+
+    # Living eyes, colour: glyphs inside the iris carry the person's TRUE eye
+    # colour -- sampled by the shared gated helper (both irises saturated and
+    # hue-consistent, else no tint; sampled, never invented). Dark grounds only:
+    # the lifted tint is designed for light-ink-on-dark.
+    if irises and iris_m is not None and g["tone"] == "light":
+        from .tonal import _iris_tint
+        tint = _iris_tint(an)
+        if tint is not None:
+            tip = np.array(tint[1][::-1], np.float32)        # lifted RGB -> BGR
+            iout = np.array(g["bg"], np.float32) * (1 - al) + tip * al
+            im3 = iris_m[..., None]
+            out = out * (1.0 - im3) + iout * im3
     oh = max(1, int(out_width * h0 / w0))
     out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
     from .preprocess import apply_vibrance
