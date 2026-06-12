@@ -392,6 +392,29 @@ def _iris_circles(an, scale: float) -> List[Tuple[float, float, float]]:
     return out
 
 
+def _catchlight_points(an) -> List[Tuple[float, float, float]]:
+    """Catchlight positions, one per iris, in WORKING coords: (gx, gy, glint_r).
+    Deterministic and consistent between the two eyes -- the classic upper
+    diagonal at ~0.34 r from the iris centre, on the side the face is lit from.
+    (The photo's own brightest-pixel is unreliable: it often sits on the iris
+    circle's rim, landing the glint off the iris and differently per eye.)"""
+    circles = _iris_circles(an, 1.0)
+    if not circles:
+        return []
+    side = -1.0                                   # default: light from viewer-left
+    try:
+        fbb = an.face_bbox
+        if fbb:
+            x, y, bw, bh = (int(v) for v in fbb)
+            g = an.img.gray[max(0, y):y + bh, max(0, x):x + bw]
+            if g.size:
+                half = g.shape[1] // 2
+                side = -1.0 if float(g[:, :half].mean()) >= float(g[:, half:].mean()) else 1.0
+    except Exception:  # noqa: BLE001
+        pass
+    return [(cx + side * 0.24 * r, cy - 0.24 * r, 0.17 * r) for cx, cy, r in circles]
+
+
 def _iris_tint(an):
     """Sample the primary face's iris colour. Returns ([(cx, cy, r)] in working
     coords, lifted RGB tip colour) when both irises pass the colour gate, else
@@ -1497,25 +1520,15 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     # eye looks back. Always white -- the lightest thing on the face -- never ink-
     # or iris-coloured. Dark grounds only; before the pad so coords hold.
     if not light:
-        circles = _iris_circles(an, 1.0)                  # working coords
-        if circles:
+        glints = _catchlight_points(an)                   # working coords
+        if glints:
             fsc = W / float(an.img.gray.shape[1])
-            g0 = an.img.gray
             gm = np.zeros((H, W), np.float32)
-            for icx, icy, irr in circles:
-                gx0, gx1 = int(max(0, icx - irr)), int(min(g0.shape[1], icx + irr + 1))
-                gy0, gy1 = int(max(0, icy - irr)), int(min(g0.shape[0], icy + irr + 1))
-                win = g0[gy0:gy1, gx0:gx1]
-                if not win.size:
-                    continue
-                wyy, wxx = np.ogrid[gy0:gy1, gx0:gx1]
-                inside = ((wxx - icx) ** 2 + (wyy - icy) ** 2) <= irr * irr
-                bright = np.where(inside, win, -1)
-                by, bx = np.unravel_index(int(np.argmax(bright)), bright.shape)
-                cv2.circle(gm, (int(round((gx0 + bx) * fsc)), int(round((gy0 + by) * fsc))),
-                           max(2, int(round(irr * 0.18 * fsc))), 1.0, -1, cv2.LINE_AA)
+            for gx, gy, gr in glints:
+                cv2.circle(gm, (int(round(gx * fsc)), int(round(gy * fsc))),
+                           max(2, int(round(gr * fsc))), 1.0, -1, cv2.LINE_AA)
             if gm.any():
-                sig = max(1.0, float(np.mean([r for _, _, r in circles])) * fsc * 0.10)
+                sig = max(1.0, float(np.mean([g[2] for g in glints])) * fsc * 0.55)
                 gm = np.clip(cv2.GaussianBlur(gm, (0, 0), sigmaX=sig), 0, 1)[..., None]
                 out = (out.astype(np.float32) * (1.0 - gm) + 250.0 * gm).clip(0, 255).astype(np.uint8)
     # Standard print canvas (4:5 = 16x20): pad with the ground BEFORE the boost

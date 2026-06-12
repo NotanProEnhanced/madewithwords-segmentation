@@ -280,16 +280,12 @@ def render_displacement_portrait(
         for icx, icy, ir in irises:
             cv2.circle(pup, (int(round(icx)), int(round(icy))),
                        max(2, int(round(ir * 0.42))), 1.0, -1, cv2.LINE_AA)
-            gx0, gx1 = int(max(0, icx - ir)), int(min(W, icx + ir + 1))
-            gy0, gy1 = int(max(0, icy - ir)), int(min(H, icy + ir + 1))
-            win = gray[gy0:gy1, gx0:gx1]
-            if win.size:
-                wyy, wxx = np.ogrid[gy0:gy1, gx0:gx1]
-                inside = ((wxx - icx) ** 2 + (wyy - icy) ** 2) <= ir * ir
-                bright = np.where(inside, win, -1.0)
-                by, bx = np.unravel_index(int(np.argmax(bright)), bright.shape)
-                cv2.circle(glint, (gx0 + bx, gy0 + by),
-                           max(1, int(round(ir * 0.18))), 1.0, -1, cv2.LINE_AA)
+        # Catchlight: deterministic, consistent between both eyes (the classic
+        # upper diagonal on the lit side) -- shared helper, working coords -> xSS.
+        from .tonal import _catchlight_points
+        for gx, gy, gr in _catchlight_points(an):
+            cv2.circle(glint, (int(round(gx * SS)), int(round(gy * SS))),
+                       max(1, int(round(gr * SS))), 1.0, -1, cv2.LINE_AA)
         ir_mean = float(np.mean([r for _, _, r in irises]))
         pup = np.clip(cv2.GaussianBlur(pup, (0, 0), sigmaX=max(1.0, ir_mean * 0.10)), 0, 1)
         glint = np.clip(cv2.GaussianBlur(glint, (0, 0), sigmaX=max(1.0, ir_mean * 0.10)), 0, 1)
