@@ -1492,6 +1492,32 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     ground = np.array(_hex_to_rgb(_ground_hex(ink, light)), dtype=np.float32)
     m = (mask.astype(np.float32) / 255.0)[..., None]
     out = (ground + (photo - ground) * m).clip(0, 255).astype(np.uint8)
+    # Catchlight: a SPECULAR white glint at the eye's real brightest pixel inside
+    # each iris, painted over the finished composite (above the text mask) so the
+    # eye looks back. Always white -- the lightest thing on the face -- never ink-
+    # or iris-coloured. Dark grounds only; before the pad so coords hold.
+    if not light:
+        circles = _iris_circles(an, 1.0)                  # working coords
+        if circles:
+            fsc = W / float(an.img.gray.shape[1])
+            g0 = an.img.gray
+            gm = np.zeros((H, W), np.float32)
+            for icx, icy, irr in circles:
+                gx0, gx1 = int(max(0, icx - irr)), int(min(g0.shape[1], icx + irr + 1))
+                gy0, gy1 = int(max(0, icy - irr)), int(min(g0.shape[0], icy + irr + 1))
+                win = g0[gy0:gy1, gx0:gx1]
+                if not win.size:
+                    continue
+                wyy, wxx = np.ogrid[gy0:gy1, gx0:gx1]
+                inside = ((wxx - icx) ** 2 + (wyy - icy) ** 2) <= irr * irr
+                bright = np.where(inside, win, -1)
+                by, bx = np.unravel_index(int(np.argmax(bright)), bright.shape)
+                cv2.circle(gm, (int(round((gx0 + bx) * fsc)), int(round((gy0 + by) * fsc))),
+                           max(2, int(round(irr * 0.18 * fsc))), 1.0, -1, cv2.LINE_AA)
+            if gm.any():
+                sig = max(1.0, float(np.mean([r for _, _, r in circles])) * fsc * 0.10)
+                gm = np.clip(cv2.GaussianBlur(gm, (0, 0), sigmaX=sig), 0, 1)[..., None]
+                out = (out.astype(np.float32) * (1.0 - gm) + 250.0 * gm).clip(0, 255).astype(np.uint8)
     # Standard print canvas (4:5 = 16x20): pad with the ground BEFORE the boost
     # and vibrance passes so the band is processed identically to the interior
     # ground (no visible seam).

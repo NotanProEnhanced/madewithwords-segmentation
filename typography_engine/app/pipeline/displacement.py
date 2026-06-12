@@ -341,6 +341,11 @@ def render_displacement_portrait(
             iout = np.array(g["bg"], np.float32) * (1 - al) + tip * al
             im3 = iris_m[..., None]
             out = out * (1.0 - im3) + iout * im3
+    # Catchlight is a SPECULAR highlight: always white (the lightest thing on the
+    # face), never ink- or iris-coloured -- painted over the colour composite.
+    if irises and g["tone"] == "light":
+        gl3 = glint[..., None]
+        out = out * (1.0 - gl3) + np.float32(250.0) * gl3
     oh = max(1, int(out_width * h0 / w0))
     out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
     # Standard print canvas (4:5 = 16x20), padded with the ground BEFORE vibrance
