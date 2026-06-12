@@ -354,8 +354,11 @@ def _eye_ellipses(an, scale: float) -> List[Tuple[float, float, float, float]]:
         for grp in (_EYE_L, _EYE_R):
             ep = pts[list(grp)]
             cx, cy = float(ep[:, 0].mean()), float(ep[:, 1].mean())
-            rx = (float(ep[:, 0].max() - ep[:, 0].min()) / 2.0) * 1.30
-            ry = (float(ep[:, 1].max() - ep[:, 1].min()) / 2.0) * 1.55
+            # Tight to the EYEBALL (the lid aperture): lids/brows take normal
+            # face-tier words; only the eyeball itself is reserved for the iris
+            # pass, so type appears in the iris and nowhere else inside the eye.
+            rx = (float(ep[:, 0].max() - ep[:, 0].min()) / 2.0) * 1.05
+            ry = (float(ep[:, 1].max() - ep[:, 1].min()) / 2.0) * 1.10
             if rx >= 2.0 and ry >= 2.0:
                 out.append((cx, cy, rx, ry))
     return out
@@ -371,6 +374,22 @@ _IRIS_R = (473, (474, 475, 476, 477))
 # sample colour, never invent it (same doctrine as the enhancement stage).
 _IRIS_MIN_SAT = 50.0     # OpenCV HSV S (0-255); pale blue irises sit ~60-80
 _IRIS_HUE_TOL = 22.0     # max circular hue difference between the two eyes
+
+
+def _iris_circles(an, scale: float) -> List[Tuple[float, float, float]]:
+    """Per-iris (cx, cy, r) circles in render coords from the 478-mesh iris
+    landmarks (geometry only, no colour gate); [] when unavailable/too small."""
+    out: List[Tuple[float, float, float]] = []
+    for face in _faces_of(an):
+        pts = face.points
+        if pts.shape[0] < 478:
+            continue
+        for c, ring in (_IRIS_L, _IRIS_R):
+            cx, cy = float(pts[c][0]), float(pts[c][1])
+            r = float(np.mean([np.hypot(pts[i][0] - cx, pts[i][1] - cy) for i in ring]))
+            if r * scale >= 2.5:
+                out.append((cx * scale, cy * scale, r * scale))
+    return out
 
 
 def _iris_tint(an):
@@ -419,11 +438,12 @@ def _iris_tint(an):
     dh = abs(float(hsvs[0][0]) - float(hsvs[1][0]))
     if min(dh, 180.0 - dh) > _IRIS_HUE_TOL:
         return None                            # eyes disagree -> unreliable sample
-    # Shared colour, lifted to ink brightness (raw iris pixels are dark) with a
-    # gentle saturation nudge so the hue reads at glyph scale on the dark ground.
+    # Shared colour with a gentle saturation nudge. The ink VALUE tracks the true
+    # eye lightness: pale blue / light-brown irises render lighter than deep
+    # brown, so the rendered eye colour is honest to the person, not uniform.
     hsv = np.mean(hsvs, 0)
     hsv[1] = min(255.0, hsv[1] * 1.25)
-    hsv[2] = 215.0
+    hsv[2] = float(np.interp(hsv[2], [30.0, 160.0], [140.0, 235.0]))
     rgb = cv2.cvtColor(np.clip(hsv, 0, 255).astype(np.uint8).reshape(1, 1, 3),
                        cv2.COLOR_HSV2RGB)[0, 0].astype(np.float32)
     return circles, rgb
@@ -755,7 +775,7 @@ def build_tonal_portrait(
     body_font = float(min(cfg.max_font_px, max(12.0, base * 2.2)))
     mid_font = float(min(cfg.max_font_px, max(10.0, base * 1.45)))
     face_font = float(max(8.0, base * 1.0))
-    eye_font = float(max(6.0, face_font * 0.62))
+    eye_font = float(max(5.0, face_font * 0.45))   # finest: words sized to eye anatomy
 
     # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
     # the source photo. Mono keeps the existing gray ramp untouched.
@@ -804,6 +824,18 @@ def build_tonal_portrait(
     def in_eyes(px: float, py: float) -> bool:
         for ex, ey, rx, ry in eyes:
             if ((px - ex) / rx) ** 2 + ((py - ey) / ry) ** 2 <= 1.0:
+                return True
+        return False
+
+    # Inside the eyeball, type lives ONLY in the iris annulus: outside the round
+    # pupil (0.40 r), inside the iris circle. Sclera and pupil carry no glyphs at
+    # all, so the eye reads as anatomy -- round pupil, typed iris -- not as text.
+    iris_cl = _iris_circles(an, scale)
+
+    def in_iris_annulus(px: float, py: float) -> bool:
+        for icx, icy, irr in iris_cl:
+            d2 = (px - icx) ** 2 + (py - icy) ** 2
+            if (0.40 * irr) ** 2 <= d2 <= irr * irr:
                 return True
         return False
 
@@ -1022,8 +1054,13 @@ def build_tonal_portrait(
                 rowf = sub[rf]
                 inkf = (rowf > level) & msub[rf]
                 for cf in range(cols_f):
-                    if inkf[cf] and not in_eyes(ex0 + (cf + 0.5) * ecw, cyf):
-                        inkf[cf] = False
+                    if inkf[cf]:
+                        pxf = ex0 + (cf + 0.5) * ecw
+                        # Iris annulus only (when the iris resolves); otherwise the
+                        # legacy whole-eye fill so far/small faces still get eyes.
+                        ok = in_eyes(pxf, cyf) and (not iris_cl or in_iris_annulus(pxf, cyf))
+                        if not ok:
+                            inkf[cf] = False
                 c = 0
                 while c < cols_f:
                     if not inkf[c]:

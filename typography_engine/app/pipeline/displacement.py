@@ -166,7 +166,7 @@ def render_displacement_portrait(
     # Fifth tier, scaled to the EYE rather than the face: even "micro" type spans
     # a whole iris on a close-up, so the iris gets rows proportional to its own
     # radius -- typography that fits inside the eye.
-    t_iris = rows(max(7.0, float(np.mean([r for _, _, r in irises])) * 0.45)) if irises else None
+    t_iris = rows(max(6.0, float(np.mean([r for _, _, r in irises])) * 0.30)) if irises else None
 
     def mask_of(keys, dil, sig) -> np.ndarray:
         mm = np.zeros((H, W), np.uint8)
@@ -293,6 +293,20 @@ def render_displacement_portrait(
         ir_mean = float(np.mean([r for _, _, r in irises]))
         pup = np.clip(cv2.GaussianBlur(pup, (0, 0), sigmaX=max(1.0, ir_mean * 0.10)), 0, 1)
         glint = np.clip(cv2.GaussianBlur(glint, (0, 0), sigmaX=max(1.0, ir_mean * 0.10)), 0, 1)
+        # No typography in the sclera: inside the eyelid hull but outside the
+        # iris, ink is suppressed entirely -- the eye reads as anatomy (clean
+        # sclera, typed iris, round pupil, glint), not as text.
+        scl = np.zeros((H, W), np.float32)
+        for k in ("Leye", "Reye"):
+            p = np.array([pts[i] for i in _GROUPS[k] if i < len(pts)], np.int32)
+            if len(p) >= 3:
+                cv2.fillConvexPoly(scl, cv2.convexHull(p), 1.0)
+        iris_full = np.zeros((H, W), np.float32)
+        for icx, icy, ir in irises:
+            cv2.circle(iris_full, (int(round(icx)), int(round(icy))), int(round(ir)), 1.0, -1, cv2.LINE_AA)
+        scl = np.clip(scl - iris_full, 0, 1)
+        scl = cv2.GaussianBlur(scl, (0, 0), sigmaX=max(1.0, fw * 0.004))
+        a = a * (1.0 - 0.92 * scl)
         if g["tone"] == "light":                  # light ink on a dark ground
             a = a * (1.0 - 0.88 * pup)            # pupil: round, dark (ground shows)
             a = np.clip(a + 0.85 * glint, 0, 1)   # catchlight: bright glint
