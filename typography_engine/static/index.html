@@ -190,6 +190,9 @@
   .seg{display:flex;gap:4px;background:#f1efe9;border-radius:999px;padding:4px;margin:8px auto 0;width:100%}
   .seg button{flex:1 1 0;min-width:0;border:none;background:none;border-radius:999px;padding:9px 6px;font-size:13.5px;font-weight:600;color:var(--muted);font-family:var(--sans);cursor:pointer;white-space:nowrap;letter-spacing:-.01em;transition:background .18s ease,color .18s ease}
   .seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  /* "Best for this photo" recommendation badge (set by the likeness scorer). */
+  .seg button.best::after{content:"\2726";margin-left:5px;color:#c9a227;font-size:11px;vertical-align:1px}
+  #bestNote{color:#8a6d1f}
   /* Quiet text link (e.g. switch to writing a message) — not a loud button. */
   .linklike{display:inline-block;background:none;border:none;color:var(--navy);font-family:var(--sans);font-size:13.5px;font-weight:600;padding:10px 2px 2px;margin:0;cursor:pointer;letter-spacing:-.01em}
   .linklike:hover{opacity:.75}
@@ -306,6 +309,7 @@
         <button type="button" data-style="displacement">Sculpted</button>
       </div>
       <div class="ctl-hint" id="styleCaption">Words you love, scattered to form their face.</div>
+      <div class="ctl-hint" id="bestNote" style="display:none"></div>
     </div>
     <div class="carousel">
       <button type="button" class="arrow left" id="arrowL" aria-label="Previous colours">&#8249;</button>
@@ -528,7 +532,7 @@ const contentToggle=$("#contentToggle");
 if(contentToggle){ contentToggle.addEventListener("click", ()=>{
   setStyle(state.style==="message" ? "words" : "message", false);
 }); }
-$("#styleSegResult").addEventListener("click", e=>{ const b=e.target.closest("button"); if(b) setStyle(b.dataset.style, true); });
+$("#styleSegResult").addEventListener("click", e=>{ const b=e.target.closest("button"); if(b){ userTouched=true; setStyle(b.dataset.style, true); } });
 // Word-size scale: sets the floor font size; the body/mid/face/eye tiers all
 // scale from it, so "Giant" = bold/dramatic with fewer words, "Small" = fine and
 // detailed with many. (min_font_px is honored server-side by the render endpoint.)
@@ -541,11 +545,12 @@ if(sizeSeg){ sizeSeg.addEventListener("click", e=>{
 // Options now live on the result screen: toggling re-renders the current ink
 // (and re-warms the swatch thumbnails) so the change is immediate.
 function optionChanged(){ if(resultView.style.display==="block"){ invalidate(); render(state.ink,{animate:false}); } }
-bgSwitch.addEventListener("click", ()=>{ state.removeBg=!state.removeBg; bgSwitch.classList.toggle("on",state.removeBg); optionChanged(); });
+bgSwitch.addEventListener("click", ()=>{ userTouched=true; state.removeBg=!state.removeBg; bgSwitch.classList.toggle("on",state.removeBg); optionChanged(); });
 // Letter case: render the words ALL CAPS, or exactly as the user typed them.
 const caseSeg=$("#caseSeg");
 if(caseSeg){ caseSeg.addEventListener("click", e=>{
   const b=e.target.closest("button"); if(!b) return;
+  userTouched=true;
   state.uppercase = b.dataset.uc==="1";
   [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
   optionChanged();
@@ -733,8 +738,78 @@ async function prewarmSizes(){
   }
   prewarmingSizes=false;
 }
+
+/* ---------- style recommendation: measure, don't guess --------------------
+   After the first reveal, each style is probed with a coarse render and the
+   server scores how well it preserves the face (the /render "likeness" field).
+   The winner gets a quiet gold badge; if the user hasn't touched anything yet,
+   the studio adopts it with a gentle crossfade -- never a spinner over the
+   portrait they're already looking at. */
+let styleScores={}, recoStarted=false, recoDone=false, userTouched=false;
+const STYLE_NAMES={words:"Words",message:"Message",displacement:"Sculpted"};
+function resetReco(){
+  styleScores={}; recoStarted=false; recoDone=false; userTouched=false;
+  document.querySelectorAll('#styleSegResult button').forEach(b=>b.classList.remove("best"));
+  const n=$("#bestNote"); if(n){ n.style.display="none"; n.textContent=""; }
+}
+function recoFd(style, coarse){
+  const fd=new FormData();
+  fd.append("image",state.file); fd.append("words",words.value.trim()); fd.append("message",words.value.trim());
+  let ink=state.ink||"photo";
+  if(style==="displacement" && (ink==="spectrum"||ink==="aurora")) ink="photo";  // gradients don't drape
+  fd.append("ink",ink); fd.append("style",style); fd.append("ground","navy");
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF);
+  fd.append("min_font_px", style==="message" ? "20" : String(state.minFont||57));
+  if(coarse){ fd.append("png_width","380"); fd.append("render_w","760"); } else { fd.append("png_width","1500"); }
+  return fd;
+}
+async function recommendStyle(){
+  if(recoDone) return;
+  const myGen=gen;
+  for(const st of ["words","message","displacement"]){
+    if(typeof styleScores[st]==="number") continue;
+    try{
+      const r=await fetchWithTimeout("/render",{method:"POST",body:recoFd(st,true)}, RENDER_TIMEOUT_MS);
+      const d=await r.json();
+      if(myGen!==gen) return;                       // photo/words changed -> abandon
+      if(r.ok && d.ok && typeof d.likeness==="number") styleScores[st]=d.likeness;
+    }catch(e){}
+  }
+  const ranked=Object.keys(styleScores).filter(s=>typeof styleScores[s]==="number")
+    .sort((a,b)=>styleScores[b]-styleScores[a]);
+  if(ranked.length<2) return;                       // not enough signal to recommend
+  recoDone=true;
+  const best=ranked[0];
+  document.querySelectorAll('#styleSegResult button').forEach(b=>b.classList.toggle("best", b.dataset.style===best));
+  tp_track("style_reco",{best:best,current:state.style});
+  const note=$("#bestNote");
+  if(best===state.style){
+    if(note){ note.textContent="✦ "+STYLE_NAMES[best]+" suits this photo best."; note.style.display=""; }
+    return;
+  }
+  if(userTouched){
+    if(note){ note.textContent="✦ "+STYLE_NAMES[best]+" suits this photo best — tap to see."; note.style.display=""; }
+    return;
+  }
+  // Adopt quietly: render the winner at full size in the background, then a
+  // gentle crossfade if the user STILL hasn't interacted when it lands.
+  try{
+    const r=await fetchWithTimeout("/render",{method:"POST",body:recoFd(best,false)}, RENDER_TIMEOUT_MS);
+    const d=await r.json();
+    if(myGen!==gen || userTouched) return;          // they moved on -> leave them be
+    if(!(r.ok && d.ok && d.preview)) return;
+    setStyle(best,false);                            // UI follows; no re-render, no busy
+    cache[state.ink]={preview:d.preview, job:d.job, price:d.price_cents, currency:d.currency};
+    showImage(cache[state.ink], true);               // crossfade swap
+    document.querySelectorAll('#styleSegResult button').forEach(b=>b.classList.toggle("best", b.dataset.style===best));
+    if(note){ note.textContent="✦ Showing "+STYLE_NAMES[best]+" — it suits this photo best."; note.style.display=""; }
+    tp_track("style_reco_adopted",{best:best});
+    prewarm(); refreshSizeStrip(); prewarmSizes();
+  }catch(e){}
+}
 function selectSize(mf){
   mf=Number(mf); if(mf===Number(state.minFont)) return;
+  userTouched=true;
   state.minFont=mf;
   // keep the hidden input segment in sync (drives downloads / recipe)
   document.querySelectorAll('#sizeSeg button').forEach(b=>b.classList.toggle("on",Number(b.dataset.mf)===mf));
@@ -836,13 +911,14 @@ createBtn.addEventListener("click", ()=>{
   errInput.style.display="none";
   inputView.style.display="none"; resultView.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
   applyKeepsake(true);                 // show the framed desk/greenery scene instantly while composing
+  resetReco();                         // fresh style recommendation for this photo
   invalidate(); render(state.ink,{animate:true}); });
 $("#restart").addEventListener("click", ()=>{ resultView.style.display="none"; inputView.style.display="block";
   invalidate(); portrait.src=""; portrait.className=""; stopAssembly(); });
 function invalidate(){ gen++; cache={}; thumbCache={}; resetThumbs(); }
 
 function selectInk(id){
-  if(id===state.ink) return; state.ink=id; markSel();
+  if(id===state.ink) return; userTouched=true; state.ink=id; markSel();
   sizeThumbCache={}; resetSizeThumbs();        // size chips show the current ink -> now stale
   if(cache[id]) showImage(cache[id], true);    // instant crossfade
   else { const pic=swatchEl.querySelector(`.pic[data-ink="${id}"]`); if(pic) pic.classList.add("loading"); render(id,{animate:false}); }
@@ -1052,10 +1128,12 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     cache[ink]={preview:data.preview, job:data.job, price:data.price_cents, currency:data.currency}; updateThumb(ink);
     if(background || ink!==state.ink) return;
     showImage(cache[ink]);   // watermarked preview (clean art is unlocked via Stripe)
+    if(typeof data.likeness==="number") styleScores[state.style]=data.likeness;
     if(!window._tpPreviewTracked){ window._tpPreviewTracked=true; tp_track("preview_ready", {style: state.style}); }
     prewarm();               // fill the other swatch thumbnails in the background
     refreshSizeStrip();      // reflect this preview in the selected size chip
     prewarmSizes();          // fill the other size chips for this ink in the background
+    if(!recoStarted){ recoStarted=true; recommendStyle(); }   // probe + badge the best style
   }catch(e){ if(!background && !thumb){
       const m=(e&&e.name==="AbortError") ? "This is taking longer than usual — please try again." : "Network error — please try again.";
       // On a first render with no portrait yet, surface on the input screen

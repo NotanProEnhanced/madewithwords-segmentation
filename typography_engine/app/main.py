@@ -457,12 +457,21 @@ async def render(
             "ref": ref_clean,
         }), encoding="utf-8")
 
+    # Likeness score (how well this render preserves the face) -- the studio
+    # compares scores across styles to recommend the best one for this photo.
+    try:
+        from .pipeline.score import likeness_score
+        likeness = likeness_score(an, png_bytes)
+    except Exception:  # noqa: BLE001
+        likeness = None
+
     return JSONResponse(
         {
             "ok": True,
             "job_id": job_id,
             "job": job_id,
             "faces": len(an.faces),
+            "likeness": likeness,
             "ink": ink_choice,
             "style": style_choice,
             "ground": ground_choice,
