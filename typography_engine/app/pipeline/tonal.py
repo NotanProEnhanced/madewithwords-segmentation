@@ -127,6 +127,34 @@ _SHADE_DARK = 0
 # shadows/midtones toward life while leaving highlights near-white. 0 disables.
 _MSG_BOOST = 0.5
 
+# Every render is composed onto a STANDARD PRINT canvas: 4:5 (16"x20", also
+# 8"x10") so the digital file, the Printful print, and the studio's framed
+# presentation all share one true aspect -- no letterbox gaps in the mat and no
+# crop at the printer. The art is fitted centred and the canvas filled with the
+# ground colour, which is seamless because the composite ground is solid.
+_PRINT_ASPECT = 0.8          # width / height = 4:5
+
+
+def _fit_print_canvas(arr: np.ndarray, ground) -> np.ndarray:
+    """Fit an HxWx3 image onto a 4:5 canvas filled with `ground` (RGB/BGR triple
+    matching the array's channel order). Centred; downscales only when the image
+    is taller than the canvas allows. Returns the array unchanged if already 4:5."""
+    h, w = arr.shape[:2]
+    if h <= 0 or w <= 0:
+        return arr
+    cw, ch = w, int(round(w / _PRINT_ASPECT))
+    if abs(w / h - _PRINT_ASPECT) < 0.005:
+        return arr
+    if h > ch:                       # too tall for this width -> scale down to fit
+        f = ch / float(h)
+        arr = cv2.resize(arr, (max(1, int(round(w * f))), ch), interpolation=cv2.INTER_AREA)
+        h, w = arr.shape[:2]
+    canvas = np.empty((ch, cw, 3), dtype=arr.dtype)
+    canvas[:] = np.asarray(ground, dtype=arr.dtype)
+    ox, oy = (cw - w) // 2, (ch - h) // 2
+    canvas[oy:oy + h, ox:ox + w] = arr
+    return canvas
+
 
 def _auto_message_font(text: str) -> float:
     """Pick the Message/prose font size from message length. build_poster repeats
@@ -1360,10 +1388,13 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
             return b"", eres.runs, eground, ""
         ss = _eff_supersample(out_width)
         epng = svg_to_png_bytes(eres.svg, output_width=out_width * ss)
+        from PIL import Image
+        eimg = Image.open(io.BytesIO(epng)).convert("RGB")
         if ss > 1:                   # supersampled -> Lanczos down to final size
-            from PIL import Image
-            eimg = _lanczos_down(Image.open(io.BytesIO(epng)).convert("RGB"), out_width)
-            ebuf = io.BytesIO(); eimg.save(ebuf, format="PNG"); epng = ebuf.getvalue()
+            eimg = _lanczos_down(eimg, out_width)
+        # Same standard 4:5 print canvas as the composite path, padded with paper.
+        eimg = Image.fromarray(_fit_print_canvas(np.asarray(eimg), _hex_to_rgb(eground)))
+        ebuf = io.BytesIO(); eimg.save(ebuf, format="PNG"); epng = ebuf.getvalue()
         return epng, eres.runs, eground, ""
 
     # The layout only needs glyph POSITIONS (we whiten them into a mask); the
@@ -1424,6 +1455,10 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     ground = np.array(_hex_to_rgb(_ground_hex(ink, light)), dtype=np.float32)
     m = (mask.astype(np.float32) / 255.0)[..., None]
     out = (ground + (photo - ground) * m).clip(0, 255).astype(np.uint8)
+    # Standard print canvas (4:5 = 16x20): pad with the ground BEFORE the boost
+    # and vibrance passes so the band is processed identically to the interior
+    # ground (no visible seam).
+    out = _fit_print_canvas(out, ground)
     if boost and boost > 0.0:        # lift dark Message renders (shadows/midtones)
         f = (out.astype(np.float32) / 255.0) ** (1.0 / (1.0 + float(boost)))
         out = (f * 255.0).clip(0, 255).astype(np.uint8)
