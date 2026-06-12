@@ -333,6 +333,74 @@ def _eye_ellipses(an, scale: float) -> List[Tuple[float, float, float, float]]:
     return out
 
 
+# --- Living eyes: the person's true iris colour carried by the glyphs ---------
+# MediaPipe's 478-point mesh includes the irises: centre + 4-point ring per eye.
+_IRIS_L = (468, (469, 470, 471, 472))
+_IRIS_R = (473, (474, 475, 476, 477))
+# Faithfulness gate: tint ONLY when the photo itself clearly carries the eye
+# colour. Both irises must be reasonably saturated and hue-consistent with each
+# other; faded/B&W/dim photos fail the gate and render exactly as before. We
+# sample colour, never invent it (same doctrine as the enhancement stage).
+_IRIS_MIN_SAT = 50.0     # OpenCV HSV S (0-255); pale blue irises sit ~60-80
+_IRIS_HUE_TOL = 22.0     # max circular hue difference between the two eyes
+
+
+def _iris_tint(an):
+    """Sample the primary face's iris colour. Returns ([(cx, cy, r)] in working
+    coords, lifted RGB tip colour) when both irises pass the colour gate, else
+    None (renders fall back to the plain ink, byte-identical)."""
+    faces = _faces_of(an)
+    if not faces:
+        return None
+    pts = faces[0].points                      # primary face (renderer features it)
+    if pts.shape[0] < 478:
+        return None                            # no iris landmarks (fallback mesh)
+    bgr = an.img.bgr
+    H0, W0 = bgr.shape[:2]
+    circles: List[Tuple[float, float, float]] = []
+    hsvs: List[np.ndarray] = []
+    for c, ring in (_IRIS_L, _IRIS_R):
+        cx, cy = float(pts[c][0]), float(pts[c][1])
+        r = float(np.mean([np.hypot(pts[i][0] - cx, pts[i][1] - cy) for i in ring]))
+        if r < 3.0:
+            return None
+        # Sample the inner iris only (0.68 r skips lid/lash overlap), dropping
+        # the darkest 30% (pupil) and brightest 20% (catchlight) of pixels.
+        x0, x1 = int(max(0, cx - r)), int(min(W0, cx + r + 1))
+        y0, y1 = int(max(0, cy - r)), int(min(H0, cy + r + 1))
+        if x1 - x0 < 3 or y1 - y0 < 3:
+            return None
+        yy, xx = np.ogrid[y0:y1, x0:x1]
+        m = (xx - cx) ** 2 + (yy - cy) ** 2 <= (0.68 * r) ** 2
+        px = bgr[y0:y1, x0:x1][m].astype(np.float32)
+        if px.shape[0] < 12:
+            return None
+        lum = px.mean(1)
+        lo, hi = np.percentile(lum, [30.0, 80.0])
+        sel = px[(lum >= lo) & (lum <= hi)]
+        if sel.shape[0] < 6:
+            return None
+        med = np.clip(np.median(sel, 0), 0, 255).astype(np.uint8)
+        hsv = cv2.cvtColor(med.reshape(1, 1, 3), cv2.COLOR_BGR2HSV)[0, 0].astype(np.float32)
+        circles.append((cx, cy, r))
+        hsvs.append(hsv)
+    if len(circles) < 2:
+        return None
+    if any(h[1] < _IRIS_MIN_SAT for h in hsvs):
+        return None                            # photo doesn't carry the colour
+    dh = abs(float(hsvs[0][0]) - float(hsvs[1][0]))
+    if min(dh, 180.0 - dh) > _IRIS_HUE_TOL:
+        return None                            # eyes disagree -> unreliable sample
+    # Shared colour, lifted to ink brightness (raw iris pixels are dark) with a
+    # gentle saturation nudge so the hue reads at glyph scale on the dark ground.
+    hsv = np.mean(hsvs, 0)
+    hsv[1] = min(255.0, hsv[1] * 1.25)
+    hsv[2] = 215.0
+    rgb = cv2.cvtColor(np.clip(hsv, 0, 255).astype(np.uint8).reshape(1, 1, 3),
+                       cv2.COLOR_HSV2RGB)[0, 0].astype(np.float32)
+    return circles, rgb
+
+
 def _face_ovals(an, scale: float) -> List[Tuple[float, float, float, float]]:
     """Per-face (cx, cy, rx, ry) ellipses (render coords) marking the area that
     gets the finer 'face' word tier, so the likeness keeps its detail while the
@@ -1221,6 +1289,31 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         # with white space, not a faint gray jumble.
         v = np.clip(0.08 + 1.25 * (1.0 - np.clip(lum ** 0.8, 0.0, 1.0)), 0.0, 1.0)
     out = ground + (tip - ground) * v[..., None]
+    # Living eyes: inside each iris, carry the person's TRUE eye colour in the
+    # glyphs (sampled, never invented -- _iris_tint gates on the photo actually
+    # holding the colour; gated-off photos render byte-identical). The tonal
+    # field `v` is kept, so iris structure and the catchlight stay; only the
+    # ink hue changes, feathered at the iris edge. Dark ground only: the dormant
+    # light/engraving path uses dark ink on paper, where a brightness-lifted
+    # tint would read wrong.
+    if not light:
+        iris = _iris_tint(an)
+        if iris is not None:
+            circles, itip = iris
+            imask = np.zeros((H, W), np.float32)
+            rmax = 2.0
+            for cx, cy, r in circles:
+                rr = max(2, int(round(r * fscale)))
+                rmax = max(rmax, float(rr))
+                cv2.circle(imask, (int(round(cx * fscale)), int(round(cy * fscale))), rr, 1.0, -1)
+            imask = cv2.GaussianBlur(imask, (0, 0), max(1.0, rmax * 0.22))
+            # Gentle brightness floor inside the iris so the eye colour actually
+            # reads -- the iris is tonally dark, so without a floor the tinted
+            # glyphs barely glow. Feathered by the same mask; catchlight (v~1)
+            # and pupil structure still dominate above the floor.
+            v_eye = np.maximum(v, 0.38 * imask)
+            iout = ground + (itip - ground) * v_eye[..., None]
+            out = out * (1.0 - imask[..., None]) + iout * imask[..., None]
     if remove_bg:
         m = an.silhouette.mask
         if m.shape[:2] != (H, W):
