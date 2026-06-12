@@ -116,6 +116,11 @@ def apply_vibrance(img: np.ndarray, strength: float = _VIBRANCE, bgr: bool = Fal
 
 def load_and_normalize(img_bytes: bytes, max_dim: int, warns: WarningCollector) -> LoadedImage:
     bgr_full = decode_image(img_bytes, warns)
+    # Faithful in-house enhancement (upscale small / denoise grainy) before any
+    # downsizing, so imperfect source photos still give a clean tonal map. Never
+    # alters identity; clean, well-sized photos pass through untouched.
+    from .enhance import enhance_source
+    bgr_full = enhance_source(bgr_full, warns)
     oh, ow = bgr_full.shape[:2]
 
     longest = max(oh, ow)
