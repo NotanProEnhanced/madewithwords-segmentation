@@ -337,6 +337,14 @@ def render_displacement_portrait(
             iout = np.array(g["bg"], np.float32) * (1 - al) + tip * al
             im3 = iris_m[..., None]
             out = out * (1.0 - im3) + iout * im3
+    # Sclera wash: the whites of the eyes read LIGHT (carrying no typography),
+    # painted as a soft warm-white modulated by the photo's own shading so the
+    # eye keeps its natural gradient -- not a flat disc, and dimmer than glyphs.
+    if irises and g["tone"] == "light":
+        # Shading-following but with a floor, so even the shadow-side sclera
+        # clearly reads light (0.30 minimum inside the sclera mask).
+        wash = (scl * np.clip(0.30 + (gray / 255.0 - 0.25) / 0.5, 0.30, 1.0) * 0.80)[..., None]
+        out = out * (1.0 - wash) + np.array((198, 206, 214), np.float32) * wash
     # Catchlight is a SPECULAR highlight: always white (the lightest thing on the
     # face), never ink- or iris-coloured -- painted over the colour composite.
     if irises and g["tone"] == "light":

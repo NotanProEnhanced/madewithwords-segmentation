@@ -1520,6 +1520,25 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     # eye looks back. Always white -- the lightest thing on the face -- never ink-
     # or iris-coloured. Dark grounds only; before the pad so coords hold.
     if not light:
+        # Sclera wash: the whites of the eyes read LIGHT (carrying no typography),
+        # painted as a soft warm-white modulated by the photo's own shading so the
+        # eye keeps its natural gradient -- not a flat disc, dimmer than glyphs.
+        fsc0 = W / float(an.img.gray.shape[1])
+        eyes_e = _eye_ellipses(an, fsc0)
+        if eyes_e:
+            sm = np.zeros((H, W), np.float32)
+            for ex, ey, rx, ry in eyes_e:
+                cv2.ellipse(sm, (int(round(ex)), int(round(ey))),
+                            (int(round(rx)), int(round(ry))), 0, 0, 360, 1.0, -1)
+            for icx, icy, irr in _iris_circles(an, fsc0):
+                cv2.circle(sm, (int(round(icx)), int(round(icy))), int(round(irr)), 0.0, -1, cv2.LINE_AA)
+            sm = cv2.GaussianBlur(sm, (0, 0), sigmaX=max(1.0, float(np.mean([e[2] for e in eyes_e])) * 0.10))
+            gl0 = cv2.resize(an.img.gray, (W, H), interpolation=cv2.INTER_LINEAR).astype(np.float32) / 255.0
+            # Shading-following but with a floor, so even the shadow-side sclera
+            # clearly reads light (0.30 minimum inside the sclera mask).
+            wash = (sm * np.clip(0.30 + (gl0 - 0.25) / 0.5, 0.30, 1.0) * 0.80)[..., None]
+            out = (out.astype(np.float32) * (1.0 - wash)
+                   + np.array((214, 206, 198), np.float32) * wash).clip(0, 255).astype(np.uint8)
         glints = _catchlight_points(an)                   # working coords
         if glints:
             fsc = W / float(an.img.gray.shape[1])
