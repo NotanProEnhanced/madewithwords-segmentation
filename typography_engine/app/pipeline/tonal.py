@@ -1525,20 +1525,32 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         # eye keeps its natural gradient -- not a flat disc, dimmer than glyphs.
         fsc0 = W / float(an.img.gray.shape[1])
         eyes_e = _eye_ellipses(an, fsc0)
+        iris_c = _iris_circles(an, fsc0)
         if eyes_e:
+            ir_mean = float(np.mean([r for _, _, r in iris_c])) if iris_c else 1.0
+            # Limbal ring: dark rim at the iris edge -- the cue that reads as a
+            # real iris, not a flat disc. Darken the thin annulus toward the ground.
+            if iris_c:
+                lm = np.zeros((H, W), np.float32)
+                for icx, icy, irr in iris_c:
+                    cv2.circle(lm, (int(round(icx)), int(round(icy))), int(round(irr)), 1.0, -1, cv2.LINE_AA)
+                    cv2.circle(lm, (int(round(icx)), int(round(icy))), int(round(irr * 0.80)), 0.0, -1, cv2.LINE_AA)
+                lm = cv2.GaussianBlur(lm, (0, 0), sigmaX=max(1.0, ir_mean * 0.05))[..., None]
+                out = (out.astype(np.float32) * (1.0 - 0.60 * lm)
+                       + ground * (0.60 * lm)).clip(0, 255).astype(np.uint8)
+            # Sclera (eye ellipse minus iris): bright, lightly-warm off-white,
+            # shading-modulated with a high floor so the whites clearly read.
             sm = np.zeros((H, W), np.float32)
             for ex, ey, rx, ry in eyes_e:
                 cv2.ellipse(sm, (int(round(ex)), int(round(ey))),
                             (int(round(rx)), int(round(ry))), 0, 0, 360, 1.0, -1)
-            for icx, icy, irr in _iris_circles(an, fsc0):
+            for icx, icy, irr in iris_c:
                 cv2.circle(sm, (int(round(icx)), int(round(icy))), int(round(irr)), 0.0, -1, cv2.LINE_AA)
             sm = cv2.GaussianBlur(sm, (0, 0), sigmaX=max(1.0, float(np.mean([e[2] for e in eyes_e])) * 0.10))
             gl0 = cv2.resize(an.img.gray, (W, H), interpolation=cv2.INTER_LINEAR).astype(np.float32) / 255.0
-            # Shading-following but with a floor, so even the shadow-side sclera
-            # clearly reads light (0.30 minimum inside the sclera mask).
-            wash = (sm * np.clip(0.30 + (gl0 - 0.25) / 0.5, 0.30, 1.0) * 0.80)[..., None]
+            wash = (sm * np.clip(0.55 + (gl0 - 0.30) / 0.5, 0.55, 1.0) * 0.92)[..., None]
             out = (out.astype(np.float32) * (1.0 - wash)
-                   + np.array((214, 206, 198), np.float32) * wash).clip(0, 255).astype(np.uint8)
+                   + np.array((236, 229, 222), np.float32) * wash).clip(0, 255).astype(np.uint8)
         glints = _catchlight_points(an)                   # working coords
         if glints:
             fsc = W / float(an.img.gray.shape[1])

@@ -298,8 +298,13 @@ def render_displacement_portrait(
             if len(p) >= 3:
                 cv2.fillConvexPoly(scl, cv2.convexHull(p), 1.0)
         iris_full = np.zeros((H, W), np.float32)
+        limbal = np.zeros((H, W), np.float32)      # dark rim at the iris edge
         for icx, icy, ir in irises:
-            cv2.circle(iris_full, (int(round(icx)), int(round(icy))), int(round(ir)), 1.0, -1, cv2.LINE_AA)
+            ci = (int(round(icx)), int(round(icy)))
+            cv2.circle(iris_full, ci, int(round(ir)), 1.0, -1, cv2.LINE_AA)
+            cv2.circle(limbal, ci, int(round(ir)), 1.0, -1, cv2.LINE_AA)
+            cv2.circle(limbal, ci, int(round(ir * 0.80)), 0.0, -1, cv2.LINE_AA)
+        limbal = cv2.GaussianBlur(limbal, (0, 0), sigmaX=max(1.0, ir_mean * 0.05))
         scl = np.clip(scl - iris_full, 0, 1)
         scl = cv2.GaussianBlur(scl, (0, 0), sigmaX=max(1.0, fw * 0.004))
         a = a * (1.0 - 0.92 * scl)
@@ -337,14 +342,18 @@ def render_displacement_portrait(
             iout = np.array(g["bg"], np.float32) * (1 - al) + tip * al
             im3 = iris_m[..., None]
             out = out * (1.0 - im3) + iout * im3
-    # Sclera wash: the whites of the eyes read LIGHT (carrying no typography),
-    # painted as a soft warm-white modulated by the photo's own shading so the
-    # eye keeps its natural gradient -- not a flat disc, and dimmer than glyphs.
+    # Limbal ring: a dark rim at the iris edge -- the single strongest cue that
+    # reads as a real iris rather than a flat tinted disc. Darken toward the
+    # ground in that thin annulus.
     if irises and g["tone"] == "light":
-        # Shading-following but with a floor, so even the shadow-side sclera
-        # clearly reads light (0.30 minimum inside the sclera mask).
-        wash = (scl * np.clip(0.30 + (gray / 255.0 - 0.25) / 0.5, 0.30, 1.0) * 0.80)[..., None]
-        out = out * (1.0 - wash) + np.array((198, 206, 214), np.float32) * wash
+        lim = limbal[..., None]
+        out = out * (1.0 - 0.60 * lim) + np.array(g["bg"], np.float32) * (0.60 * lim)
+    # Sclera wash: the whites of the eyes read as bright, lightly-warm off-white
+    # (carrying no typography), modulated by the photo's own shading so the eye
+    # keeps a natural gradient -- not a flat grey disc, and dimmer than glyphs.
+    if irises and g["tone"] == "light":
+        wash = (scl * np.clip(0.55 + (gray / 255.0 - 0.30) / 0.5, 0.55, 1.0) * 0.92)[..., None]
+        out = out * (1.0 - wash) + np.array((222, 229, 236), np.float32) * wash
     # Catchlight is a SPECULAR highlight: always white (the lightest thing on the
     # face), never ink- or iris-coloured -- painted over the colour composite.
     if irises and g["tone"] == "light":
