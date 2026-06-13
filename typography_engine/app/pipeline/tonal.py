@@ -1548,9 +1548,13 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
                 cv2.circle(sm, (int(round(icx)), int(round(icy))), int(round(irr)), 0.0, -1, cv2.LINE_AA)
             sm = cv2.GaussianBlur(sm, (0, 0), sigmaX=max(1.0, float(np.mean([e[2] for e in eyes_e])) * 0.10))
             gl0 = cv2.resize(an.img.gray, (W, H), interpolation=cv2.INTER_LINEAR).astype(np.float32) / 255.0
-            wash = (sm * np.clip(0.55 + (gl0 - 0.30) / 0.5, 0.55, 1.0) * 0.92)[..., None]
+            # Modest lift of the photo's OWN eye-white shading, no floor -- the
+            # natural gradient (bright lower sclera, shadow under the upper lid)
+            # survives, so the eye never glows as a flat bright disc.
+            shade = np.clip((gl0 - 0.18) / 0.55, 0.0, 1.0)
+            wash = (sm * shade * 0.72)[..., None]
             out = (out.astype(np.float32) * (1.0 - wash)
-                   + np.array((236, 229, 222), np.float32) * wash).clip(0, 255).astype(np.uint8)
+                   + np.array((210, 202, 196), np.float32) * wash).clip(0, 255).astype(np.uint8)
         glints = _catchlight_points(an)                   # working coords
         if glints:
             fsc = W / float(an.img.gray.shape[1])
