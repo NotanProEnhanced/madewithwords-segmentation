@@ -315,6 +315,14 @@ def render_displacement_portrait(
             a = np.clip(a + 0.80 * pup, 0, 1)     # pupil: round dark ink
             a = a * (1.0 - 0.85 * glint)          # catchlight: paper shows
 
+    # Teeth carry NO typography. Where the mouth is open, suppress ink across the
+    # inner mouth (both tones); on a dark ground the cleared teeth get a soft
+    # light wash below, on light paper the paper already reads as teeth. A closed
+    # mouth yields no mask and is left untouched.
+    from .tonal import _teeth_mask
+    teeth = _teeth_mask(pts, H, W)
+    if teeth is not None:
+        a = a * (1.0 - 0.92 * teeth)
     al = a[..., None]
     if ink == "photo":
         # Words take the photo's OWN colours, draped over the form, on the ground.
@@ -356,6 +364,14 @@ def render_displacement_portrait(
         shade = np.clip((gray / 255.0 - 0.18) / 0.55, 0.0, 1.0)
         wash = (scl * shade * 0.72)[..., None]
         out = out * (1.0 - wash) + np.array((196, 202, 210), np.float32) * wash
+    # Teeth (open mouth, dark ground): the cleared inner mouth takes a soft off-
+    # white where the photo is bright (the teeth) and falls to ground in the dark
+    # inter-tooth gap -- so a smile reads as teeth, never as a row of glyphs.
+    if teeth is not None and g["tone"] == "light":
+        tshade = np.clip((gray / 255.0 - 0.30) / 0.50, 0.0, 1.0)[..., None]
+        tcol = np.array(g["bg"], np.float32) * (1.0 - tshade) + np.array((216, 222, 224), np.float32) * tshade
+        tw = (teeth * 0.92)[..., None]
+        out = out * (1.0 - tw) + tcol * tw
     # Catchlight is a SPECULAR highlight: always white (the lightest thing on the
     # face), never ink- or iris-coloured -- painted over the colour composite.
     if irises and g["tone"] == "light":

@@ -392,6 +392,27 @@ def _iris_circles(an, scale: float) -> List[Tuple[float, float, float]]:
     return out
 
 
+# Inner-lip ring (MediaPipe 478-mesh): bounds the mouth OPENING, i.e. the teeth.
+_INNER_LIP = (78, 191, 80, 81, 82, 13, 312, 311, 310, 415,
+              308, 324, 318, 402, 317, 14, 87, 178, 88, 95)
+
+
+def _teeth_mask(pts, h: int, w: int):
+    """Soft mask of the inner mouth (where teeth show) from already-scaled
+    landmark points. None when the mouth is ~closed (no teeth to clear) or the
+    mesh is unavailable -- so a closed-mouth portrait is left untouched."""
+    if pts is None or len(pts) <= max(_INNER_LIP):
+        return None
+    p = np.array([pts[i] for i in _INNER_LIP], np.float32)
+    pw = float(p[:, 0].max() - p[:, 0].min())
+    ph = float(p[:, 1].max() - p[:, 1].min())
+    if pw < 3.0 or ph < 2.0 or ph / pw < 0.12:    # lips together -> no teeth
+        return None
+    mm = np.zeros((h, w), np.float32)
+    cv2.fillConvexPoly(mm, cv2.convexHull(p.astype(np.int32)), 1.0)
+    return cv2.GaussianBlur(mm, (0, 0), max(1.0, pw * 0.05))
+
+
 def _catchlight_points(an) -> List[Tuple[float, float, float]]:
     """Catchlight positions, one per iris, in WORKING coords: (gx, gy, glint_r).
     Deterministic and consistent between the two eyes -- the classic upper
@@ -1524,6 +1545,7 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         # painted as a soft warm-white modulated by the photo's own shading so the
         # eye keeps its natural gradient -- not a flat disc, dimmer than glyphs.
         fsc0 = W / float(an.img.gray.shape[1])
+        gl0 = cv2.resize(an.img.gray, (W, H), interpolation=cv2.INTER_LINEAR).astype(np.float32) / 255.0
         eyes_e = _eye_ellipses(an, fsc0)
         iris_c = _iris_circles(an, fsc0)
         if eyes_e:
@@ -1547,7 +1569,6 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             for icx, icy, irr in iris_c:
                 cv2.circle(sm, (int(round(icx)), int(round(icy))), int(round(irr)), 0.0, -1, cv2.LINE_AA)
             sm = cv2.GaussianBlur(sm, (0, 0), sigmaX=max(1.0, float(np.mean([e[2] for e in eyes_e])) * 0.10))
-            gl0 = cv2.resize(an.img.gray, (W, H), interpolation=cv2.INTER_LINEAR).astype(np.float32) / 255.0
             # Modest lift of the photo's OWN eye-white shading, no floor -- the
             # natural gradient (bright lower sclera, shadow under the upper lid)
             # survives, so the eye never glows as a flat bright disc.
@@ -1555,6 +1576,16 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             wash = (sm * shade * 0.72)[..., None]
             out = (out.astype(np.float32) * (1.0 - wash)
                    + np.array((210, 202, 196), np.float32) * wash).clip(0, 255).astype(np.uint8)
+        # Teeth carry NO typography. Where the mouth is open, clear the glyphs from
+        # the inner mouth: bright pixels (the teeth) take a soft off-white that
+        # follows the photo's own shading; the dark inter-tooth gap falls to ground.
+        # A closed mouth yields no mask, so it is left exactly as composed.
+        tm = _teeth_mask(_faces_of(an)[0].points * fsc0 if _faces_of(an) else None, H, W)
+        if tm is not None:
+            tshade = np.clip((gl0 - 0.30) / 0.50, 0.0, 1.0)[..., None]
+            teeth = ground * (1.0 - tshade) + np.array((224, 222, 216), np.float32) * tshade
+            tw = (tm * 0.92)[..., None]
+            out = (out.astype(np.float32) * (1.0 - tw) + teeth * tw).clip(0, 255).astype(np.uint8)
         glints = _catchlight_points(an)                   # working coords
         if glints:
             fsc = W / float(an.img.gray.shape[1])
