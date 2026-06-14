@@ -135,15 +135,21 @@ _MSG_BOOST = 0.5
 _PRINT_ASPECT = 0.8          # width / height = 4:5
 
 
-def _fit_print_canvas(arr: np.ndarray, ground) -> np.ndarray:
-    """Fit an HxWx3 image onto a 4:5 canvas filled with `ground` (RGB/BGR triple
-    matching the array's channel order). Centred; downscales only when the image
-    is taller than the canvas allows. Returns the array unchanged if already 4:5."""
+def _fit_print_canvas(arr: np.ndarray, ground, aspect: float = _PRINT_ASPECT) -> np.ndarray:
+    """Fit an HxWx3 image onto a `aspect` (width/height) canvas filled with
+    `ground` (RGB/BGR triple matching the array's channel order). Centred;
+    downscales only when the image is taller than the canvas allows. Returns the
+    array unchanged when it already matches the target aspect.
+
+    `aspect` defaults to 4:5 (the digital download / on-screen proof); the print
+    path passes each product's true aspect (e.g. 0.75 for an 18x24 poster) so the
+    fulfilment file matches the physical size with the face centred and ground-
+    padded -- never cropped or stretched to fit."""
     h, w = arr.shape[:2]
     if h <= 0 or w <= 0:
         return arr
-    cw, ch = w, int(round(w / _PRINT_ASPECT))
-    if abs(w / h - _PRINT_ASPECT) < 0.005:
+    cw, ch = w, int(round(w / aspect))
+    if abs(w / h - aspect) < 0.005:
         return arr
     if h > ch:                       # too tall for this width -> scale down to fit
         f = ch / float(h)
@@ -1449,7 +1455,7 @@ def _ground_hex(ink: str, light: bool) -> str:
 def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: WarningCollector,
                        ink: str = "mono", remove_bg: bool = True, light: bool = False,
                        out_width: int = 1400, render_w: int = 2200, tone_density: float = 0.6,
-                       uppercase: bool = True):
+                       uppercase: bool = True, print_aspect: float = _PRINT_ASPECT):
     """Layered portrait -> PNG bytes. style='message' = poster rows; else Words
     (mosaic) layout. Returns (png_bytes, runs, ground_hex, mask_svg)."""
     # --- Dedicated light/engraving renderer (Words style) --------------------
@@ -1475,8 +1481,8 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         eimg = Image.open(io.BytesIO(epng)).convert("RGB")
         if ss > 1:                   # supersampled -> Lanczos down to final size
             eimg = _lanczos_down(eimg, out_width)
-        # Same standard 4:5 print canvas as the composite path, padded with paper.
-        eimg = Image.fromarray(_fit_print_canvas(np.asarray(eimg), _hex_to_rgb(eground)))
+        # Same print canvas as the composite path, padded with paper.
+        eimg = Image.fromarray(_fit_print_canvas(np.asarray(eimg), _hex_to_rgb(eground), print_aspect))
         ebuf = io.BytesIO(); eimg.save(ebuf, format="PNG"); epng = ebuf.getvalue()
         return epng, eres.runs, eground, ""
 
@@ -1515,12 +1521,14 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         return b"", runs, ground_hex, ""
     mask_svg = _mask_svg(colored)
     boost = _MSG_BOOST if style == "message" else 0.0
-    png = compose_layered(mask_svg, an, ink, remove_bg, out_width, light=light, boost=boost)
+    png = compose_layered(mask_svg, an, ink, remove_bg, out_width, light=light, boost=boost,
+                          print_aspect=print_aspect)
     return png, runs, ground_hex, mask_svg
 
 
 def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int,
-                    light: bool = False, boost: float = 0.0) -> bytes:
+                    light: bool = False, boost: float = 0.0,
+                    print_aspect: float = _PRINT_ASPECT) -> bytes:
     """Composite the tinted photo through a prebuilt white-text mask SVG. Reused
     at download from the stored mask, so the costly layout build runs only once
     (at render), not again per sale. `boost` (>0) gamma-lifts the finished
@@ -1601,7 +1609,7 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     # Standard print canvas (4:5 = 16x20): pad with the ground BEFORE the boost
     # and vibrance passes so the band is processed identically to the interior
     # ground (no visible seam).
-    out = _fit_print_canvas(out, ground)
+    out = _fit_print_canvas(out, ground, print_aspect)
     if boost and boost > 0.0:        # lift dark Message renders (shadows/midtones)
         f = (out.astype(np.float32) / 255.0) ** (1.0 / (1.0 + float(boost)))
         out = (f * 255.0).clip(0, 255).astype(np.uint8)

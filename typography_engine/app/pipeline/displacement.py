@@ -105,6 +105,7 @@ def render_displacement_portrait(
     seed: int = 7,
     uppercase: bool = True,
     ink: Optional[str] = None,
+    print_aspect: float = 0.8,    # width/height of the print canvas (4:5 default)
 ) -> bytes:
     """Render a displacement typographic portrait to PNG bytes.
 
@@ -385,7 +386,7 @@ def render_displacement_portrait(
     # Standard print canvas (4:5 = 16x20), padded with the ground BEFORE vibrance
     # so the band is processed identically to the interior ground (no seam).
     from .tonal import _fit_print_canvas
-    out = _fit_print_canvas(out, g["bg"])
+    out = _fit_print_canvas(out, g["bg"], print_aspect)
     from .preprocess import apply_vibrance
     out = apply_vibrance(out, bgr=True)       # give the render life (clarity/glow/saturation)
     ok, buf = cv2.imencode(".png", np.clip(out, 0, 255).astype(np.uint8))

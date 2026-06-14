@@ -70,18 +70,27 @@ def _request(method: str, path: str, *, json: Any = None, timeout: float = 30.0)
 
 # ---------- signed print URLs ------------------------------------------------
 
-def signed_print_url(job: str, ttl_seconds: int = 86_400) -> str:
+def signed_print_url(job: str, ttl_seconds: int = 86_400,
+                     aspect: Optional[float] = None) -> str:
     """Return a public URL Printful can fetch the clean PNG from.
 
     The URL embeds an HMAC signature + expiry. Without the secret an attacker
     cannot forge a working URL; with a valid signature anyone can fetch the
     art (so don't share these URLs publicly — they go straight to Printful).
+
+    `aspect` (width/height) selects the print canvas the file is rendered to, so
+    the art matches the product's physical size. It is appended unsigned: it only
+    changes the padding of the same already-signed, paywalled art, so it needs no
+    extra integrity guarantee. Omitted -> the server's default (4:5).
     """
     expires = int(time.time()) + ttl_seconds
     payload = f"{job}:{expires}".encode()
     sig = hmac.new(PRINT_URL_SECRET.encode(), payload, hashlib.sha256).hexdigest()
     base = PUBLIC_BASE_URL.rstrip("/")
-    return f"{base}/printful-fetch/{job}?exp={expires}&sig={sig}"
+    url = f"{base}/printful-fetch/{job}?exp={expires}&sig={sig}"
+    if aspect is not None:
+        url += f"&a={aspect:.4f}"
+    return url
 
 
 def verify_signed_url(job: str, exp: int, sig: str) -> bool:

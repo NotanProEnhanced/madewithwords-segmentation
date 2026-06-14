@@ -22,6 +22,10 @@ class Product:
     price_cents: int              # retail price the customer pays (excl. shipping)
     shipping_cents: int           # flat US shipping the customer pays
     physical: bool                # True if Printful-fulfilled; False = digital
+    # Print canvas aspect (width / height) the fulfilment file is rendered to, so
+    # the art matches the physical size with the face centred and ground-padded
+    # (never cropped or stretched). 4:5 = 0.8 for 16x20 / digital; 18x24 = 0.75.
+    print_aspect: float = 0.8
     printful_variant_id: Optional[int] = None  # required if physical
     # For products that need a size variant (t-shirts), this lists the
     # selectable sizes mapped to their Printful variant IDs.
@@ -69,6 +73,7 @@ CATALOG: List[Product] = [
         price_cents=2900,
         shipping_cents=800,
         physical=True,
+        print_aspect=0.75,          # 18/24 = 3:4, not 4:5 -- render the print file to match
         printful_variant_id=1,      # Enhanced Matte Paper Poster (in) 18×24 (product 1) — verified 2026-06-02
     ),
     Product(

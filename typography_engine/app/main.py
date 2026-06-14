@@ -54,6 +54,7 @@ from .pipeline.quality import assess_portrait_input
 from .pipeline.raster import write_png
 from .pipeline.silhouette import extract_silhouette
 from .pipeline.svgbuild import SvgDoc, validate_svg
+from .pipeline.tonal import _PRINT_ASPECT
 from .pipeline.warnings import WarningCollector
 
 
@@ -653,19 +654,26 @@ def _stripe_to_dict(obj):
         return {}
 
 
-def _ensure_clean_png(job: str) -> Optional[Path]:
+def _ensure_clean_png(job: str, aspect: float = _PRINT_ASPECT) -> Optional[Path]:
     """Compose (once) and return the path to the clean print-resolution PNG for
     `job`, or None if the job's inputs are missing or composition fails.
 
     The expensive layout build is reused from the stored mask; only the photo is
     re-derived and composited at print resolution. Idempotent: returns the
     cached file if it already exists. Shared by the paid /download path and the
-    signed /printful-fetch art URL so both produce byte-identical output."""
+    signed /printful-fetch art URL so both produce byte-identical output.
+
+    `aspect` is the print canvas aspect (width/height). It defaults to 4:5 (the
+    digital download / on-screen proof, cached as `{job}.png`); a physical order
+    passes its product's true aspect (e.g. 0.75 for an 18x24 poster) and the file
+    is composed + cached per aspect (`{job}.a750.png`) so the art matches the
+    physical size -- face centred, ground-padded, never cropped or stretched."""
     recipe_path = PRIVATE_DIR / f"{job}.json"
     src_path = PRIVATE_DIR / f"{job}.src"
     if not recipe_path.exists() or not src_path.exists():
         return None
-    path = PRIVATE_DIR / f"{job}.png"
+    tag = "" if abs(aspect - _PRINT_ASPECT) < 0.005 else f".a{int(round(aspect * 1000))}"
+    path = PRIVATE_DIR / f"{job}{tag}.png"
     if path.exists():
         return path
     try:
@@ -678,7 +686,8 @@ def _ensure_clean_png(job: str) -> Optional[Path]:
             png_bytes = render_displacement_portrait(
                 an, (r.get("text", "") or "").split(),
                 ground=r.get("ground", "navy"), out_width=DOWNLOAD_PNG_WIDTH,
-                uppercase=bool(r.get("uppercase", True)), ink=r.get("ink"))
+                uppercase=bool(r.get("uppercase", True)), ink=r.get("ink"),
+                print_aspect=aspect)
             if not png_bytes:
                 return None
             path.write_bytes(png_bytes)
@@ -690,7 +699,7 @@ def _ensure_clean_png(job: str) -> Optional[Path]:
             png_bytes = compose_layered(
                 mask_path.read_text(encoding="utf-8"), an,
                 r.get("ink", "navy"), bool(r.get("remove_bg", True)), DOWNLOAD_PNG_WIDTH,
-                light=bool(r.get("light", False)), boost=dl_boost)
+                light=bool(r.get("light", False)), boost=dl_boost, print_aspect=aspect)
         else:  # no stored mask (e.g. light/engraving renders) or older jobs:
             # recompose at print size. Reuse the chosen word size so the paid
             # download matches the preview (light mode has no baked mask).
@@ -704,7 +713,7 @@ def _ensure_clean_png(job: str) -> Optional[Path]:
                 an, r["text"], r.get("style", "words"), cfg2, warns2,
                 ink=r.get("ink", "navy"), remove_bg=bool(r.get("remove_bg", True)),
                 light=bool(r.get("light", False)), out_width=DOWNLOAD_PNG_WIDTH, render_w=2600,
-                uppercase=bool(r.get("uppercase", True)))
+                uppercase=bool(r.get("uppercase", True)), print_aspect=aspect)
         if not png_bytes:
             return None
         path.write_bytes(png_bytes)
@@ -752,7 +761,7 @@ def download(job: str, session_id: str, fmt: str = "png"):
 
 
 @app.api_route("/printful-fetch/{job}", methods=["GET", "HEAD"])
-def printful_fetch(job: str, exp: int, sig: str):
+def printful_fetch(job: str, exp: int, sig: str, a: float = _PRINT_ASPECT):
     """One-time signed URL Printful fetches the clean PNG from.
 
     The clean file lives in PRIVATE_DIR (paywalled, not statically mounted). For
@@ -767,7 +776,11 @@ def printful_fetch(job: str, exp: int, sig: str):
     lazy compose warms the file so the follow-up GET is served from cache."""
     if not printful.verify_signed_url(job, exp, sig):
         raise HTTPException(status_code=403, detail="invalid_or_expired_signature")
-    path = _ensure_clean_png(job)
+    # `a` is the print aspect (set by the order's product); clamp to a sane band so
+    # a malformed value can't drive a runaway canvas. Unsigned -- it only changes
+    # padding of the same already-paywalled art, so it carries no extra authority.
+    aspect = min(2.0, max(0.4, float(a)))
+    path = _ensure_clean_png(job, aspect)
     if path is None:
         raise HTTPException(status_code=404, detail="unknown_job")
     return FileResponse(str(path), media_type="image/png")
@@ -819,7 +832,9 @@ def _fulfill_with_printful(order_id: str, recipient: dict) -> None:
     if o["status"] != "paid" or not o["variant_id"]:
         return
     try:
-        signed = printful.signed_print_url(o["job_id"])
+        prod = products.get(str(o["sku"]))
+        aspect = prod.print_aspect if prod else _PRINT_ASPECT
+        signed = printful.signed_print_url(o["job_id"], aspect=aspect)
         placement = "front" if str(o["sku"]).startswith("tshirt") else "default"
         res = printful.create_order(
             recipient=recipient,
