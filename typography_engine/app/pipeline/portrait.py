@@ -7,7 +7,7 @@ letters, bright skin blank), which reads as the person's face.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Sequence
+from typing import Callable, List, Optional, Sequence
 
 from ..config import RenderConfig
 from .analyze import Analysis
@@ -32,10 +32,12 @@ def build_portrait(
     ink: str = "navy",
     render_w: int = 2600,
     tone_density: float = 0.0,
+    progress: Optional[Callable[[str, float, str], None]] = None,
 ) -> PortraitResult:
     cfg.validate()
-    svg, runs = build_tonal_portrait(an, words, cfg, warns, uppercase=uppercase, ink=ink,
-                                     render_w=render_w, tone_density=tone_density)
+    svg, runs = build_tonal_portrait(an, words, cfg, warns, uppercase=uppercase,
+                                     ink=ink, render_w=render_w,
+                                     tone_density=tone_density, progress=progress)
     if svg:
         validate_svg(svg)
     return PortraitResult(svg=svg, runs=runs)

@@ -22,7 +22,7 @@ from __future__ import annotations
 import base64
 import io
 import re
-from typing import List, Optional, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -31,6 +31,16 @@ from ..config import RenderConfig
 from .svgbuild import SvgDoc, esc
 from .textlayout import TextRun, normalize_words
 from .warnings import WarningCollector
+
+# Type for the optional progress callback. The pipeline calls it at real
+# work boundaries (one call per row placed, one when the raster step
+# starts, etc). None is the silent default for callers that don't need
+# streaming progress (the legacy /render endpoint, /download recompose).
+ProgressFn = Callable[[str, float, str], None]
+
+
+def _noop_progress(stage: str, frac: float, detail: str = "") -> None:
+    return None
 
 _MONO_FAMILY = "'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', monospace"
 _MONO_ADVANCE = 0.6  # glyph advance as a fraction of em for monospace fonts
@@ -517,6 +527,7 @@ def build_tonal_portrait(
     pivot: float = 0.34,
     ink: str = "mono",
     tone_density: float = 0.0,
+    progress: Optional[ProgressFn] = None,
 ) -> Tuple[str, List[TextRun]]:
     approved = normalize_words(words, uppercase)
     if not approved:
@@ -643,6 +654,12 @@ def build_tonal_portrait(
     # Seeded (reproducible) per-row jitter offsets break up the rigid column grid
     # so words don't form vertical "rivers" or horizontal banding.
     rng = np.random.default_rng(seed)
+    prog = progress or _noop_progress
+
+    # Map an internal region name to a stages key in jobs.STAGES so the
+    # progress reporter knows which bucket the emit() loop is filling.
+    _region_to_stage = {"body": "layout_body", "mid": "layout_mid",
+                        "face": "layout_face"}
 
     def emit(font: float, bx0: int, by0: int, bx1: int, by1: int, region: str, kind: str) -> None:
         """Lay one size tier of words over [bx0:bx1, by0:by1]. Every cell inside
@@ -662,7 +679,12 @@ def build_tonal_portrait(
         mg = cv2.resize(mask[by0:by1, bx0:bx1], (cols, rows), interpolation=cv2.INTER_AREA)
         csub = (cv2.resize(an.img.bgr[by0:by1, bx0:bx1], (cols, rows),
                            interpolation=cv2.INTER_AREA) if photo_ink else None)
+        stage_key = _region_to_stage.get(region, "")
         for r in range(rows):
+            if stage_key:
+                # Real fraction: rows actually emitted out of total rows in
+                # this tier. The bar advances only when emit() advances.
+                prog(stage_key, (r + 1) / float(rows), f"row {r + 1}/{rows}")
             ox = (rng.random() - 0.5) * cw * jitter
             oy = (rng.random() - 0.5) * rh * jitter * 0.5
             baseline = by0 + (r + 0.5) * rh + font * 0.34 + oy
@@ -756,9 +778,11 @@ def build_tonal_portrait(
                 )
 
     # Body: big, legible words across the silhouette, outside the head region.
+    prog("layout_body", 0.0, "starting outer tier")
     emit(body_font, 0, 0, W, H, "body", "primary")
     # Mid: medium words in the ring around the face (the large->small step-down).
     if mid_ov:
+        prog("layout_mid", 0.0, "starting mid tier")
         mx0 = min(cx - rx for cx, cy, rx, ry in mid_ov)
         my0 = min(cy - ry for cx, cy, rx, ry in mid_ov)
         mx1 = max(cx + rx for cx, cy, rx, ry in mid_ov)
@@ -767,6 +791,7 @@ def build_tonal_portrait(
     # Face: finer words to resolve nose/lips/features (exempt from the readable
     # min-font floor that governs the body, like the eye pass).
     if face_ov:
+        prog("layout_face", 0.0, "starting face tier")
         fx0 = min(cx - rx for cx, cy, rx, ry in face_ov)
         fy0 = min(cy - ry for cx, cy, rx, ry in face_ov)
         fx1 = max(cx + rx for cx, cy, rx, ry in face_ov)
@@ -777,6 +802,7 @@ def build_tonal_portrait(
     # ellipses (which the main grid skipped). Half-size glyphs, marked "detail"
     # so they're exempt from the readable min-font floor that governs the body.
     if eyes:
+        prog("layout_eyes", 0.0, "starting eye tier")
         fe = eye_font
         ecw, erh = fe * _MONO_ADVANCE, fe * 0.80
         ex0 = max(0, int(min(e[0] - e[2] for e in eyes)))
@@ -792,6 +818,7 @@ def build_tonal_portrait(
             csub = (cv2.resize(an.img.bgr[ey0:ey1, ex0:ex1], (cols_f, rows_f),
                                interpolation=cv2.INTER_AREA) if photo_ink else None)
             for rf in range(rows_f):
+                prog("layout_eyes", (rf + 1) / float(rows_f), f"eye row {rf + 1}/{rows_f}")
                 cyf = ey0 + (rf + 0.5) * erh
                 baseline = cyf + fe * 0.34
                 rowf = sub[rf]
@@ -874,6 +901,7 @@ def build_poster(
     pivot: float = 0.34,
     power: float = 1.0,
     level: float = 0.015,
+    progress: Optional[ProgressFn] = None,
 ) -> Tuple[str, List[TextRun]]:
     """Type-poster: the message in clean, fully-readable straight rows, with the
     portrait formed by per-letter brightness (tone), like a printed letter that
@@ -954,7 +982,10 @@ def build_poster(
     rows = max(1, int(H / rh))
     rng = np.random.default_rng(7)
     nwords = max(1, len(words))
+    prog = progress or _noop_progress
+    prog("layout_body", 0.0, "starting poster rows")
     for r in range(rows):
+        prog("layout_body", (r + 1) / float(rows), f"poster row {r + 1}/{rows}")
         # Start each row at a different point in the message AND a different
         # horizontal offset, so the repeating phrase doesn't stack into vertical
         # "rivers." (A sub-cell shift isn't enough -- the word boundaries realign.)
@@ -1084,7 +1115,9 @@ def _ground_hex(ink: str, light: bool) -> str:
 
 def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: WarningCollector,
                        ink: str = "mono", remove_bg: bool = True, light: bool = False,
-                       out_width: int = 1400, render_w: int = 2200, tone_density: float = 0.6):
+                       out_width: int = 1400, render_w: int = 2200,
+                       tone_density: float = 0.6,
+                       progress: Optional[ProgressFn] = None):
     """Layered portrait -> PNG bytes. style='message' = poster rows; else Words
     (mosaic) layout. Returns (png_bytes, runs, ground_hex, mask_svg)."""
     # The layout only needs glyph POSITIONS (we whiten them into a mask); the
@@ -1092,7 +1125,8 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
     # neutral ink so the ink choice never touches the layout (and we avoid the
     # mosaic's photo-ink colour path, which isn't needed here).
     if style == "message":
-        colored, runs = build_poster(an, text, cfg, warns, render_w=render_w, ink="mono", remove_bg=remove_bg)
+        colored, runs = build_poster(an, text, cfg, warns, render_w=render_w,
+                                     ink="mono", remove_bg=remove_bg, progress=progress)
     else:
         from .portrait import build_portrait
         words = [w for w in re.split(r"[\s,]+", text) if w]
@@ -1102,17 +1136,20 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         # mode and keep full dark-ink-on-paper shadows (the engraving look).
         eff_density = 0.0 if light else tone_density
         res = build_portrait(an, words, cfg, warns, uppercase=True, ink="mono",
-                             render_w=render_w, tone_density=eff_density)
+                             render_w=render_w, tone_density=eff_density,
+                             progress=progress)
         colored, runs = res.svg, res.runs
     ground_hex = _ground_hex(ink, light)
     if not colored:
         return b"", runs, ground_hex, ""
     mask_svg = _mask_svg(colored)
-    png = compose_layered(mask_svg, an, ink, remove_bg, out_width, light=light)
+    png = compose_layered(mask_svg, an, ink, remove_bg, out_width,
+                          light=light, progress=progress)
     return png, runs, ground_hex, mask_svg
 
 
-def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int, light: bool = False) -> bytes:
+def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int,
+                    light: bool = False, progress: Optional[ProgressFn] = None) -> bytes:
     """Composite the tinted photo through a prebuilt white-text mask SVG. Reused
     at download from the stored mask, so the costly layout build runs only once
     (at render), not again per sale."""
@@ -1120,7 +1157,14 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     from .raster import svg_to_png_bytes
     if not mask_svg:
         return b""
+    prog = progress or _noop_progress
+    # The rasteriser is one atomic CairoSVG call -- start/end is the only
+    # honest signal available. The bar holds at the stage's start until
+    # CairoSVG returns, then jumps; that IS the real timing.
+    prog("rasterize", 0.0, "rasterising text mask")
     mpng = svg_to_png_bytes(mask_svg, output_width=out_width)
+    prog("rasterize", 1.0, "rasterised")
+    prog("composite", 0.0, "tinting and compositing photo")
     mask = np.asarray(Image.open(io.BytesIO(mpng)).convert("L"))
     H, W = mask.shape[:2]
     photo = _tint_photo(an, W, H, ink, remove_bg, light=light).astype(np.float32)
@@ -1129,4 +1173,5 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     out = (ground + (photo - ground) * m).clip(0, 255).astype(np.uint8)
     buf = io.BytesIO()
     Image.fromarray(out).save(buf, format="PNG")
+    prog("composite", 1.0, "composited")
     return buf.getvalue()

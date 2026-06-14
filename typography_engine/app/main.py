@@ -6,16 +6,28 @@ Later phases add /render.
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import queue as _queue
+import threading
 import uuid
-from typing import List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, File, Form, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from . import admin as admin_mod
+from .jobs import (
+    Cancelled,
+    JobEvent,
+    ProgressReporter,
+    STAGE_LABELS,
+    STAGES,
+    registry as job_registry,
+)
 from .config import (
     CURRENCY,
     DOWNLOAD_PNG_WIDTH,
@@ -109,6 +121,12 @@ def _start_retention_sweeper() -> None:
         while True:
             try:
                 _cleanup_old_files()
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                # Reap finished in-memory job records so the registry
+                # doesn't grow unbounded over a long-running process.
+                job_registry.reap(older_than_seconds=600)
             except Exception:  # noqa: BLE001
                 pass
             time.sleep(12 * 3600)
@@ -372,6 +390,296 @@ async def render(
             "warnings": warns.as_list(),
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Streaming-progress render path
+#
+# /render/start  -- accepts the same form fields as /render but returns a
+#                   job_id immediately and runs the actual render in a
+#                   background thread.
+# /render/status/{job_id}  -- Server-Sent Events stream of real progress
+#                              events emitted from inside the pipeline.
+# /render/cancel/{job_id}  -- raises the cancel flag; pipeline stops mid-row.
+# /render/result/{job_id}  -- the final JSON, also delivered inline on the
+#                              terminal SSE event.
+#
+# The legacy synchronous /render endpoint is preserved above for callers
+# that don't need progress; both paths share the same pipeline.
+# ---------------------------------------------------------------------------
+
+
+def _build_render_params(
+    words: Optional[str], words_json: Optional[str],
+    min_font_px: Optional[float], background_hex: Optional[str],
+    foreground_hex: Optional[str], ink: str, style: str,
+    message: Optional[str], png_width: int, render_w: int,
+    remove_bg: bool, light: bool, uppercase: bool,
+) -> Dict[str, Any]:
+    """Normalise the form inputs once so the sync /render and the async
+    worker thread see the same shape."""
+    return {
+        "words": words, "words_json": words_json,
+        "min_font_px": min_font_px,
+        "background_hex": background_hex, "foreground_hex": foreground_hex,
+        "ink": ink, "style": style, "message": message,
+        "png_width": int(png_width), "render_w": int(render_w),
+        "remove_bg": bool(remove_bg), "light": bool(light),
+        "uppercase": bool(uppercase),
+    }
+
+
+def _run_render_worker(rec, img_bytes: bytes, params: Dict[str, Any]) -> None:
+    """The actual render, with a ProgressReporter wired through. Runs in a
+    background thread; reports stages as the pipeline crosses them."""
+    reporter = ProgressReporter(rec)
+    warns = WarningCollector()
+
+    try:
+        word_list = _parse_words(params["words"], params["words_json"])
+        if not word_list:
+            reporter.error("no_words")
+            return
+
+        cfg = RenderConfig()
+        if params["min_font_px"] is not None:
+            cfg.min_font_px = float(params["min_font_px"])
+        if params["background_hex"]:
+            cfg.background_hex = params["background_hex"]
+        if params["foreground_hex"]:
+            cfg.foreground_hex = params["foreground_hex"]
+        try:
+            cfg.validate()
+        except ValueError as e:
+            reporter.error(f"bad_config: {e}")
+            return
+
+        # ---- analyze --------------------------------------------------------
+        reporter("analyze", 0.0, "detecting face and silhouette")
+        try:
+            an = analyze_image(img_bytes, cfg, warns)
+        except ValueError as e:
+            reporter.error(str(e))
+            return
+        reporter("analyze", 1.0, "face and silhouette ready")
+
+        gate = assess_portrait_input(an)
+        for issue in gate:
+            (warns.error if issue.severity == "error" else warns.warn)(
+                "input", issue.code, issue.message)
+        blocking = [i for i in gate if i.severity == "error"]
+        if blocking:
+            reporter.error(f"unsuitable_image: {blocking[0].message}")
+            return
+
+        from .pipeline.tonal import _PALETTES, _GRADIENTS, render_layered_png
+        ink_choice = params["ink"] if (params["ink"] in _PALETTES or params["ink"] in _GRADIENTS
+                                        or params["ink"] == "photo") else "navy"
+        style_choice = "message" if params["style"] in ("message", "poster", "story") else "words"
+        render_w_eff = max(700, min(3000, params["render_w"]))
+        is_thumb = params["png_width"] < 600
+
+        if style_choice == "words":
+            text = " ".join(word_list) or (params["message"] or "").strip()
+        else:
+            text = (params["message"] or "").strip() or " ".join(word_list)
+
+        # ---- layout + rasterise + composite (all inside render_layered_png) -
+        preview_w = min(params["png_width"], PREVIEW_PNG_WIDTH)
+        try:
+            png_bytes, runs, ground_hex, mask_svg = render_layered_png(
+                an, text, style_choice, cfg, warns,
+                ink=ink_choice, remove_bg=params["remove_bg"],
+                light=params["light"], out_width=max(320, preview_w),
+                render_w=render_w_eff, progress=reporter)
+        except Cancelled:
+            reporter.cancelled()
+            return
+        except ValueError as e:
+            reporter.error(str(e))
+            return
+        except Exception as e:  # noqa: BLE001
+            reporter.error(f"render_failed: {e}")
+            return
+
+        if warns.has_errors() or not png_bytes:
+            reporter.error("render_incomplete")
+            return
+
+        # ---- watermark ------------------------------------------------------
+        reporter("watermark", 0.0, "watermarking preview")
+        job_id = rec.job_id
+        preview_path = OUTPUTS_DIR / f"{job_id}_preview.png"
+        try:
+            from .pipeline.watermark import add_watermark
+            preview_path.write_bytes(add_watermark(png_bytes, url=WATERMARK_URL))
+        except Exception as e:  # noqa: BLE001
+            warns.warn("render", "preview_failed", f"Watermark failed: {e}")
+            preview_path.write_bytes(png_bytes)
+        reporter("watermark", 1.0, "watermark applied")
+
+        # ---- persist recipe (so the paid download can recompose) ------------
+        reporter("persist", 0.0, "saving recipe")
+        if not is_thumb:
+            (PRIVATE_DIR / f"{job_id}.src").write_bytes(img_bytes)
+            if mask_svg:
+                (PRIVATE_DIR / f"{job_id}.mask.svg").write_text(mask_svg, encoding="utf-8")
+            (PRIVATE_DIR / f"{job_id}.json").write_text(json.dumps({
+                "style": style_choice, "ink": ink_choice,
+                "remove_bg": bool(params["remove_bg"]),
+                "light": bool(params["light"]), "text": text,
+                "uppercase": bool(params["uppercase"]),
+            }), encoding="utf-8")
+        reporter("persist", 1.0, "saved")
+
+        reporter.done({
+            "ok": True,
+            "job_id": job_id,
+            "job": job_id,
+            "faces": len(an.faces),
+            "ink": ink_choice,
+            "style": style_choice,
+            "words_used": word_list,
+            "text_runs": [
+                {"region": r.region, "font_size": r.font_size,
+                 "kind": r.kind, "chars": len(r.text)} for r in runs],
+            "preview": f"/outputs/{preview_path.name}" if preview_path.exists() else None,
+            "price_cents": DOWNLOAD_PRICE_CENTS,
+            "currency": CURRENCY,
+            "warnings": warns.as_list(),
+        })
+    except Cancelled:
+        reporter.cancelled()
+    except Exception as e:  # noqa: BLE001
+        reporter.error(f"worker_crash: {e}")
+
+
+@app.post("/render/start")
+async def render_start(
+    image: UploadFile = File(...),
+    words: Optional[str] = Form(None),
+    words_json: Optional[str] = Form(None),
+    min_font_px: Optional[float] = Form(None),
+    uppercase: bool = Form(True),
+    background_hex: Optional[str] = Form(None),
+    foreground_hex: Optional[str] = Form(None),
+    ink: str = Form("navy"),
+    style: str = Form("mosaic"),
+    message: Optional[str] = Form(None),
+    png_width: int = Form(2000),
+    render_w: int = Form(2600),
+    remove_bg: bool = Form(True),
+    light: bool = Form(False),
+) -> JSONResponse:
+    """Kick off an async render. Returns the job_id; the client subscribes
+    to /render/status/{job_id} for real-time progress events."""
+    img_bytes = await image.read()
+    if not img_bytes:
+        return JSONResponse({"ok": False, "error": "empty_upload"}, status_code=400)
+
+    params = _build_render_params(
+        words, words_json, min_font_px, background_hex, foreground_hex,
+        ink, style, message, png_width, render_w, remove_bg, light, uppercase)
+
+    rec = job_registry.new()
+    thread = threading.Thread(
+        target=_run_render_worker, args=(rec, img_bytes, params),
+        name=f"render-{rec.job_id}", daemon=True)
+    thread.start()
+    return JSONResponse({
+        "ok": True,
+        "job_id": rec.job_id,
+        "status_url": f"/render/status/{rec.job_id}",
+        "cancel_url": f"/render/cancel/{rec.job_id}",
+        "result_url": f"/render/result/{rec.job_id}",
+    })
+
+
+def _sse_format(event: JobEvent) -> str:
+    return f"event: {event.type}\ndata: {json.dumps(event.to_dict())}\n\n"
+
+
+@app.get("/render/status/{job_id}")
+async def render_status(job_id: str):
+    """Server-Sent Events stream for an in-flight job. Each event is one
+    real progress tick emitted by the pipeline. Terminates on done /
+    error / cancelled."""
+    rec = job_registry.get(job_id)
+    if rec is None:
+        return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+
+    async def event_stream():
+        # If the job has already finished before the client subscribed,
+        # replay the final event and close immediately -- the reporter
+        # always stashes it on rec.final_event.
+        if rec.done.is_set() and rec.final_event is not None:
+            yield _sse_format(rec.final_event)
+            return
+        # First event: tell the client the stage layout so it can draw
+        # the bar even before the first progress tick arrives.
+        yield "event: init\n" + "data: " + json.dumps({
+            "type": "init", "job_id": job_id,
+            "stages": [{"key": s, "label": STAGE_LABELS[s]} for s in STAGES],
+        }) + "\n\n"
+        while True:
+            try:
+                ev = await asyncio.to_thread(rec.queue.get, True, 15.0)
+            except _queue.Empty:
+                # SSE-comment keepalive so proxies don't close the idle
+                # socket. The client treats it as a no-op.
+                yield ": keepalive\n\n"
+                continue
+            yield _sse_format(ev)
+            if ev.type in ("done", "error", "cancelled"):
+                return
+
+    headers = {
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",  # disable nginx buffering on Cloudflare/etc
+    }
+    return StreamingResponse(event_stream(), media_type="text/event-stream",
+                             headers=headers)
+
+
+@app.post("/render/cancel/{job_id}")
+def render_cancel(job_id: str) -> JSONResponse:
+    """Raise the cancel flag for an in-flight job. The pipeline's progress
+    callback checks the flag and raises Cancelled at the next work
+    boundary; the worker thread emits a 'cancelled' SSE event."""
+    rec = job_registry.get(job_id)
+    if rec is None:
+        return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    rec.cancel.set()
+    return JSONResponse({"ok": True, "job_id": job_id, "cancel_requested": True})
+
+
+@app.get("/render/result/{job_id}")
+def render_result(job_id: str) -> JSONResponse:
+    """Return the final render result (same shape as /render's JSON). 404
+    if unknown, 425 if still running -- the client should subscribe to
+    /render/status/{job_id} for progress, not poll this."""
+    rec = job_registry.get(job_id)
+    if rec is None:
+        return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    if not rec.done.is_set() or rec.final_event is None:
+        return JSONResponse({"ok": False, "error": "not_ready"}, status_code=425)
+    ev = rec.final_event
+    if ev.type == "done" and ev.result is not None:
+        return JSONResponse(ev.result)
+    if ev.type == "error":
+        return JSONResponse({"ok": False, "error": ev.error}, status_code=422)
+    return JSONResponse({"ok": False, "error": ev.type}, status_code=409)
+
+
+@app.get("/render/stages")
+def render_stages() -> JSONResponse:
+    """Single source of truth for the stage list + labels. The UI fetches
+    this once at startup so the progress bar labels stay in sync with the
+    pipeline without a separate hardcoded copy."""
+    return JSONResponse({
+        "stages": [{"key": s, "label": STAGE_LABELS[s]} for s in STAGES],
+    })
 
 
 @app.get("/pricing")

@@ -77,14 +77,20 @@
   .busy.anim{background:transparent}
   .busy.anim .spin{display:none}
   .busy.anim .msg{display:none}   /* status text moves out of the canvas -> .compose-status below the frame */
-  .compose-status{display:none;flex-direction:column;align-items:center;margin-top:16px}
+  .compose-status{display:none;flex-direction:column;align-items:center;margin-top:16px;width:100%}
   .compose-status.on{display:flex}
   .compose-status .cs-line{display:flex;align-items:center;gap:10px;font-family:var(--serif);color:var(--navy);font-size:16px}
   .compose-status .dot{width:9px;height:9px;border-radius:50%;background:var(--navy);animation:cpulse 1s ease-in-out infinite}
   @keyframes cpulse{0%,100%{opacity:.25;transform:scale(.65)}50%{opacity:1;transform:scale(1)}}
-  .compose-bar{position:relative;height:3px;width:180px;margin-top:12px;border-radius:999px;background:var(--line);overflow:hidden}
-  .compose-bar::after{content:"";position:absolute;top:0;left:-40%;height:100%;width:40%;border-radius:999px;background:var(--navy);animation:cbar 1.15s ease-in-out infinite}
-  @keyframes cbar{to{left:100%}}
+  /* Real progress bar: width is driven by the SSE `overall` value -- the
+     fill ONLY moves when the pipeline reports work. No CSS animation. */
+  .compose-bar{position:relative;height:5px;width:240px;margin-top:12px;border-radius:999px;background:var(--line);overflow:hidden}
+  .compose-bar .fill{position:absolute;top:0;left:0;height:100%;width:0%;background:var(--navy);border-radius:999px;transition:width .25s linear}
+  .compose-meta{display:flex;justify-content:space-between;align-items:center;width:240px;margin-top:6px;font-size:12px;color:var(--muted);font-family:var(--sans)}
+  .compose-meta .pct{font-variant-numeric:tabular-nums;color:var(--navy);font-weight:600}
+  .compose-meta .eta{font-variant-numeric:tabular-nums}
+  .compose-cancel{margin-top:10px;background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;padding:4px 8px}
+  .compose-cancel:hover{color:var(--navy)}
   .opts{margin-top:10px;border-top:1px solid var(--line);padding-top:4px}
 
   /* iOS-style filter carousel: each swatch is a live thumbnail of THIS portrait */
@@ -200,8 +206,13 @@
       </div>
     </div>
     <div id="composeStatus" class="compose-status" aria-live="polite">
-      <div class="cs-line"><span class="dot"></span><span id="composeMsg">Finding the face&hellip;</span></div>
-      <div class="compose-bar"></div>
+      <div class="cs-line"><span class="dot"></span><span id="composeMsg">Starting&hellip;</span></div>
+      <div class="compose-bar"><div class="fill" id="composeFill"></div></div>
+      <div class="compose-meta">
+        <span class="pct" id="composePct">0%</span>
+        <span class="eta" id="composeEta">calculating&hellip;</span>
+      </div>
+      <button type="button" id="composeCancel" class="compose-cancel" style="display:none">Cancel</button>
     </div>
     <button type="button" id="zoomBtn" class="zoomlink">&#128269; View up close</button>
     <div class="carousel">
@@ -521,22 +532,111 @@ function startAssembly(){
   })(t0);
 }
 function stopAssembly(){ if(animRAF){ cancelAnimationFrame(animRAF); animRAF=0; } canvas.style.display="none"; busy.classList.remove("anim"); stopComposeStatus(); }
-let msgTimer=0;
-const COMPOSE_MSGS=["Finding the face…","Placing your words…","Composing your portrait…","Adding the finishing touches…"];
-function startComposeStatus(){
-  const cs=$("#composeStatus"), m=$("#composeMsg"); if(!cs) return;
-  cs.classList.add("on"); let i=0; if(m) m.textContent=COMPOSE_MSGS[0];
-  clearInterval(msgTimer);
-  msgTimer=setInterval(()=>{ i=(i+1)%COMPOSE_MSGS.length; if(m) m.textContent=COMPOSE_MSGS[i]; }, 1600);
+
+/* ---------- real progress: driven by /render/status SSE events ----------
+   Every UI tick (label, %, ETA) is sourced from a server event emitted at
+   a real pipeline boundary -- never from a setInterval timer or a
+   cosmetic easing function. Honest by construction: if the pipeline
+   stalls, the bar stalls too. */
+let activeES=null, activeJob=null;
+function fmtETA(secs){
+  if(secs==null || !isFinite(secs)) return "calculating…";
+  if(secs<1) return "almost done";
+  if(secs<60) return Math.ceil(secs)+"s remaining";
+  const m=Math.floor(secs/60), s=Math.round(secs%60);
+  return m+"m "+(s<10?"0":"")+s+"s remaining";
 }
-function stopComposeStatus(){ clearInterval(msgTimer); msgTimer=0; const cs=document.getElementById("composeStatus"); if(cs) cs.classList.remove("on"); }
+function startComposeStatus(){
+  const cs=$("#composeStatus"); if(!cs) return;
+  cs.classList.add("on");
+  const m=$("#composeMsg"); if(m) m.textContent="Starting…";
+  const f=$("#composeFill"); if(f) f.style.width="0%";
+  const p=$("#composePct"); if(p) p.textContent="0%";
+  const e=$("#composeEta"); if(e) e.textContent="calculating…";
+  const c=$("#composeCancel"); if(c) c.style.display="inline-block";
+}
+function stopComposeStatus(){
+  const cs=document.getElementById("composeStatus"); if(cs) cs.classList.remove("on");
+  const c=document.getElementById("composeCancel"); if(c) c.style.display="none";
+  if(activeES){ try{activeES.close();}catch(_){} activeES=null; }
+  activeJob=null;
+}
+function applyProgressEvent(ev){
+  const m=$("#composeMsg"); if(m && ev.stage_label) m.textContent=ev.stage_label+"…";
+  const overall=Math.max(0, Math.min(1, ev.overall||0));
+  const f=$("#composeFill"); if(f) f.style.width=(overall*100).toFixed(1)+"%";
+  const p=$("#composePct"); if(p) p.textContent=Math.round(overall*100)+"%";
+  const e=$("#composeEta"); if(e) e.textContent=fmtETA(ev.eta_seconds);
+}
+const cancelBtn=document.getElementById("composeCancel");
+if(cancelBtn){
+  cancelBtn.onclick=function(){
+    if(!activeJob) return;
+    cancelBtn.disabled=true; cancelBtn.textContent="Cancelling…";
+    fetch("/render/cancel/"+encodeURIComponent(activeJob),{method:"POST"})
+      .catch(function(){})
+      .finally(function(){ cancelBtn.disabled=false; cancelBtn.textContent="Cancel"; });
+  };
+}
 function showBusy(animate){
   errResult.style.display="none"; $(".msg").textContent="Composing from your words…";
   busy.classList.remove("hide");
-  // Show the word-assembly for the first Create — meaningful progress feedback,
-  // played for everyone (it's brief and on-brand, not gratuitous motion).
+  // The word-assembly canvas + the real progress meter run together: the
+  // canvas is on-brand motion, the meter is the honest signal.
   if(animate){ busy.classList.add("anim"); compareEl.classList.add("hide-cmp"); startComposeStatus(); startAssembly(); }
   else { stopAssembly(); }
+}
+async function streamRender(fd, myGen){
+  // POST to /render/start, get back a job_id, then subscribe to the SSE
+  // stream and resolve when we see a terminal event. Thumb/background
+  // renders skip this and use the legacy synchronous /render.
+  const r=await fetch("/render/start",{method:"POST",body:fd});
+  const data=await r.json();
+  if(!r.ok || !data.ok) return data;
+  activeJob=data.job_id;
+  return new Promise(function(resolve){
+    const es=new EventSource(data.status_url);
+    activeES=es;
+    let finalResult=null;
+    es.addEventListener("init", function(){/* stages list; bar is already at 0 */});
+    es.addEventListener("progress", function(e){
+      if(myGen!==gen){ try{es.close();}catch(_){} activeES=null; resolve({ok:false,error:"superseded"}); return; }
+      try{ applyProgressEvent(JSON.parse(e.data)); }catch(_){}
+    });
+    es.addEventListener("stage_done", function(e){
+      if(myGen!==gen){ try{es.close();}catch(_){} activeES=null; resolve({ok:false,error:"superseded"}); return; }
+      try{ applyProgressEvent(JSON.parse(e.data)); }catch(_){}
+    });
+    es.addEventListener("done", function(e){
+      try{ const ev=JSON.parse(e.data); applyProgressEvent(ev); finalResult=ev.result||{ok:true}; }catch(_){ finalResult={ok:true}; }
+      try{es.close();}catch(_){} activeES=null;
+      resolve(finalResult);
+    });
+    es.addEventListener("error", function(e){
+      let err="render_failed";
+      try{ err=(JSON.parse(e.data)||{}).error||err; }catch(_){}
+      try{es.close();}catch(_){} activeES=null;
+      resolve({ok:false, error:err});
+    });
+    es.addEventListener("cancelled", function(){
+      try{es.close();}catch(_){} activeES=null;
+      resolve({ok:false, error:"cancelled"});
+    });
+    es.onerror=function(){
+      // Network drop / proxy timeout. Fall back to polling /render/result
+      // -- the worker is still running server-side and will have stashed
+      // its final event. If that 404s we report a network error.
+      try{es.close();}catch(_){} activeES=null;
+      fetch("/render/result/"+encodeURIComponent(data.job_id))
+        .then(function(rr){ return rr.json().then(function(j){ return {status:rr.status, body:j}; }); })
+        .then(function(x){
+          if(x.status===200 && x.body && x.body.ok!==false) resolve(x.body);
+          else if(x.status===425) resolve({ok:false, error:"network_dropped"});
+          else resolve(x.body || {ok:false, error:"network_error"});
+        })
+        .catch(function(){ resolve({ok:false, error:"network_error"}); });
+    };
+  });
 }
 async function render(ink,{animate=false,background=false,thumb=false}={}){
   if(!state.file) return;
@@ -555,11 +655,19 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     fd.append("png_width","1500");
   }
   try{
-    const r=await fetch("/render",{method:"POST",body:fd}); const data=await r.json();
+    let data;
+    if(thumb || background){
+      // Swatch thumbnails and background prewarms don't show progress to
+      // the user, so they use the legacy single-shot /render path.
+      const r=await fetch("/render",{method:"POST",body:fd}); data=await r.json();
+      if(!r.ok && !data) data={ok:false, error:"http_"+r.status};
+    } else {
+      data=await streamRender(fd, myGen);
+    }
     if(myGen!==gen) return;                 // photo/words/poster changed mid-render -> drop
-    if(!r.ok||!data.ok){
+    if(!data || !data.ok){
       if(background || thumb) return;
-      const msg=data.detail||friendly(data.error)||"Something went wrong. Try another photo.";
+      const msg=(data&&data.detail)||friendly(data&&data.error)||"Something went wrong. Try another photo.";
       if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; errInput.textContent=msg; errInput.style.display="block"; }
       else { errResult.textContent=msg; errResult.style.display="block"; }
       stopAssembly(); busy.classList.add("hide"); return;
