@@ -364,14 +364,20 @@ def render_displacement_portrait(
         shade = np.clip((gray / 255.0 - 0.18) / 0.55, 0.0, 1.0)
         wash = (scl * shade * 0.72)[..., None]
         out = out * (1.0 - wash) + np.array((196, 202, 210), np.float32) * wash
-    # Teeth (open mouth, dark ground): the cleared inner mouth takes a soft off-
-    # white where the photo is bright (the teeth) and falls to ground in the dark
-    # inter-tooth gap -- so a smile reads as teeth, never as a row of glyphs.
+    # Teeth (open mouth, dark ground): the cleared inner mouth takes the photo's
+    # OWN pixels -- real ivory and shading sampled from the source, not an invented
+    # white -- so a smile reads as the subject's actual teeth. Blended just shy of
+    # full so a touch of the ground settles the patch into the portrait's mood.
     if teeth is not None and g["tone"] == "light":
-        tshade = np.clip((gray / 255.0 - 0.30) / 0.50, 0.0, 1.0)[..., None]
-        tcol = np.array(g["bg"], np.float32) * (1.0 - tshade) + np.array((216, 222, 224), np.float32) * tshade
-        tw = (teeth * 0.92)[..., None]
-        out = out * (1.0 - tw) + tcol * tw
+        src = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+        # Pull the sampled patch toward neutral: teeth are near-grey already, so
+        # this barely touches them but mutes any lip red the inner-lip hull catches,
+        # so the mouth settles into the navy portrait instead of reading as a
+        # full-colour photo cut-out. Real luminance and shading are preserved.
+        g3 = cv2.cvtColor(np.clip(src, 0, 255).astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32)[..., None]
+        src = src * 0.45 + g3 * 0.55
+        tw = (teeth * 0.85)[..., None]
+        out = out * (1.0 - tw) + src * tw
     # Catchlight is a SPECULAR highlight: always white (the lightest thing on the
     # face), never ink- or iris-coloured -- painted over the colour composite.
     if irises and g["tone"] == "light":

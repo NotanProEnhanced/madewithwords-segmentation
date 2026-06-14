@@ -1577,15 +1577,14 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             out = (out.astype(np.float32) * (1.0 - wash)
                    + np.array((210, 202, 196), np.float32) * wash).clip(0, 255).astype(np.uint8)
         # Teeth carry NO typography. Where the mouth is open, clear the glyphs from
-        # the inner mouth: bright pixels (the teeth) take a soft off-white that
-        # follows the photo's own shading; the dark inter-tooth gap falls to ground.
+        # the inner mouth and let the photo's OWN pixels show through -- the same
+        # tinted source the rest of the portrait is built from, so the teeth keep
+        # their real ivory and shading and match the face, never an invented white.
         # A closed mouth yields no mask, so it is left exactly as composed.
         tm = _teeth_mask(_faces_of(an)[0].points * fsc0 if _faces_of(an) else None, H, W)
         if tm is not None:
-            tshade = np.clip((gl0 - 0.30) / 0.50, 0.0, 1.0)[..., None]
-            teeth = ground * (1.0 - tshade) + np.array((224, 222, 216), np.float32) * tshade
-            tw = (tm * 0.92)[..., None]
-            out = (out.astype(np.float32) * (1.0 - tw) + teeth * tw).clip(0, 255).astype(np.uint8)
+            tw = (tm * 0.90)[..., None]
+            out = (out.astype(np.float32) * (1.0 - tw) + photo * tw).clip(0, 255).astype(np.uint8)
         glints = _catchlight_points(an)                   # working coords
         if glints:
             fsc = W / float(an.img.gray.shape[1])
