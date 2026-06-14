@@ -884,14 +884,18 @@ function renderProducts(data){
   const cur = data.currency || "usd";
   CATALOG = (data.products||[]).map(p=>({...p, currency:cur}));
   if(!data.fulfillment_configured) return;               // stay digital-only
-  // Order is brand-aware. Loved in Words is a memorial keepsake brand: it leads
-  // with the framed/print keepsakes and puts the digital download BENEATH them.
-  // Every other brand keeps the digital download first (the entry product). The
-  // sort key is physical-first (0) vs digital (1); the direction flips per brand.
-  const printsFirst = (typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords");
-  const order = CATALOG.slice().sort((a,b)=>{
+  // Presentation is brand-aware. Loved in Words is a memorial keepsake brand, so:
+  //  - apparel (a t-shirt of someone who has passed) is tonally off -> hidden;
+  //  - the lineup leads with the framed/print keepsakes and puts the digital
+  //    download BENEATH them (the print is the hero; digital is the alternative).
+  // Every other brand shows the full catalog with the digital download first (the
+  // entry product). Sort key is physical-first (0) vs digital (1), flipped per brand.
+  const isLoved = (typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords");
+  let items = CATALOG.slice();
+  if(isLoved) items = items.filter(p=>!String(p.sku).startsWith("tshirt"));
+  const order = items.sort((a,b)=>{
     const av=a.physical?0:1, bv=b.physical?0:1;
-    return printsFirst ? (av-bv) : (bv-av);
+    return isLoved ? (av-bv) : (bv-av);
   });
   const list = $("#productList"); list.innerHTML="";
   order.forEach(p=>{
