@@ -834,7 +834,14 @@ def _fulfill_with_printful(order_id: str, recipient: dict) -> None:
     try:
         prod = products.get(str(o["sku"]))
         aspect = prod.print_aspect if prod else _PRINT_ASPECT
-        signed = printful.signed_print_url(o["job_id"], aspect=aspect)
+        # Warm the print file in the background so Printful's fetch is served from
+        # cache: the high-res compose takes ~30-45s and we don't want it to land on
+        # Printful's fetch timeout. Idempotent -- the signed URL still composes
+        # lazily as a fallback if the warm hasn't finished by the time they fetch.
+        import threading
+        job_id = o["job_id"]
+        threading.Thread(target=lambda: _ensure_clean_png(job_id, aspect), daemon=True).start()
+        signed = printful.signed_print_url(job_id, aspect=aspect)
         placement = "front" if str(o["sku"]).startswith("tshirt") else "default"
         res = printful.create_order(
             recipient=recipient,
@@ -1390,7 +1397,7 @@ def success(job: str, session_id: str):
         inner = (
             '<div class="check">&#10003;</div>'
             '<h1>Your Typortrait is ready</h1>'
-            '<p class="sub" id="sub">Preparing your high-resolution file — this can take a few seconds…</p>'
+            '<p class="sub" id="sub">Preparing your high-resolution file — this can take up to a minute…</p>'
             '<button class="btn" id="dl" disabled><span class="spin"></span>Preparing…</button>'
             '<button class="btn ghost" id="sh">Share</button>'
             '<p class="note">Watermark-free, print-quality — ready to print or share.</p>'

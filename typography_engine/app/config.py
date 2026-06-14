@@ -143,7 +143,11 @@ ORDERS_DB = DATA_DIR / "orders.db"
 # rendered at print resolution (lazily, at download time) so the one expensive
 # big raster runs once per sale, not on every preview/swatch.
 PREVIEW_PNG_WIDTH = env_int("TYPO_PREVIEW_PX", 1400)
-DOWNLOAD_PNG_WIDTH = env_int("TYPO_DOWNLOAD_PX", 2600)   # ~8.7in at 300dpi; fast to compose
+# Print/download long-edge width in px. 3600 clears Printful's 150-PPI floor with
+# margin on every catalogued size: 225 PPI on 16x20, 200 PPI on 18x24 (the widest
+# product) -- crisp paper prints, ~35s to compose (warmed in the background at
+# fulfilment, behind a spinner for the digital download). Bump to 4320 for 240 PPI.
+DOWNLOAD_PNG_WIDTH = env_int("TYPO_DOWNLOAD_PX", 3600)
 # Uploaded photos, previews and generated files are auto-deleted after this many
 # days so the Privacy Policy's retention statement stays accurate.
 RETENTION_DAYS = env_int("TYPO_RETENTION_DAYS", 30)
