@@ -427,8 +427,14 @@ const state = { file:null, ink:"photo", style:"words", fmt:"png", removeBg:true,
 const _qp=new URLSearchParams(location.search);
 // Registry of brand front-ends — same engine, different face. `host` lets the
 // studio also recognize the brand from the referring domain. Add partners here.
+// A brand re-dresses this one engine: name/tagline/title, an optional softer
+// colour theme (CSS-var overrides), and an opening default look. `style`/`ink`
+// set the first render; `pinStyle` keeps that style (the recommender still hints
+// the best fit as a badge, but doesn't auto-switch away from the brand's look).
 const BRANDS={
-  lovedinwords:{ name:"Loved in Words", tag:"A portrait of a life, in the words that describe them.", title:"Loved in Words — a remembrance portrait made from words", host:"lovedinwords.com" }
+  lovedinwords:{ name:"Loved in Words", tag:"A portrait of a life, in the words that describe them.", title:"Loved in Words — a remembrance portrait made from words", host:"lovedinwords.com",
+    style:"displacement", ink:"photo", pinStyle:true,
+    theme:{ "--navy":"#42525f", "--ink":"#2f3742", "--paper":"#f4efe8", "--card":"#fffdf9", "--line":"#e7e0d5", "--muted":"#776f64" } }
 };
 function _brandFromReferrer(){
   try{
@@ -452,6 +458,7 @@ if(BRAND){
     document.title=BRAND.title||BRAND.name;
     const _bn=document.querySelector("header .brand"); if(_bn) _bn.textContent=BRAND.name;
     const _tg=document.querySelector("header .tag"); if(_tg) _tg.textContent=BRAND.tag;
+    if(BRAND.theme){ const rs=document.documentElement.style; for(const k in BRAND.theme) rs.setProperty(k, BRAND.theme[k]); }
   }catch(e){}
 }
 // Every render is presented as a framed keepsake in a room: a portrait shot
@@ -642,6 +649,13 @@ function rebuildSwatches(){
   invalidate();            // renders depend on style+variant -> drop stale caches
   buildSwatches();
 }
+// Brand opening look: e.g. Loved in Words opens on Sculpt + Photo (the most
+// lifelike for a remembrance portrait). setStyle syncs the control + labels and,
+// since the style changes from the default, rebuilds the swatch strip.
+if(BRAND){
+  if(BRAND.ink) state.ink=BRAND.ink;
+  if(BRAND.style && BRAND.style!==state.style) setStyle(BRAND.style, false);
+}
 function markSel(){
   [...swatchEl.children].forEach(c=>c.classList.toggle("sel",c.dataset.ink===state.ink));
   const sel=swatchEl.querySelector(".thumb.sel");
@@ -788,6 +802,12 @@ async function recommendStyle(){
     return;
   }
   if(userTouched){
+    if(note){ note.textContent="✦ "+STYLE_NAMES[best]+" suits this photo best — tap to see."; note.style.display=""; }
+    return;
+  }
+  if(BRAND && BRAND.pinStyle){
+    // Brand pins its opening look (e.g. Loved in Words -> Sculpt): hint the best
+    // fit as a tappable badge, but never auto-switch away from the brand's style.
     if(note){ note.textContent="✦ "+STYLE_NAMES[best]+" suits this photo best — tap to see."; note.style.display=""; }
     return;
   }
