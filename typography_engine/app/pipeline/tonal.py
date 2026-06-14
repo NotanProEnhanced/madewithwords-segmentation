@@ -410,7 +410,9 @@ def _teeth_mask(pts, h: int, w: int):
         return None
     mm = np.zeros((h, w), np.float32)
     cv2.fillConvexPoly(mm, cv2.convexHull(p.astype(np.int32)), 1.0)
-    return cv2.GaussianBlur(mm, (0, 0), max(1.0, pw * 0.05))
+    # Tight feather: enough to anti-alias the boundary, not so much that the teeth
+    # blur into the lips (the fill itself is unsharp-masked to read crisp).
+    return cv2.GaussianBlur(mm, (0, 0), max(1.0, pw * 0.03))
 
 
 def _catchlight_points(an) -> List[Tuple[float, float, float]]:
@@ -1545,7 +1547,6 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         # painted as a soft warm-white modulated by the photo's own shading so the
         # eye keeps its natural gradient -- not a flat disc, dimmer than glyphs.
         fsc0 = W / float(an.img.gray.shape[1])
-        gl0 = cv2.resize(an.img.gray, (W, H), interpolation=cv2.INTER_LINEAR).astype(np.float32) / 255.0
         eyes_e = _eye_ellipses(an, fsc0)
         iris_c = _iris_circles(an, fsc0)
         if eyes_e:
@@ -1560,8 +1561,10 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
                 lm = cv2.GaussianBlur(lm, (0, 0), sigmaX=max(1.0, ir_mean * 0.05))[..., None]
                 out = (out.astype(np.float32) * (1.0 - 0.60 * lm)
                        + ground * (0.60 * lm)).clip(0, 255).astype(np.uint8)
-            # Sclera (eye ellipse minus iris): bright, lightly-warm off-white,
-            # shading-modulated with a high floor so the whites clearly read.
+            # Sclera (eye ellipse minus iris): no typography on the whites. Let the
+            # photo's OWN eye-white show through -- its real brightness and gradient,
+            # calibrated to this face -- never an invented tone that flattens into a
+            # glowing disc. (The catchlight below is the one true specular white.)
             sm = np.zeros((H, W), np.float32)
             for ex, ey, rx, ry in eyes_e:
                 cv2.ellipse(sm, (int(round(ex)), int(round(ey))),
@@ -1569,13 +1572,8 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             for icx, icy, irr in iris_c:
                 cv2.circle(sm, (int(round(icx)), int(round(icy))), int(round(irr)), 0.0, -1, cv2.LINE_AA)
             sm = cv2.GaussianBlur(sm, (0, 0), sigmaX=max(1.0, float(np.mean([e[2] for e in eyes_e])) * 0.10))
-            # Modest lift of the photo's OWN eye-white shading, no floor -- the
-            # natural gradient (bright lower sclera, shadow under the upper lid)
-            # survives, so the eye never glows as a flat bright disc.
-            shade = np.clip((gl0 - 0.18) / 0.55, 0.0, 1.0)
-            wash = (sm * shade * 0.72)[..., None]
-            out = (out.astype(np.float32) * (1.0 - wash)
-                   + np.array((210, 202, 196), np.float32) * wash).clip(0, 255).astype(np.uint8)
+            wash = (sm * 0.88)[..., None]
+            out = (out.astype(np.float32) * (1.0 - wash) + photo * wash).clip(0, 255).astype(np.uint8)
         # Teeth carry NO typography. Where the mouth is open, clear the glyphs from
         # the inner mouth and let the photo's OWN pixels show through -- the same
         # tinted source the rest of the portrait is built from, so the teeth keep
@@ -1583,8 +1581,12 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         # A closed mouth yields no mask, so it is left exactly as composed.
         tm = _teeth_mask(_faces_of(an)[0].points * fsc0 if _faces_of(an) else None, H, W)
         if tm is not None:
-            tw = (tm * 0.90)[..., None]
-            out = (out.astype(np.float32) * (1.0 - tw) + photo * tw).clip(0, 255).astype(np.uint8)
+            # The mouth is a small source region scaled up, so the bare photo reads
+            # soft against the crisp type. Unsharp-mask the fill so the tooth edges
+            # and gum line are defined -- crisp teeth, still the photo's own tone.
+            ph_sharp = cv2.addWeighted(photo, 1.7, cv2.GaussianBlur(photo, (0, 0), 1.4), -0.7, 0.0)
+            tw = (tm * 0.92)[..., None]
+            out = (out.astype(np.float32) * (1.0 - tw) + ph_sharp * tw).clip(0, 255).astype(np.uint8)
         glints = _catchlight_points(an)                   # working coords
         if glints:
             fsc = W / float(an.img.gray.shape[1])

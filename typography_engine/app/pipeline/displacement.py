@@ -356,28 +356,25 @@ def render_displacement_portrait(
     if irises and g["tone"] == "light":
         lim = limbal[..., None]
         out = out * (1.0 - 0.60 * lim) + np.array(g["bg"], np.float32) * (0.60 * lim)
-    # Sclera: a MODEST lift of the photo's OWN eye-white shading (no typography).
-    # No floor -- so the natural gradient survives (bright lower sclera, shadow
-    # under the upper lid) and the eye never glows as a flat bright disc. Soft
-    # warm off-white, dimmer than glyphs.
-    if irises and g["tone"] == "light":
-        shade = np.clip((gray / 255.0 - 0.18) / 0.55, 0.0, 1.0)
-        wash = (scl * shade * 0.72)[..., None]
-        out = out * (1.0 - wash) + np.array((196, 202, 210), np.float32) * wash
-    # Teeth (open mouth, dark ground): the cleared inner mouth takes the photo's
-    # OWN pixels -- real ivory and shading sampled from the source, not an invented
-    # white -- so a smile reads as the subject's actual teeth. Blended just shy of
-    # full so a touch of the ground settles the patch into the portrait's mood.
-    if teeth is not None and g["tone"] == "light":
+    # Eye-white + teeth (dark ground): neither carries typography, and both take
+    # the photo's OWN pixels so they read at the subject's REAL brightness -- never
+    # an invented tone that flattens into a glowing disc. Pulled toward neutral so
+    # the patch settles into the navy portrait (teeth/sclera are near-grey already,
+    # so this barely touches them but mutes any lip red the lip hull catches).
+    if g["tone"] == "light" and (irises or teeth is not None):
         src = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
-        # Pull the sampled patch toward neutral: teeth are near-grey already, so
-        # this barely touches them but mutes any lip red the inner-lip hull catches,
-        # so the mouth settles into the navy portrait instead of reading as a
-        # full-colour photo cut-out. Real luminance and shading are preserved.
         g3 = cv2.cvtColor(np.clip(src, 0, 255).astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32)[..., None]
         src = src * 0.45 + g3 * 0.55
-        tw = (teeth * 0.85)[..., None]
-        out = out * (1.0 - tw) + src * tw
+        if irises:                                    # sclera: real, calibrated eye-white
+            sw = (scl * 0.85)[..., None]
+            out = out * (1.0 - sw) + src * sw
+        if teeth is not None:
+            # The mouth is a small source region scaled up, so the bare patch reads
+            # soft against the crisp type -- unsharp-mask it so the tooth edges and
+            # gum line are defined (crisp teeth, still the photo's own tone).
+            src_sharp = cv2.addWeighted(src, 1.7, cv2.GaussianBlur(src, (0, 0), 1.4), -0.7, 0.0)
+            tw = (teeth * 0.88)[..., None]
+            out = out * (1.0 - tw) + src_sharp * tw
     # Catchlight is a SPECULAR highlight: always white (the lightest thing on the
     # face), never ink- or iris-coloured -- painted over the colour composite.
     if irises and g["tone"] == "light":
