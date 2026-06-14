@@ -884,8 +884,15 @@ function renderProducts(data){
   const cur = data.currency || "usd";
   CATALOG = (data.products||[]).map(p=>({...p, currency:cur}));
   if(!data.fulfillment_configured) return;               // stay digital-only
-  // Digital first (the default), then physical keepsakes.
-  const order = CATALOG.slice().sort((a,b)=>(a.physical?1:0)-(b.physical?1:0));
+  // Order is brand-aware. Loved in Words is a memorial keepsake brand: it leads
+  // with the framed/print keepsakes and puts the digital download BENEATH them.
+  // Every other brand keeps the digital download first (the entry product). The
+  // sort key is physical-first (0) vs digital (1); the direction flips per brand.
+  const printsFirst = (typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords");
+  const order = CATALOG.slice().sort((a,b)=>{
+    const av=a.physical?0:1, bv=b.physical?0:1;
+    return printsFirst ? (av-bv) : (bv-av);
+  });
   const list = $("#productList"); list.innerHTML="";
   order.forEach(p=>{
     const el=document.createElement("button");
