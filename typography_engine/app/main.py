@@ -1089,6 +1089,33 @@ def _reel_maker_block(job: str, session_id: str) -> str:
     Portable: carries its own styles so it can drop into any page chrome."""
     j = json.dumps(job)
     s = json.dumps(session_id)
+    # Memorial brand (Loved in Words): tribute-video framing, and DROP the
+    # "feature on our social channels" ask. Brand from the job's stored ref.
+    _ref = ""
+    try:
+        _ref = str(json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("ref") or "")
+    except Exception:  # noqa: BLE001
+        _ref = ""
+    if _ref == "lovedinwords":
+        reel_title = "Create a tribute video"
+        reel_sub = "Turn the portrait into a short remembrance video — their face forming from your words — to keep or share with family."
+        personal_label = "Yes, I’ll share this video for personal use."
+        reel_btn = "Make the tribute video"
+        ready_label = "Your tribute video is ready."
+        share_label = "Share video"
+        making_label = "Making the tribute video… (~30s)"
+        ct_html = ""
+    else:
+        reel_title = "Make a reel from your portrait"
+        reel_sub = "Turn it into a short 9:16 video — the dissolve, your words, and the finished portrait — perfect for sharing."
+        personal_label = "Yes, I’ll share my reel for personal use."
+        reel_btn = "Make my reel"
+        ready_label = "Your reel is ready."
+        share_label = "Share reel"
+        making_label = "Making your reel… (~30s)"
+        ct_html = ('<label class="rl-chk"><input type="checkbox" id="ct"> '
+                   '<span>Optional: Allow Typortrait to feature this reel on our own social channels '
+                   '(<a href="/terms" target="_blank" rel="noopener">terms</a>). You can revoke any time by emailing us.</span></label>')
     return (
         '<style>'
         '.rl-divider{height:1px;background:#ece9e3;margin:24px 0 18px}'
@@ -1106,20 +1133,17 @@ def _reel_maker_block(job: str, session_id: str) -> str:
         '@keyframes rlsp{to{transform:rotate(360deg)}}'
         '</style>'
         '<div class="rl-divider"></div>'
-        '<h2 class="rl-h">Make a reel from your portrait</h2>'
-        '<p class="rl-sub">Turn it into a short 9:16 video — the dissolve, your words, and the '
-        'finished portrait — perfect for sharing.</p>'
+        '<h2 class="rl-h">' + reel_title + '</h2>'
+        '<p class="rl-sub">' + reel_sub + '</p>'
         '<label class="rl-chk"><input type="checkbox" id="cp"> '
-        '<span>Yes, I’ll share my reel for personal use.</span></label>'
-        '<label class="rl-chk"><input type="checkbox" id="ct"> '
-        '<span>Optional: Allow Typortrait to feature this reel on our own social channels '
-        '(<a href="/terms" target="_blank" rel="noopener">terms</a>). You can revoke any time by emailing us.</span></label>'
-        '<button class="btn" id="mk" disabled>Make my reel</button>'
+        '<span>' + personal_label + '</span></label>'
+        + ct_html +
+        '<button class="btn" id="mk" disabled>' + reel_btn + '</button>'
         '<div id="rlOut" style="display:none">'
-        '<p class="rl-sub" id="rlSub" style="margin-top:14px">Your reel is ready.</p>'
+        '<p class="rl-sub" id="rlSub" style="margin-top:14px">' + ready_label + '</p>'
         '<a class="btn" id="rlMp4" download="typortrait-reel.mp4" style="display:none">Download MP4</a>'
         '<a class="btn ghost" id="rlGif" download="typortrait-reel.gif">Download GIF</a>'
-        '<button class="btn ghost" id="rlSh" style="display:none">Share reel</button>'
+        '<button class="btn ghost" id="rlSh" style="display:none">' + share_label + '</button>'
         '</div>'
         '<script>(function(){'
         'var job=' + j + ',sid=' + s + ',o=location.origin;'
@@ -1129,16 +1153,16 @@ def _reel_maker_block(job: str, session_id: str) -> str:
         'var rlGif=document.getElementById("rlGif"),rlMp4=document.getElementById("rlMp4"),rlSh=document.getElementById("rlSh");'
         'cp.onchange=function(){mk.disabled=!cp.checked;};'
         'mk.onclick=function(){if(!cp.checked)return;'
-        'mk.disabled=true;mk.innerHTML=\'<span class="rl-spin"></span>Making your reel… (~30s)\';'
+        'mk.disabled=true;mk.innerHTML=\'<span class="rl-spin"></span>' + making_label + '\';'
         'var fd=new FormData();fd.append("job",job);fd.append("session_id",sid);'
         'fd.append("personal_consent",cp.checked?"on":"");'
-        'fd.append("typortrait_consent",ct.checked?"on":"");'
+        'fd.append("typortrait_consent",(ct&&ct.checked)?"on":"");'
         'fetch("/reel",{method:"POST",body:fd}).then(function(r){return r.json();}).then(function(j){'
-        'if(!j||!j.ok){mk.disabled=false;mk.innerHTML="Make my reel";'
+        'if(!j||!j.ok){mk.disabled=false;mk.innerHTML=' + json.dumps(reel_btn) + ';'
         'rlSub.textContent="Sorry, that didn\\u2019t work: "+((j&&(j.detail||j.error))||"please try again.");'
         'rlOut.style.display="block";return;}'
         'mk.style.display="none";rlOut.style.display="block";'
-        'rlSub.textContent=j.typortrait_share?"Your reel is ready. Thanks \\u2014 we\\u2019ll review it before posting on our channels.":"Your reel is ready.";'
+        'rlSub.textContent=j.typortrait_share?"Your reel is ready. Thanks \\u2014 we\\u2019ll review it before posting on our channels.":' + json.dumps(ready_label) + ';'
         'rlGif.href=j.gif_url;'
         'if(j.mp4_url){rlMp4.href=j.mp4_url;rlMp4.style.display="inline-block";}'
         'var mob=(window.matchMedia&&matchMedia("(pointer:coarse)").matches)||/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");'
@@ -1149,7 +1173,7 @@ def _reel_maker_block(job: str, session_id: str) -> str:
         'var f=new File([bl],nm,{type:mt});'
         'if(navigator.canShare({files:[f]}))return navigator.share({title:"Typortrait",text:"Made from our words \\u2014 with Typortrait.",url:shareUrl,files:[f]});'
         'throw 0;}).catch(function(){if(navigator.clipboard){navigator.clipboard.writeText(shareUrl);rlSh.textContent="Link copied";}});};}'
-        '}).catch(function(){mk.disabled=false;mk.innerHTML="Make my reel";'
+        '}).catch(function(){mk.disabled=false;mk.innerHTML=' + json.dumps(reel_btn) + ';'
         'rlSub.textContent="Network error \\u2014 please try again.";rlOut.style.display="block";});};'
         '})();</script>'
     )
