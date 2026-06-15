@@ -873,7 +873,7 @@ async function renderSizeThumb(mf){
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim());
   const vp=variantPost(state.ink); fd.append("ink",vp.ink); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
-  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF);
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(mf));
   fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
   try{
@@ -917,7 +917,7 @@ function recoFd(style, coarse){
   let ink=state.ink||"photo";
   if(style==="displacement" && (ink==="spectrum"||ink==="aurora")) ink="photo";  // gradients don't drape
   fd.append("ink",ink); fd.append("style",style); fd.append("ground","navy");
-  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF);
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", style==="message" ? "20" : String(state.minFont||57));
   if(coarse){ fd.append("png_width","380"); fd.append("render_w","760"); } else { fd.append("png_width","1500"); }
   return fd;
@@ -1290,7 +1290,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim());
   const vp=variantPost(ink); fd.append("ink",vp.ink); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
-  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF);
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(state.minFont||20));
   if(thumb){
     // A 74px chip needs only the colour and rough likeness; a small canvas

@@ -391,11 +391,13 @@ async def render(
     light: bool = Form(False),
     ground: str = Form("navy"),
     ref: str = Form(""),
+    brand: str = Form(""),
     crop: Optional[str] = Form(None),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
-    ref_clean = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40]   # referral/source tag
+    ref_clean = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40]     # referral/source tag (persists)
+    brand_clean = re.sub(r"[^A-Za-z0-9_-]", "", brand or "")[:40]  # ACTIVE brand skin (gates brand UX)
     img_bytes = await image.read()
     if not img_bytes:
         return JSONResponse({"ok": False, "error": "empty_upload"}, status_code=400)
@@ -501,7 +503,7 @@ async def render(
             "style": style_choice, "ink": ink_choice, "remove_bg": bool(remove_bg),
             "light": bool(light), "text": text, "uppercase": bool(uppercase),
             "min_font_px": float(cfg.min_font_px), "ground": ground_choice,
-            "ref": ref_clean,
+            "ref": ref_clean, "brand": brand_clean,
         }), encoding="utf-8")
 
     # Likeness score (how well this render preserves the face) -- the studio
@@ -1147,7 +1149,7 @@ def _reel_maker_block(job: str, session_id: str) -> str:
     # "feature on our social channels" ask. Brand from the job's stored ref.
     _ref = ""
     try:
-        _ref = str(json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("ref") or "")
+        _ref = str(json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("brand") or "")
     except Exception:  # noqa: BLE001
         _ref = ""
     if _ref == "lovedinwords":
@@ -1459,7 +1461,7 @@ def make_reel(
         return JSONResponse({"ok": False, "error": "reel_import_failed", "detail": str(e)}, status_code=500)
 
     try:
-        _memorial = str(recipe.get("ref") or "") == "lovedinwords"
+        _memorial = str(recipe.get("brand") or "") == "lovedinwords"
         # Both brands present the portrait inside a real framed-on-a-desk scene,
         # tonally matched: Loved in Words gets the candle-lit memorial scene; every
         # other subject (pets, weddings, graduates) gets a brighter, candle-free
@@ -1550,7 +1552,7 @@ def success(job: str, session_id: str):
         # stored ref (set to the brand id when they came through that storefront).
         _ref = ""
         try:
-            _ref = str(_json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("ref") or "")
+            _ref = str(_json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("brand") or "")
         except Exception:  # noqa: BLE001
             _ref = ""
         is_memorial = _ref == "lovedinwords"
