@@ -367,7 +367,10 @@ def render_displacement_portrait(
         if ink == "photo":
             src = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
             g3 = cv2.cvtColor(np.clip(src, 0, 255).astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32)[..., None]
-            src = src * 0.45 + g3 * 0.55              # mute any lip red the hull catches
+            # Take mostly the LUMINANCE (real shading) and only a trace of the
+            # colour, so the eye-white/teeth read as natural neutral white/ivory
+            # rather than picking up the photo's (and the render's) warm cast.
+            src = src * 0.15 + g3 * 0.85
             if irises:                                # sclera: real eye-white, dimmed so it sits in the face
                 sw = (scl * 0.78)[..., None]
                 out = out * (1.0 - sw) + (src * 0.80) * sw

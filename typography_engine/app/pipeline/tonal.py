@@ -1557,6 +1557,15 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         fsc0 = W / float(an.img.gray.shape[1])
         eyes_e = _eye_ellipses(an, fsc0)
         iris_c = _iris_circles(an, fsc0)
+        # Eye-white + teeth fill. In Photo ink the photo's OWN pixels can carry a
+        # warm cast (warm light + warm ink), so take mostly LUMINANCE + a trace of
+        # colour -> natural neutral whites. Other inks keep the tinted photo (it
+        # already matches the duotone face), so they're left as-is.
+        if ink == "photo":
+            gp = (photo[..., 0] * 0.299 + photo[..., 1] * 0.587 + photo[..., 2] * 0.114)[..., None]
+            eye_fill = photo * 0.15 + gp * 0.85
+        else:
+            eye_fill = photo
         if eyes_e:
             ir_mean = float(np.mean([r for _, _, r in iris_c])) if iris_c else 1.0
             # Limbal ring: dark rim at the iris edge -- the cue that reads as a
@@ -1581,7 +1590,7 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
                 cv2.circle(sm, (int(round(icx)), int(round(icy))), int(round(irr)), 0.0, -1, cv2.LINE_AA)
             sm = cv2.GaussianBlur(sm, (0, 0), sigmaX=max(1.0, float(np.mean([e[2] for e in eyes_e])) * 0.10))
             wash = (sm * 0.88)[..., None]
-            out = (out.astype(np.float32) * (1.0 - wash) + photo * wash).clip(0, 255).astype(np.uint8)
+            out = (out.astype(np.float32) * (1.0 - wash) + eye_fill * wash).clip(0, 255).astype(np.uint8)
         # Teeth carry NO typography. Where the mouth is open, clear the glyphs from
         # the inner mouth and let the photo's OWN pixels show through -- the same
         # tinted source the rest of the portrait is built from, so the teeth keep
@@ -1592,7 +1601,7 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             # The mouth is a small source region scaled up, so the bare photo reads
             # soft against the crisp type. Unsharp-mask the fill so the tooth edges
             # and gum line are defined -- crisp teeth, still the photo's own tone.
-            ph_sharp = cv2.addWeighted(photo, 1.7, cv2.GaussianBlur(photo, (0, 0), 1.4), -0.7, 0.0)
+            ph_sharp = cv2.addWeighted(eye_fill, 1.7, cv2.GaussianBlur(eye_fill, (0, 0), 1.4), -0.7, 0.0)
             tw = (tm * 0.92)[..., None]
             out = (out.astype(np.float32) * (1.0 - tw) + ph_sharp * tw).clip(0, 255).astype(np.uint8)
         glints = _catchlight_points(an)                   # working coords
