@@ -649,13 +649,6 @@ function rebuildSwatches(){
   invalidate();            // renders depend on style+variant -> drop stale caches
   buildSwatches();
 }
-// Brand opening look: e.g. Loved in Words opens on Sculpt + Photo (the most
-// lifelike for a remembrance portrait). setStyle syncs the control + labels and,
-// since the style changes from the default, rebuilds the swatch strip.
-if(BRAND){
-  if(BRAND.ink) state.ink=BRAND.ink;
-  if(BRAND.style && BRAND.style!==state.style) setStyle(BRAND.style, false);
-}
 function markSel(){
   [...swatchEl.children].forEach(c=>c.classList.toggle("sel",c.dataset.ink===state.ink));
   const sel=swatchEl.querySelector(".thumb.sel");
@@ -946,6 +939,15 @@ createBtn.addEventListener("click", ()=>{
   invalidate(); render(state.ink,{animate:true}); });
 $("#restart").addEventListener("click", ()=>{ resultView.style.display="none"; inputView.style.display="block";
   invalidate(); portrait.src=""; portrait.className=""; stopAssembly(); });
+// Brand opening look: e.g. Loved in Words opens on Sculpt + Photo (the most
+// lifelike for a remembrance portrait). Run LAST -- after every const + listener
+// is defined -- because setStyle() reaches size-strip state; calling it during
+// early init would throw on those not-yet-initialised bindings and abort the rest
+// of the script (leaving the Create button without its handler).
+if(BRAND){
+  if(BRAND.ink) state.ink=BRAND.ink;
+  if(BRAND.style && BRAND.style!==state.style) setStyle(BRAND.style, false);
+}
 function invalidate(){ gen++; cache={}; thumbCache={}; resetThumbs(); }
 
 function selectInk(id){
