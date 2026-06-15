@@ -1015,19 +1015,21 @@ def _notify_sale(sess: dict, order: Optional[dict]) -> None:
     threading.Thread(target=_bg, daemon=True).start()
 
 
-def _studio_href(job: str) -> str:
-    """The studio URL for a 'make another' link, preserving the brand the buyer
-    came in under -- so a Loved in Words buyer returns to the branded studio, a
-    generic buyer to the plain one. Relative, so it stays on whatever host
-    (staging.typortrait.com / app.typortrait.com) they're on."""
+def _make_another(job: str) -> tuple:
+    """(href, label) for the post-purchase 'make another' link, preserving the
+    buyer's brand: Loved in Words -> branded studio + 'Make another Tribute
+    Portrait'; generic -> plain studio + 'Make another Typortrait'. The href is
+    relative, so it stays on whatever host (staging/app) the buyer is on."""
     try:
         brand = str(json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("brand") or "")
     except Exception:  # noqa: BLE001
         brand = ""
+    if brand == "lovedinwords":
+        return ("/static/index.html?brand=lovedinwords", "Make another Tribute Portrait")
     if brand:
         from urllib.parse import quote
-        return f"/static/index.html?brand={quote(brand, safe='')}"
-    return "/static/index.html"
+        return (f"/static/index.html?brand={quote(brand, safe='')}", "Make another Typortrait")
+    return ("/static/index.html", "Make another Typortrait")
 
 
 def _track_purchase_once(
@@ -1293,7 +1295,7 @@ def order_status(order_id: str, session_id: Optional[str] = None):
 
     product = products.get(o["sku"])
     name = product.name if product else o["sku"]
-    studio_href = _studio_href(o["job_id"])   # 'make another' keeps the buyer's brand
+    studio_href, studio_label = _make_another(o["job_id"])   # 'make another' keeps the buyer's brand + name
     status_msg = {
         "pending_payment": "Waiting for payment confirmation…",
         "paid": "Payment received. Preparing your order for fulfillment…",
@@ -1370,7 +1372,7 @@ def order_status(order_id: str, session_id: Optional[str] = None):
     Bookmark this page to check on your order, or reply to your receipt email
     if anything looks off.
   </p>
-  <p><a href="{studio_href}">Make another →</a></p>
+  <p><a href="{studio_href}">{studio_label} →</a></p>
 </div></body></html>"""
     return HTMLResponse(body)
 
@@ -1557,7 +1559,7 @@ def success(job: str, session_id: str):
     paid = _session_paid(session_id, job) and (PRIVATE_DIR / f"{job}.json").exists()
     jq, sq = quote(job, safe=""), quote(session_id, safe="")
     png_url = f"/download?job={jq}&fmt=png&session_id={sq}"
-    studio_href = _studio_href(job)   # 'make another' keeps the buyer's brand
+    studio_href, studio_label = _make_another(job)   # 'make another' keeps the buyer's brand + name
     if paid:
         # Conversion event for digital sales (the primary revenue path, which
         # completes here rather than via the webhook). Deduped + revenue/sku
@@ -1613,7 +1615,7 @@ def success(job: str, session_id: str):
             '<span>' + personal_label + '</span></label>'
             + ct_html +
             '<button class="btn" id="mk" disabled>' + reel_btn + '</button>'
-            '<div class="link-wrap"><a class="link" href="' + studio_href + '">Create another portrait</a></div>'
+            '<div class="link-wrap"><a class="link" href="' + studio_href + '">' + studio_label + '</a></div>'
             '<div id="rlOut" style="display:none">'
             '<p class="sub" id="rlSub">' + ready_label + '</p>'
             '<a class="btn" id="rlMp4" download="typortrait-reel.mp4" style="display:none">Download MP4</a>'
