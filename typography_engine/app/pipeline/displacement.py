@@ -357,39 +357,21 @@ def render_displacement_portrait(
     if irises and g["tone"] == "light":
         lim = limbal[..., None]
         out = out * (1.0 - 0.60 * lim) + np.array(g["bg"], np.float32) * (0.60 * lim)
-    # Eye-white + teeth (dark ground): neither carries typography. The COLOUR they
-    # take depends on the ink. In PHOTO mode they take the subject's OWN pixels
-    # (real eye-white / ivory) -- but that would read as a photographic cut-out
-    # dropped into the solid-ground mono/colour inks, so those get a neutral,
-    # stylised light tone instead (never the colour ink itself -> no orange/sepia
-    # teeth). Whites are kept deliberately dim so the eye never glows.
+    # Eye-white + teeth (dark ground): neither carries typography. A neutral, dim
+    # light tone shaded by the photo's OWN luminance (so it keeps the real bright/
+    # shadow gradient, not a flat disc) -- the SAME treatment in every ink. Using
+    # the photo's actual pixels in Photo mode read too bright/warm (the whites
+    # glowed and picked up the render's cast); the neutral tone never glows and
+    # never takes the ink's colour. The iris still carries the subject's real eye
+    # colour in Photo mode (handled separately above).
     if g["tone"] == "light" and (irises or teeth is not None):
-        if ink == "photo":
-            src = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
-            g3 = cv2.cvtColor(np.clip(src, 0, 255).astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32)[..., None]
-            # Take mostly the LUMINANCE (real shading) and only a trace of the
-            # colour, so the eye-white/teeth read as natural neutral white/ivory
-            # rather than picking up the photo's (and the render's) warm cast.
-            src = src * 0.15 + g3 * 0.85
-            if irises:                                # sclera: real eye-white, dimmed so it sits in the face
-                sw = (scl * 0.78)[..., None]
-                out = out * (1.0 - sw) + (src * 0.80) * sw
-            if teeth is not None:
-                # Small upscaled mouth reads soft against the type -- unsharp-mask
-                # it so the tooth edges and gum line are defined (crisp, real tone).
-                src_sharp = cv2.addWeighted(src, 1.7, cv2.GaussianBlur(src, (0, 0), 1.4), -0.7, 0.0)
-                tw = (teeth * 0.88)[..., None]
-                out = out * (1.0 - tw) + src_sharp * tw
-        else:
-            # Stylised inks: a neutral, moderate light tone, shaded by the photo so
-            # it keeps a gradient instead of reading as a flat disc.
-            gshade = np.clip((gray / 255.0 - 0.20) / 0.55, 0.0, 1.0)
-            if irises:
-                sw = (scl * gshade * 0.60)[..., None]
-                out = out * (1.0 - sw) + np.array((198, 200, 202), np.float32) * sw
-            if teeth is not None:
-                tw = (teeth * gshade * 0.66)[..., None]
-                out = out * (1.0 - tw) + np.array((200, 202, 204), np.float32) * tw
+        gshade = np.clip((gray / 255.0 - 0.20) / 0.55, 0.0, 1.0)
+        if irises:
+            sw = (scl * gshade * 0.60)[..., None]
+            out = out * (1.0 - sw) + np.array((198, 200, 202), np.float32) * sw
+        if teeth is not None:
+            tw = (teeth * gshade * 0.66)[..., None]
+            out = out * (1.0 - tw) + np.array((200, 202, 204), np.float32) * tw
     # Catchlight is a SPECULAR highlight: always white (the lightest thing on the
     # face), never ink- or iris-coloured -- painted over the colour composite.
     if irises and g["tone"] == "light":
