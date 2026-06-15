@@ -17,10 +17,12 @@
 /* Self-hosted Inter — Apple-style sans. */
 @font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;src:url('InterVariable.woff2') format('woff2')}
 :root{
-  --navy:#0d1b3a; --ink:#16203a; --paper:#faf9f7; --card:#ffffff;
-  --muted:#6b7280; --line:#ece9e3;
+  /* Soft memorial palette -- matches the Loved in Words studio skin (a calm
+     slate accent on warm ivory, rather than the stark Typortrait navy). */
+  --navy:#42525f; --ink:#2f3742; --paper:#f4efe8; --card:#fffdf9;
+  --muted:#776f64; --line:#e7e0d5;
   --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  --shadow:0 18px 50px rgba(20,30,60,.08);
+  --shadow:0 18px 50px rgba(60,55,45,.10);
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -57,7 +59,7 @@ a{color:var(--navy)}
   border-radius:50%; background:rgba(255,255,255,.96); box-shadow:0 2px 10px rgba(0,0,0,.28);
   display:flex; align-items:center; justify-content:center; color:var(--navy); font-size:16px}
 .ba-tag{position:absolute; top:12px; font-size:10.5px; letter-spacing:.09em; text-transform:uppercase;
-  color:#fff; background:rgba(13,27,58,.6); padding:4px 9px; border-radius:999px}
+  color:#fff; background:rgba(66,82,95,.6); padding:4px 9px; border-radius:999px}
 .ba-tag.l{left:12px} .ba-tag.r{right:12px}
 
 /* Framed keepsake scene (portrait composited into a desk photo). */
@@ -79,8 +81,8 @@ a{color:var(--navy)}
 .btn{display:inline-block; background:var(--navy); color:#fff; text-decoration:none;
   font-weight:700; font-size:17px; letter-spacing:-.01em; padding:15px 34px;
   border-radius:999px; transition:transform .15s ease, box-shadow .15s ease;
-  box-shadow:0 8px 24px rgba(13,27,58,.18)}
-.btn:hover{transform:translateY(-1px); box-shadow:0 12px 30px rgba(13,27,58,.24)}
+  box-shadow:0 8px 24px rgba(66,82,95,.18)}
+.btn:hover{transform:translateY(-1px); box-shadow:0 12px 30px rgba(66,82,95,.24)}
 .free{display:block; color:var(--muted); font-size:13.5px; margin-top:12px}
 
 /* Sections */
