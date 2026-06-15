@@ -183,15 +183,23 @@ def render_displacement_portrait(
 
     fmh = np.zeros((H, W), np.uint8)
     cv2.fillConvexPoly(fmh, cv2.convexHull(pts.astype(np.int32)), 1)
-    face_w = cv2.GaussianBlur(fmh.astype(np.float32), (0, 0), sigmaX=W * 0.02)
+    # FACE-relative feathering (not image-relative): on a tight crop the face fills
+    # the frame, so an image-relative blur transitions over too thin a band and the
+    # type SNAPS large->small. Scaling the blur to the face width keeps the size
+    # gradient gradual across the forehead/cheeks at any crop tightness.
+    face_w = cv2.GaussianBlur(fmh.astype(np.float32), (0, 0), sigmaX=max(W * 0.012, fw * 0.22))
 
     # Smooth "detail field" df in [0,1] that drives a CONTINUOUS size gradient:
     # ~0 on the body (large text) -> ~0.45 on the broad face (mid) -> ~1 at the
     # features (small). Heavily feathered so the size transition is gradual.
     face_norm = np.clip(face_w / (face_w.max() + 1e-6), 0, 1)
-    feat_union = mask_of(_GROUPS.keys(), int(fw * 0.04), fw * 0.10)
+    # Wide feature feathering -> feat_norm DECAYS smoothly outward from the eyes/
+    # nose/mouth, so the type grows continuously (small at features -> mid -> large)
+    # instead of snapping at a hard feature boundary.
+    feat_union = mask_of(_GROUPS.keys(), int(fw * 0.04), fw * 0.24)
     feat_norm = np.clip(feat_union / (feat_union.max() + 1e-6), 0, 1)
     df = np.clip(0.45 * face_norm + 0.70 * feat_norm, 0, 1)
+    df = cv2.GaussianBlur(df, (0, 0), sigmaX=max(2.0, fw * 0.06))   # ease the size steps further
 
     # Clean vertical drape, dampened in the feature band (keeps features crisp).
     D = cv2.GaussianBlur(gray, (0, 0), sigmaX=W * 0.020)
