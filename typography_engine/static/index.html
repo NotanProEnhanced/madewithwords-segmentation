@@ -458,7 +458,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, ink:"photo", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true };
+const state = { file:null, crop:null, ink:"photo", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true };
 // Referral/source tag (?ref=everloved) AND brand skin. A brand re-dresses this
 // same engine as a partner identity (name + tagline). The brand is resolved from
 // the ?brand param FIRST (reliable, and it persists in this single-page URL),
@@ -601,7 +601,7 @@ const cropModal=$("#cropModal"), cropStage=$("#cropStage"), cropImg=$("#cropImg"
 const CROP_AR=0.8;                      // width/height = 4:5, matching the print canvas
 let cropPending=null, cropRect={x:0,y:0,w:0,h:0}, stageW=0, stageH=0, cropDrag=null;
 function openCrop(f){
-  cropPending=f;
+  cropPending=f; state.crop=null;          // new photo -> no crop until confirmed
   const url=URL.createObjectURL(f);
   cropImg.onload=()=>{ URL.revokeObjectURL(url); layoutStage(); initCropBox(null);
     cropModal.classList.add("on"); cropModal.setAttribute("aria-hidden","false"); measureFaceBox(f); };
@@ -670,30 +670,30 @@ cropCancelBtn.addEventListener("click", ()=>{ cropModal.classList.remove("on"); 
   fileInput.value=""; fileInput.click(); });
 cropApplyBtn.addEventListener("click", ()=>{
   if(!cropPending){ cropModal.classList.remove("on"); return; }
-  const fallback=cropPending, cropName=(fallback.name||"photo").replace(/\.[^.]+$/,"")+"-crop.jpg";
-  const rect={x:cropRect.x,y:cropRect.y,w:cropRect.w,h:cropRect.h}, sw=stageW, sh=stageH, img=cropImg;
+  const original=cropPending, img=cropImg, rect={x:cropRect.x,y:cropRect.y,w:cropRect.w,h:cropRect.h}, sw=stageW, sh=stageH;
+  // Record the crop as fractions of the image. The SERVER crops the source at
+  // render time (robust, full-resolution, every format) -- state.file stays the
+  // ORIGINAL upload and `crop` rides along on each request.
+  state.crop=[rect.x/sw, rect.y/sh, rect.w/sw, rect.h/sh].map(v=>Math.max(0,Math.min(1,v)).toFixed(5)).join(",");
   cropModal.classList.remove("on");
-  // Crop + encode on a fresh task (not synchronously inside the click): canvas
-  // encoding is more reliable off the input-event stack, and the UI closes first.
-  // Synchronous toDataURL -> File; if the canvas can't be read (e.g. a tainted or
-  // undecodable image), fall back to the original upload uncropped.
-  setTimeout(()=>{
-    let file=fallback;
-    try{
-      const sx=img.naturalWidth/sw, sy=img.naturalHeight/sh;
-      const cw=Math.max(1,Math.round(rect.w*sx)), ch=Math.max(1,Math.round(rect.h*sy));
-      const cv=document.createElement("canvas"); cv.width=cw; cv.height=ch;
-      cv.getContext("2d").drawImage(img, Math.round(rect.x*sx), Math.round(rect.y*sy), cw, ch, 0, 0, cw, ch);
-      const durl=cv.toDataURL("image/jpeg", 0.92);
-      if(durl && durl.length>64){
-        const bin=atob(durl.split(",")[1]); const arr=new Uint8Array(bin.length);
-        for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
-        file=new File([new Blob([arr],{type:"image/jpeg"})], cropName, {type:"image/jpeg"});
-      }
-    }catch(e){}
-    img.src="";
-    useCroppedFile(file);
-  }, 0);
+  // A small cropped thumbnail JUST for the on-screen preview + before/after slider
+  // (the real render is server-cropped). Best-effort: fall back to the full image
+  // if the canvas can't encode -- the render is cropped either way.
+  let previewUrl=null;
+  try{
+    const sx=img.naturalWidth/sw, sy=img.naturalHeight/sh;
+    const PW=Math.min(540, Math.max(1, Math.round(rect.w*sx))), PH=Math.max(1, Math.round(PW/CROP_AR));
+    const cv=document.createElement("canvas"); cv.width=PW; cv.height=PH;
+    cv.getContext("2d").drawImage(img, Math.round(rect.x*sx), Math.round(rect.y*sy), Math.round(rect.w*sx), Math.round(rect.h*sy), 0, 0, PW, PH);
+    const durl=cv.toDataURL("image/jpeg", 0.9);
+    if(durl && durl.length>64) previewUrl=durl;
+  }catch(e){}
+  img.src="";
+  if(previewImg.src && previewImg.src.indexOf("blob:")===0) URL.revokeObjectURL(previewImg.src);
+  state.file=original; previewImg.src=previewUrl || URL.createObjectURL(original);
+  preview.style.display="block"; drop.style.display="none"; setPhotoNote("");
+  refreshCreate(); tp_track("photo_selected");
+  measureSubject(original);
 });
 
 // Options now live on the result screen: toggling re-renders the current ink
@@ -765,7 +765,7 @@ function setPhotoNote(msg){
 }
 function measureSubject(f){
   applySizes(null);                          // optimistic: all enabled while measuring
-  const fd=new FormData(); fd.append("image",f);
+  const fd=new FormData(); fd.append("image",f); if(state.crop) fd.append("crop",state.crop);
   fetch("/measure",{method:"POST",body:fd}).then(r=>r.json())
     .then(d=>{ if(d&&d.ok){
         applySizes(d.sizes, d.default);
@@ -871,7 +871,7 @@ async function renderSizeThumb(mf){
   if(!state.file) return;
   const myGen=gen;
   const fd=new FormData();
-  fd.append("image",state.file); fd.append("words",words.value.trim());
+  fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim());
   const vp=variantPost(state.ink); fd.append("ink",vp.ink); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF);
   fd.append("min_font_px", String(mf));
@@ -913,7 +913,7 @@ function resetReco(){
 }
 function recoFd(style, coarse){
   const fd=new FormData();
-  fd.append("image",state.file); fd.append("words",words.value.trim()); fd.append("message",words.value.trim());
+  fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim()); fd.append("message",words.value.trim());
   let ink=state.ink||"photo";
   if(style==="displacement" && (ink==="spectrum"||ink==="aurora")) ink="photo";  // gradients don't drape
   fd.append("ink",ink); fd.append("style",style); fd.append("ground","navy");
@@ -1286,7 +1286,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   const myGen=gen;
   if(!background && !thumb) showBusy(animate);
   const fd=new FormData();
-  fd.append("image",state.file); fd.append("words",words.value.trim());
+  fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim());
   const vp=variantPost(ink); fd.append("ink",vp.ink); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF);
   fd.append("min_font_px", String(state.minFont||20));

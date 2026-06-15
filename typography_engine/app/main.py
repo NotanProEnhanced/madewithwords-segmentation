@@ -298,8 +298,42 @@ def _recommended_size_mf(face_frac):
     return 57.0 if 57.0 in allowed else allowed[0]   # Large (always offered)
 
 
+def _apply_crop(data: bytes, crop: Optional[str]) -> bytes:
+    """Crop image bytes to a rectangle given as four comma-separated fractions
+    'x,y,w,h' (of the whole image), re-encoded as PNG. Returns the original bytes
+    on absent/invalid crop or any failure. Done server-side so the crop applies to
+    every format and resolution with no client-side canvas encoding to go wrong,
+    and so the stored source (and every downstream render/recompose) is cropped."""
+    if not crop:
+        return data
+    try:
+        parts = [float(v) for v in str(crop).split(",")]
+        if len(parts) != 4:
+            return data
+        fx, fy, fw, fh = parts
+        if fw <= 0.0 or fh <= 0.0:
+            return data
+        import cv2 as _cv2
+        import numpy as _np
+        arr = _cv2.imdecode(_np.frombuffer(data, _np.uint8), _cv2.IMREAD_COLOR)
+        if arr is None:
+            return data
+        h, w = arr.shape[:2]
+        x0 = max(0, min(w - 1, int(round(fx * w))))
+        y0 = max(0, min(h - 1, int(round(fy * h))))
+        x1 = max(x0 + 1, min(w, int(round((fx + fw) * w))))
+        y1 = max(y0 + 1, min(h, int(round((fy + fh) * h))))
+        sub = arr[y0:y1, x0:x1]
+        if sub.size == 0:
+            return data
+        ok, buf = _cv2.imencode(".png", sub)
+        return buf.tobytes() if ok else data
+    except Exception:  # noqa: BLE001
+        return data
+
+
 @app.post("/measure")
-async def measure(image: UploadFile = File(...)) -> JSONResponse:
+async def measure(image: UploadFile = File(...), crop: Optional[str] = Form(None)) -> JSONResponse:
     """Lightweight pre-render check: detect the subject's face and return its
     width as a fraction of the photo, plus the word sizes that stay readable for
     that framing. The studio calls this on upload so it can grey out size options
@@ -309,6 +343,7 @@ async def measure(image: UploadFile = File(...)) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "empty_upload"}, status_code=400)
     if len(data) > MAX_UPLOAD_BYTES:
         return JSONResponse({"ok": False, "error": "file_too_large"}, status_code=413)
+    data = _apply_crop(data, crop)         # size-gate on the cropped framing when a crop is set
     warns = WarningCollector()
     try:
         from .pipeline.preprocess import load_and_normalize
@@ -356,6 +391,7 @@ async def render(
     light: bool = Form(False),
     ground: str = Form("navy"),
     ref: str = Form(""),
+    crop: Optional[str] = Form(None),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
@@ -369,6 +405,9 @@ async def render(
              "detail": "That image is too large — please use one under 25 MB."},
             status_code=413,
         )
+    # Crop to the studio's framing BEFORE anything else, so the stored source and
+    # every downstream render/recompose use the cropped image (no client encoding).
+    img_bytes = _apply_crop(img_bytes, crop)
 
     word_list = _parse_words(words, words_json)
     if not word_list:
