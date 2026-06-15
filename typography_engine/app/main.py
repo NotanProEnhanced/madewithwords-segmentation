@@ -1405,6 +1405,8 @@ def make_reel(
         return JSONResponse({"ok": False, "error": "reel_import_failed", "detail": str(e)}, status_code=500)
 
     try:
+        _ref = str(recipe.get("ref") or "")
+        _scene = STATIC_DIR / "everloved" / "scene-desk.jpg"
         build_reel({
             "before": str(src_path),       # original photo, kept at its real aspect ratio
             "after":  str(portrait_path),
@@ -1412,6 +1414,10 @@ def make_reel(
             "out":    str(gif_path),
             "aspect": "source",            # personal reel preserves the original aspect ratio
             "minimal": True,               # no CTA / promo captions — just a discreet credit
+            # Present the portrait inside the real framed-on-a-desk scene (candle,
+            # sprig) rather than a drawn frame; credit matches the brand.
+            "scene":  str(_scene) if _scene.exists() else None,
+            "credit": "lovedinwords.com" if _ref == "lovedinwords" else "Typortrait.com",
         })
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "reel_build_failed", "detail": str(e)}, status_code=500)

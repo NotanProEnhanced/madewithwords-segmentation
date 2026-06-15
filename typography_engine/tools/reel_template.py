@@ -104,8 +104,27 @@ def build_reel(cfg):
         before = _cover_square(cfg["before"], SQ)
         after  = _cover_square(cfg["after"], SQ)
         IMG_X, IMG_Y = 55, 200
+    # Optional: present inside a real framed-on-a-desk scene (a wood frame with a
+    # cream matt, a candle and a sprig) instead of the drawn faux frame. The scene
+    # and its 4:5 mat opening are fixed; fit the scene to the reel width and drop
+    # the portrait into the opening so the slider plays inside the real frame.
+    scene_img = None; scene_pos = (0, 0)
+    _scene_path = cfg.get("scene")
+    if _scene_path and os.path.exists(_scene_path):
+        try:
+            _sc = ImageOps.exif_transpose(Image.open(_scene_path)).convert("RGB")
+            _sw = W; _sh = int(round(_sc.size[1] * (_sw / _sc.size[0])))
+            scene_img = _sc.resize((_sw, _sh), Image.LANCZOS)
+            _sy = max(0, (H - _sh) // 2); scene_pos = (0, _sy)
+            OPX0, OPX1, OPY0, OPY1 = 0.219, 0.773, 0.206, 0.760   # the scene's 4:5 mat opening
+            IMG_X = int(round(OPX0 * _sw)); IMG_Y = _sy + int(round(OPY0 * _sh))
+            IW = int(round((OPX1 - OPX0) * _sw)); IH = int(round((OPY1 - OPY0) * _sh))
+            before = _load_fit(cfg["before"], IW, IH); after = _load_fit(cfg["after"], IW, IH)
+        except Exception:
+            scene_img = None
     words  = [w for w in (cfg.get("words") or ["love"]) if w]
     brand  = cfg.get("brand", "Typortrait")
+    credit = cfg.get("credit", "Typortrait.com")
     cta    = "" if minimal else cfg.get("cta", "Create yours free")
     fps    = cfg.get("fps", 10)
     out    = cfg["out"]
@@ -190,6 +209,16 @@ def build_reel(cfg):
 
     def frame(t):
         im=Image.new("RGB",(W,H),BG); d=ImageDraw.Draw(im)
+        if scene_img is not None:
+            # Framed-on-a-desk presentation: the real scene with the portrait (and
+            # its before/after slider) playing inside the frame's mat opening.
+            im.paste(scene_img, scene_pos)
+            im.paste(img_for(t), (IMG_X, IMG_Y))
+            d = ImageDraw.Draw(im)
+            if t >= SLIDER_END:
+                ctext(d, W/2, scene_pos[1] + scene_img.height + 16, wordlist, f_small, MUTED)
+            ctext(d, W/2, H-30, credit, f_small, MUTED)
+            return im
         if not minimal:
             ctext(d,W/2,60,brand,f_brand,INK)
         # Present the rendering like a hung print: a navy frame with a wide white
