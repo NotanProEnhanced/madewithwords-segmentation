@@ -1405,8 +1405,12 @@ def make_reel(
         return JSONResponse({"ok": False, "error": "reel_import_failed", "detail": str(e)}, status_code=500)
 
     try:
-        _ref = str(recipe.get("ref") or "")
-        _scene = STATIC_DIR / "everloved" / "scene-desk.jpg"
+        _memorial = str(recipe.get("ref") or "") == "lovedinwords"
+        # Both brands present the portrait inside a real framed-on-a-desk scene,
+        # tonally matched: Loved in Words gets the candle-lit memorial scene; every
+        # other subject (pets, weddings, graduates) gets a brighter, candle-free
+        # desk so the mood fits. Same fixed 4:5 mat opening; credit per brand.
+        _scene = (STATIC_DIR / "everloved" / "scene-desk.jpg") if _memorial else (STATIC_DIR / "scene-desk-plain.jpg")
         build_reel({
             "before": str(src_path),       # original photo, kept at its real aspect ratio
             "after":  str(portrait_path),
@@ -1414,12 +1418,8 @@ def make_reel(
             "out":    str(gif_path),
             "aspect": "source",            # personal reel preserves the original aspect ratio
             "minimal": True,               # no CTA / promo captions — just a discreet credit
-            # Loved in Words (memorial) presents the portrait inside the real
-            # framed-on-a-desk scene (candle, sprig). Generic Typortrait keeps the
-            # clean drawn frame -- the candle's somber mood doesn't fit every
-            # celebratory subject (pets, weddings, graduates). Credit per brand.
-            "scene":  str(_scene) if (_ref == "lovedinwords" and _scene.exists()) else None,
-            "credit": "lovedinwords.com" if _ref == "lovedinwords" else "Typortrait.com",
+            "scene":  str(_scene) if _scene.exists() else None,
+            "credit": "lovedinwords.com" if _memorial else "Typortrait.com",
         })
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "reel_build_failed", "detail": str(e)}, status_code=500)
