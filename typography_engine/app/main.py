@@ -318,13 +318,20 @@ async def measure(image: UploadFile = File(...)) -> JSONResponse:
         faces = detect_faces(img, warns)
         bbox = faces[0].bbox if faces else haar_face_bbox(img, warns)
         w = float(img.gray.shape[1]) or 1.0
+        h = float(img.gray.shape[0]) or 1.0
         face_frac = round(float(bbox[2]) / w, 4) if bbox else None
+        # Face box as fractions of the photo (resolution-independent) so the studio
+        # can open the crop editor framed on the subject -- useful when the upload
+        # is a photo OF a framed picture and the person fills only part of it.
+        face_box = ([round(float(bbox[0]) / w, 4), round(float(bbox[1]) / h, 4),
+                     round(float(bbox[2]) / w, 4), round(float(bbox[3]) / h, 4)]
+                    if bbox else None)
         n_faces = len(faces)            # 0/1 via haar fallback; >=2 only when MediaPipe sees a group
     except Exception as e:  # noqa: BLE001
         # On any failure, allow all sizes (the renderer's floor still protects).
-        return JSONResponse({"ok": True, "face_frac": None, "faces": 0,
+        return JSONResponse({"ok": True, "face_frac": None, "faces": 0, "face_box": None,
                              "sizes": _allowed_size_mf(None), "default": _recommended_size_mf(None)})
-    return JSONResponse({"ok": True, "face_frac": face_frac, "faces": n_faces,
+    return JSONResponse({"ok": True, "face_frac": face_frac, "faces": n_faces, "face_box": face_box,
                          "sizes": _allowed_size_mf(face_frac), "default": _recommended_size_mf(face_frac)})
 
 

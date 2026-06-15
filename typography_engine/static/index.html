@@ -241,6 +241,27 @@
   #zoomImg{display:block;margin:0 auto;width:100%;cursor:zoom-in}
   .zoomclose{position:fixed;top:14px;right:16px;z-index:51;width:42px;height:42px;border-radius:50%;border:none;
     background:rgba(255,255,255,.92);color:var(--navy);font-size:24px;line-height:1;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.3)}
+  /* ---- Crop editor (opens on upload; 4:5 print frame; mouse/touch/stylus) ---- */
+  .crop-modal{position:fixed;inset:0;z-index:80;background:rgba(10,12,18,.72);display:none;
+    align-items:center;justify-content:center;padding:18px}
+  .crop-modal.on{display:flex}
+  .crop-card{background:var(--card);border-radius:18px;box-shadow:0 24px 70px rgba(0,0,0,.4);
+    padding:18px;max-width:520px;width:100%;max-height:94vh;overflow:auto}
+  .crop-h1{font-weight:800;font-size:20px;color:var(--navy);letter-spacing:-.02em;text-align:center}
+  .crop-p{color:var(--muted);font-size:13.5px;text-align:center;margin:6px 0 14px;line-height:1.5}
+  .crop-stage{position:relative;margin:0 auto;touch-action:none;user-select:none;-webkit-user-select:none;
+    line-height:0;border-radius:8px;overflow:hidden;background:#0d0d0f}
+  .crop-stage img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
+  .crop-box{position:absolute;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,.5);
+    cursor:move;box-sizing:border-box}
+  .crop-grip{position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;
+    box-shadow:0 1px 5px rgba(0,0,0,.45);touch-action:none}
+  .crop-grip.tl{top:-11px;left:-11px;cursor:nwse-resize}
+  .crop-grip.tr{top:-11px;right:-11px;cursor:nesw-resize}
+  .crop-grip.bl{bottom:-11px;left:-11px;cursor:nesw-resize}
+  .crop-grip.br{bottom:-11px;right:-11px;cursor:nwse-resize}
+  .crop-actions{display:flex;gap:10px;margin-top:16px}
+  .crop-actions .btn{margin-top:0}
 </style>
 </head>
 <body>
@@ -255,6 +276,26 @@
     <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
     <div id="photoNote" class="photo-note" style="display:none"></div>
     <input id="file" type="file" accept="image/*" hidden />
+    <!-- Crop editor: opens on every upload, pre-framed on the detected face (so a
+         photo OF a framed picture is auto-cropped to the person), locked to the
+         16x20 / 4:5 print shape, adjustable with mouse, touch, or stylus. -->
+    <div id="cropModal" class="crop-modal" aria-hidden="true">
+      <div class="crop-card">
+        <div class="crop-h1">Frame the portrait</div>
+        <div class="crop-p">Drag to move, pull a corner to resize. The box is the 16×20 print — what's inside becomes the portrait.</div>
+        <div id="cropStage" class="crop-stage">
+          <img id="cropImg" alt="" draggable="false" />
+          <div id="cropBox" class="crop-box">
+            <span class="crop-grip tl" data-h="tl"></span><span class="crop-grip tr" data-h="tr"></span>
+            <span class="crop-grip bl" data-h="bl"></span><span class="crop-grip br" data-h="br"></span>
+          </div>
+        </div>
+        <div class="crop-actions">
+          <button id="cropCancel" type="button" class="btn secondary">Different photo</button>
+          <button id="cropApply" type="button" class="btn">Use this crop</button>
+        </div>
+      </div>
+    </div>
     <label class="field">
       <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
       <span class="hint" id="wordsHint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
@@ -551,6 +592,110 @@ if(sizeSeg){ sizeSeg.addEventListener("click", e=>{
   state.minFont=parseFloat(b.dataset.mf)||20;
   [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
 }); }
+// ---------- Crop editor: opens on upload, 4:5 print frame, pointer/stylus ------
+// Pre-frames on the detected face (so an upload that is itself a photo of a
+// framed picture gets cropped down to the person), locks to 16x20 / 4:5, and is
+// adjustable with mouse, touch, or stylus (Pointer Events cover pen natively).
+const cropModal=$("#cropModal"), cropStage=$("#cropStage"), cropImg=$("#cropImg"),
+      cropBox=$("#cropBox"), cropApplyBtn=$("#cropApply"), cropCancelBtn=$("#cropCancel");
+const CROP_AR=0.8;                      // width/height = 4:5, matching the print canvas
+let cropPending=null, cropRect={x:0,y:0,w:0,h:0}, stageW=0, stageH=0, cropDrag=null;
+function openCrop(f){
+  cropPending=f;
+  const url=URL.createObjectURL(f);
+  cropImg.onload=()=>{ URL.revokeObjectURL(url); layoutStage(); initCropBox(null);
+    cropModal.classList.add("on"); cropModal.setAttribute("aria-hidden","false"); measureFaceBox(f); };
+  cropImg.onerror=()=>{ URL.revokeObjectURL(url); useCroppedFile(f); };   // can't preview (e.g. HEIC) -> skip crop, let the server decode
+  cropImg.src=url;
+}
+function layoutStage(){
+  const natW=cropImg.naturalWidth||1, natH=cropImg.naturalHeight||1;
+  const maxW=Math.min(460,(window.innerWidth||460)-72), maxH=Math.min(560,(window.innerHeight||560)-230);
+  let w=maxW, h=w*natH/natW; if(h>maxH){ h=maxH; w=h*natW/natH; }
+  stageW=Math.round(w); stageH=Math.round(h);
+  cropStage.style.width=stageW+"px"; cropStage.style.height=stageH+"px";
+}
+// Place the 4:5 box: head-and-shoulders around the face (fractions), else centred.
+function initCropBox(fb){
+  let cw,ch,cx,cy;
+  if(fb){
+    const fx=fb[0]*stageW, fy=fb[1]*stageH, fw=fb[2]*stageW, fh=fb[3]*stageH;
+    ch=Math.min(stageH, fh*3.0); cw=ch*CROP_AR;            // face ~ a third of the height
+    if(cw>stageW){ cw=stageW; ch=cw/CROP_AR; }
+    if(cw<fw*1.2){ cw=Math.min(stageW,fw*1.2); ch=cw/CROP_AR; if(ch>stageH){ ch=stageH; cw=ch*CROP_AR; } }
+    cx=(fx+fw/2)-cw/2; cy=(fy+fh/2)-ch*0.42;               // face a touch above centre
+  } else if(stageW/stageH>CROP_AR){ ch=stageH; cw=ch*CROP_AR; cx=(stageW-cw)/2; cy=0; }
+  else { cw=stageW; ch=cw/CROP_AR; cx=0; cy=(stageH-ch)/2; }
+  cropRect={x:cx,y:cy,w:cw,h:ch}; clampRect(); drawBox();
+}
+function clampRect(){
+  let {x,y,w,h}=cropRect;
+  w=Math.min(w,stageW); h=w/CROP_AR; if(h>stageH){ h=stageH; w=h*CROP_AR; }
+  x=Math.max(0,Math.min(x,stageW-w)); y=Math.max(0,Math.min(y,stageH-h));
+  cropRect={x,y,w,h};
+}
+function drawBox(){ cropBox.style.left=cropRect.x+"px"; cropBox.style.top=cropRect.y+"px";
+  cropBox.style.width=cropRect.w+"px"; cropBox.style.height=cropRect.h+"px"; }
+async function measureFaceBox(f){
+  try{ const fd=new FormData(); fd.append("image",f);
+    const d=await (await fetch("/measure",{method:"POST",body:fd})).json();
+    if(d && d.ok && d.face_box && cropModal.classList.contains("on")) initCropBox(d.face_box);
+  }catch(e){}
+}
+function cropXY(e){ const r=cropStage.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
+cropBox.addEventListener("pointerdown", e=>{
+  if(e.target.classList.contains("crop-grip")) return;
+  e.preventDefault(); cropBox.setPointerCapture(e.pointerId);
+  const p=cropXY(e); cropDrag={mode:"move",ox:p.x-cropRect.x,oy:p.y-cropRect.y,id:e.pointerId};
+});
+[...cropBox.querySelectorAll(".crop-grip")].forEach(g=>g.addEventListener("pointerdown", e=>{
+  e.preventDefault(); e.stopPropagation(); g.setPointerCapture(e.pointerId);
+  cropDrag={mode:"resize",h:g.dataset.h,id:e.pointerId,
+    ax:cropRect.x+(g.dataset.h.indexOf("l")>=0?cropRect.w:0),
+    ay:cropRect.y+(g.dataset.h.indexOf("t")>=0?cropRect.h:0)};
+}));
+cropStage.addEventListener("pointermove", e=>{
+  if(!cropDrag || e.pointerId!==cropDrag.id) return;
+  const p=cropXY(e);
+  if(cropDrag.mode==="move"){ cropRect.x=p.x-cropDrag.ox; cropRect.y=p.y-cropDrag.oy; clampRect(); drawBox(); return; }
+  const left=cropDrag.h.indexOf("l")>=0, top=cropDrag.h.indexOf("t")>=0;
+  const maxW=left?cropDrag.ax:(stageW-cropDrag.ax), maxH=top?cropDrag.ay:(stageH-cropDrag.ay);
+  let w=Math.min(Math.abs(p.x-cropDrag.ax), maxW, maxH*CROP_AR); let h=w/CROP_AR;
+  if(w>26){ cropRect={x:left?cropDrag.ax-w:cropDrag.ax, y:top?cropDrag.ay-h:cropDrag.ay, w:w, h:h}; clampRect(); drawBox(); }
+});
+function cropEnd(e){ if(cropDrag && e.pointerId===cropDrag.id) cropDrag=null; }
+cropStage.addEventListener("pointerup", cropEnd);
+cropStage.addEventListener("pointercancel", cropEnd);
+cropCancelBtn.addEventListener("click", ()=>{ cropModal.classList.remove("on"); cropImg.src=""; cropPending=null;
+  fileInput.value=""; fileInput.click(); });
+cropApplyBtn.addEventListener("click", ()=>{
+  if(!cropPending){ cropModal.classList.remove("on"); return; }
+  const fallback=cropPending, cropName=(fallback.name||"photo").replace(/\.[^.]+$/,"")+"-crop.jpg";
+  const rect={x:cropRect.x,y:cropRect.y,w:cropRect.w,h:cropRect.h}, sw=stageW, sh=stageH, img=cropImg;
+  cropModal.classList.remove("on");
+  // Crop + encode on a fresh task (not synchronously inside the click): canvas
+  // encoding is more reliable off the input-event stack, and the UI closes first.
+  // Synchronous toDataURL -> File; if the canvas can't be read (e.g. a tainted or
+  // undecodable image), fall back to the original upload uncropped.
+  setTimeout(()=>{
+    let file=fallback;
+    try{
+      const sx=img.naturalWidth/sw, sy=img.naturalHeight/sh;
+      const cw=Math.max(1,Math.round(rect.w*sx)), ch=Math.max(1,Math.round(rect.h*sy));
+      const cv=document.createElement("canvas"); cv.width=cw; cv.height=ch;
+      cv.getContext("2d").drawImage(img, Math.round(rect.x*sx), Math.round(rect.y*sy), cw, ch, 0, 0, cw, ch);
+      const durl=cv.toDataURL("image/jpeg", 0.92);
+      if(durl && durl.length>64){
+        const bin=atob(durl.split(",")[1]); const arr=new Uint8Array(bin.length);
+        for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+        file=new File([new Blob([arr],{type:"image/jpeg"})], cropName, {type:"image/jpeg"});
+      }
+    }catch(e){}
+    img.src="";
+    useCroppedFile(file);
+  }, 0);
+});
+
 // Options now live on the result screen: toggling re-renders the current ink
 // (and re-warms the swatch thumbnails) so the change is immediate.
 function optionChanged(){ if(resultView.style.display==="block"){ invalidate(); render(state.ink,{animate:false}); } }
@@ -574,6 +719,11 @@ const MAX_UPLOAD_BYTES=25*1024*1024;   // keep in step with TYPO_MAX_UPLOAD_BYTE
 function setFile(f){
   if(!f.type.startsWith("image/")){ inputErr("That file isn't an image — please choose a JPG, PNG or HEIC photo."); return; }
   if(f.size>MAX_UPLOAD_BYTES){ inputErr("That photo is too large (max 25 MB). Try a smaller image or a screenshot."); return; }
+  errInput.style.display="none";
+  openCrop(f);                          // crop first (auto-framed on the face), then use the result
+}
+// The cropped image becomes the render source; from here the flow is as before.
+function useCroppedFile(f){
   if(previewImg.src && previewImg.src.indexOf("blob:")===0) URL.revokeObjectURL(previewImg.src);   // free the prior upload
   state.file=f; previewImg.src=URL.createObjectURL(f);
   preview.style.display="block"; drop.style.display="none"; setPhotoNote("");
