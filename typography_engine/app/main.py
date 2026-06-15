@@ -1414,9 +1414,11 @@ def make_reel(
             "out":    str(gif_path),
             "aspect": "source",            # personal reel preserves the original aspect ratio
             "minimal": True,               # no CTA / promo captions — just a discreet credit
-            # Present the portrait inside the real framed-on-a-desk scene (candle,
-            # sprig) rather than a drawn frame; credit matches the brand.
-            "scene":  str(_scene) if _scene.exists() else None,
+            # Loved in Words (memorial) presents the portrait inside the real
+            # framed-on-a-desk scene (candle, sprig). Generic Typortrait keeps the
+            # clean drawn frame -- the candle's somber mood doesn't fit every
+            # celebratory subject (pets, weddings, graduates). Credit per brand.
+            "scene":  str(_scene) if (_ref == "lovedinwords" and _scene.exists()) else None,
             "credit": "lovedinwords.com" if _ref == "lovedinwords" else "Typortrait.com",
         })
     except Exception as e:  # noqa: BLE001
