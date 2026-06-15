@@ -193,6 +193,8 @@
   /* "Best for this photo" recommendation badge (set by the likeness scorer). */
   .seg button.best::after{content:"\2726";margin-left:5px;color:#c9a227;font-size:11px;vertical-align:1px}
   #bestNote{color:#8a6d1f}
+  /* Center the style caption + recommendation note under the style picker. */
+  #styleCaption,#bestNote{text-align:center}
   /* Quiet text link (e.g. switch to writing a message) — not a loud button. */
   .linklike{display:inline-block;background:none;border:none;color:var(--navy);font-family:var(--sans);font-size:13.5px;font-weight:600;padding:10px 2px 2px;margin:0;cursor:pointer;letter-spacing:-.01em}
   .linklike:hover{opacity:.75}
@@ -753,7 +755,7 @@ async function prewarmSizes(){
    the studio adopts it with a gentle crossfade -- never a spinner over the
    portrait they're already looking at. */
 let styleScores={}, recoStarted=false, recoDone=false, userTouched=false;
-const STYLE_NAMES={words:"Words",message:"Message",displacement:"Sculpted"};
+const STYLE_NAMES={words:"Words",message:"Message",displacement:"Sculpted Style"};
 function resetReco(){
   styleScores={}; recoStarted=false; recoDone=false; userTouched=false;
   document.querySelectorAll('#styleSegResult button').forEach(b=>b.classList.remove("best"));
