@@ -1015,6 +1015,21 @@ def _notify_sale(sess: dict, order: Optional[dict]) -> None:
     threading.Thread(target=_bg, daemon=True).start()
 
 
+def _studio_href(job: str) -> str:
+    """The studio URL for a 'make another' link, preserving the brand the buyer
+    came in under -- so a Loved in Words buyer returns to the branded studio, a
+    generic buyer to the plain one. Relative, so it stays on whatever host
+    (staging.typortrait.com / app.typortrait.com) they're on."""
+    try:
+        brand = str(json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("brand") or "")
+    except Exception:  # noqa: BLE001
+        brand = ""
+    if brand:
+        from urllib.parse import quote
+        return f"/static/index.html?brand={quote(brand, safe='')}"
+    return "/static/index.html"
+
+
 def _track_purchase_once(
     session_id: str,
     *,
@@ -1278,6 +1293,7 @@ def order_status(order_id: str, session_id: Optional[str] = None):
 
     product = products.get(o["sku"])
     name = product.name if product else o["sku"]
+    studio_href = _studio_href(o["job_id"])   # 'make another' keeps the buyer's brand
     status_msg = {
         "pending_payment": "Waiting for payment confirmation…",
         "paid": "Payment received. Preparing your order for fulfillment…",
@@ -1354,7 +1370,7 @@ def order_status(order_id: str, session_id: Optional[str] = None):
     Bookmark this page to check on your order, or reply to your receipt email
     if anything looks off.
   </p>
-  <p><a href="/static/index.html">Make another Typortrait →</a></p>
+  <p><a href="{studio_href}">Make another →</a></p>
 </div></body></html>"""
     return HTMLResponse(body)
 
@@ -1541,6 +1557,7 @@ def success(job: str, session_id: str):
     paid = _session_paid(session_id, job) and (PRIVATE_DIR / f"{job}.json").exists()
     jq, sq = quote(job, safe=""), quote(session_id, safe="")
     png_url = f"/download?job={jq}&fmt=png&session_id={sq}"
+    studio_href = _studio_href(job)   # 'make another' keeps the buyer's brand
     if paid:
         # Conversion event for digital sales (the primary revenue path, which
         # completes here rather than via the webhook). Deduped + revenue/sku
@@ -1596,7 +1613,7 @@ def success(job: str, session_id: str):
             '<span>' + personal_label + '</span></label>'
             + ct_html +
             '<button class="btn" id="mk" disabled>' + reel_btn + '</button>'
-            '<div class="link-wrap"><a class="link" href="/static/index.html">Create another portrait</a></div>'
+            '<div class="link-wrap"><a class="link" href="' + studio_href + '">Create another portrait</a></div>'
             '<div id="rlOut" style="display:none">'
             '<p class="sub" id="rlSub">' + ready_label + '</p>'
             '<a class="btn" id="rlMp4" download="typortrait-reel.mp4" style="display:none">Download MP4</a>'
@@ -1657,7 +1674,7 @@ def success(job: str, session_id: str):
             '<p class="sub">If your payment just completed, your download will be ready in a moment. '
             'Refresh this page; if it doesn&rsquo;t appear, your card may not have been charged.</p>'
             f'<a class="btn" href="/success?job={html.escape(jq)}&amp;session_id={html.escape(sq)}">Refresh</a>'
-            '<a class="link" href="/static/index.html">Back to Typortrait</a>'
+            '<a class="link" href="' + studio_href + '">Back to the studio</a>'
         )
     page = (
         "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
