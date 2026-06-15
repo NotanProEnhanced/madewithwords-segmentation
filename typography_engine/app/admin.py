@@ -452,6 +452,60 @@ def _read_words_for_job(job: str):
         return []
 
 
+def send_sale_email(summary: dict) -> bool:
+    """Email the admin a 'you made a sale' notice. Best-effort; reuses the same
+    Gmail SMTP path. `summary` keys: product, amount (formatted str), email, ref,
+    order_id, shipping (recipient dict|None), digital_included (bool)."""
+    if not smtp_configured():
+        _log("send_sale_email skipped (smtp not configured)")
+        return False
+    product = html.escape(str(summary.get("product") or "Order"))
+    amount = html.escape(str(summary.get("amount") or ""))
+    cust = html.escape(str(summary.get("email") or "—"))
+    ref = html.escape(str(summary.get("ref") or ""))
+    oid = html.escape(str(summary.get("order_id") or ""))
+    ts_s = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+    rows = [f"<li><b>Item:</b> {product}</li>", f"<li><b>Amount:</b> {amount}</li>",
+            f"<li><b>Customer:</b> {cust}</li>"]
+    if ref:
+        rows.append(f"<li><b>Source:</b> {ref}</li>")
+    if oid:
+        rows.append(f"<li><b>Order:</b> {oid}</li>")
+    if summary.get("digital_included"):
+        rows.append("<li>High-res digital file included free.</li>")
+    ship = summary.get("shipping") or None
+    ship_html = ""
+    if ship and ship.get("address1"):
+        parts = [ship.get("name"), ship.get("address1"), ship.get("address2"),
+                 ship.get("city"), ship.get("state_code"), ship.get("zip"), ship.get("country_code")]
+        ship_html = "<p><b>Ship to:</b> " + html.escape(", ".join(p for p in parts if p)) + "</p>"
+    dash = f"{PUBLIC_BASE_URL}/admin"
+    body_html = f"""<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#16203a">
+<p>New sale.</p>
+<ul>{''.join(rows)}</ul>
+{ship_html}
+<p style="color:#6b7280;font-size:13px">{ts_s} &middot; <a href="{dash}">admin dashboard</a></p>
+</div>"""
+    body_text = (f"New sale.\nItem: {summary.get('product')}\nAmount: {summary.get('amount')}\n"
+                 f"Customer: {summary.get('email')}\nOrder: {summary.get('order_id') or '-'}\n")
+    msg = EmailMessage()
+    msg["Subject"] = f"New sale · {summary.get('product') or 'Order'} · {summary.get('amount') or ''}"
+    msg["From"] = SMTP_USER
+    msg["To"] = ADMIN_EMAIL
+    msg.set_content(body_text)
+    msg.add_alternative(body_html, subtype="html")
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
+            s.starttls()
+            s.login(SMTP_USER, SMTP_PASS)
+            s.send_message(msg)
+        _log(f"send_sale_email ok: order={summary.get('order_id')} to={ADMIN_EMAIL}")
+        return True
+    except Exception as e:  # noqa: BLE001
+        _log(f"send_sale_email FAILED: err={type(e).__name__}: {e}")
+        return False
+
+
 def send_review_email(job: str, words, consent: dict) -> bool:
     if not smtp_configured():
         _log(f"send_review_email skipped (smtp not configured): job={job}")

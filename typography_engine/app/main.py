@@ -959,6 +959,58 @@ def _umami_event(name: str, data: Optional[dict] = None) -> None:
 # no matter how many times those pages are reloaded. Lives under data/ (the
 # volume-mounted dir) so it survives restarts.
 _PURCHASE_TRACK_DIR = DATA_DIR / "purchase_events"
+_SALE_NOTIFY_DIR = DATA_DIR / "sale_notified"
+
+
+def _notify_sale(sess: dict, order: Optional[dict]) -> None:
+    """On a paid checkout: (1) force the customer's Stripe receipt by setting
+    receipt_email on the PaymentIntent (so it sends regardless of the dashboard
+    setting), and (2) email the admin a 'you made a sale' alert. Deduped per
+    session; the network I/O runs off the webhook response thread. Best-effort --
+    never raises into the payment path."""
+    sid = sess.get("id") or ""
+    if not sid:
+        return
+    try:
+        import hashlib
+        _SALE_NOTIFY_DIR.mkdir(parents=True, exist_ok=True)
+        marker = _SALE_NOTIFY_DIR / (hashlib.sha256(sid.encode("utf-8")).hexdigest()[:32] + ".txt")
+        if marker.exists():
+            return
+        marker.write_text("1", encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        return
+    email = (sess.get("customer_details") or {}).get("email")
+    pi = sess.get("payment_intent")
+    meta = sess.get("metadata") or {}
+    sku = meta.get("sku")
+    prod = products.get(sku) if sku else None
+    amt = sess.get("amount_total")
+    summary = {
+        "product": (prod.name if prod else (sku or "High-res digital download")),
+        "amount": (f"{amt/100:.2f} {(sess.get('currency') or 'usd').upper()}"
+                   if isinstance(amt, (int, float)) else ""),
+        "email": email,
+        "ref": meta.get("ref"),
+        "order_id": (order or {}).get("id") or meta.get("order_id"),
+        "shipping": _recipient_from_session(sess),
+        "digital_included": bool(prod and prod.physical),
+    }
+
+    def _bg():
+        if pi and email and STRIPE_SECRET_KEY:
+            try:
+                import stripe
+                stripe.api_key = STRIPE_SECRET_KEY
+                stripe.PaymentIntent.modify(pi, receipt_email=email)
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            admin_mod.send_sale_email(summary)
+        except Exception:  # noqa: BLE001
+            pass
+    import threading
+    threading.Thread(target=_bg, daemon=True).start()
 
 
 def _track_purchase_once(
@@ -1079,6 +1131,8 @@ async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Hea
         currency=sess.get("currency"),
         source=meta.get("ref"),
     )
+    # Customer receipt (force Stripe to send one) + admin sale-notification email.
+    _notify_sale(sess, transitioned)
     return JSONResponse({"ok": True})
 
 
