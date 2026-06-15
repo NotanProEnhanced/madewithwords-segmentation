@@ -512,6 +512,26 @@ async def render(
     except Exception:  # noqa: BLE001
         likeness = None
 
+    # When the upload was cropped, hand the studio a small JPEG of the CROPPED
+    # source so the before/after slider's "before" matches the rendered "after"
+    # (the client can't reliably crop the photo itself). Main render only.
+    source_url = None
+    if not is_thumb and crop:
+        try:
+            import cv2 as _cv2
+            import numpy as _np
+            sa = _cv2.imdecode(_np.frombuffer(img_bytes, _np.uint8), _cv2.IMREAD_COLOR)
+            if sa is not None:
+                sh, sw = sa.shape[:2]
+                sc = 760.0 / max(1, sw)
+                if sc < 1.0:
+                    sa = _cv2.resize(sa, (int(sw * sc), int(sh * sc)), interpolation=_cv2.INTER_AREA)
+                sp = OUTPUTS_DIR / f"{job_id}_src.jpg"
+                if _cv2.imwrite(str(sp), sa, [int(_cv2.IMWRITE_JPEG_QUALITY), 86]):
+                    source_url = f"/outputs/{sp.name}"
+        except Exception:  # noqa: BLE001
+            source_url = None
+
     return JSONResponse(
         {
             "ok": True,
@@ -528,6 +548,7 @@ async def render(
                 for r in runs
             ],
             "preview": f"/outputs/{preview_path.name}" if preview_path.exists() else None,
+            "source": source_url,
             "price_cents": DOWNLOAD_PRICE_CENTS,
             "currency": CURRENCY,
             "warnings": warns.as_list(),

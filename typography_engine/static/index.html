@@ -601,7 +601,7 @@ const cropModal=$("#cropModal"), cropStage=$("#cropStage"), cropImg=$("#cropImg"
 const CROP_AR=0.8;                      // width/height = 4:5, matching the print canvas
 let cropPending=null, cropRect={x:0,y:0,w:0,h:0}, stageW=0, stageH=0, cropDrag=null;
 function openCrop(f){
-  cropPending=f; state.crop=null;          // new photo -> no crop until confirmed
+  cropPending=f; state.crop=null; sourcePreview=null;   // new photo -> no crop, no stale "before"
   const url=URL.createObjectURL(f);
   cropImg.onload=()=>{ URL.revokeObjectURL(url); layoutStage(); initCropBox(null);
     cropModal.classList.add("on"); cropModal.setAttribute("aria-hidden","false"); measureFaceBox(f); };
@@ -988,7 +988,7 @@ function selectSize(mf){
 /* ---------- views ---------- */
 const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy");
 const canvas=$("#assembly"), buy=$("#buy"), buynote=$("#buynote"), errResult=$("#errResult"), errInput=$("#errInput");
-let currentJob=null, priceLabel="";
+let currentJob=null, priceLabel="", sourcePreview=null;   // sourcePreview = server-cropped "before" image
 // Keepsake presentation: the framed-on-a-desk scene, shown THROUGHOUT — from the
 // moment Create is clicked, through the compose, to the reveal. Every finished
 // portrait is now 4:5 (the standard print canvas), so it always drops cleanly
@@ -1154,7 +1154,7 @@ function revealPlain(entry, crossfade){
   stopAssembly();
   // Before/after reveal: show the uploaded photo under the slider.
   compareEl.classList.remove("hide-cmp");
-  if(previewImg.src){ beforeImg.src=previewImg.src; }
+  { const bsrc=sourcePreview||previewImg.src; if(bsrc) beforeImg.src=bsrc; }   // server-cropped "before" when available
   const url = entry.preview + "?t=" + Date.now();
   if(crossfade && portrait.getAttribute("src")){
     overlay.onload=()=>{
@@ -1174,7 +1174,7 @@ function revealFromAssembly(entry){
   setBuy(entry);
   applyFrame(state.ink);
   compareEl.classList.remove("hide-cmp");
-  if(previewImg.src){ beforeImg.src=previewImg.src; }
+  { const bsrc=sourcePreview||previewImg.src; if(bsrc) beforeImg.src=bsrc; }   // server-cropped "before" when available
   const url = entry.preview + "?t=" + Date.now();
   const im=new Image();
   im.onload=()=>{
@@ -1309,6 +1309,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     }
     if(thumb){ thumbCache[ink]=data.preview; updateThumb(ink); return; }
     cache[ink]={preview:data.preview, job:data.job, price:data.price_cents, currency:data.currency}; updateThumb(ink);
+    if(data.source){ sourcePreview=data.source; if(beforeImg) beforeImg.src=sourcePreview; }   // cropped "before"
     if(background || ink!==state.ink) return;
     showImage(cache[ink]);   // watermarked preview (clean art is unlocked via Stripe)
     if(typeof data.likeness==="number") styleScores[state.style]=data.likeness;
