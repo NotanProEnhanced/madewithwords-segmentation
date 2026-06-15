@@ -1183,18 +1183,26 @@ function setThumbStatus(label){
   if(label){ thumbStatus.innerHTML=`<span class="dot"></span><span>Typortrait is rendering your <b>${label}</b> portrait — a second or two…</span>`; thumbStatus.classList.add("on"); }
   else { thumbStatus.classList.remove("on"); thumbStatus.textContent=""; }
 }
-let prewarming=false;
+let prewarming=false, prewarmAgain=false;
 async function prewarm(){
-  if(prewarming) return;
+  // Don't run two passes at once -- but if a prewarm is requested WHILE one is
+  // running, flag a re-run instead of dropping it. That covers a style/variant
+  // switch mid-prewarm (e.g. the recommender adopting Sculpt after the Words
+  // render): the in-flight Words pass breaks on the gen bump, then the do-while
+  // runs again for the NEW swatch set so the Sculpt thumbnails actually fill.
+  if(prewarming){ prewarmAgain=true; return; }
   prewarming=true;
-  const myGen=gen;
-  for(const [id, , label] of currentSwatches()){
-    if(gen!==myGen) break;
-    if(id===state.ink || cache[id] || thumbCache[id]){ updateThumb(id); continue; }
-    const pic=swatchEl.querySelector(`.pic[data-ink="${id}"]`); if(pic) pic.classList.add("loading");
-    setThumbStatus(label);
-    await render(id,{thumb:true});
-  }
+  do {
+    prewarmAgain=false;
+    const myGen=gen;
+    for(const [id, , label] of currentSwatches()){
+      if(gen!==myGen) break;
+      if(id===state.ink || cache[id] || thumbCache[id]){ updateThumb(id); continue; }
+      const pic=swatchEl.querySelector(`.pic[data-ink="${id}"]`); if(pic) pic.classList.add("loading");
+      setThumbStatus(label);
+      await render(id,{thumb:true});
+    }
+  } while(prewarmAgain);
   setThumbStatus("");
   prewarming=false;
 }
