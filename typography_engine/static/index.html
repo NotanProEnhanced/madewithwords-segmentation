@@ -837,19 +837,17 @@ function selectSize(mf){
 const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy");
 const canvas=$("#assembly"), buy=$("#buy"), buynote=$("#buynote"), errResult=$("#errResult"), errInput=$("#errInput");
 let currentJob=null, priceLabel="";
-// Pick the keepsake presentation from the subject's shape: a clearly vertical
-// portrait drops into the framed desk scene (3:4 opening); square or landscape
-// falls back to the greenery card so nothing gets cropped awkwardly. Called
-// preliminarily at Create (from the uploaded PHOTO's aspect) so the frame shows
-// instantly while composing, then again on reveal (from the RENDER's aspect).
-function sceneFor(w,h){ return (w&&h&&(w/h)<=0.85) ? "kp-desk" : "kp-leaf"; }
+// Keepsake presentation: the framed-on-a-desk scene, shown THROUGHOUT — from the
+// moment Create is clicked, through the compose, to the reveal. Every finished
+// portrait is now 4:5 (the standard print canvas), so it always drops cleanly
+// into the desk frame's 4:5 mat opening; there's no longer any need to guess the
+// scene from the photo's shape or fall back to the greenery card, and doing so
+// caused a visible mid-compose flip (the input photo's aspect guessed one frame,
+// then the 4:5 render revealed in another). Always the desk -> no flip.
 function applyKeepsake(prelim){
   if(!KEEPSAKE) return;
-  const src = prelim ? previewImg : portrait;
-  const w=src.naturalWidth||0, h=src.naturalHeight||0;
-  resultView.classList.remove("kp-desk","kp-leaf");
-  if(!w||!h){ if(prelim) resultView.classList.add("kp-desk"); return; }   // unknown -> default desk
-  resultView.classList.add(sceneFor(w,h));
+  resultView.classList.remove("kp-leaf");
+  resultView.classList.add("kp-desk");
 }
 buy.addEventListener("click", async ()=>{
   if(!currentJob) return;
