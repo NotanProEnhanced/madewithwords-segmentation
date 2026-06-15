@@ -1458,6 +1458,38 @@ def success(job: str, session_id: str):
         # completes here rather than via the webhook). Deduped + revenue/sku
         # filled from Stripe, so a page refresh can't double-count.
         _track_purchase_once(session_id, sku="digital")
+        # Memorial brand (Loved in Words): reframe the "reel" as a tribute video
+        # and DROP the "feature on our social channels" ask -- marketing with a
+        # grieving family's loved one is off-key. Brand is read from the job's
+        # stored ref (set to the brand id when they came through that storefront).
+        _ref = ""
+        try:
+            _ref = str(_json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("ref") or "")
+        except Exception:  # noqa: BLE001
+            _ref = ""
+        is_memorial = _ref == "lovedinwords"
+        if is_memorial:
+            reel_noun = "tribute video"
+            reel_title = "Create a tribute video"
+            reel_sub = "Turn the portrait into a short remembrance video — their face forming from your words — to keep or share with family."
+            personal_label = "Yes, I’ll share this video for personal use."
+            reel_btn = "Make the tribute video"
+            ready_label = "Your tribute video is ready."
+            share_label = "Share video"
+            making_label = "Making the tribute video… (~30s)"
+            ct_html = ""
+        else:
+            reel_noun = "reel"
+            reel_title = "Make a reel from your portrait"
+            reel_sub = "Turn it into a short 9:16 video — the dissolve, your words, and the finished portrait — perfect for sharing."
+            personal_label = "Yes, I’ll share my reel for personal use."
+            reel_btn = "Make my reel"
+            ready_label = "Your reel is ready."
+            share_label = "Share reel"
+            making_label = "Making your reel… (~30s)"
+            ct_html = ('<label class="chk"><input type="checkbox" id="ct"> '
+                       '<span>Optional: Allow Typortrait to feature this reel on our own social channels '
+                       '(<a href="/terms" target="_blank" rel="noopener">terms</a>). You can revoke any time by emailing us.</span></label>')
         # Fetch the high-res file in the background (it's composed on first
         # request and can take a few seconds), showing a spinner, then hand the
         # user a ready, instant download instead of a hung button.
@@ -1468,22 +1500,20 @@ def success(job: str, session_id: str):
             '<button class="btn" id="dl" disabled><span class="spin"></span>Preparing…</button>'
             '<button class="btn ghost" id="sh">Share</button>'
             '<p class="note">Watermark-free, print-quality — ready to print or share.</p>'
-            # ---- Phase B: optional "Make a reel" card with dual consent ----
+            # ---- Phase B: optional reel / tribute-video card (brand-aware) ----
             '<div class="divider"></div>'
-            '<h2 class="reel-h">Make a reel from your portrait</h2>'
-            '<p class="sub reel-sub">Turn it into a short 9:16 video — the dissolve, your words, and the finished portrait — perfect for sharing.</p>'
+            '<h2 class="reel-h">' + reel_title + '</h2>'
+            '<p class="sub reel-sub">' + reel_sub + '</p>'
             '<label class="chk"><input type="checkbox" id="cp"> '
-            '<span>Yes, I’ll share my reel for personal use.</span></label>'
-            '<label class="chk"><input type="checkbox" id="ct"> '
-            '<span>Optional: Allow Typortrait to feature this reel on our own social channels '
-            '(<a href="/terms" target="_blank" rel="noopener">terms</a>). You can revoke any time by emailing us.</span></label>'
-            '<button class="btn" id="mk" disabled>Make my reel</button>'
+            '<span>' + personal_label + '</span></label>'
+            + ct_html +
+            '<button class="btn" id="mk" disabled>' + reel_btn + '</button>'
             '<div class="link-wrap"><a class="link" href="/static/index.html">Create another portrait</a></div>'
             '<div id="rlOut" style="display:none">'
-            '<p class="sub" id="rlSub">Your reel is ready.</p>'
+            '<p class="sub" id="rlSub">' + ready_label + '</p>'
             '<a class="btn" id="rlMp4" download="typortrait-reel.mp4" style="display:none">Download MP4</a>'
             '<a class="btn ghost" id="rlGif" download="typortrait-reel.gif">Download GIF</a>'
-            '<button class="btn ghost" id="rlSh" style="display:none">Share reel</button>'
+            '<button class="btn ghost" id="rlSh" style="display:none">' + share_label + '</button>'
             '</div>'
             '<script>(function(){var url=' + _json.dumps(png_url) + ';'
             'var job=' + _json.dumps(job) + ',sid=' + _json.dumps(session_id) + ',o=location.origin;'
@@ -1509,16 +1539,16 @@ def success(job: str, session_id: str):
             'var rlGif=document.getElementById("rlGif"),rlMp4=document.getElementById("rlMp4"),rlSh=document.getElementById("rlSh");'
             'cp.onchange=function(){mk.disabled=!cp.checked;};'
             'mk.onclick=function(){if(!cp.checked)return;'
-            'mk.disabled=true;mk.innerHTML=\'<span class="spin"></span>Making your reel… (~30s)\';'
+            'mk.disabled=true;mk.innerHTML=\'<span class="spin"></span>' + making_label + '\';'
             'var fd=new FormData();fd.append("job",job);fd.append("session_id",sid);'
             'fd.append("personal_consent",cp.checked?"on":"");'
-            'fd.append("typortrait_consent",ct.checked?"on":"");'
+            'fd.append("typortrait_consent",(ct&&ct.checked)?"on":"");'
             'fetch("/reel",{method:"POST",body:fd}).then(function(r){return r.json();}).then(function(j){'
-            'if(!j||!j.ok){mk.disabled=false;mk.innerHTML="Make my reel";'
+            'if(!j||!j.ok){mk.disabled=false;mk.innerHTML=' + _json.dumps(reel_btn) + ';'
             'rlSub.textContent="Sorry, that didn\\u2019t work: "+((j&&(j.detail||j.error))||"please try again.");'
             'rlOut.style.display="block";return;}'
             'mk.style.display="none";rlOut.style.display="block";'
-            'rlSub.textContent=j.typortrait_share?"Your reel is ready. Thanks \\u2014 we\\u2019ll review it before posting on our channels.":"Your reel is ready.";'
+            'rlSub.textContent=j.typortrait_share?"Your reel is ready. Thanks \\u2014 we\\u2019ll review it before posting on our channels.":' + _json.dumps(ready_label) + ';'
             'rlGif.href=j.gif_url;'
             'if(j.mp4_url){rlMp4.href=j.mp4_url;rlMp4.style.display="inline-block";}'
             'var mob=(window.matchMedia&&matchMedia("(pointer:coarse)").matches)||/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");'

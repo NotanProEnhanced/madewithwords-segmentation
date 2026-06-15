@@ -1271,9 +1271,11 @@ function stopComposeStatus(){ clearInterval(msgTimer); msgTimer=0; const cs=docu
 function showBusy(animate){
   errResult.style.display="none";
   // In the framed presentation the empty mat shows a calm line about what's
-  // taking shape on the desk; the classic frame keeps the shorter status.
-  $(".msg").textContent = KEEPSAKE ? "Composing your portrait, woven from your words…"
-                                   : "Composing from your words…";
+  // taking shape on the desk; the classic frame keeps the shorter status. The
+  // memorial brand stays especially gentle and unhurried (no exclamation/upsell).
+  $(".msg").textContent = (typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords")
+    ? "Composing their portrait, in your words…"
+    : (KEEPSAKE ? "Composing your portrait, woven from your words…" : "Composing from your words…");
   busy.classList.remove("hide");
   // Show the word-assembly for the first Create — meaningful progress feedback,
   // played for everyone (it's brief and on-brand, not gratuitous motion).
