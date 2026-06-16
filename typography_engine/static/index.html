@@ -1298,33 +1298,25 @@ function startAssembly(){
 }
 function stopAssembly(){ if(animRAF){ cancelAnimationFrame(animRAF); animRAF=0; } canvas.style.display="none"; busy.classList.remove("anim"); stopComposeStatus(); }
 let msgTimer=0;
-// Honest narration: advance ONCE through plausible early stages, then HOLD on an
-// open-ended line -- never loop back to "finding the face" or claim "finishing
-// touches" while still rasterizing. The Sculpted style is slow (~30s), so it sets
-// that expectation so the wait reads as expected, not stuck. (The bar stays
-// indeterminate; it only ends when the render actually completes.)
-function startComposeStatus(){
-  const cs=$("#composeStatus"), m=$("#composeMsg"); if(!cs) return;
-  let slow=false; try{ slow = variantPost(state.ink).style==="displacement"; }catch(e){}
-  const msgs = slow
-    ? ["Finding the face…","Placing your words…","Sculpting your portrait — this takes about 30 seconds…","Still sculpting — almost there…"]
-    : ["Finding the face…","Placing your words…","Composing your portrait…","Almost there…"];
-  cs.classList.add("on"); let i=0; if(m) m.textContent=msgs[0];
-  clearInterval(msgTimer);
-  msgTimer=setInterval(()=>{
-    if(i < msgs.length-1){ i++; if(m) m.textContent=msgs[i]; }
-    else { clearInterval(msgTimer); msgTimer=0; }   // reached the last line -> hold it honestly
-  }, slow ? 5000 : 3000);
-}
+// The animated multi-step compose narration is superseded by the framed-desk
+// keepsake: KEEPSAKE=true forces animate=false in render(), so this path no longer
+// runs. The live progress text is the single style-aware line set in showBusy().
+// Kept as an inert no-op so the (dead) animate branch + cleanup calls stay valid.
+function startComposeStatus(){ /* inert: keepsake presentation replaced the narration */ }
 function stopComposeStatus(){ clearInterval(msgTimer); msgTimer=0; const cs=document.getElementById("composeStatus"); if(cs) cs.classList.remove("on"); }
 function showBusy(animate){
   errResult.style.display="none";
   // In the framed presentation the empty mat shows a calm line about what's
   // taking shape on the desk; the classic frame keeps the shorter status. The
   // memorial brand stays especially gentle and unhurried (no exclamation/upsell).
+  // This single line is the live progress text (the framed-desk keepsake replaced
+  // the animated narration). Make it style-aware so the slow Sculpted render sets
+  // its own ~30s expectation; Loved in Words stays gentle (no clinical countdown
+  // in a grief context).
+  var _slow=false; try{ _slow = variantPost(state.ink).style==="displacement"; }catch(e){}
   $(".msg").textContent = (typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords")
-    ? "Composing their portrait, in your words…"
-    : (KEEPSAKE ? "Composing your portrait, woven from your words…" : "Composing from your words…");
+    ? (_slow ? "Composing their portrait — this takes a moment…" : "Composing their portrait, in your words…")
+    : (_slow ? "Sculpting your portrait — this takes about 30 seconds…" : "Composing your portrait, woven from your words…");
   busy.classList.remove("hide");
   // Show the word-assembly for the first Create — meaningful progress feedback,
   // played for everyone (it's brief and on-brand, not gratuitous motion).
