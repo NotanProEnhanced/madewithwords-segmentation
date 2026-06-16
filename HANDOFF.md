@@ -10,12 +10,15 @@ The **code is the source of truth** — it's all on the branch below. This file 
 - **Branch:** `feat/displacement-style` (active dev branch). PROD runs `claude/printful-integration`,
   which on 2026-06-16 was fast-forwarded to `feat/displacement-style`'s tip `d543bfd` (clean FF —
   `feat/displacement-style` descends directly from prod's prior HEAD `18da690`, nothing dropped).
-- **Latest commit:** `d543bfd` — *Render-health docs* (canary/fail-loud rasterizer, brand-preserving
-  "make another" links, memorial brand-gating, reels, purchase emails — all earlier on the same branch).
-- **Deployed?** **PROD IS LIVE** at `app.typortrait.com` on `d543bfd` (promoted 2026-06-16 via
-  `STAGING_BRANCH=feat/displacement-style ./promote.sh`). Rollback tag: **`prod-pre-promote-20260616`**
-  (= `18da690`); rollback = `git reset --hard` that tag + `docker compose up -d --build` in
-  `/root/typortrait/typography_engine`. Staging mirrors prod on port 8078.
+- **Latest commit:** `bb7459a` — *consent drop-zone lock UX* (atop the privacy-compliance work
+  `640a9ec`; render-health, brand-preserving "make another" links, memorial gating, reels, purchase
+  emails are all earlier on the same branch).
+- **Deployed?** **PROD IS LIVE & COMPLIANCE-ENABLED** at `app.typortrait.com` on `bb7459a` (promoted
+  2026-06-16 via `STAGING_BRANCH=feat/displacement-style ./promote.sh`). Verified on prod: canary 5/5,
+  geo gate US-IL→blocked / US-CA→allowed, render completes. Two rollback tags exist:
+  **`prod-pre-compliance-20260616`** (pre-compliance) and **`prod-pre-promote-20260616`** (= `18da690`,
+  the original pre-everything state). Rollback = `git reset --hard <tag>` + `docker compose up -d --build`
+  in `/root/typortrait/typography_engine`. Staging mirrors prod on port 8078.
 - **App lives in:** `typography_engine/` (FastAPI app `app/main.py`, renderers in `app/pipeline/`, frontend `static/index.html`, reel builder `tools/reel_template.py`).
 
 ## The brand: "Loved in Words"
@@ -85,20 +88,34 @@ mode (silently shipping a degraded portrait of someone's loved one):
   `/root/typortrait/typography_engine/docker-compose.yml`). The pm2 `typortrait-render` is an unrelated
   legacy **node** service (`/var/www/typortrait-render/render-api.js`) — NOT the web app; leave it alone.
   Prod canary: `docker exec typortrait python /app/tools/render_canary.py 2>/dev/null`.
-- **Hard-fail flag not yet wired through compose:** neither `docker-compose.yml` nor
-  `docker-compose.staging.yml` lists `TYPO_REQUIRE_CAIROSVG` under `environment:` (and there's no
-  `env_file:`), so setting it in `.env` is currently INERT. To activate, add
-  `- TYPO_REQUIRE_CAIROSVG=${TYPO_REQUIRE_CAIROSVG:-}` to both compose files, then set it in each `.env`.
-  The canary + render-path WARNING already protect regardless; this is the belt-and-suspenders hard stop.
+**Privacy compliance — GDPR / CCPA / BIPA (`640a9ec`, `bb7459a`) — LIVE on prod + staging:**
+- **Biometric consent gate:** the studio greys out the photo drop zone until the `#bioConsent` box is
+  ticked; `/measure` + `/render` enforce a `biometric_consent` field server-side (400 without it) and
+  store a versioned consent record per job. No faceprint is ever stored (mesh is transient).
+- **Illinois geo-block:** `/measure` + `/render` return 451 for blocked regions; studio disables upload
+  up front via `GET /compliance/region`. Region from nginx GeoIP2 headers `X-Geo-Country`/`X-Geo-Region`
+  (MaxMind GeoLite2-City at `/var/lib/GeoIP`, `geoip2.conf` + `proxy_set_header` in the server blocks).
+  Default block `US-IL`; **fails OPEN** with no geo signal. Token format `COUNTRY-REGION` (avoids IL-state
+  vs IL-country clash). Verified on prod: US-IL→blocked, US-CA→allowed.
+- **Policies + DSAR:** expanded `/privacy`, new `/biometric-policy`, self-serve `/data-request`
+  (job-id → immediate delete; all requests logged to `data/data_requests.log`). Debug face endpoints
+  (`/debug/*`) now 404 unless `TYPO_ENABLE_DEBUG=1`. Full picture + lawyer punch list in `COMPLIANCE.md`.
+- **Compose knobs NOT wired (see Next step #2):** `TYPO_BLOCKED_REGIONS`, `TYPO_GEO_*_HEADER`,
+  `TYPO_BIO_CONSENT_VERSION`, `TYPO_ENABLE_DEBUG`, `TYPO_REQUIRE_CAIROSVG` are read in code with safe
+  defaults but are NOT in the compose `environment:` blocks (no `env_file:`), so `.env` overrides are
+  INERT. Defaults are correct, so nothing's broken — but to tune from `.env` (e.g. add Texas), add each
+  as `- VAR=${VAR:-default}` to both `docker-compose.yml` and `docker-compose.staging.yml`.
 
 ---
 
 ## Next step
 
-1. ~~Promote to production.~~ **DONE 2026-06-16** — prod is live on `d543bfd`. Remaining tidy-ups:
-   schedule the **prod canary cron** (`docker exec typortrait …` at 06:00 UTC → `typortrait-canary-prod.log`)
-   and, when ready, wire the `TYPO_REQUIRE_CAIROSVG` compose line (see Render-health note above).
-2. (Deferred) **Ever Loved partnership research** — a deep‑research run was started earlier; surface
+1. **Lawyer review of the compliance posture** (not legal sign-off yet) — punch list in `COMPLIANCE.md`
+   (EU/UK Art. 27 rep, sub-processor DPAs, confirm the biometric stance, cookie audit). Also: whoever
+   monitors `data/data_requests.log` for non-job DSARs.
+2. **(Optional) Wire the compose knobs** — add the env vars above to both compose `environment:` blocks
+   so the dials (block regions, hard-fail rasterizer) are tunable from `.env`. Low-risk; rides a deploy.
+3. (Deferred) **Ever Loved partnership research** — a deep‑research run was started earlier; surface
    the findings + draft outreach when wanted. A trial = tracked referral link + code + one hero SKU,
    you as merchant of record (no deep integration); only being *visible on their site* needs their yes.
 
