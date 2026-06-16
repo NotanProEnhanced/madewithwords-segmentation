@@ -2,8 +2,15 @@
 
 The basic /health endpoint reports local capabilities only. This adds a deeper,
 network check of the two external services that take payment and fulfil orders,
-so a bad/expired key or an upstream outage is visible to monitoring BEFORE a
+so a revoked/expired key or an upstream outage is visible to monitoring BEFORE a
 customer hits it at checkout.
+
+What "healthy" means here: the service is reachable AND our credential
+authenticates. We deliberately do NOT require full read access -- production keys
+are (correctly) least-privilege, scoped only to what the app does (create
+checkouts / create orders), so a probe of an unrelated read endpoint returns
+403. A 403 still proves auth succeeded and the service is up, so we treat it as
+healthy. Only a 401 (bad/expired key), 429, 5xx, or network failure is unhealthy.
 
 Each check is best-effort, short-timeout, and cached briefly so polling the
 health endpoint can't hammer the upstream APIs. Responses expose only coarse
@@ -13,7 +20,7 @@ the endpoint stays safe to leave unauthenticated for uptime monitors.
 from __future__ import annotations
 
 import time
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict
 
 import httpx
 
@@ -39,14 +46,22 @@ def _cached(name: str, fn: Callable[[], dict]) -> dict:
     return res
 
 
-def _reason(status: int) -> str:
-    if status in (401, 403):
-        return "auth_failed"
+def _classify(status: int):
+    """(ok, detail) for an auth probe. A 200 is fully healthy. A 403 still proves
+    the service is reachable and the credential authenticates -- the (correctly)
+    least-privilege key just lacks scope to read this probe endpoint -- so it is
+    healthy. Only 401, 429, 5xx, or a network failure is unhealthy."""
+    if status == 200:
+        return True, "ok"
+    if status == 403:
+        return True, "reachable; key authenticates (probe endpoint outside key scope)"
+    if status == 401:
+        return False, "auth_failed (bad or expired key)"
     if status == 429:
-        return "rate_limited"
+        return False, "rate_limited"
     if status >= 500:
-        return "upstream_error"
-    return f"http_{status}"
+        return False, "upstream_error"
+    return False, f"http_{status}"
 
 
 def _check_stripe() -> dict:
@@ -61,10 +76,11 @@ def _check_stripe() -> dict:
     except httpx.HTTPError as e:
         return {"configured": True, "ok": False, "mode": mode, "detail": f"network_error: {type(e).__name__}"}
     ms = round((time.time() - t0) * 1000)
-    if r.status_code == 200:
-        return {"configured": True, "ok": True, "mode": mode, "latency_ms": ms}
-    return {"configured": True, "ok": False, "mode": mode, "latency_ms": ms,
-            "status": r.status_code, "detail": _reason(r.status_code)}
+    ok, detail = _classify(r.status_code)
+    res = {"configured": True, "ok": ok, "mode": mode, "latency_ms": ms, "detail": detail}
+    if r.status_code != 200:
+        res["status"] = r.status_code
+    return res
 
 
 def _check_printful() -> dict:
@@ -75,14 +91,17 @@ def _check_printful() -> dict:
         headers["X-PF-Store-Id"] = str(PRINTFUL_STORE_ID)
     t0 = time.time()
     try:
-        r = httpx.get(f"{PRINTFUL_API_BASE.rstrip('/')}/store", headers=headers, timeout=_TIMEOUT)
+        # Probe the orders endpoint -- the capability the app actually uses, so a
+        # least-privilege fulfilment token gets a 200 (or 403, still authenticated).
+        r = httpx.get(f"{PRINTFUL_API_BASE.rstrip('/')}/orders?limit=1", headers=headers, timeout=_TIMEOUT)
     except httpx.HTTPError as e:
         return {"configured": True, "ok": False, "detail": f"network_error: {type(e).__name__}"}
     ms = round((time.time() - t0) * 1000)
-    if r.status_code == 200:
-        return {"configured": True, "ok": True, "latency_ms": ms}
-    return {"configured": True, "ok": False, "latency_ms": ms,
-            "status": r.status_code, "detail": _reason(r.status_code)}
+    ok, detail = _classify(r.status_code)
+    res = {"configured": True, "ok": ok, "latency_ms": ms, "detail": detail}
+    if r.status_code != 200:
+        res["status"] = r.status_code
+    return res
 
 
 def check_stripe() -> dict:
