@@ -481,6 +481,19 @@ async def render(
         warns.error("render", "render_failed", str(e))
         return JSONResponse({"ok": False, "error": "render_failed", "detail": str(e), "warnings": warns.as_list()}, status_code=500)
 
+    # Fail loud, never silent: the layered (Words/Message) renderer rasterizes
+    # SVG, and a cairosvg->resvg fallback quietly drops tonal modulation. Surface
+    # it as a warning everywhere; in production set TYPO_REQUIRE_CAIROSVG to make
+    # it a hard block so a degraded portrait can never reach a paying customer.
+    if not is_displacement:
+        import os
+        from .pipeline.raster import cairosvg_available
+        if not cairosvg_available():
+            msg = ("Rasterizer is in DEGRADED mode (resvg fallback; cairosvg "
+                   "unavailable) -- tonal modulation may be dropped.")
+            require = (os.getenv("TYPO_REQUIRE_CAIROSVG") or "").strip().lower() in ("1", "true", "yes", "on")
+            (warns.error if require else warns.warn)("raster", "degraded_rasterizer", msg)
+
     if warns.has_errors() or not png_bytes:
         return JSONResponse({"ok": False, "error": "render_incomplete", "warnings": warns.as_list()}, status_code=422)
 

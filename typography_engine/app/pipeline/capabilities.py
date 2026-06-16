@@ -31,6 +31,12 @@ def probe() -> Dict[str, object]:
     except Exception as e:  # pragma: no cover
         caps["cairosvg"] = f"unavailable: {e}"
 
+    # Import success is not enough -- the native cairo lib can be missing at call
+    # time, which silently degrades rasterization. Report ACTUAL usability so the
+    # health check / canary can alarm before a degraded portrait ships.
+    from .raster import cairosvg_available
+    caps["cairosvg_usable"] = cairosvg_available()
+
     # MediaPipe is optional. Importing + locating the model both matter, but we
     # only do a cheap import check here; full landmark init happens lazily.
     try:
