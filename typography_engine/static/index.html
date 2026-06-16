@@ -234,6 +234,9 @@
   .consent a{color:var(--navy);font-weight:600}
   footer{color:var(--muted);font-size:12px;text-align:center;margin-top:30px}
   footer a{color:var(--muted)}
+  .drop.locked{opacity:.5;cursor:not-allowed}
+  .drop.locked .big,.drop.locked .ico{color:var(--muted)}
+  .consent.flash{box-shadow:0 0 0 2px #c9a24a;border-radius:8px}
   .zoomlink{display:block;margin:12px auto 0;background:none;border:none;color:var(--navy);font-size:14px;
     font-weight:600;cursor:pointer;font-family:var(--sans)}
   .zoomview{position:fixed;inset:0;background:rgba(8,8,10,.95);z-index:50;display:none;overflow:auto;-webkit-overflow-scrolling:touch}
@@ -713,7 +716,7 @@ if(caseSeg){ caseSeg.addEventListener("click", e=>{
   [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
   optionChanged();
 }); }
-drop.addEventListener("click", ()=>fileInput.click());
+drop.addEventListener("click", ()=>{ if(!bioOK()){ nudgeBio(); return; } fileInput.click(); });
 $("#changePhoto").addEventListener("click", e=>{e.stopPropagation();fileInput.click();});
 ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
 ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));
@@ -721,6 +724,18 @@ drop.addEventListener("drop", e=>{ if(e.dataTransfer.files[0]) setFile(e.dataTra
 fileInput.addEventListener("change", e=>{ if(e.target.files[0]) setFile(e.target.files[0]); });
 const MAX_UPLOAD_BYTES=25*1024*1024;   // keep in step with TYPO_MAX_UPLOAD_BYTES on the server
 function bioOK(){ var b=document.getElementById("bioConsent"); return !!(b && b.checked); }
+// Lock the photo drop zone until biometric consent is given, so the requirement
+// is obvious up front instead of surfacing as an error after a file is picked.
+var _dropSmall=drop?drop.querySelector(".small"):null;
+var _dropSmallDefault=_dropSmall?_dropSmall.textContent:"";
+function nudgeBio(){ var r=document.getElementById("bioConsentRow"); if(r){ r.scrollIntoView({block:"center",behavior:"smooth"}); r.classList.add("flash"); setTimeout(function(){r.classList.remove("flash");},1400); } }
+function syncBioLock(){
+  if(window.__regionBlocked) return;            // region block owns the drop zone
+  var ok=bioOK();
+  if(drop) drop.classList.toggle("locked", !ok);
+  if(_dropSmall) _dropSmall.textContent = ok ? _dropSmallDefault : "First, tick the consent box below — then add your photo.";
+}
+(function(){ var b=document.getElementById("bioConsent"); if(b) b.addEventListener("change", syncBioLock); syncBioLock(); })();
 function setFile(f){
   if(window.__regionBlocked){ inputErr("Sorry — Typortrait isn’t available in your location."); return; }
   if(!f.type.startsWith("image/")){ inputErr("That file isn't an image — please choose a JPG, PNG or HEIC photo."); return; }
