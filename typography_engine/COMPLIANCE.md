@@ -38,6 +38,14 @@ auto-deletes them after `TYPO_RETENTION_DAYS` (default 30). We don't sell data.
 5. **Debug endpoints disabled in prod.** `/debug/preprocess` and `/debug/regions`
    ran face detection with no consent/geo gate; they now 404 unless
    `TYPO_ENABLE_DEBUG=1` (local dev only). Do **not** set it in production.
+6. **Content moderation.** The user's words/message/title/caption (which become
+   the portrait) are screened via OpenAI's moderation endpoint (`app/moderation.py`,
+   key `OPENAI_API_KEY`) before render; a definitive flag returns 422. **Fails
+   open** (allows) when unconfigured or on API error, so an outage can't take the
+   product down -- Terms + the attestation are the backstop. **Uploaded-image NSFW
+   is deliberately NOT auto-detected** (would mean shipping faces to a cloud or a
+   model on a constrained box); instead: Terms prohibition + the reel admin-review
+   for public content + a report path (`report_abuse` on `/data-request`).
 
 ### Config / env vars
 | Var | Default | Purpose |
@@ -79,6 +87,12 @@ must be set for state-level blocking to match.
 
 ## Lawyer punch list (decisions / sign-off needed)
 
+- [ ] **CSAM response plan (URGENT, operational/legal).** A face-upload app can be
+      targeted. We do NOT (and cannot reliably) auto-detect CSAM. Required: a
+      written response plan (preserve, do not redistribute, **report to NCMEC** per
+      18 U.S.C. 2258A), a monitored abuse channel (`report_abuse` on `/data-request`
+      feeds the admin email + log), and -- as volume grows -- enrol in **PhotoDNA**
+      or a provider's CSAM scanning. Take this to counsel; it is not a code feature.
 - [ ] **Confirm the biometric treatment.** We treat MediaPipe face-mesh as
       "biometric" (BIPA) / "special-category" (GDPR). Confirm this conservative
       stance and the consent + policy wording.

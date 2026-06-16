@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from . import admin as admin_mod
 from . import orders as orders_db
+from . import moderation
 from . import printful, products
 from .config import (
     BIOMETRIC_CONSENT_VERSION,
@@ -553,6 +554,18 @@ async def render(
     word_list = _parse_words(words, words_json)
     if not word_list:
         return JSONResponse({"ok": False, "error": "no_words"}, status_code=400)
+
+    # Content moderation: the words/message/title/caption become the portrait, so
+    # block hate / sexual / harassing text before rendering. Fails OPEN (allows)
+    # when unconfigured or unavailable -- Terms + attestation are the backstop.
+    mod_text = " ".join(t for t in (" ".join(word_list), message, title, caption) if t).strip()
+    mod = await asyncio.to_thread(moderation.check_text, mod_text)
+    if mod.get("flagged"):
+        return JSONResponse(
+            {"ok": False, "error": "content_flagged",
+             "detail": "Your words include content that violates our Terms (hate, explicit, or "
+                       "harassing content). Please revise them and try again."},
+            status_code=422)
 
     cfg = RenderConfig()
     if min_font_px is not None:
@@ -2231,6 +2244,7 @@ _DATA_REQUEST_FORM = (
     "<option value='correct'>Correct my data</option>"
     "<option value='object'>Object to / restrict processing</option>"
     "<option value='takedown'>Remove a photo of me uploaded by someone else</option>"
+    "<option value='report_abuse'>Report inappropriate or abusive content</option>"
     "</select></label>"
     "<label>Portrait job ID (optional, 12 characters)<br><input type='text' name='job_id' maxlength='12' placeholder='e.g. a1b2c3d4e5f6'></label>"
     "<label>Details (optional)<br><textarea name='details' rows='3'></textarea></label>"

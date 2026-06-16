@@ -55,6 +55,9 @@ services:
       - TYPO_ENABLE_DEBUG=${TYPO_ENABLE_DEBUG:-}
       - TYPO_REQUIRE_CAIROSVG=${TYPO_REQUIRE_CAIROSVG:-}
       - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}
+      # Text moderation (OpenAI moderation endpoint). Unset -> text moderation off.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - TYPO_MODERATION_MODEL=${TYPO_MODERATION_MODEL:-omni-moderation-latest}
     volumes:
       # Persist previews + paid clean files across restarts/rebuilds.
       - ./data/outputs:/app/outputs

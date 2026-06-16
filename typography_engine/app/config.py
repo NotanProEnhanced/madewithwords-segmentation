@@ -212,3 +212,14 @@ def _render_concurrency() -> int:
 
 
 RENDER_CONCURRENCY = _render_concurrency()
+
+# --- Content moderation -----------------------------------------------------
+# The user's words/message BECOME the portrait, so we moderate that text (hate,
+# sexual, harassment, etc.) via OpenAI's free moderation endpoint. With no key
+# set, text moderation is OFF and the Terms + attestation are the only backstop.
+# If the moderator errors, we FAIL OPEN (allow) so an outage can't take the paid
+# product down. Uploaded-IMAGE NSFW is deliberately NOT auto-detected (Terms +
+# human review + a report channel); CSAM is handled via policy + NCMEC reporting,
+# not a classifier. See COMPLIANCE.md.
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+MODERATION_MODEL = os.environ.get("TYPO_MODERATION_MODEL", "omni-moderation-latest")
