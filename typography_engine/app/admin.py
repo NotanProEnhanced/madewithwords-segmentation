@@ -506,6 +506,53 @@ def send_sale_email(summary: dict) -> bool:
         return False
 
 
+def send_data_request_email(rec: dict) -> bool:
+    """Email the admin when a GDPR/CCPA data request arrives, so the statutory
+    response window (GDPR ~30 days, CCPA ~45 days) isn't missed. Best-effort;
+    reuses the Gmail SMTP path. `rec` keys: type, email, job_id, deleted_files,
+    details, region, ts."""
+    if not smtp_configured():
+        _log("send_data_request_email skipped (smtp not configured)")
+        return False
+    rtype = html.escape(str(rec.get("type") or "request"))
+    cust = html.escape(str(rec.get("email") or "—"))
+    jid = html.escape(str(rec.get("job_id") or ""))
+    deleted = int(rec.get("deleted_files") or 0)
+    details = html.escape(str(rec.get("details") or ""))
+    region = html.escape(str(rec.get("region") or ""))
+    ts_s = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+    rows = [f"<li><b>Type:</b> {rtype}</li>", f"<li><b>From:</b> {cust}</li>"]
+    if jid:
+        rows.append(f"<li><b>Job ID:</b> {jid} &mdash; {deleted} file(s) deleted automatically</li>")
+    if region:
+        rows.append(f"<li><b>Region:</b> {region}</li>")
+    if details:
+        rows.append(f"<li><b>Details:</b> {details}</li>")
+    body_html = f"""<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#16203a">
+<p>New data request &mdash; please action within the statutory window (GDPR ~30 days, CCPA ~45 days). Verify the requester's identity before disclosing any data.</p>
+<ul>{''.join(rows)}</ul>
+<p style="color:#6b7280;font-size:13px">{ts_s} &middot; also logged to data/data_requests.log</p>
+</div>"""
+    body_text = (f"New data request.\nType: {rec.get('type')}\nFrom: {rec.get('email')}\n"
+                 f"Job ID: {rec.get('job_id') or '-'} ({deleted} deleted)\nDetails: {rec.get('details') or '-'}\n")
+    msg = EmailMessage()
+    msg["Subject"] = f"Data request · {rec.get('type') or 'request'} · {rec.get('email') or ''}"
+    msg["From"] = SMTP_USER
+    msg["To"] = ADMIN_EMAIL
+    msg.set_content(body_text)
+    msg.add_alternative(body_html, subtype="html")
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
+            s.starttls()
+            s.login(SMTP_USER, SMTP_PASS)
+            s.send_message(msg)
+        _log(f"send_data_request_email ok: type={rec.get('type')} to={ADMIN_EMAIL}")
+        return True
+    except Exception as e:  # noqa: BLE001
+        _log(f"send_data_request_email FAILED: err={type(e).__name__}: {e}")
+        return False
+
+
 def send_review_email(job: str, words, consent: dict) -> bool:
     if not smtp_configured():
         _log(f"send_review_email skipped (smtp not configured): job={job}")

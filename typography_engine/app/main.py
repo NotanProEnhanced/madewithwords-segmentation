@@ -2087,7 +2087,8 @@ def privacy():
             "<li><b>Basic technical data</b> (e.g., server logs, approximate region) needed to operate and secure the Service.</li></ul>"),
         ("Legal bases (GDPR/UK GDPR)", "<p>Where the UK/EU GDPR applies, we rely on: <b>your explicit consent</b> to analyse facial geometry (a special category of data &mdash; we ask before processing); <b>performance of a contract</b> to create and deliver your portrait and fulfil orders; and our <b>legitimate interests</b> in operating, securing, and improving the Service. You can withdraw consent at any time, which stops further processing.</p>"),
         ("How we use it", "<p>To generate and deliver your portrait, process your payment and any print order, provide support, and operate, secure, and improve the Service. We do <b>not</b> use your photo to train face-recognition systems, and we do not use it to identify anyone.</p>"),
-        ("Storage and retention", f"<p>Your uploaded photo and generated files are stored only to provide your preview and download, and are <b>automatically deleted after about {RETENTION_DAYS} days</b>. Facial geometry is computed in memory at render time and discarded immediately &mdash; no faceprint is retained. You can request earlier deletion at any time via our <a href=\"/data-request\">data request page</a>.</p>"),
+        ("Storage and retention", f"<p>Your uploaded photo and generated files are stored only to provide your preview and download, and are <b>automatically deleted after about {RETENTION_DAYS} days</b>. Facial geometry is computed in memory at render time and discarded immediately &mdash; no faceprint is retained. You can request earlier deletion at any time via our <a href=\"/data-request\">data request page</a>.</p>"
+            "<p>We may retain limited order, payment, and transaction records for longer where required for tax, accounting, fraud-prevention, or other legal obligations, even after a deletion request.</p>"),
         ("Sharing and sub-processors", "<p>We share data only with the providers needed to run Typortrait: <b>Stripe</b> (payments), <b>Printful</b> (print fulfilment, physical orders only), our <b>hosting provider</b>, and privacy-first, cookieless <b>Umami</b> analytics. We <b>do not sell or &ldquo;share&rdquo;</b> your personal information (as those terms are defined under U.S. state privacy laws), and we do not use it for cross-context behavioural advertising. We may disclose information if required by law.</p>"
             "<p><b>Optional social feature.</b> After purchase you may generate a shareable &ldquo;reel&rdquo;; it appears on our channels only if you explicitly tick the optional box (off by default). See section 6.5 of the <a href=\"/terms\">Terms of Use</a>.</p>"),
         ("International transfers", "<p>We operate from the United States, so if you are outside the U.S. your information is transferred to and processed there. Where required, we rely on appropriate safeguards (such as the EU Standard Contractual Clauses) and/or your consent.</p>"),
@@ -2184,19 +2185,25 @@ async def data_request_submit(
     within the statutory window (see data/data_requests.log)."""
     jid = (job_id or "").strip().lower()
     deleted = _purge_job(jid) if jid else 0
+    import time as _t, threading
+    rec = {
+        "ts": int(_t.time()),
+        "email": (email or "").strip()[:200],
+        "type": (request_type or "")[:40],
+        "job_id": jid[:24],
+        "deleted_files": deleted,
+        "details": (details or "")[:2000],
+        "region": _region_token(request) or None,
+    }
     try:
-        import time as _t
-        rec = {
-            "ts": int(_t.time()),
-            "email": (email or "").strip()[:200],
-            "type": (request_type or "")[:40],
-            "job_id": jid[:24],
-            "deleted_files": deleted,
-            "details": (details or "")[:2000],
-            "region": _region_token(request) or None,
-        }
         with (DATA_DIR / "data_requests.log").open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+    # Notify the admin so the statutory response window isn't missed (best-effort,
+    # off-thread; no-op if SMTP isn't configured).
+    try:
+        threading.Thread(target=admin_mod.send_data_request_email, args=(rec,), daemon=True).start()
     except Exception:  # noqa: BLE001
         pass
     msg = ("Your portrait files were deleted." if deleted
