@@ -95,9 +95,46 @@ must be set for state-level blocking to match.
       processing (GDPR Art. 30).
 - [ ] **Governing law / minors:** terms currently say NY law; confirm. Tighten
       handling of minors' photos (a core "children" use case).
-- [ ] **DSAR operations:** decide who monitors `data/data_requests.log` and the
-      `support@typortrait.com` inbox, and the SLA (GDPR 30 days / CCPA 45 days).
-      Optionally wire an email alert on new data requests.
+- [ ] **DSAR operations:** confirm who actions data requests and the SLA (GDPR 30
+      days / CCPA 45 days). Every request now **emails `TYPO_ADMIN_EMAIL`**
+      (`e86c106`) and is logged to `data/data_requests.log`; the human steps below
+      still need an owner.
+
+---
+
+## How to handle a data request
+
+When `/data-request` is submitted you get an email (`Data request · <type> · <email>`)
+and a line in `data/data_requests.log`. The email is a **to-do**, not a "handled"
+receipt — except a delete-by-job-ID, which is already done.
+
+**Two rules for every request:** (1) respond within the window — ~30 days (GDPR) /
+~45 days (CCPA); even a "done" reply counts. (2) **Verify the requester's identity
+before disclosing or changing anything** (especially `access`); a delete-by-job-ID
+is the exception (the job ID is a private token from their own receipt).
+
+| Type | Auto-done? | Action |
+|------|-----------|--------|
+| `delete` + Job ID | ✅ files purged | Reply confirming. Optionally remove their order row too. |
+| `delete` no Job ID | ❌ | Find by email (below), delete, reply. (Photos also auto-expire in ~30 days.) |
+| `access` | ❌ | **Verify identity**, compile what we hold, send it, reply. |
+| `correct` | ❌ | Verify identity, fix the field (e.g. name on an order), reply. |
+| `object` / restrict | ❌ | Stop the named processing (e.g. revoke a reel feature opt-in), reply. |
+| `takedown` (third party's photo) | ❌ | Locate + delete the job(s), reply confirming removal. |
+
+**Where the data lives:** photos/renders → `private/` keyed by random job ID, and
+**auto-deleted after ~30 days** (`TYPO_RETENTION_DAYS`); not searchable by email
+unless they give the job ID, but they self-purge anyway. Order records (email +
+shipping for prints) → `data/orders.db`, **searchable by email**. Sub-processors
+(Stripe, Printful) hold copies for physical orders — a full erasure may require
+asking them too.
+
+**You may lawfully retain** order/payment/transaction records (tax, accounting,
+fraud) even after a delete request — the privacy policy says so. So don't wipe
+financial history; the obligation is to *respond*, and the sensitive (photo/
+biometric) data is what gets deleted. Set an email filter on subject
+`Data request ·` so these are never missed. Not legal advice — confirm the
+identity-verification standard and retention periods with counsel.
 
 ---
 

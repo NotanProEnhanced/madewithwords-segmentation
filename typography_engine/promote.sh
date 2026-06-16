@@ -28,13 +28,16 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
-# 3. Fetch, pick the staging source (local branch is authoritative; worktrees share it).
+# 3. Fetch and use the REMOTE staging branch as the source of truth. We compare
+# against origin/<branch>, NEVER a local copy: a stale local branch in this tree
+# (git fetch updates origin/* refs, not local branches) would make us think there
+# is nothing to promote and silently skip the rebuild.
 echo "→ Fetching latest…"
 git fetch origin --quiet || true
-if git show-ref --verify --quiet "refs/heads/$STAGING_BRANCH"; then
-  SRC="$STAGING_BRANCH"
-else
-  SRC="origin/$STAGING_BRANCH"
+SRC="origin/$STAGING_BRANCH"
+if ! git rev-parse --verify --quiet "$SRC" >/dev/null; then
+  echo "✗ '$SRC' not found. Did you push the staging branch to origin?"
+  exit 1
 fi
 
 PENDING="$(git log --oneline "$PROD_BRANCH..$SRC" || true)"

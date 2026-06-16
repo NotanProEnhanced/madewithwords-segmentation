@@ -100,11 +100,24 @@ mode (silently shipping a degraded portrait of someone's loved one):
 - **Policies + DSAR:** expanded `/privacy`, new `/biometric-policy`, self-serve `/data-request`
   (job-id → immediate delete; all requests logged to `data/data_requests.log`). Debug face endpoints
   (`/debug/*`) now 404 unless `TYPO_ENABLE_DEBUG=1`. Full picture + lawyer punch list in `COMPLIANCE.md`.
-- **Compose knobs NOT wired (see Next step #2):** `TYPO_BLOCKED_REGIONS`, `TYPO_GEO_*_HEADER`,
-  `TYPO_BIO_CONSENT_VERSION`, `TYPO_ENABLE_DEBUG`, `TYPO_REQUIRE_CAIROSVG` are read in code with safe
-  defaults but are NOT in the compose `environment:` blocks (no `env_file:`), so `.env` overrides are
-  INERT. Defaults are correct, so nothing's broken — but to tune from `.env` (e.g. add Texas), add each
-  as `- VAR=${VAR:-default}` to both `docker-compose.yml` and `docker-compose.staging.yml`.
+- **Compose knobs ARE wired (`84a3cec`):** `TYPO_BLOCKED_REGIONS`, `TYPO_GEO_*_HEADER`,
+  `TYPO_BIO_CONSENT_VERSION`, `TYPO_RETENTION_DAYS`, `TYPO_ENABLE_DEBUG`, `TYPO_REQUIRE_CAIROSVG` are now
+  in both compose `environment:` blocks as `- VAR=${VAR:-default}`, so they're tunable from each env's
+  `.env`. Defaults match the code (block `US-IL`, cairosvg warn, retention 30d). DSAR admin email +
+  lawful-retention note added (`e86c106`).
+
+**Upstream health — Stripe + Printful (`a35f993`, `8fb9755`) — LIVE on prod:**
+- **`GET /health/upstream`** (separate from the fast local `/health`) pings Stripe (`/v1/account`) and
+  Printful (`/orders`) with the configured keys — 8s timeout, 60s-cached. Returns `{ok, stripe, printful}`
+  and **503** if any CONFIGURED upstream is unhealthy. A **403 is treated as healthy** (prod uses
+  least-privilege keys that authenticate but can't read the probe endpoint); only 401 / 429 / 5xx /
+  network fail. Exposes only coarse status (no keys/ids). Verified on prod: `ok:true`, Stripe live-key
+  authenticates, Printful orders endpoint `200`. Wire into an uptime monitor or a `*/15` cron.
+
+**`promote.sh` fix:** it used to prefer a **local** `feat/displacement-style` branch in
+the prod tree, which `git fetch` does NOT update — so it once said "nothing to promote" and skipped the
+rebuild while a new commit sat on origin. Now it always compares against **`origin/$STAGING_BRANCH`**.
+Run it as `STAGING_BRANCH=feat/displacement-style ./promote.sh` from `/root/typortrait/typography_engine`.
 
 ---
 
@@ -113,8 +126,9 @@ mode (silently shipping a degraded portrait of someone's loved one):
 1. **Lawyer review of the compliance posture** (not legal sign-off yet) — punch list in `COMPLIANCE.md`
    (EU/UK Art. 27 rep, sub-processor DPAs, confirm the biometric stance, cookie audit). Also: whoever
    monitors `data/data_requests.log` for non-job DSARs.
-2. **(Optional) Wire the compose knobs** — add the env vars above to both compose `environment:` blocks
-   so the dials (block regions, hard-fail rasterizer) are tunable from `.env`. Low-risk; rides a deploy.
+2. **(Optional) Wire `/health/upstream` into monitoring** — uptime monitor or a `*/15` cron, so a
+   revoked Stripe/Printful key or an outage pages you. Also schedule a **prod render-canary cron** if not
+   already done (`docker exec typortrait …` → `typortrait-canary-prod.log`).
 3. (Deferred) **Ever Loved partnership research** — a deep‑research run was started earlier; surface
    the findings + draft outreach when wanted. A trial = tracked referral link + code + one hero SKU,
    you as merchant of record (no deep integration); only being *visible on their site* needs their yes.
