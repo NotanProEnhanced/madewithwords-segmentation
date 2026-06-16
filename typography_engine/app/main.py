@@ -645,6 +645,9 @@ async def render(
         import time as _t
         (PRIVATE_DIR / f"{job_id}.biometric_consent.json").write_text(json.dumps({
             "biometric_consent": True,
+            # Folded into the same required checkbox (see consent_version wording):
+            # user attests they are 13+ and, for a child's photo, the parent/guardian.
+            "age_guardian_attested": True,
             "consent_version": BIOMETRIC_CONSENT_VERSION,
             "ts": int(_t.time()),
             "region": _region_token(request) or None,
@@ -2108,7 +2111,7 @@ def _policy_page(title: str, blocks) -> HTMLResponse:
 @app.get("/terms", response_class=HTMLResponse)
 def terms():
     blocks = [
-        ("1. Acceptance", "<p>By using Typortrait (the &ldquo;Service&rdquo;) you agree to these Terms of Use. If you do not agree, please do not use the Service. You must be at least 18 years old, or have the consent of a parent or legal guardian.</p>"),
+        ("1. Acceptance", "<p>By using Typortrait (the &ldquo;Service&rdquo;) you agree to these Terms of Use. If you do not agree, please do not use the Service. You must be at least 13 years old to use the Service, and if you are under 18 you must have your parent or legal guardian&rsquo;s permission. The Service is not for children under 13.</p>"),
         ("2. The Service", "<p>Typortrait turns a photo and words you provide into a typographic portrait, offered as a free watermarked preview and a paid, watermark-free digital download.</p>"),
         ("3. Your content and rights", "<p>For any image you upload, you confirm that:</p><ul>"
             "<li>you own it or have all rights and permissions necessary to use it;</li>"

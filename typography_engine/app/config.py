@@ -161,7 +161,8 @@ RETENTION_DAYS = env_int("TYPO_RETENTION_DAYS", 30)
 
 # Versioned so each stored consent record points at the exact notice wording the
 # user saw. Bump when the upload-time biometric notice copy materially changes.
-BIOMETRIC_CONSENT_VERSION = os.environ.get("TYPO_BIO_CONSENT_VERSION", "bio-v1-2026-06")
+# v2 adds the age (13+) + parent/guardian attestation folded into the same box.
+BIOMETRIC_CONSENT_VERSION = os.environ.get("TYPO_BIO_CONSENT_VERSION", "bio-v2-2026-06")
 
 
 def _env_region_set(key: str, default: str) -> set:

@@ -93,8 +93,12 @@ must be set for state-level blocking to match.
 - [ ] **Sub-processor DPAs:** execute/keep Data Processing Agreements with
       Stripe, Printful, the hosting provider, and Umami; maintain a record of
       processing (GDPR Art. 30).
-- [ ] **Governing law / minors:** terms currently say NY law; confirm. Tighten
-      handling of minors' photos (a core "children" use case).
+- [ ] **Governing law / minors:** terms currently say NY law; confirm. The
+      consent box now attests **age 13+** and, for a child's photo, parent/guardian
+      status -- captured per job in `<job>.biometric_consent.json`
+      (`age_guardian_attested`, `consent_version` bumped to `bio-v2-*`). Confirm
+      the **13+ threshold** is the one you want (vs 18+), and that the attestation
+      wording is sufficient for COPPA/BIPA on a minor's biometric data.
 - [ ] **DSAR operations:** confirm who actions data requests and the SLA (GDPR 30
       days / CCPA 45 days). Every request now **emails `TYPO_ADMIN_EMAIL`**
       (`e86c106`) and is logged to `data/data_requests.log`; the human steps below
