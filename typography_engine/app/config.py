@@ -151,3 +151,36 @@ DOWNLOAD_PNG_WIDTH = env_int("TYPO_DOWNLOAD_PX", 3600)
 # Uploaded photos, previews and generated files are auto-deleted after this many
 # days so the Privacy Policy's retention statement stays accurate.
 RETENTION_DAYS = env_int("TYPO_RETENTION_DAYS", 30)
+
+# --- Privacy / biometric compliance (GDPR special-category, BIPA, CCPA) ------
+# We analyse facial geometry from the uploaded photo to place the type; that is
+# "biometric" under BIPA and "special-category data" under GDPR. We store NO
+# faceprint/template (the mesh is computed transiently and discarded), and the
+# source photo auto-deletes per RETENTION_DAYS -- but we still need notice +
+# consent before processing, a published retention policy, and a geo-gate.
+
+# Versioned so each stored consent record points at the exact notice wording the
+# user saw. Bump when the upload-time biometric notice copy materially changes.
+BIOMETRIC_CONSENT_VERSION = os.environ.get("TYPO_BIO_CONSENT_VERSION", "bio-v1-2026-06")
+
+
+def _env_region_set(key: str, default: str) -> set:
+    raw = os.environ.get(key, default)
+    return {p.strip().upper() for p in (raw or "").split(",") if p.strip()}
+
+
+# BIPA geo-gate: refuse face processing for visitors in these regions. Tokens may
+# be a country ("US"), a region/state ("IL"), or "COUNTRY-REGION" ("US-IL").
+# Default blocks Illinois (BIPA's private right of action is the acute risk).
+# Set TYPO_BLOCKED_REGIONS="" to disable. The visitor's location comes from the
+# headers below, which the upstream proxy (nginx GeoIP2 / Cloudflare) must set;
+# with NO geo signal the gate fails OPEN (allows) so the site never hard-breaks.
+# See COMPLIANCE.md to wire a geo source and make the block effective.
+BLOCKED_REGIONS = _env_region_set("TYPO_BLOCKED_REGIONS", "US-IL")
+GEO_COUNTRY_HEADER = os.environ.get("TYPO_GEO_COUNTRY_HEADER", "X-Geo-Country")
+GEO_REGION_HEADER = os.environ.get("TYPO_GEO_REGION_HEADER", "X-Geo-Region")
+
+# The /debug/* endpoints run face detection WITHOUT the consent/geo gate, so they
+# are disabled unless explicitly enabled (local development only). Never enable
+# in production -- they would be an ungated biometric-processing bypass.
+ENABLE_DEBUG_ENDPOINTS = os.environ.get("TYPO_ENABLE_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")

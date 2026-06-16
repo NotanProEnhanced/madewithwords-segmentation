@@ -21,10 +21,15 @@ from . import admin as admin_mod
 from . import orders as orders_db
 from . import printful, products
 from .config import (
+    BIOMETRIC_CONSENT_VERSION,
+    BLOCKED_REGIONS,
     CURRENCY,
+    ENABLE_DEBUG_ENDPOINTS,
     DATA_DIR,
     DOWNLOAD_PNG_WIDTH,
     DOWNLOAD_PRICE_CENTS,
+    GEO_COUNTRY_HEADER,
+    GEO_REGION_HEADER,
     MAX_UPLOAD_BYTES,
     OUTPUTS_DIR,
     PREVIEW_PNG_WIDTH,
@@ -172,6 +177,8 @@ def health() -> JSONResponse:
 
 @app.post("/debug/preprocess")
 async def debug_preprocess(image: UploadFile = File(...)) -> JSONResponse:
+    if not ENABLE_DEBUG_ENDPOINTS:   # ungated face processing -> disabled in prod
+        raise HTTPException(status_code=404)
     warns = WarningCollector()
     img_bytes = await image.read()
     if not img_bytes:
@@ -221,6 +228,8 @@ async def debug_preprocess(image: UploadFile = File(...)) -> JSONResponse:
 @app.post("/debug/regions")
 async def debug_regions(image: UploadFile = File(...)) -> JSONResponse:
     """Phase 3: derive region paths and render them as a stroked debug SVG/PNG."""
+    if not ENABLE_DEBUG_ENDPOINTS:   # ungated face processing -> disabled in prod
+        raise HTTPException(status_code=404)
     warns = WarningCollector()
     img_bytes = await image.read()
     if not img_bytes:
@@ -332,12 +341,69 @@ def _apply_crop(data: bytes, crop: Optional[str]) -> bytes:
         return data
 
 
+# --- Privacy / biometric compliance gates -----------------------------------
+# Face-mesh analysis is "biometric" (BIPA) / "special-category" (GDPR), so the
+# two endpoints that touch a face (/measure, /render) must (1) refuse blocked
+# regions and (2) require explicit consent BEFORE processing. See COMPLIANCE.md.
+def _client_region(request: Request):
+    """(country, region) upper-cased from the proxy's geo headers; '' if absent."""
+    country = (request.headers.get(GEO_COUNTRY_HEADER) or "").strip().upper()
+    region = (request.headers.get(GEO_REGION_HEADER) or "").strip().upper()
+    return country, region
+
+
+def _region_token(request: Request) -> str:
+    c, r = _client_region(request)
+    return "-".join(t for t in (c, r) if t)
+
+
+def _blocked_region(request: Request):
+    """The matched blocked-region token if this visitor is in a blocked region,
+    else None. Fails OPEN (returns None) when the proxy gives no geo signal."""
+    if not BLOCKED_REGIONS:
+        return None
+    c, r = _client_region(request)
+    if not c and not r:
+        return None
+    candidates = {t for t in (c, r, (f"{c}-{r}" if c and r else "")) if t}
+    hit = candidates & BLOCKED_REGIONS
+    return next(iter(hit)) if hit else None
+
+
+def _consent_given(val) -> bool:
+    return (val or "").strip().lower() in ("on", "true", "1", "yes")
+
+
+_GEO_BLOCK_DETAIL = ("To comply with the Illinois Biometric Information Privacy "
+                     "Act (BIPA), Typortrait is not currently available to visitors "
+                     "located in Illinois. We're sorry for the inconvenience.")
+_BIO_CONSENT_DETAIL = ("Creating a portrait analyses facial geometry from your photo. "
+                       "Please confirm the biometric-data consent to continue.")
+
+
+def _compliance_gate(request: Request, biometric_consent: str):
+    """Shared gate for the face-processing endpoints. Returns a JSONResponse to
+    short-circuit (geo-block 451 or consent-required 400), or None to allow."""
+    blocked = _blocked_region(request)
+    if blocked:
+        return JSONResponse({"ok": False, "error": "region_unavailable",
+                             "detail": _GEO_BLOCK_DETAIL}, status_code=451)
+    if not _consent_given(biometric_consent):
+        return JSONResponse({"ok": False, "error": "biometric_consent_required",
+                             "detail": _BIO_CONSENT_DETAIL}, status_code=400)
+    return None
+
+
 @app.post("/measure")
-async def measure(image: UploadFile = File(...), crop: Optional[str] = Form(None)) -> JSONResponse:
+async def measure(request: Request, image: UploadFile = File(...), crop: Optional[str] = Form(None),
+                  biometric_consent: str = Form("")) -> JSONResponse:
     """Lightweight pre-render check: detect the subject's face and return its
     width as a fraction of the photo, plus the word sizes that stay readable for
     that framing. The studio calls this on upload so it can grey out size options
     (e.g. Small) that would produce unreadable type for a far/small subject."""
+    gate = _compliance_gate(request, biometric_consent)
+    if gate is not None:
+        return gate
     data = await image.read()
     if not data:
         return JSONResponse({"ok": False, "error": "empty_upload"}, status_code=400)
@@ -372,6 +438,7 @@ async def measure(image: UploadFile = File(...), crop: Optional[str] = Form(None
 
 @app.post("/render")
 async def render(
+    request: Request,
     image: UploadFile = File(...),
     words: Optional[str] = Form(None),
     words_json: Optional[str] = Form(None),
@@ -393,9 +460,13 @@ async def render(
     ref: str = Form(""),
     brand: str = Form(""),
     crop: Optional[str] = Form(None),
+    biometric_consent: str = Form(""),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
+    gate = _compliance_gate(request, biometric_consent)   # geo-block + biometric consent BEFORE any face processing
+    if gate is not None:
+        return gate
     ref_clean = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40]     # referral/source tag (persists)
     brand_clean = re.sub(r"[^A-Za-z0-9_-]", "", brand or "")[:40]  # ACTIVE brand skin (gates brand UX)
     img_bytes = await image.read()
@@ -512,6 +583,15 @@ async def render(
         (PRIVATE_DIR / f"{job_id}.src").write_bytes(img_bytes)
         if mask_svg:
             (PRIVATE_DIR / f"{job_id}.mask.svg").write_text(mask_svg, encoding="utf-8")
+        # Record the biometric-processing consent (BIPA written release / GDPR
+        # explicit consent), versioned to the exact notice wording the user saw.
+        import time as _t
+        (PRIVATE_DIR / f"{job_id}.biometric_consent.json").write_text(json.dumps({
+            "biometric_consent": True,
+            "consent_version": BIOMETRIC_CONSENT_VERSION,
+            "ts": int(_t.time()),
+            "region": _region_token(request) or None,
+        }), encoding="utf-8")
         (PRIVATE_DIR / f"{job_id}.json").write_text(json.dumps({
             "style": style_choice, "ink": ink_choice, "remove_bg": bool(remove_bg),
             "light": bool(light), "text": text, "uppercase": bool(uppercase),
@@ -1941,11 +2021,11 @@ def resume_page(job: str):
 
 
 _POLICY_CONTACT = "support@typortrait.com"
-_POLICY_UPDATED = "May 2026"
+_POLICY_UPDATED = "June 2026"
 
 
 def _policy_page(title: str, blocks) -> HTMLResponse:
-    body = "".join(f"<h2>{h}</h2>{p}" for h, p in blocks)
+    body = "".join((f"<h2>{h}</h2>{p}" if h else p) for h, p in blocks)
     page = (
         "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
@@ -1997,18 +2077,141 @@ def terms():
 @app.get("/privacy", response_class=HTMLResponse)
 def privacy():
     blocks = [
-        ("Overview", "<p>This Privacy Policy explains what information Typortrait handles and how. We aim to collect only what we need to create your portrait and process your order.</p>"),
+        ("Overview", "<p>This Privacy Policy explains what Typortrait (&ldquo;we&rdquo;) collects, why, and your rights. We collect only what we need to create your portrait and process your order. For how we handle facial geometry specifically, see our <a href=\"/biometric-policy\">Biometric Data Policy</a>.</p>"),
+        ("Who we are", f"<p>Typortrait is the data controller for the information described here. Contact us at <a href='mailto:{_POLICY_CONTACT}'>{_POLICY_CONTACT}</a> with any privacy question or to exercise your rights.</p>"),
         ("What we collect", "<ul>"
             "<li><b>Images you upload</b> and the <b>words/message</b> you enter.</li>"
+            "<li><b>Facial geometry</b> derived from your photo, used transiently to place the type. We do <b>not</b> create or store a faceprint/biometric template &mdash; see the <a href=\"/biometric-policy\">Biometric Data Policy</a>.</li>"
             "<li><b>Payment information</b>, processed by Stripe. We do not see or store your full card details.</li>"
-            "<li><b>Basic technical data</b> (e.g., server logs) needed to operate the Service.</li></ul>"),
-        ("How we use it", "<p>To generate and deliver your portrait, process your payment, and operate and improve the Service.</p>"),
-        ("Storage and retention", f"<p>Your uploaded photo and generated files are stored only to provide your preview and download, and are automatically deleted after about {RETENTION_DAYS} days. Email us to request earlier deletion.</p>"),
-        ("Sharing", "<p>We share data only with the service providers needed to run Typortrait (for example, Stripe for payments and our hosting provider). We do not sell your data. We may disclose information if required by law.</p>"
-            "<p><b>Optional social-channel feature.</b> After you purchase, you can choose to generate a short shareable &ldquo;reel&rdquo; of your portrait. Before doing so you are shown two checkboxes; only if you explicitly tick the second &mdash; &ldquo;Allow Typortrait to feature this on our social channels&rdquo; &mdash; will the reel be eligible to appear on Typortrait&rsquo;s own social channels. The default is off. You can revoke this at any time by emailing us; we will remove the post within a reasonable period. See section 6.5 of the <a href=\"/terms\">Terms of Use</a> for the full license language.</p>"),
-        ("Your choices", "<p>You may request access to or deletion of your data by contacting us.</p>"),
-        ("Children", "<p>The Service is not directed to children under 13, and you should not upload a minor&rsquo;s photo without parental consent.</p>"),
-        ("Security", "<p>We use reasonable measures to protect your data, but no method of transmission or storage is completely secure.</p>"),
+            "<li><b>Order and contact details</b> (e.g., email; shipping address for prints).</li>"
+            "<li><b>Basic technical data</b> (e.g., server logs, approximate region) needed to operate and secure the Service.</li></ul>"),
+        ("Legal bases (GDPR/UK GDPR)", "<p>Where the UK/EU GDPR applies, we rely on: <b>your explicit consent</b> to analyse facial geometry (a special category of data &mdash; we ask before processing); <b>performance of a contract</b> to create and deliver your portrait and fulfil orders; and our <b>legitimate interests</b> in operating, securing, and improving the Service. You can withdraw consent at any time, which stops further processing.</p>"),
+        ("How we use it", "<p>To generate and deliver your portrait, process your payment and any print order, provide support, and operate, secure, and improve the Service. We do <b>not</b> use your photo to train face-recognition systems, and we do not use it to identify anyone.</p>"),
+        ("Storage and retention", f"<p>Your uploaded photo and generated files are stored only to provide your preview and download, and are <b>automatically deleted after about {RETENTION_DAYS} days</b>. Facial geometry is computed in memory at render time and discarded immediately &mdash; no faceprint is retained. You can request earlier deletion at any time via our <a href=\"/data-request\">data request page</a>.</p>"),
+        ("Sharing and sub-processors", "<p>We share data only with the providers needed to run Typortrait: <b>Stripe</b> (payments), <b>Printful</b> (print fulfilment, physical orders only), our <b>hosting provider</b>, and privacy-first, cookieless <b>Umami</b> analytics. We <b>do not sell or &ldquo;share&rdquo;</b> your personal information (as those terms are defined under U.S. state privacy laws), and we do not use it for cross-context behavioural advertising. We may disclose information if required by law.</p>"
+            "<p><b>Optional social feature.</b> After purchase you may generate a shareable &ldquo;reel&rdquo;; it appears on our channels only if you explicitly tick the optional box (off by default). See section 6.5 of the <a href=\"/terms\">Terms of Use</a>.</p>"),
+        ("International transfers", "<p>We operate from the United States, so if you are outside the U.S. your information is transferred to and processed there. Where required, we rely on appropriate safeguards (such as the EU Standard Contractual Clauses) and/or your consent.</p>"),
+        ("Your rights", "<p>Depending on where you live, you may have rights to access, correct, delete, port, or object to/restrict processing of your data, and to withdraw consent. To exercise them, use our <a href=\"/data-request\">data request page</a> or email us. We will not discriminate against you for exercising your rights, and we respond within the time limits the law requires.</p>"),
+        ("California (CCPA/CPRA)", "<p>California residents have the rights to know, delete, and correct their personal information, and to limit the use of sensitive personal information. Your photo and facial geometry are treated as <b>sensitive personal information</b>, used only to provide the portrait you requested. We do not sell or share personal information. Submit a request via our <a href=\"/data-request\">data request page</a>.</p>"),
+        ("Photos of other people", "<p>If you upload a photo of someone else, you confirm you have the right to do so (see the <a href=\"/terms\">Terms of Use</a>). If you believe your image was uploaded without your permission, contact us via the <a href=\"/data-request\">data request page</a> and we will remove it.</p>"),
+        ("Children", "<p>The Service is not directed to children under 13, and you should not upload a minor&rsquo;s photo without the consent of their parent or guardian.</p>"),
+        ("Security", "<p>We use reasonable technical and organisational measures to protect your data, but no method of transmission or storage is completely secure.</p>"),
         ("Changes", "<p>We may update this policy; the &ldquo;last updated&rdquo; date above will change accordingly.</p>"),
     ]
     return _policy_page("Privacy Policy", blocks)
+
+
+@app.get("/biometric-policy", response_class=HTMLResponse)
+def biometric_policy():
+    blocks = [
+        ("What this covers", "<p>This Biometric Data Policy explains how Typortrait handles facial geometry, including for the purposes of the Illinois Biometric Information Privacy Act (BIPA) and similar laws. It is our publicly available written policy for biometric data.</p>"),
+        ("What we analyse and why", "<p>To turn your photo into a typographic portrait, our software analyses the geometry of the face in the image (the relative positions of facial features) so it can place the type along the contours of the face. This face-geometry analysis is the only biometric processing we perform, and its sole purpose is to render the artwork you requested.</p>"),
+        ("We do not store a faceprint", "<p>The facial geometry is computed in memory at the moment of rendering and then discarded. We do <b>not</b> create, store, or maintain a biometric template or &ldquo;faceprint,&rdquo; and we do <b>not</b> use it to identify you or anyone else, for face recognition, for surveillance, or to train such systems.</p>"),
+        ("Consent", "<p>Before we process your photo, we ask you to confirm that you understand this analysis and consent to it, and that you have the right to upload the image. We do not process the face until you give that consent, and you can withdraw it at any time.</p>"),
+        ("Retention and destruction", f"<p>Because we keep no biometric template, there is nothing biometric to retain beyond the moment of rendering. The <b>source photo</b> you upload is stored only to provide your preview and download and is automatically deleted after about {RETENTION_DAYS} days, or sooner on request. This is our written retention schedule and destruction guideline for biometric data.</p>"),
+        ("No sale or disclosure", "<p>We do not sell, lease, trade, or otherwise profit from biometric data, and we do not disclose it to third parties except as strictly necessary to provide the Service or as required by law.</p>"),
+        ("Availability", "<p>To reduce risk, the Service may be unavailable to visitors in certain locations (for example, Illinois). Where it is available, the protections above apply.</p>"),
+        ("Your choices", "<p>You can withdraw consent and request deletion of your photo at any time via our <a href=\"/data-request\">data request page</a>. See our <a href=\"/privacy\">Privacy Policy</a> for the full picture.</p>"),
+    ]
+    return _policy_page("Biometric Data Policy", blocks)
+
+
+_JOB_RE = re.compile(r"^[a-f0-9]{12}$")
+
+
+def _purge_job(job_id: str) -> int:
+    """Delete every stored artifact for a job (source photo, recipe, consent
+    record, mask, previews, clean PNGs). Returns the number of files removed."""
+    if not _JOB_RE.match((job_id or "").strip().lower()):
+        return 0
+    jid = job_id.strip().lower()
+    removed = 0
+    for d, pattern in ((PRIVATE_DIR, f"{jid}.*"), (PRIVATE_DIR, f"{jid}_*"),
+                       (OUTPUTS_DIR, f"{jid}_*"), (OUTPUTS_DIR, f"{jid}.*")):
+        try:
+            for f in d.glob(pattern):
+                try:
+                    if f.is_file():
+                        f.unlink()
+                        removed += 1
+                except OSError:
+                    pass
+        except OSError:
+            pass
+    return removed
+
+
+_DATA_REQUEST_FORM = (
+    "<h2>Request access to or deletion of your data</h2>"
+    "<p>Use this form to ask us to delete the photo and files for a portrait you created, "
+    "or to access, correct, or object to the data we hold. If you have your portrait link, "
+    "paste its job ID for an immediate deletion; otherwise leave it blank and we&rsquo;ll "
+    "action your request and reply by email.</p>"
+    "<form method='post' action='/data-request' class='dr'>"
+    "<label>Your email<br><input type='email' name='email' required placeholder='you@example.com'></label>"
+    "<label>Request type<br><select name='request_type'>"
+    "<option value='delete'>Delete my data</option>"
+    "<option value='access'>Access my data</option>"
+    "<option value='correct'>Correct my data</option>"
+    "<option value='object'>Object to / restrict processing</option>"
+    "<option value='takedown'>Remove a photo of me uploaded by someone else</option>"
+    "</select></label>"
+    "<label>Portrait job ID (optional, 12 characters)<br><input type='text' name='job_id' maxlength='12' placeholder='e.g. a1b2c3d4e5f6'></label>"
+    "<label>Details (optional)<br><textarea name='details' rows='3'></textarea></label>"
+    "<button type='submit'>Submit request</button>"
+    "</form>"
+    "<style>form.dr label{display:block;margin:14px 0}form.dr input,form.dr select,form.dr textarea"
+    "{width:100%;max-width:420px;padding:8px;border:1px solid #d8d4cc;border-radius:8px;font:inherit;box-sizing:border-box}"
+    "form.dr button{margin-top:16px;background:#0d1b3a;color:#fff;border:0;border-radius:8px;padding:10px 18px;font:inherit;cursor:pointer}</style>"
+)
+
+
+@app.get("/data-request", response_class=HTMLResponse)
+def data_request_page():
+    return _policy_page("Data Request", [("", _DATA_REQUEST_FORM)])
+
+
+@app.post("/data-request", response_class=HTMLResponse)
+async def data_request_submit(
+    request: Request,
+    email: str = Form(""),
+    request_type: str = Form("delete"),
+    job_id: str = Form(""),
+    details: str = Form(""),
+):
+    """Self-serve data request. A valid job ID is deleted immediately; every
+    request is logged server-side so the operator can fulfil non-job requests
+    within the statutory window (see data/data_requests.log)."""
+    jid = (job_id or "").strip().lower()
+    deleted = _purge_job(jid) if jid else 0
+    try:
+        import time as _t
+        rec = {
+            "ts": int(_t.time()),
+            "email": (email or "").strip()[:200],
+            "type": (request_type or "")[:40],
+            "job_id": jid[:24],
+            "deleted_files": deleted,
+            "details": (details or "")[:2000],
+            "region": _region_token(request) or None,
+        }
+        with (DATA_DIR / "data_requests.log").open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+    msg = ("Your portrait files were deleted." if deleted
+           else "We&rsquo;ve received your request.")
+    body = (f"<h2>Thank you</h2><p>{msg} We will action your request and contact you at the email "
+            "you provided if anything further is needed. Most requests are completed within 30 days "
+            "(sooner where the law requires).</p>"
+            "<p><a href='/static/index.html'>&larr; Back to Typortrait</a></p>")
+    return _policy_page("Data request received", [("", body)])
+
+
+@app.get("/compliance/region")
+def compliance_region(request: Request) -> JSONResponse:
+    """Lets the studio disable upload up front for blocked regions. The /measure
+    and /render gates still enforce this server-side regardless of the client."""
+    blocked = _blocked_region(request)
+    return JSONResponse({"blocked": bool(blocked),
+                         "detail": _GEO_BLOCK_DETAIL if blocked else ""})

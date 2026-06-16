@@ -275,6 +275,10 @@
     </div>
     <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
     <div id="photoNote" class="photo-note" style="display:none"></div>
+    <label class="consent" id="bioConsentRow">
+      <input type="checkbox" id="bioConsent" />
+      <span>I understand Typortrait analyses facial geometry from this photo solely to create the artwork, keeps no faceprint, and auto&#8209;deletes the photo. I confirm I have the right to upload it and I consent to this processing. <a href="/biometric-policy" target="_blank" rel="noopener">Biometric Data Policy</a>.</span>
+    </label>
     <input id="file" type="file" accept="image/*" hidden />
     <!-- Crop editor: opens on every upload, pre-framed on the detected face (so a
          photo OF a framed picture is auto-cropped to the person), locked to the
@@ -406,7 +410,7 @@
     <div id="errResult" class="err"></div>
   </section>
 
-  <footer>Typortrait · typortrait.com<br><a href="/terms" target="_blank" rel="noopener">Terms of Use</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a></footer>
+  <footer>Typortrait · typortrait.com<br><a href="/terms" target="_blank" rel="noopener">Terms of Use</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> · <a href="/biometric-policy" target="_blank" rel="noopener">Biometric Data Policy</a> · <a href="/data-request" target="_blank" rel="noopener">Manage my data</a></footer>
 </div>
 
 <div id="zoomView" class="zoomview">
@@ -637,7 +641,7 @@ function clampRect(){
 function drawBox(){ cropBox.style.left=cropRect.x+"px"; cropBox.style.top=cropRect.y+"px";
   cropBox.style.width=cropRect.w+"px"; cropBox.style.height=cropRect.h+"px"; }
 async function measureFaceBox(f){
-  try{ const fd=new FormData(); fd.append("image",f);
+  try{ const fd=new FormData(); fd.append("image",f); fd.append("biometric_consent", bioOK()?"on":"");
     const d=await (await fetch("/measure",{method:"POST",body:fd})).json();
     if(d && d.ok && d.face_box && cropModal.classList.contains("on")) initCropBox(d.face_box);
   }catch(e){}
@@ -716,9 +720,17 @@ $("#changePhoto").addEventListener("click", e=>{e.stopPropagation();fileInput.cl
 drop.addEventListener("drop", e=>{ if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
 fileInput.addEventListener("change", e=>{ if(e.target.files[0]) setFile(e.target.files[0]); });
 const MAX_UPLOAD_BYTES=25*1024*1024;   // keep in step with TYPO_MAX_UPLOAD_BYTES on the server
+function bioOK(){ var b=document.getElementById("bioConsent"); return !!(b && b.checked); }
 function setFile(f){
+  if(window.__regionBlocked){ inputErr("Sorry — Typortrait isn’t available in your location."); return; }
   if(!f.type.startsWith("image/")){ inputErr("That file isn't an image — please choose a JPG, PNG or HEIC photo."); return; }
   if(f.size>MAX_UPLOAD_BYTES){ inputErr("That photo is too large (max 25 MB). Try a smaller image or a screenshot."); return; }
+  // Biometric consent must be given BEFORE the face is analysed (BIPA/GDPR).
+  if(!bioOK()){
+    inputErr("Please tick the box confirming you consent to the facial‑geometry analysis before uploading.");
+    var row=document.getElementById("bioConsentRow"); if(row) row.scrollIntoView({block:"center",behavior:"smooth"});
+    return;
+  }
   errInput.style.display="none";
   openCrop(f);                          // crop first (auto-framed on the face), then use the result
 }
@@ -765,7 +777,7 @@ function setPhotoNote(msg){
 }
 function measureSubject(f){
   applySizes(null);                          // optimistic: all enabled while measuring
-  const fd=new FormData(); fd.append("image",f); if(state.crop) fd.append("crop",state.crop);
+  const fd=new FormData(); fd.append("image",f); if(state.crop) fd.append("crop",state.crop); fd.append("biometric_consent", bioOK()?"on":"");
   fetch("/measure",{method:"POST",body:fd}).then(r=>r.json())
     .then(d=>{ if(d&&d.ok){
         applySizes(d.sizes, d.default);
@@ -873,7 +885,7 @@ async function renderSizeThumb(mf){
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim());
   const vp=variantPost(state.ink); fd.append("ink",vp.ink); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
-  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":"");   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(mf));
   fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
   try{
@@ -917,7 +929,7 @@ function recoFd(style, coarse){
   let ink=state.ink||"photo";
   if(style==="displacement" && (ink==="spectrum"||ink==="aurora")) ink="photo";  // gradients don't drape
   fd.append("ink",ink); fd.append("style",style); fd.append("ground","navy");
-  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":"");   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", style==="message" ? "20" : String(state.minFont||57));
   if(coarse){ fd.append("png_width","380"); fd.append("render_w","760"); } else { fd.append("png_width","1500"); }
   return fd;
@@ -1078,6 +1090,17 @@ function renderProducts(data){
   selectProduct(state.sku);
 }
 fetch("/products").then(r=>r.json()).then(renderProducts).catch(()=>{});
+// Region gate (BIPA): disable upload up front for blocked locations. The server
+// still enforces this on /measure and /render regardless of the client.
+fetch("/compliance/region").then(r=>r.json()).then(g=>{
+  if(g && g.blocked){
+    window.__regionBlocked=true;
+    var d=document.getElementById("drop");
+    if(d){ d.innerHTML='<div class="big">Not available in your area</div><div class="small">'+(g.detail||"This service isn’t available in your location.")+'</div>'; d.style.cursor="default"; }
+    var bc=document.getElementById("bioConsentRow"); if(bc) bc.style.display="none";
+    var cb=document.getElementById("create"); if(cb) cb.disabled=true;
+  }
+}).catch(()=>{});
 createBtn.addEventListener("click", ()=>{
   if(!state.file){ inputErr("Add a photo to start — a clear head-and-shoulders shot works best."); drop.scrollIntoView({behavior:"smooth",block:"center"}); return; }
   if(!words.value.trim()){ inputErr(state.style==="message" ? "Add the passage first — a letter, lyrics, a poem, or a tribute." : "Add a few words first — a name, traits, a date."); words.focus(); return; }
@@ -1290,7 +1313,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim());
   const vp=variantPost(ink); fd.append("ink",vp.ink); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
-  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":"");   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(state.minFont||20));
   if(thumb){
     // A 74px chip needs only the colour and rough likeness; a small canvas
