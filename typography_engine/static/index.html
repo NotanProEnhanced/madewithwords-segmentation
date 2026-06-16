@@ -1298,12 +1298,23 @@ function startAssembly(){
 }
 function stopAssembly(){ if(animRAF){ cancelAnimationFrame(animRAF); animRAF=0; } canvas.style.display="none"; busy.classList.remove("anim"); stopComposeStatus(); }
 let msgTimer=0;
-const COMPOSE_MSGS=["Finding the face…","Placing your words…","Composing your portrait…","Adding the finishing touches…"];
+// Honest narration: advance ONCE through plausible early stages, then HOLD on an
+// open-ended line -- never loop back to "finding the face" or claim "finishing
+// touches" while still rasterizing. The Sculpted style is slow (~30s), so it sets
+// that expectation so the wait reads as expected, not stuck. (The bar stays
+// indeterminate; it only ends when the render actually completes.)
 function startComposeStatus(){
   const cs=$("#composeStatus"), m=$("#composeMsg"); if(!cs) return;
-  cs.classList.add("on"); let i=0; if(m) m.textContent=COMPOSE_MSGS[0];
+  let slow=false; try{ slow = variantPost(state.ink).style==="displacement"; }catch(e){}
+  const msgs = slow
+    ? ["Finding the face…","Placing your words…","Sculpting your portrait — this takes about 30 seconds…","Still sculpting — almost there…"]
+    : ["Finding the face…","Placing your words…","Composing your portrait…","Almost there…"];
+  cs.classList.add("on"); let i=0; if(m) m.textContent=msgs[0];
   clearInterval(msgTimer);
-  msgTimer=setInterval(()=>{ i=(i+1)%COMPOSE_MSGS.length; if(m) m.textContent=COMPOSE_MSGS[i]; }, 1600);
+  msgTimer=setInterval(()=>{
+    if(i < msgs.length-1){ i++; if(m) m.textContent=msgs[i]; }
+    else { clearInterval(msgTimer); msgTimer=0; }   // reached the last line -> hold it honestly
+  }, slow ? 5000 : 3000);
 }
 function stopComposeStatus(){ clearInterval(msgTimer); msgTimer=0; const cs=document.getElementById("composeStatus"); if(cs) cs.classList.remove("on"); }
 function showBusy(animate){
