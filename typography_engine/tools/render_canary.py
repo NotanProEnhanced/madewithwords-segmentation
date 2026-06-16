@@ -29,7 +29,10 @@ ENGINE_ROOT = Path(__file__).resolve().parent.parent
 if str(ENGINE_ROOT) not in sys.path:
     sys.path.insert(0, str(ENGINE_ROOT))
 
-DEFAULT_PHOTO = ENGINE_ROOT / "marketing" / "use-memorial.jpg"
+# A clean, front-facing single portrait baked into the image alongside this
+# script (tools/ ships in the container, marketing/ does not), so the canary
+# always has a known-good face subject wherever the code runs.
+DEFAULT_PHOTO = ENGINE_ROOT / "tools" / "assets" / "canary_portrait.png"
 OUT_WIDTH = 768
 WORDS = ["beloved", "mother", "always", "remembered"]
 
