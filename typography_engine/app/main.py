@@ -175,6 +175,24 @@ def health() -> JSONResponse:
     )
 
 
+@app.get("/health/upstream")
+def health_upstream() -> JSONResponse:
+    """Deep health: actually reach Stripe + Printful (cached ~60s). Kept separate
+    from /health so uptime monitors can poll the fast, local check, and this one
+    can be alarmed on independently. 503 if any CONFIGURED upstream is unhealthy."""
+    from .upstream import check_all
+    res = check_all()
+    return JSONResponse(
+        {
+            "ok": res["ok"],
+            "service": "typography-portrait-engine",
+            "version": __version__,
+            "upstream": res,
+        },
+        status_code=200 if res["ok"] else 503,
+    )
+
+
 @app.post("/debug/preprocess")
 async def debug_preprocess(image: UploadFile = File(...)) -> JSONResponse:
     if not ENABLE_DEBUG_ENDPOINTS:   # ungated face processing -> disabled in prod
