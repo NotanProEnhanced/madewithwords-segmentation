@@ -173,6 +173,11 @@ def health() -> JSONResponse:
             "service": "typography-portrait-engine",
             "version": __version__,
             "capabilities": caps,
+            "render": {
+                "concurrency_limit": RENDER_CONCURRENCY,
+                "in_flight": _render_inflight,
+                "queued": _render_waiting,
+            },
         }
     )
 
@@ -371,12 +376,26 @@ def _apply_crop(data: bytes, crop: Optional[str]) -> bytes:
 # partial overlap, NOT linear CPU scaling -- real parallelism needs separate
 # processes (uvicorn --workers / a render queue). See DEPLOY.md.
 _render_sem = asyncio.Semaphore(RENDER_CONCURRENCY)
+_render_inflight = 0    # renders currently executing (holding a permit)
+_render_waiting = 0     # renders queued, waiting for a permit
 
 
 async def _bounded_to_thread(fn, *args, **kwargs):
-    """Run a blocking CPU-bound call in a worker thread, capped by _render_sem."""
-    async with _render_sem:
+    """Run a blocking CPU-bound call in a worker thread, capped by _render_sem.
+    Tracks in-flight / queued counts (surfaced on /health) so saturation is
+    visible during load tests -> tells you when to move to worker processes."""
+    global _render_inflight, _render_waiting
+    _render_waiting += 1
+    try:
+        await _render_sem.acquire()
+    finally:
+        _render_waiting -= 1
+    _render_inflight += 1
+    try:
         return await asyncio.to_thread(fn, *args, **kwargs)
+    finally:
+        _render_inflight -= 1
+        _render_sem.release()
 
 
 # --- Privacy / biometric compliance gates -----------------------------------
