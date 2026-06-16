@@ -44,6 +44,15 @@ services:
       - UMAMI_WEBSITE_ID=${UMAMI_WEBSITE_ID:-}
       - UMAMI_HOST=${UMAMI_HOST:-https://cloud.umami.is}
       - UMAMI_HOSTNAME=${UMAMI_HOSTNAME:-app.typortrait.com}
+      # Privacy compliance + render-health knobs. Read in code with safe defaults;
+      # listed here so they can be tuned from .env. See COMPLIANCE.md.
+      - TYPO_BLOCKED_REGIONS=${TYPO_BLOCKED_REGIONS:-US-IL}
+      - TYPO_GEO_COUNTRY_HEADER=${TYPO_GEO_COUNTRY_HEADER:-X-Geo-Country}
+      - TYPO_GEO_REGION_HEADER=${TYPO_GEO_REGION_HEADER:-X-Geo-Region}
+      - TYPO_BIO_CONSENT_VERSION=${TYPO_BIO_CONSENT_VERSION:-bio-v1-2026-06}
+      - TYPO_RETENTION_DAYS=${TYPO_RETENTION_DAYS:-30}
+      - TYPO_ENABLE_DEBUG=${TYPO_ENABLE_DEBUG:-}
+      - TYPO_REQUIRE_CAIROSVG=${TYPO_REQUIRE_CAIROSVG:-}
     volumes:
       # Persist previews + paid clean files across restarts/rebuilds.
       - ./data/outputs:/app/outputs
