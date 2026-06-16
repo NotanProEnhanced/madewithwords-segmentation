@@ -7,9 +7,15 @@ The **code is the source of truth** — it's all on the branch below. This file 
 
 ## Status
 
-- **Branch:** `feat/displacement-style` (all work is here; **not** merged to `main`)
-- **Latest commit:** `10d1b42` — *Render-health canary + fail-loud rasterizer* (brand-preserving "make another" links, branded labels, and the memorial brand-gating are earlier in the same branch)
-- **Deployed?** Pushed to GitHub and run on **staging only**. **Nothing is on production** yet.
+- **Branch:** `feat/displacement-style` (active dev branch). PROD runs `claude/printful-integration`,
+  which on 2026-06-16 was fast-forwarded to `feat/displacement-style`'s tip `d543bfd` (clean FF —
+  `feat/displacement-style` descends directly from prod's prior HEAD `18da690`, nothing dropped).
+- **Latest commit:** `d543bfd` — *Render-health docs* (canary/fail-loud rasterizer, brand-preserving
+  "make another" links, memorial brand-gating, reels, purchase emails — all earlier on the same branch).
+- **Deployed?** **PROD IS LIVE** at `app.typortrait.com` on `d543bfd` (promoted 2026-06-16 via
+  `STAGING_BRANCH=feat/displacement-style ./promote.sh`). Rollback tag: **`prod-pre-promote-20260616`**
+  (= `18da690`); rollback = `git reset --hard` that tag + `docker compose up -d --build` in
+  `/root/typortrait/typography_engine`. Staging mirrors prod on port 8078.
 - **App lives in:** `typography_engine/` (FastAPI app `app/main.py`, renderers in `app/pipeline/`, frontend `static/index.html`, reel builder `tools/reel_template.py`).
 
 ## The brand: "Loved in Words"
@@ -75,16 +81,23 @@ mode (silently shipping a degraded portrait of someone's loved one):
 - **Staging is wired:** `TYPO_REQUIRE_CAIROSVG=1` set, canary passes 5/5, and a daily cron runs it at
   07:00 UTC → `/var/log/typortrait-canary.log` (alerts on non-zero exit). Run by hand:
   `docker exec typortrait-staging python /app/tools/render_canary.py 2>/dev/null`.
-- **PROD GAP:** prod runs differently (pm2 `typortrait-render`, code in `~/typortrait/typography_engine`),
-  NOT this staging container. On promotion, wire a prod canary to however prod runs the engine and add
-  `TYPO_REQUIRE_CAIROSVG=1` to the prod `.env`.
+- **Prod runs the SAME way as staging** (Docker — container `typortrait`, port 8077, compose
+  `/root/typortrait/typography_engine/docker-compose.yml`). The pm2 `typortrait-render` is an unrelated
+  legacy **node** service (`/var/www/typortrait-render/render-api.js`) — NOT the web app; leave it alone.
+  Prod canary: `docker exec typortrait python /app/tools/render_canary.py 2>/dev/null`.
+- **Hard-fail flag not yet wired through compose:** neither `docker-compose.yml` nor
+  `docker-compose.staging.yml` lists `TYPO_REQUIRE_CAIROSVG` under `environment:` (and there's no
+  `env_file:`), so setting it in `.env` is currently INERT. To activate, add
+  `- TYPO_REQUIRE_CAIROSVG=${TYPO_REQUIRE_CAIROSVG:-}` to both compose files, then set it in each `.env`.
+  The canary + render-path WARNING already protect regardless; this is the belt-and-suspenders hard stop.
 
 ---
 
 ## Next step
 
-1. **Sign off on staging**, then **promote to production.** This is the main open action. At promotion,
-   close the render-health PROD GAP above (prod canary + `TYPO_REQUIRE_CAIROSVG=1`).
+1. ~~Promote to production.~~ **DONE 2026-06-16** — prod is live on `d543bfd`. Remaining tidy-ups:
+   schedule the **prod canary cron** (`docker exec typortrait …` at 06:00 UTC → `typortrait-canary-prod.log`)
+   and, when ready, wire the `TYPO_REQUIRE_CAIROSVG` compose line (see Render-health note above).
 2. (Deferred) **Ever Loved partnership research** — a deep‑research run was started earlier; surface
    the findings + draft outreach when wanted. A trial = tracked referral link + code + one hero SKU,
    you as merchant of record (no deep integration); only being *visible on their site* needs their yes.
