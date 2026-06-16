@@ -8,7 +8,7 @@ The **code is the source of truth** — it's all on the branch below. This file 
 ## Status
 
 - **Branch:** `feat/displacement-style` (all work is here; **not** merged to `main`)
-- **Latest commit:** `bcd50c8` — *Gate the memorial experience on the ACTIVE brand, not the persisted ref*
+- **Latest commit:** `10d1b42` — *Render-health canary + fail-loud rasterizer* (brand-preserving "make another" links, branded labels, and the memorial brand-gating are earlier in the same branch)
 - **Deployed?** Pushed to GitHub and run on **staging only**. **Nothing is on production** yet.
 - **App lives in:** `typography_engine/` (FastAPI app `app/main.py`, renderers in `app/pipeline/`, frontend `static/index.html`, reel builder `tools/reel_template.py`).
 
@@ -61,13 +61,33 @@ for any "is this the memorial experience?" decision; use `ref` only for sales at
 PaymentIntent so the customer always gets a Stripe receipt, and (2) emails `TYPO_ADMIN_EMAIL` a sale
 alert. Deduped per session (`data/sale_notified`), off‑thread, best‑effort. Needs SMTP + webhook set.
 
+**Render health — fail loud + canary (`1b48e34`, `10d1b42`):** Two guards against the worst failure
+mode (silently shipping a degraded portrait of someone's loved one):
+- **Fail-loud rasterizer.** `app/pipeline/raster.py` no longer silently falls back cairosvg→resvg
+  (which drops tonal modulation). It logs loudly once, records the backend, and exposes
+  `cairosvg_available()` (a real 1×1 trial render — catches "imports but native lib missing"). The
+  Words/Message render path attaches a `degraded_rasterizer` warning; with **`TYPO_REQUIRE_CAIROSVG=1`**
+  in `.env` it's a hard 422 so a degraded portrait can't reach a buyer. `/health` now reports
+  `cairosvg_usable`.
+- **Canary.** `tools/render_canary.py` runs a baked known-good portrait (`tools/assets/canary_portrait.png`)
+  through BOTH real renderers and asserts: cairosvg full-fidelity, face locks via MediaPipe, output
+  non-blank/correctly-sized. Exits non-zero on any failure.
+- **Staging is wired:** `TYPO_REQUIRE_CAIROSVG=1` set, canary passes 5/5, and a daily cron runs it at
+  07:00 UTC → `/var/log/typortrait-canary.log` (alerts on non-zero exit). Run by hand:
+  `docker exec typortrait-staging python /app/tools/render_canary.py 2>/dev/null`.
+- **PROD GAP:** prod runs differently (pm2 `typortrait-render`, code in `~/typortrait/typography_engine`),
+  NOT this staging container. On promotion, wire a prod canary to however prod runs the engine and add
+  `TYPO_REQUIRE_CAIROSVG=1` to the prod `.env`.
+
 ---
 
 ## Next step
 
-1. **Sign off on staging**, then **promote to production.** This is the main open action.
+1. **Sign off on staging**, then **promote to production.** This is the main open action. At promotion,
+   close the render-health PROD GAP above (prod canary + `TYPO_REQUIRE_CAIROSVG=1`).
 2. (Deferred) **Ever Loved partnership research** — a deep‑research run was started earlier; surface
-   the findings + draft outreach when wanted.
+   the findings + draft outreach when wanted. A trial = tracked referral link + code + one hero SKU,
+   you as merchant of record (no deep integration); only being *visible on their site* needs their yes.
 
 ---
 
