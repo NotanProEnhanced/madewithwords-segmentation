@@ -6,6 +6,7 @@ Later phases add /render.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import uuid
@@ -25,6 +26,7 @@ from .config import (
     BLOCKED_REGIONS,
     CURRENCY,
     ENABLE_DEBUG_ENDPOINTS,
+    RENDER_CONCURRENCY,
     DATA_DIR,
     DOWNLOAD_PNG_WIDTH,
     DOWNLOAD_PRICE_CENTS,
@@ -359,6 +361,24 @@ def _apply_crop(data: bytes, crop: Optional[str]) -> bytes:
         return data
 
 
+# --- Render concurrency: keep heavy CPU work OFF the event loop --------------
+# A render (MediaPipe + OpenCV + rasterize) is blocking CPU work. Running it
+# directly in an `async def` handler freezes the single event loop for its whole
+# duration, so every other request (even /health) stalls behind it. We offload it
+# into a worker thread via asyncio.to_thread (the loop stays responsive) and cap
+# concurrency with a semaphore so a burst queues instead of thrashing CPU/RAM.
+# Caveat: MediaPipe inference is likely GIL-bound, so this gives responsiveness +
+# partial overlap, NOT linear CPU scaling -- real parallelism needs separate
+# processes (uvicorn --workers / a render queue). See DEPLOY.md.
+_render_sem = asyncio.Semaphore(RENDER_CONCURRENCY)
+
+
+async def _bounded_to_thread(fn, *args, **kwargs):
+    """Run a blocking CPU-bound call in a worker thread, capped by _render_sem."""
+    async with _render_sem:
+        return await asyncio.to_thread(fn, *args, **kwargs)
+
+
 # --- Privacy / biometric compliance gates -----------------------------------
 # Face-mesh analysis is "biometric" (BIPA) / "special-category" (GDPR), so the
 # two endpoints that touch a face (/measure, /render) must (1) refuse blocked
@@ -517,7 +537,7 @@ async def render(
         return JSONResponse({"ok": False, "error": "bad_config", "detail": str(e)}, status_code=400)
 
     try:
-        an = analyze_image(img_bytes, cfg, warns)
+        an = await _bounded_to_thread(analyze_image, img_bytes, cfg, warns)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
 
@@ -555,13 +575,13 @@ async def render(
         if is_displacement:
             from .pipeline.displacement import render_displacement_portrait
             disp_words = word_list or text.split()
-            png_bytes = render_displacement_portrait(
-                an, disp_words, ground=ground_choice, out_width=max(320, preview_w),
-                uppercase=uppercase, ink=ink_choice)
+            png_bytes = await _bounded_to_thread(
+                render_displacement_portrait, an, disp_words, ground=ground_choice,
+                out_width=max(320, preview_w), uppercase=uppercase, ink=ink_choice)
             runs, ground_hex, mask_svg = [], None, None
         else:
-            png_bytes, runs, ground_hex, mask_svg = render_layered_png(
-                an, text, style_choice, cfg, warns,
+            png_bytes, runs, ground_hex, mask_svg = await _bounded_to_thread(
+                render_layered_png, an, text, style_choice, cfg, warns,
                 ink=ink_choice, remove_bg=remove_bg, light=light,
                 out_width=max(320, preview_w), render_w=render_w_eff, uppercase=uppercase)
     except ValueError as e:

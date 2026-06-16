@@ -184,3 +184,23 @@ GEO_REGION_HEADER = os.environ.get("TYPO_GEO_REGION_HEADER", "X-Geo-Region")
 # are disabled unless explicitly enabled (local development only). Never enable
 # in production -- they would be an ungated biometric-processing bypass.
 ENABLE_DEBUG_ENDPOINTS = os.environ.get("TYPO_ENABLE_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
+# --- Render concurrency -----------------------------------------------------
+# Max heavy renders (MediaPipe + OpenCV + rasterize) allowed to run at once. The
+# render is offloaded off the event loop into worker threads; this caps how many
+# run concurrently so a burst queues instead of thrashing CPU/RAM on a single
+# box. Unset/blank -> (cpu_count - 1), min 1. NOTE: threads do NOT give linear
+# CPU scaling here -- MediaPipe inference is likely GIL-bound -- so this buys
+# responsiveness + partial overlap; true parallelism needs multiple worker
+# PROCESSES (raise uvicorn --workers / a render queue). See DEPLOY.md.
+def _render_concurrency() -> int:
+    raw = (os.environ.get("TYPO_RENDER_CONCURRENCY", "") or "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    return max(1, (os.cpu_count() or 2) - 1)
+
+
+RENDER_CONCURRENCY = _render_concurrency()

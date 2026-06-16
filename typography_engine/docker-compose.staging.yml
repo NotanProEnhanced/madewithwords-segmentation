@@ -57,6 +57,7 @@ services:
       - TYPO_RETENTION_DAYS=${TYPO_RETENTION_DAYS:-30}
       - TYPO_ENABLE_DEBUG=${TYPO_ENABLE_DEBUG:-}
       - TYPO_REQUIRE_CAIROSVG=${TYPO_REQUIRE_CAIROSVG:-}
+      - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}
     volumes:
       - ./data/outputs:/app/outputs
       - ./data/private:/app/private
