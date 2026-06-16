@@ -46,7 +46,8 @@ auto-deletes them after `TYPO_RETENTION_DAYS` (default 30). We don't sell data.
 | `TYPO_GEO_COUNTRY_HEADER` | `X-Geo-Country` | Header the proxy sets with ISO country (e.g. `US`). |
 | `TYPO_GEO_REGION_HEADER` | `X-Geo-Region` | Header the proxy sets with the subdivision/state (e.g. `IL`). |
 | `TYPO_BIO_CONSENT_VERSION` | `bio-v1-2026-06` | Bump when the consent wording materially changes. |
-| `TYPO_RETENTION_DAYS` | `30` | Auto-delete window for photos/recipes/consent records. |
+| `TYPO_RETENTION_DAYS` | `30` | Auto-delete window for photos / recipes / previews. |
+| `TYPO_CONSENT_RETENTION_DAYS` | `2555` (~7y) | Separate, longer window for consent records (proof of consent + age/guardian attestation; no biometric data). Covers BIPA's 5-yr limitations period. |
 
 ---
 
@@ -103,6 +104,11 @@ must be set for state-level blocking to match.
       days / CCPA 45 days). Every request now **emails `TYPO_ADMIN_EMAIL`**
       (`e86c106`) and is logged to `data/data_requests.log`; the human steps below
       still need an owner.
+- [ ] **Consent-record retention:** photos delete at 30 days, but the minimal
+      consent record (no biometric data) is **retained ~7 years** and is **kept
+      even on a deletion request** (`_purge_job`) as proof that consent was given.
+      Confirm this posture and the period (`TYPO_CONSENT_RETENTION_DAYS`) with
+      counsel -- it trades full erasure for defensible proof-of-consent.
 
 ---
 

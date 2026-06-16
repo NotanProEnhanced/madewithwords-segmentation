@@ -152,6 +152,13 @@ DOWNLOAD_PNG_WIDTH = env_int("TYPO_DOWNLOAD_PX", 3600)
 # days so the Privacy Policy's retention statement stays accurate.
 RETENTION_DAYS = env_int("TYPO_RETENTION_DAYS", 30)
 
+# Consent records (proof of consent + the age/guardian attestation) are kept FAR
+# longer than the photos they relate to: they're the evidence needed to
+# demonstrate compliance, and they contain NO biometric data (the photo is
+# deleted on the schedule above). Default ~7 years, covering BIPA's 5-year
+# limitations period with margin. Confirm the period with counsel.
+CONSENT_RETENTION_DAYS = env_int("TYPO_CONSENT_RETENTION_DAYS", 2555)
+
 # --- Privacy / biometric compliance (GDPR special-category, BIPA, CCPA) ------
 # We analyse facial geometry from the uploaded photo to place the type; that is
 # "biometric" under BIPA and "special-category data" under GDPR. We store NO

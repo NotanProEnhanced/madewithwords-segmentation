@@ -24,6 +24,7 @@ from . import printful, products
 from .config import (
     BIOMETRIC_CONSENT_VERSION,
     BLOCKED_REGIONS,
+    CONSENT_RETENTION_DAYS,
     CURRENCY,
     ENABLE_DEBUG_ENDPOINTS,
     RENDER_CONCURRENCY,
@@ -102,15 +103,25 @@ app.include_router(admin_mod.router)
 
 def _cleanup_old_files() -> int:
     """Delete previews and stored job inputs older than the retention window so
-    the Privacy Policy's deletion statement stays accurate. Returns count removed."""
+    the Privacy Policy's deletion statement stays accurate. Consent records are
+    kept on a SEPARATE, much longer window (CONSENT_RETENTION_DAYS): they are the
+    evidence we must retain to demonstrate consent + the age/guardian attestation,
+    and they hold no biometric data (the photo they relate to is deleted on the
+    short window). Returns count removed."""
     import time
-    cutoff = time.time() - RETENTION_DAYS * 86400
+    now = time.time()
+    photo_cutoff = now - RETENTION_DAYS * 86400
+    consent_cutoff = now - CONSENT_RETENTION_DAYS * 86400
     removed = 0
     for d in (OUTPUTS_DIR, PRIVATE_DIR):
         try:
             for f in d.iterdir():
                 try:
-                    if f.is_file() and f.stat().st_mtime < cutoff:
+                    if not f.is_file():
+                        continue
+                    is_consent = f.name.endswith(".consent.json") or f.name.endswith(".biometric_consent.json")
+                    cutoff = consent_cutoff if is_consent else photo_cutoff
+                    if f.stat().st_mtime < cutoff:
                         f.unlink()
                         removed += 1
                 except OSError:
@@ -2148,7 +2159,7 @@ def privacy():
         ("Legal bases (GDPR/UK GDPR)", "<p>Where the UK/EU GDPR applies, we rely on: <b>your explicit consent</b> to analyse facial geometry (a special category of data &mdash; we ask before processing); <b>performance of a contract</b> to create and deliver your portrait and fulfil orders; and our <b>legitimate interests</b> in operating, securing, and improving the Service. You can withdraw consent at any time, which stops further processing.</p>"),
         ("How we use it", "<p>To generate and deliver your portrait, process your payment and any print order, provide support, and operate, secure, and improve the Service. We do <b>not</b> use your photo to train face-recognition systems, and we do not use it to identify anyone.</p>"),
         ("Storage and retention", f"<p>Your uploaded photo and generated files are stored only to provide your preview and download, and are <b>automatically deleted after about {RETENTION_DAYS} days</b>. Facial geometry is computed in memory at render time and discarded immediately &mdash; no faceprint is retained. You can request earlier deletion at any time via our <a href=\"/data-request\">data request page</a>.</p>"
-            "<p>We may retain limited order, payment, and transaction records for longer where required for tax, accounting, fraud-prevention, or other legal obligations, even after a deletion request.</p>"),
+            "<p>We may retain limited order, payment, and transaction records for longer where required for tax, accounting, fraud-prevention, or other legal obligations. We also keep a minimal <b>record of your consent</b> (the fact that you consented and confirmed your age &mdash; no photo or biometric data) for longer, so we can demonstrate that consent was given.</p>"),
         ("Sharing and sub-processors", "<p>We share data only with the providers needed to run Typortrait: <b>Stripe</b> (payments), <b>Printful</b> (print fulfilment, physical orders only), our <b>hosting provider</b>, and privacy-first, cookieless <b>Umami</b> analytics. We <b>do not sell or &ldquo;share&rdquo;</b> your personal information (as those terms are defined under U.S. state privacy laws), and we do not use it for cross-context behavioural advertising. We may disclose information if required by law.</p>"
             "<p><b>Optional social feature.</b> After purchase you may generate a shareable &ldquo;reel&rdquo;; it appears on our channels only if you explicitly tick the optional box (off by default). See section 6.5 of the <a href=\"/terms\">Terms of Use</a>.</p>"),
         ("International transfers", "<p>We operate from the United States, so if you are outside the U.S. your information is transferred to and processed there. Where required, we rely on appropriate safeguards (such as the EU Standard Contractual Clauses) and/or your consent.</p>"),
@@ -2181,8 +2192,10 @@ _JOB_RE = re.compile(r"^[a-f0-9]{12}$")
 
 
 def _purge_job(job_id: str) -> int:
-    """Delete every stored artifact for a job (source photo, recipe, consent
-    record, mask, previews, clean PNGs). Returns the number of files removed."""
+    """Delete the personal/biometric artifacts for a job (source photo, recipe,
+    mask, previews, clean PNGs). The minimal CONSENT RECORD is intentionally KEPT
+    (it holds no photo/biometric data) as proof that consent was given -- evidence
+    we may need even after a deletion request. Returns the number of files removed."""
     if not _JOB_RE.match((job_id or "").strip().lower()):
         return 0
     jid = job_id.strip().lower()
@@ -2192,6 +2205,8 @@ def _purge_job(job_id: str) -> int:
         try:
             for f in d.glob(pattern):
                 try:
+                    if f.name.endswith(".consent.json") or f.name.endswith(".biometric_consent.json"):
+                        continue   # retain consent evidence (no biometric data)
                     if f.is_file():
                         f.unlink()
                         removed += 1
