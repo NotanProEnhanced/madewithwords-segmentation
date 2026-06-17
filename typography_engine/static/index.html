@@ -237,6 +237,9 @@
   .drop.locked{opacity:.5;cursor:not-allowed}
   .drop.locked .big,.drop.locked .ico{color:var(--muted)}
   .consent.flash{box-shadow:0 0 0 2px #c9a24a;border-radius:8px}
+  .bg-tools{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin:12px 0}
+  .bg-tools .bg-brush{font-size:13px;color:var(--muted)}
+  .bg-tools .btn.secondary{padding:6px 12px;font-size:13px}
   .zoomlink{display:block;margin:12px auto 0;background:none;border:none;color:var(--navy);font-size:14px;
     font-weight:600;cursor:pointer;font-family:var(--sans)}
   .zoomview{position:fixed;inset:0;background:rgba(8,8,10,.95);z-index:50;display:none;overflow:auto;-webkit-overflow-scrolling:touch}
@@ -396,6 +399,7 @@
         <select id="sizeSel" aria-label="Size"></select>
       </div>
     </div>
+    <button id="bgTouchup" class="btn secondary" type="button" style="display:none">Touch up background</button>
     <div class="actions"><button id="buy" class="btn">Download</button></div>
     <button id="shareBtn" class="btn secondary" type="button">Share</button>
     <div id="sharePanel" class="sharepanel">
@@ -414,6 +418,26 @@
     <div id="errResult" class="err"></div>
   </section>
 
+  <div id="bgModal" class="crop-modal" aria-hidden="true">
+    <div class="crop-card">
+      <div class="crop-h1">Touch up the background</div>
+      <div class="crop-p">Paint to fix the cutout. <b>Erase</b> removes background; <b>Keep</b> brings the subject back. Then re‑render.</div>
+      <div id="bgStage" class="crop-stage" style="touch-action:none;display:flex;justify-content:center"><canvas id="bgCanvas" style="touch-action:none;cursor:crosshair;border-radius:8px;max-width:100%"></canvas></div>
+      <div class="bg-tools">
+        <div class="seg" id="bgMode" aria-label="Brush mode">
+          <button type="button" data-m="remove" class="on">Erase</button>
+          <button type="button" data-m="keep">Keep</button>
+        </div>
+        <label class="bg-brush">Brush <input type="range" id="bgBrush" min="8" max="90" value="34" style="vertical-align:middle"></label>
+        <button type="button" id="bgUndo" class="btn secondary">Undo</button>
+        <button type="button" id="bgReset" class="btn secondary">Reset</button>
+      </div>
+      <div class="crop-actions">
+        <button id="bgCancel" type="button" class="btn secondary">Cancel</button>
+        <button id="bgApply" type="button" class="btn">Apply &amp; re-render</button>
+      </div>
+    </div>
+  </div>
   <footer>Typortrait · typortrait.com<br><a href="/terms" target="_blank" rel="noopener">Terms of Use</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> · <a href="/refunds" target="_blank" rel="noopener">Refund Policy</a> · <a href="/biometric-policy" target="_blank" rel="noopener">Biometric Data Policy</a> · <a href="/data-request" target="_blank" rel="noopener">Manage my data</a></footer>
 </div>
 
@@ -466,7 +490,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, crop:null, ink:"photo", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true };
+const state = { file:null, crop:null, ink:"photo", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true, maskData:null };
 // Referral/source tag (?ref=everloved) AND brand skin. A brand re-dresses this
 // same engine as a partner identity (name + tagline). The brand is resolved from
 // the ?brand param FIRST (reliable, and it persists in this single-page URL),
@@ -753,7 +777,7 @@ function setFile(f){
 // The cropped image becomes the render source; from here the flow is as before.
 function useCroppedFile(f){
   if(previewImg.src && previewImg.src.indexOf("blob:")===0) URL.revokeObjectURL(previewImg.src);   // free the prior upload
-  state.file=f; previewImg.src=URL.createObjectURL(f);
+  state.file=f; state.maskData=null; previewImg.src=URL.createObjectURL(f);   // new photo -> drop any prior manual mask
   preview.style.display="block"; drop.style.display="none"; setPhotoNote("");
   refreshCreate(); tp_track("photo_selected");
   measureSubject(f);
@@ -901,7 +925,7 @@ async function renderSizeThumb(mf){
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim());
   const vp=variantPost(state.ink); fd.append("ink",vp.ink); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
-  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":"");   // brand = ACTIVE skin (no localStorage), gates the memorial experience
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(mf));
   fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
   try{
@@ -945,7 +969,7 @@ function recoFd(style, coarse){
   let ink=state.ink||"photo";
   if(style==="displacement" && (ink==="spectrum"||ink==="aurora")) ink="photo";  // gradients don't drape
   fd.append("ink",ink); fd.append("style",style); fd.append("ground","navy");
-  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":"");   // brand = ACTIVE skin (no localStorage), gates the memorial experience
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", style==="message" ? "20" : String(state.minFont||57));
   if(coarse){ fd.append("png_width","380"); fd.append("render_w","760"); } else { fd.append("png_width","1500"); }
   return fd;
@@ -1154,7 +1178,75 @@ function setBuy(entry){
   buy.textContent = "Download — " + money(entry.price, entry.currency);
   // If the product picker is active, reflect the chosen product instead.
   if(CATALOG.length) updateBuyLabel();
+  var _bt=document.getElementById("bgTouchup"); if(_bt) _bt.style.display = currentJob ? "" : "none";
 }
+
+// ---- Manual background touch-up: refine the auto cutout with Keep/Erase brushes ----
+(function(){
+  var modal=document.getElementById("bgModal"); if(!modal) return;
+  var canvas=document.getElementById("bgCanvas"), ctx=canvas.getContext("2d");
+  var maskC=document.createElement("canvas"), maskX=maskC.getContext("2d");   // alpha mask: opaque white = keep
+  var ov=document.createElement("canvas");
+  var srcImg=new Image(); srcImg.crossOrigin="anonymous";
+  var mode="remove", brush=34, painting=false, undo=[], W=0, H=0;
+  function fit(iw,ih){
+    iw=iw||1; ih=ih||1;
+    var card=modal.querySelector(".crop-card");
+    var base=(card && card.clientWidth) ? card.clientWidth : 340;   // measured only when visible
+    var maxW=Math.max(200, Math.min(380, base-32)), maxH=460;
+    var s=Math.min(maxW/iw, maxH/ih); W=Math.max(40,Math.round(iw*s)); H=Math.max(40,Math.round(ih*s));
+    canvas.width=W; canvas.height=H; maskC.width=W; maskC.height=H; ov.width=W; ov.height=H;
+  }
+  function redraw(){
+    ctx.clearRect(0,0,W,H); ctx.drawImage(srcImg,0,0,W,H);
+    var o=ov.getContext("2d"); o.globalCompositeOperation="source-over";
+    o.clearRect(0,0,W,H); o.fillStyle="rgba(18,26,60,0.55)"; o.fillRect(0,0,W,H);
+    o.globalCompositeOperation="destination-out"; o.drawImage(maskC,0,0);     // cut the tint where kept
+    ctx.drawImage(ov,0,0);
+  }
+  function paint(x,y){
+    maskX.globalCompositeOperation = (mode==="keep") ? "source-over" : "destination-out";
+    maskX.fillStyle="#fff"; maskX.beginPath(); maskX.arc(x,y,brush/2,0,7); maskX.fill();
+    redraw();
+  }
+  function pos(e){ var r=canvas.getBoundingClientRect(); return {x:(e.clientX-r.left)*(W/r.width), y:(e.clientY-r.top)*(H/r.height)}; }
+  function snap(){ try{ undo.push(maskX.getImageData(0,0,W,H)); if(undo.length>15) undo.shift(); }catch(e){} }
+  canvas.addEventListener("pointerdown",function(e){ e.preventDefault(); painting=true; snap(); try{canvas.setPointerCapture(e.pointerId);}catch(_){} var p=pos(e); paint(p.x,p.y); });
+  canvas.addEventListener("pointermove",function(e){ if(!painting)return; var p=pos(e); paint(p.x,p.y); });
+  ["pointerup","pointercancel"].forEach(function(ev){ canvas.addEventListener(ev,function(){ painting=false; }); });
+  function loadAuto(){
+    var am=new Image(); am.crossOrigin="anonymous";
+    am.onload=function(){
+      maskX.clearRect(0,0,W,H); maskX.drawImage(am,0,0,W,H);
+      var d=maskX.getImageData(0,0,W,H), p=d.data;
+      for(var i=0;i<p.length;i+=4){ var keep=p[i]>127; p[i]=p[i+1]=p[i+2]=255; p[i+3]=keep?255:0; }
+      maskX.putImageData(d,0,0); redraw();
+    };
+    am.onerror=function(){ maskX.clearRect(0,0,W,H); maskX.fillStyle="#fff"; maskX.fillRect(0,0,W,H); redraw(); };
+    am.src="/mask/"+encodeURIComponent(currentJob)+"?t="+Date.now();
+  }
+  window.openBgEditor=function(){
+    if(!currentJob) return;
+    var bg = sourcePreview || (state.file ? URL.createObjectURL(state.file) : null);
+    if(!bg) return;
+    srcImg.onload=function(){ modal.classList.add("on"); modal.setAttribute("aria-hidden","false"); fit(srcImg.naturalWidth||srcImg.width, srcImg.naturalHeight||srcImg.height); undo=[]; loadAuto(); };
+    srcImg.src=bg;
+  };
+  function close(){ modal.classList.remove("on"); modal.setAttribute("aria-hidden","true"); }
+  var seg=document.getElementById("bgMode");
+  seg.addEventListener("click",function(e){ var b=e.target.closest("button"); if(!b)return; mode=b.dataset.m; [].forEach.call(seg.children,function(c){c.classList.toggle("on",c===b);}); });
+  document.getElementById("bgBrush").addEventListener("input",function(){ brush=+this.value; });
+  document.getElementById("bgUndo").addEventListener("click",function(){ if(undo.length){ maskX.putImageData(undo.pop(),0,0); redraw(); } });
+  document.getElementById("bgReset").addEventListener("click",function(){ undo=[]; loadAuto(); });
+  document.getElementById("bgCancel").addEventListener("click",close);
+  document.getElementById("bgApply").addEventListener("click",function(){
+    var ex=document.createElement("canvas"); ex.width=W; ex.height=H; var ec=ex.getContext("2d");
+    ec.fillStyle="#000"; ec.fillRect(0,0,W,H); ec.drawImage(maskC,0,0);     // white=keep over black=remove (binary)
+    state.maskData = ex.toDataURL("image/png");
+    close(); invalidate(); render(state.ink,{animate:false});
+  });
+  var trigger=document.getElementById("bgTouchup"); if(trigger) trigger.addEventListener("click", window.openBgEditor);
+})();
 /* Show the watermarked preview. crossfade=true does an iOS-style dissolve
    between the current image and the newly-selected ink. */
 /* Frame + mat themed to each ink: a complementary moulding tone (with a bevel
@@ -1332,7 +1424,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim());
   const vp=variantPost(ink); fd.append("ink",vp.ink); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
-  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":"");   // brand = ACTIVE skin (no localStorage), gates the memorial experience
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(state.minFont||20));
   if(thumb){
     // A 74px chip needs only the colour and rough likeness; a small canvas
