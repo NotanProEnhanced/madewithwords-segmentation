@@ -1,5 +1,9 @@
 # Typortrait — runs the engine on 127.0.0.1:8077 (nginx terminates TLS in front).
 # Reads payment settings from a .env file in this directory (see GO-LIVE.md).
+# Explicit project name so prod is fully isolated from staging in Compose. Both
+# trees are named typography_engine, so WITHOUT this they share a default project
+# and a deploy in one tears down the other's container (Bad Gateway). Don't change.
+name: typortrait-prod
 services:
   typortrait:
     build: .

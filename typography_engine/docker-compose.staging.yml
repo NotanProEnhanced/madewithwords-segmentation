@@ -17,6 +17,10 @@
 #   * bind-mounts resolve inside THIS working tree -> separate data/orders/files
 #   * secrets come from THIS tree's .env (copy from .env.staging.example):
 #     Stripe TEST keys, PRINTFUL_CONFIRM=false, no Umami, distinct admin/secret.
+# Explicit project name so staging is fully isolated from prod in Compose. Both
+# trees are named typography_engine, so WITHOUT this they share a default project
+# and a deploy in one tears down the other's container (Bad Gateway). Don't change.
+name: typortrait-staging
 services:
   typortrait:
     build: .
