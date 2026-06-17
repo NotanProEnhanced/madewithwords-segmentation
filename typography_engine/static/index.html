@@ -1825,12 +1825,13 @@ function fetchWithTimeout(url, opts, ms){
       return {n:n,s:s,h:h,b:b,sub:h.querySelector(".gstep-sub")};
     }
     const S=[null, mkStep(1,"A favorite photo"), mkStep(2,"Share their story"),
-             mkStep(3,"The words that picture them"), mkStep(4,"Create their portrait")];
+             mkStep(3,"The words that describe them"), mkStep(4,"See their portrait")];
 
     S[1].b.append(elBio, elDrop, elPrev, elNote);
     S[2].b.append(elStory);
     S[3].b.append(elChips, elWords, elToggle, elSize);
     S[4].b.append(elConsent, elCreate, elFree);
+    if(elCreate) elCreate.textContent="Create their portrait";   // warmer than the generic "Create portrait"; guided brand only
 
     function contBtn(label){ const x=document.createElement("button"); x.type="button"; x.className="btn gstep-continue"; x.textContent=label; return x; }
     const cont2=contBtn("Continue"), cont3=contBtn("Continue");
@@ -1844,9 +1845,9 @@ function fetchWithTimeout(url, opts, ms){
     const wordsEl=g("words");
     function wordsVal(){ return (wordsEl && wordsEl.value || "").trim(); }
     function summarize(){
-      S[1].sub.textContent = state.file ? "Photo added" : "Choose a clear photo of your loved one";
+      S[1].sub.textContent = state.file ? "Photo chosen" : "A clear photo you love — older family photos are welcome.";
       const wv=wordsVal();
-      S[2].sub.textContent = (maxReached>2) ? (wv ? "Story shared" : "Skipped") : "Paste a tribute — we’ll suggest words";
+      S[2].sub.textContent = (maxReached>2) ? (wv ? "Story shared" : "Words added by hand") : "An obituary, a few memories — we’ll find the words.";
       S[3].sub.textContent = wv ? (wv.length>42 ? wv.slice(0,42)+"…" : wv) : "Their name, roles, the qualities you loved";
       S[4].sub.textContent = "Free preview — no payment until you love it";
     }
