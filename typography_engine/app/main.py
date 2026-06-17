@@ -798,9 +798,16 @@ async def render(
         if is_displacement:
             from .pipeline.displacement import render_displacement_portrait
             disp_words = word_list or text.split()
+            # The Sculpt renderer works at supersample x the ANALYSIS resolution
+            # (independent of out_width): 5 full-canvas text layers + a warp. At
+            # SS=2 that's ~2048px and ~20s. This endpoint only ever produces the
+            # on-screen PREVIEW (the paid file is recomposed separately), so use
+            # SS=1 for previews/thumbnails -- ~4x fewer pixels, the big memorial win.
+            disp_ss = 1 if int(png_width) < 1200 else 2
             png_bytes = await _bounded_to_thread(
                 render_displacement_portrait, an, disp_words, ground=ground_choice,
-                out_width=max(320, preview_w), uppercase=uppercase, ink=ink_choice)
+                out_width=max(320, preview_w), supersample=disp_ss,
+                uppercase=uppercase, ink=ink_choice)
             runs, ground_hex, mask_svg = [], None, None
         else:
             png_bytes, runs, ground_hex, mask_svg = await _bounded_to_thread(
