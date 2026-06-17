@@ -20,9 +20,12 @@
     font-display:swap;src:url('/static/fonts/InterVariable-Italic.woff2') format('woff2');
   }
   :root{
-    --navy:#0d1b3a; --ink:#16203a; --paper:#faf9f7; --card:#ffffff;
-    --muted:#6b7280; --line:#ece9e3; --radius:20px;
-    --shadow:0 10px 40px rgba(20,30,60,.10);
+    /* Re-skin (LovedInWords mockup): warmer paper/lines, warmer near-black text,
+       softer + rounder cards. --navy stays the brand/CTA dark (memorial-appropriate;
+       not the mockup's tech-blue). --soft is the new filled-control background. */
+    --navy:#0d1b3a; --ink:#1d1d1f; --paper:#f8f6f3; --card:#ffffff;
+    --muted:#6f6a66; --line:#ded8d2; --soft:#f3f1ee; --radius:28px;
+    --shadow:0 1px 10px rgba(45,38,31,.06);
     /* All-sans, Apple style. --serif kept as a name for headings but now points
        to Inter so every headline/brand renders in the Apple typeface. */
     --serif:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -35,7 +38,7 @@
   header{text-align:center;padding:18px 0 8px}
   .brand{font-family:var(--serif);font-size:30px;letter-spacing:-.02em;color:var(--navy);font-weight:700}
   .tag{color:var(--muted);font-size:15px;margin-top:6px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-top:22px}
+  .card{background:var(--card);border:none;border-radius:var(--radius);box-shadow:var(--shadow);padding:24px;margin-top:22px}
 
   .drop{border:2px dashed #d8d3c8;border-radius:16px;padding:34px 18px;text-align:center;cursor:pointer;transition:.18s;background:#fcfbf9}
   .drop.drag{border-color:var(--navy);background:#f3f5fa}
@@ -56,8 +59,8 @@
   .ctl-hint{color:var(--muted);font-size:13px;line-height:1.45;margin-top:8px}
   .photo-note{margin-top:10px;padding:10px 12px;border-radius:10px;background:#f4f1e8;
     border:1px solid #e7e1d2;color:#6a5b39;font-size:13px;line-height:1.45}
-  textarea,input[type=text]{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:16px;font-family:var(--sans);resize:none;background:#fff;color:var(--ink)}
-  textarea:focus,input:focus{outline:none;border-color:var(--navy)}
+  textarea,input[type=text]{width:100%;border:1px solid transparent;border-radius:16px;padding:14px 16px;font-size:16px;font-family:var(--sans);resize:none;background:var(--soft);color:var(--ink)}
+  textarea:focus,input:focus{outline:none;border-color:var(--navy);background:#fff}
 
   .btn{display:block;width:100%;border:none;border-radius:999px;background:var(--navy);color:#fff;font-size:17px;font-weight:600;padding:15px;margin-top:22px;cursor:pointer;transition:.15s;text-align:center;text-decoration:none}
   .btn:disabled{opacity:.4;cursor:default}
