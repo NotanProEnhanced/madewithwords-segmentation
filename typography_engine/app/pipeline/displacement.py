@@ -124,6 +124,12 @@ def render_displacement_portrait(
     m0 = (an.silhouette.mask > 127).astype(np.float32)
     h0, w0 = g0.shape
     SS = max(1, int(supersample))
+    # A few absolute pixel sizes below (text tiers, drape amplitude) were tuned at
+    # the default SS=2. Everything else (face width, blurs, warp coords) scales
+    # with the canvas, so at a LOWER SS those absolutes come out coarse relative to
+    # the face. Normalize them by SS so a light preview (SS=1) keeps the SAME
+    # typography + drape as the full SS=2 paid file -- just at lower resolution.
+    _ssn = SS / 2.0
     W, H = w0 * SS, h0 * SS
     gray = cv2.resize(g0, (W, H), interpolation=cv2.INTER_CUBIC)
     mask01 = cv2.resize(m0, (W, H), interpolation=cv2.INTER_LINEAR)
@@ -163,7 +169,8 @@ def render_displacement_portrait(
 
     # Four size tiers blended *continuously* (below) so the type eases from large
     # to small instead of snapping between discrete sizes.
-    t_large, t_mid, t_fine, t_micro = rows(64 * s), rows(40 * s), rows(26 * s), rows(16 * s)
+    t_large, t_mid, t_fine, t_micro = (rows(64 * s * _ssn), rows(40 * s * _ssn),
+                                       rows(26 * s * _ssn), rows(16 * s * _ssn))
     # Fifth tier, scaled to the EYE rather than the face: even "micro" type spans
     # a whole iris on a close-up, so the iris gets rows proportional to its own
     # radius -- typography that fits inside the eye.
@@ -205,7 +212,7 @@ def render_displacement_portrait(
     D = cv2.GaussianBlur(gray, (0, 0), sigmaX=W * 0.020)
     dn = (D / 255.0 - 0.5) * 2.0
     xx, yy = np.meshgrid(np.arange(W).astype(np.float32), np.arange(H).astype(np.float32))
-    amp = 64.0 * s * (1.0 - 0.85 * feat_damp)
+    amp = 64.0 * s * _ssn * (1.0 - 0.85 * feat_damp)
     my = (yy + amp * dn).astype(np.float32)
     mx = xx.astype(np.float32)
 
