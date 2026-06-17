@@ -162,6 +162,30 @@ def _init_orders_db() -> None:
 
 
 @app.on_event("startup")
+def _warm_render_models() -> None:
+    """Cold-load the MediaPipe face-mesh + selfie-segmentation models at boot, in a
+    daemon thread, so the FIRST real user render doesn't pay the multi-second model
+    load (which can blow the request timeout right after a deploy). Seeds the
+    analysis cache with a throwaway synthetic image; harmless if it fails."""
+    import threading
+
+    def warm():
+        try:
+            import cv2
+            import numpy as np
+            from .pipeline.warnings import WarningCollector
+            img = np.full((256, 256, 3), 210, np.uint8)
+            cv2.circle(img, (128, 122), 66, (140, 140, 140), -1)   # rough head shape
+            ok, buf = cv2.imencode(".png", img)
+            if ok:
+                _cached_analyze(buf.tobytes(), RenderConfig(), WarningCollector())
+        except Exception:  # noqa: BLE001
+            pass
+
+    threading.Thread(target=warm, daemon=True).start()
+
+
+@app.on_event("startup")
 def _start_admin_services() -> None:
     """Promote any legacy .queue markers to .review.json records, then start
     the background email scanner that notifies the admin of new queued reels."""
@@ -430,6 +454,62 @@ async def _bounded_to_thread(fn, *args, **kwargs):
         _render_sem.release()
 
 
+# --- Per-photo analysis cache ------------------------------------------------
+# The result screen re-renders the SAME photo many times (every swatch colour,
+# size, and the style-recommendation probes). Each /render used to re-run
+# analyze_image -- MediaPipe face mesh + selfie segmentation, by far the most
+# expensive step -- from scratch. But that analysis depends ONLY on the (cropped)
+# image bytes and any manual mask, not on ink/style/size, so we cache it. The
+# first render of a photo pays for MediaPipe; every later swatch/style/size render
+# reuses it and skips straight to typography + rasterizing. We hand back a deep
+# copy so a renderer can never mutate the cached, pristine analysis.
+import copy as _copy
+import hashlib as _hashlib
+import threading as _threading
+from collections import OrderedDict as _OrderedDict
+
+_analysis_cache = _OrderedDict()         # key -> pristine Analysis
+_analysis_lock = _threading.Lock()
+_ANALYSIS_CACHE_MAX = 12                  # ~12 photos in flight; bounded memory
+
+
+def _analysis_key(img_bytes: bytes, manual_mask) -> str:
+    h = _hashlib.sha256(img_bytes).hexdigest()
+    if manual_mask is not None:
+        try:
+            h += ":" + _hashlib.sha256(manual_mask.tobytes()).hexdigest()[:16]
+        except Exception:  # noqa: BLE001
+            h += ":mask"
+    return h
+
+
+def _cached_analyze(img_bytes, cfg, warns, manual_mask=None):
+    """analyze_image with an LRU cache keyed on the image+mask. Returns a deep
+    copy on a hit (so renderers can mutate freely). Degrades to a fresh analysis
+    if cloning ever fails -- correctness never depends on the cache."""
+    key = _analysis_key(img_bytes, manual_mask)
+    with _analysis_lock:
+        hit = _analysis_cache.get(key)
+        if hit is not None:
+            _analysis_cache.move_to_end(key)
+    if hit is not None:
+        try:
+            return _copy.deepcopy(hit)
+        except Exception:  # noqa: BLE001
+            pass            # cached entry won't clone -> fall through to fresh
+    an = analyze_image(img_bytes, cfg, warns, manual_mask=manual_mask)
+    try:
+        pristine = _copy.deepcopy(an)
+        with _analysis_lock:
+            _analysis_cache[key] = pristine
+            _analysis_cache.move_to_end(key)
+            while len(_analysis_cache) > _ANALYSIS_CACHE_MAX:
+                _analysis_cache.popitem(last=False)
+    except Exception:  # noqa: BLE001
+        pass                # uncopyable -> just don't cache; still correct
+    return an
+
+
 # --- Privacy / biometric compliance gates -----------------------------------
 # Face-mesh analysis is "biometric" (BIPA) / "special-category" (GDPR), so the
 # two endpoints that touch a face (/measure, /render) must (1) refuse blocked
@@ -680,7 +760,7 @@ async def render(
         except Exception:  # noqa: BLE001
             manual_mask_arr = None
     try:
-        an = await _bounded_to_thread(analyze_image, img_bytes, cfg, warns, manual_mask=manual_mask_arr)
+        an = await _bounded_to_thread(_cached_analyze, img_bytes, cfg, warns, manual_mask=manual_mask_arr)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
 
