@@ -219,6 +219,30 @@
   .chip button{background:none;border:none;color:var(--muted);font-size:15px;line-height:1;
     padding:0;margin:0;cursor:pointer}
   .chip button:hover{color:var(--heart,#c85b57)}
+  /* Guided step-wise onboarding (memorial brand only). Everything is scoped to
+     body.lw-guided; the generic studio never gets these nodes or classes, so its
+     single-card flow is provably unchanged. */
+  body.lw-guided #input{background:none;box-shadow:none;border:none;padding:0;border-radius:0;margin-top:14px}
+  body.lw-guided .gstep{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
+    margin-bottom:16px;overflow:hidden;transition:opacity .28s ease, transform .28s ease}
+  body.lw-guided .gstep.locked{opacity:.3;transform:scale(.99);pointer-events:none}
+  body.lw-guided .gstep-head{display:flex;align-items:center;gap:14px;width:100%;text-align:left;
+    background:none;border:0;cursor:pointer;padding:22px 26px;font-family:var(--sans)}
+  body.lw-guided .gstep-num{flex:none;width:30px;height:30px;border-radius:50%;background:var(--soft);
+    color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:650}
+  body.lw-guided .gstep.open .gstep-num{background:var(--navy);color:#fff}
+  body.lw-guided .gstep.done .gstep-num{background:var(--navy);color:#fff;font-size:0}
+  body.lw-guided .gstep.done .gstep-num::after{content:"\2713";font-size:14px}
+  body.lw-guided .gstep-tt{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+  body.lw-guided .gstep-title{font-size:18px;font-weight:650;letter-spacing:-.02em;color:var(--ink)}
+  body.lw-guided .gstep-sub{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  body.lw-guided .gstep-chev{flex:none;color:var(--muted);font-size:22px;line-height:1;transition:transform .2s ease}
+  body.lw-guided .gstep.open .gstep-chev{transform:rotate(90deg)}
+  body.lw-guided .gstep-body{padding:0 26px 26px}
+  body.lw-guided .gstep:not(.open) .gstep-body{display:none}
+  body.lw-guided .story-step{background:none;padding:0;margin:0}
+  body.lw-guided .story-h{display:none}   /* the step header already titles this card */
+  body.lw-guided .gstep-continue{margin-top:18px;width:100%}
   .actions{display:flex;gap:12px;margin-top:16px}.actions .btn{margin-top:0}
   .btn.secondary{margin-top:12px}
   .sharepanel{display:none;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px}
@@ -649,8 +673,9 @@ consent.addEventListener("change", refreshCreate);
       const ws=(j&&j.words)||[];
       if(ws.length){
         chipWords=ws.slice(); renderChips(); syncWordsField();
-        msg.textContent="Suggested words added below. Remove any that don’t fit, or add your own.";
+        msg.textContent="We found these words — edit any that don’t fit, or add your own.";
         tp_track("story_suggest_ok",{n:ws.length});
+        document.dispatchEvent(new CustomEvent("lw:words-suggested"));   // guided flow advances to the words step
       }else{
         msg.textContent="We couldn’t suggest words from that — please add the words yourself below.";
         tp_track("story_suggest_empty");
@@ -1759,6 +1784,94 @@ function fetchWithTimeout(url, opts, ms){
       fineEl.textContent="Network hiccup — please try again.";
     }
   });
+})();
+
+/* ---------- Guided step-wise onboarding (memorial brand only) ----------
+   Grieving families do better with a gentle, one-thing-at-a-time flow than a
+   dense single form. For lovedinwords ONLY, we regroup the existing input
+   controls at runtime into collapsible step cards revealed in sequence:
+     1 A favorite photo  2 Share their story  3 The words  4 Create
+   Nodes are MOVED (appendChild), not cloned, so every existing listener and
+   validation stays attached. GATED to lovedinwords -> the generic studio never
+   enters this path; if anything is unexpected we bail and keep the flat flow. */
+(function initGuided(){
+  try{
+    if(typeof BRAND_ID==="undefined" || BRAND_ID!=="lovedinwords") return;
+    const input=document.getElementById("input"); if(!input) return;
+    const g=id=>document.getElementById(id);
+    const elDrop=g("drop"), elPrev=g("preview"), elNote=g("photoNote"),
+          elBio=g("bioConsentRow"), elFile=g("file"), elCrop=g("cropModal"),
+          elStory=g("storyStep"), elChips=g("storyChips"),
+          elWords=input.querySelector("label.field"),
+          elToggle=g("contentToggle"), elSize=g("inputSizeCtl"),
+          elConsent=g("consentRow"), elCreate=g("create"), elFree=g("freenote"), elErr=g("errInput");
+    if(!elDrop||!elWords||!elCreate||!elStory){ return; }   // markup changed -> keep flat flow
+
+    document.body.classList.add("lw-guided");
+    // Crop modal + hidden file input float free of the accordion so a collapsed
+    // step never hides them (both are fixed/hidden; position in DOM is irrelevant).
+    if(elCrop) document.body.appendChild(elCrop);
+    if(elFile) document.body.appendChild(elFile);
+
+    function mkStep(n,title){
+      const s=document.createElement("section"); s.className="gstep"; s.dataset.step=String(n);
+      const h=document.createElement("button"); h.type="button"; h.className="gstep-head";
+      h.innerHTML='<span class="gstep-num">'+n+'</span>'+
+        '<span class="gstep-tt"><span class="gstep-title"></span><span class="gstep-sub"></span></span>'+
+        '<span class="gstep-chev" aria-hidden="true">›</span>';
+      h.querySelector(".gstep-title").textContent=title;
+      const b=document.createElement("div"); b.className="gstep-body";
+      s.appendChild(h); s.appendChild(b);
+      return {n:n,s:s,h:h,b:b,sub:h.querySelector(".gstep-sub")};
+    }
+    const S=[null, mkStep(1,"A favorite photo"), mkStep(2,"Share their story"),
+             mkStep(3,"The words that picture them"), mkStep(4,"Create their portrait")];
+
+    S[1].b.append(elBio, elDrop, elPrev, elNote);
+    S[2].b.append(elStory);
+    S[3].b.append(elChips, elWords, elToggle, elSize);
+    S[4].b.append(elConsent, elCreate, elFree);
+
+    function contBtn(label){ const x=document.createElement("button"); x.type="button"; x.className="btn gstep-continue"; x.textContent=label; return x; }
+    const cont2=contBtn("Continue"), cont3=contBtn("Continue");
+    S[2].b.appendChild(cont2); S[3].b.appendChild(cont3);
+
+    // Lay the steps into #input; errInput stays outside (always visible for errors).
+    input.append(S[1].s, S[2].s, S[3].s, S[4].s);
+    if(elErr) input.appendChild(elErr);
+
+    let maxReached=1, openStep=1;
+    const wordsEl=g("words");
+    function wordsVal(){ return (wordsEl && wordsEl.value || "").trim(); }
+    function summarize(){
+      S[1].sub.textContent = state.file ? "Photo added" : "Choose a clear photo of your loved one";
+      const wv=wordsVal();
+      S[2].sub.textContent = (maxReached>2) ? (wv ? "Story shared" : "Skipped") : "Paste a tribute — we’ll suggest words";
+      S[3].sub.textContent = wv ? (wv.length>42 ? wv.slice(0,42)+"…" : wv) : "Their name, roles, the qualities you loved";
+      S[4].sub.textContent = "Free preview — no payment until you love it";
+    }
+    function paint(){
+      for(let i=1;i<=4;i++){
+        const locked=i>maxReached, open=(i===openStep)&&!locked, done=i<maxReached;
+        S[i].s.classList.toggle("locked",locked);
+        S[i].s.classList.toggle("open",open);
+        S[i].s.classList.toggle("done",done);
+      }
+      summarize();
+    }
+    function goTo(n){ n=Math.max(1,Math.min(4,n)); maxReached=Math.max(maxReached,n); openStep=n; paint();
+      try{ S[n].s.scrollIntoView({block:"start",behavior:"smooth"}); }catch(e){} }
+
+    S.forEach(function(st){ if(!st) return; st.h.addEventListener("click",function(){ if(st.n<=maxReached){ openStep=st.n; paint(); } }); });
+    // Photo lands -> auto-advance from step 1 (preview becomes visible).
+    try{ new MutationObserver(function(){ if(state.file && getComputedStyle(elPrev).display!=="none" && openStep===1){ goTo(2); } })
+          .observe(elPrev,{attributes:true,attributeFilter:["style"]}); }catch(e){}
+    document.addEventListener("lw:words-suggested",function(){ goTo(3); });
+    cont2.addEventListener("click",function(){ goTo(3); });   // story is optional
+    cont3.addEventListener("click",function(){ if(!wordsVal()){ if(wordsEl) wordsEl.focus(); S[3].sub.textContent="Add a few words to continue"; return; } goTo(4); });
+
+    paint();
+  }catch(e){ /* leave the flat flow intact on any failure */ }
 })();
 </script>
 </body>
