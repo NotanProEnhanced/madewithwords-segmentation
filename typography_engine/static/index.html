@@ -673,50 +673,36 @@ function inputErr(m){ const e=document.getElementById("errInput"); e.textContent
 function refreshCreate(){ if(state.file && words.value.trim() && consent.checked){ const e=document.getElementById("errInput"); if(e) e.style.display="none"; } }
 words.addEventListener("input", refreshCreate);
 consent.addEventListener("change", refreshCreate);
-/* ---------- "Share their story" -> suggested words (memorial brand) ----------
-   Paste a tribute, POST to /suggest-words, drop the returned words into the
-   words field as removable chips. The #words textarea stays the canonical
-   input (what's rendered); chips are a convenience echo. Fails soft: on no
-   suggestion / error / no key, we just nudge the user to type words below. */
+/* ---------- One box: type words, or paste a story and distill it (memorial) ----
+   The single #words field is the canonical input (what's rendered). If the user
+   pastes an obituary or tribute into it, "Suggest words" sends THAT text to
+   /suggest-words and REPLACES the field with the suggested words, in place -- no
+   second box, no chips. Fails soft: on no suggestion / error / no key, we leave
+   their text untouched and nudge them to edit by hand. */
 (function(){
-  const btn=document.getElementById("suggestWords"), story=document.getElementById("storyText"),
-        chipsBox=document.getElementById("storyChips"), msg=document.getElementById("storyMsg");
-  if(!btn||!story) return;
-  let chipWords=[];
-  function syncWordsField(){ words.value = chipWords.join(", "); refreshCreate(); }
-  function renderChips(){
-    chipsBox.innerHTML="";
-    if(!chipWords.length){ chipsBox.style.display="none"; return; }
-    chipWords.forEach((w,i)=>{
-      const c=document.createElement("span"); c.className="chip";
-      const t=document.createElement("span"); t.textContent=w; c.appendChild(t);
-      const x=document.createElement("button"); x.type="button"; x.textContent="×";
-      x.setAttribute("aria-label","Remove "+w);
-      x.addEventListener("click",()=>{ chipWords.splice(i,1); renderChips(); syncWordsField(); });
-      c.appendChild(x); chipsBox.appendChild(c);
-    });
-    chipsBox.style.display="flex";
-  }
+  const btn=document.getElementById("suggestWords"), msg=document.getElementById("storyMsg");
+  if(!btn) return;
+  function say(m){ if(msg) msg.textContent=m; }
   btn.addEventListener("click", async ()=>{
-    const text=(story.value||"").trim();
-    if(!text){ msg.textContent="Paste a few words about them first, or type the words yourself below."; story.focus(); return; }
-    btn.disabled=true; const label=btn.textContent; btn.textContent="Finding words…"; msg.textContent="";
+    const text=(words.value||"").trim();
+    if(!text){ say("Type a few words, or paste their story here first."); words.focus(); return; }
+    btn.disabled=true; const label=btn.textContent; btn.textContent="Finding words…"; say("");
     try{
       const fd=new FormData(); fd.append("story", text);
       const r=await fetch("/suggest-words",{method:"POST",body:fd});
       const j=await r.json();
       const ws=(j&&j.words)||[];
       if(ws.length){
-        chipWords=ws.slice(); renderChips(); syncWordsField();
-        msg.textContent="We found these words — edit any that don’t fit, or add your own.";
+        words.value = ws.join(", "); refreshCreate();
+        say("We pulled these words from what you wrote — edit any that don’t fit.");
         tp_track("story_suggest_ok",{n:ws.length});
-        document.dispatchEvent(new CustomEvent("lw:words-suggested"));   // guided flow advances to the words step
+        document.dispatchEvent(new CustomEvent("lw:words-suggested"));
       }else{
-        msg.textContent="We couldn’t suggest words from that — please add the words yourself below.";
+        say("We couldn’t find words in that — please edit them by hand.");
         tp_track("story_suggest_empty");
       }
     }catch(e){
-      msg.textContent="Couldn’t reach the suggestion service — please add the words yourself below.";
+      say("Couldn’t reach the suggestion service — please edit the words by hand.");
     }finally{
       btn.disabled=false; btn.textContent=label;
     }
@@ -1855,11 +1841,11 @@ function fetchWithTimeout(url, opts, ms){
     const g=id=>document.getElementById(id);
     const elDrop=g("drop"), elPrev=g("preview"), elNote=g("photoNote"),
           elBio=g("bioConsentRow"), elFile=g("file"), elCrop=g("cropModal"),
-          elStory=g("storyStep"), elChips=g("storyChips"),
+          elStory=g("storyStep"), elSuggest=g("suggestWords"), elStoryMsg=g("storyMsg"),
           elWords=input.querySelector("label.field"),
           elToggle=g("contentToggle"), elSize=g("inputSizeCtl"),
           elConsent=g("consentRow"), elCreate=g("create"), elFree=g("freenote"), elErr=g("errInput");
-    if(!elDrop||!elWords||!elCreate||!elStory){ return; }   // markup changed -> keep flat flow
+    if(!elDrop||!elWords||!elCreate||!elSuggest){ return; }   // markup changed -> keep flat flow
 
     document.body.classList.add("lw-guided");
     // Crop modal + hidden file input float free of the accordion so a collapsed
@@ -1883,14 +1869,19 @@ function fetchWithTimeout(url, opts, ms){
              mkStep(3,"See their portrait")];
 
     S[1].b.append(elBio, elDrop, elPrev, elNote);
-    // The "paste their story" helper folds INTO the words step (it used to be its
-    // own step 2, which felt redundant with the words): optional story box ->
-    // suggested chips -> the editable words field.
-    S[2].b.append(elStory, elChips, elWords, elToggle, elSize);
+    // ONE box for the words step: the user types words, OR pastes a story into the
+    // same field and taps Suggest words to distill it in place. The field's own
+    // label/hint are hidden (the step header titles it) and a helper explains both
+    // uses. The old separate story textarea is dropped entirely.
+    const _wl=g("wordsLbl"), _wh=g("wordsHint");
+    if(_wl) _wl.style.display="none";
+    if(_wh) _wh.style.display="none";
+    const _help=document.createElement("div"); _help.className="story-p";
+    _help.textContent="A few words, separated by commas — their name, who they were, the qualities you loved. Not sure where to start? Paste an obituary or a tribute and tap Suggest words to pull them out.";
+    S[2].b.append.apply(S[2].b, [_help, elWords, elSuggest, elStoryMsg, elToggle, elSize].filter(Boolean));
+    if(elStory && elStory.parentNode) elStory.parentNode.removeChild(elStory);   // drop the now-unused story-box container
     S[3].b.append(elConsent, elCreate, elFree);
     if(elCreate) elCreate.textContent="Create their portrait";   // warmer than the generic "Create portrait"; guided brand only
-    var _sp=elStory.querySelector(".story-p");
-    if(_sp) _sp.textContent="Optional — paste an obituary, a tribute, or a few memories and we’ll suggest words you can edit. Or just type them below.";
 
     function contBtn(label){ const x=document.createElement("button"); x.type="button"; x.className="btn gstep-continue"; x.textContent=label; return x; }
     const contWords=contBtn("Continue");
