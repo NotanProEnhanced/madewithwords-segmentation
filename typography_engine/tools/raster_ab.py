@@ -1,17 +1,14 @@
-"""A/B the SVG rasterizers (CairoSVG vs resvg) on a real portrait.
+"""Decompose a render's cost (and A/B the rasterizers if resvg is installed).
 
-Renders the SAME photo + words BOTH ways in one process (only the rasterizer
-differs -- layout/crop/compositing are identical), reports the speed of each,
-and measures how different the two output images actually are. Use it to decide
-whether resvg (much faster) is visually equivalent to CairoSVG for this pipeline.
+Finds a real face photo, renders it, and reports the FULL render time. The
+'raster backend=... took=Xs' line the renderer logs is the rasterization
+sub-time, so:  layout + composite = full - raster.  That tells us whether the
+slow part is rasterizing (swap rasterizer) or the word-layout (optimize layout /
+cut preview resolution). If resvg_py is installed it also A/Bs CairoSVG vs resvg.
 
-Run it by piping this file into the container's python (no rebuild needed):
-
+Run (no rebuild needed):
     docker exec -i typortrait-staging python - < tools/raster_ab.py
-
-Optionally pass an explicit image path:
-
-    docker exec -i typortrait-staging python - < tools/raster_ab.py  /path/in/container.jpg
+    docker exec -i typortrait-staging python - < tools/raster_ab.py  data/private/<file>.png
 """
 import glob
 import io
@@ -27,22 +24,20 @@ from app.main import _cached_analyze
 from app.pipeline.tonal import render_layered_png
 from app.pipeline.warnings import WarningCollector
 
-WORDS = "GRACE KIND MOTHER FAITHFUL ALWAYS FAMILY GRACE KIND"
+WORDS = "GRACE KIND MOTHER FAITHFUL ALWAYS FAMILY GRACE KIND BRILLIANT MOM"
 SKIP = ("preview", "thumb", "swatch", "mask", "overlay")
 
 
-def _pick_image():
+def _candidates():
     if len(sys.argv) > 1 and os.path.exists(sys.argv[1]):
-        return sys.argv[1]
-    # search data/ and tools/ recursively (uploads may live under a job subdir),
-    # skip rendered artifacts, and prefer the largest file (most likely a photo).
+        return [sys.argv[1]]
     pool = []
     for base in ("data", "tools"):
         for ext in ("jpg", "jpeg", "png"):
             pool += glob.glob("%s/**/*.%s" % (base, ext), recursive=True)
     imgs = [c for c in pool if not any(x in c.lower() for x in SKIP)]
     imgs.sort(key=lambda p: os.path.getsize(p) if os.path.exists(p) else 0, reverse=True)
-    return imgs[0] if imgs else None
+    return imgs
 
 
 def _render(an, cfg, pref):
@@ -55,32 +50,52 @@ def _render(an, cfg, pref):
 
 
 def main():
-    img = _pick_image()
-    if not img:
-        print("No test image found. Pass one explicitly:")
-        print("  docker exec -i typortrait-staging python - < tools/raster_ab.py <path>")
-        return
     cfg = RenderConfig()
-    an = _cached_analyze(open(img, "rb").read(), cfg, WarningCollector())
-    print("image=%s  faces=%d  (faces=0 => sparse, not representative)" % (img, len(an.faces)))
+    cands = _candidates()
+    if not cands:
+        print("No image found. Pass one explicitly: ... python - < tools/raster_ab.py <path>")
+        return
 
+    # Prefer an image with a detectable face (dense, representative of the slow case).
+    chosen, an = None, None
+    for c in cands[:10]:
+        a = _cached_analyze(open(c, "rb").read(), cfg, WarningCollector())
+        if len(a.faces) > 0:
+            chosen, an = c, a
+            break
+    if chosen is None:
+        chosen = cands[0]
+        an = _cached_analyze(open(chosen, "rb").read(), cfg, WarningCollector())
+    cov = float((an.silhouette.mask > 0).mean()) if an.silhouette.mask is not None else -1
+    print("image=%s  faces=%d  sil_coverage=%.3f" % (chosen, len(an.faces), cov))
+    if len(an.faces) == 0:
+        print("  (no face among the candidates -> sparse render; the dense ~28s case may not reproduce here)")
+
+    # CairoSVG = current production. The 'raster ... took=Xs' line printed above is
+    # the rasterize sub-time; this is the FULL render time.
     pc, tc = _render(an, cfg, "cairosvg")
-    pr, tr = _render(an, cfg, "resvg")
+    print("FULL render (cairosvg) = %.2fs   [layout+composite = this MINUS the raster 'took=' line above]" % tc)
+    Image.open(io.BytesIO(pc)).convert("RGB").save("/tmp/ab_cairosvg.png")
+    print("wrote /tmp/ab_cairosvg.png")
 
-    A = Image.open(io.BytesIO(pc)).convert("RGB")
+    try:
+        import resvg_py  # noqa: F401
+    except Exception as e:
+        print("resvg NOT installed here (%s) -> can't A/B it. (It's only the rasterizer; "
+              "if rasterizing isn't the bottleneck, installing it won't help.)" % type(e).__name__)
+        return
+
+    pr, tr = _render(an, cfg, "resvg")
+    A = Image.open("/tmp/ab_cairosvg.png").convert("RGB")
     B = Image.open(io.BytesIO(pr)).convert("RGB")
     if A.size != B.size:
         B = B.resize(A.size)
     d = np.abs(np.asarray(A, np.int16) - np.asarray(B, np.int16))
-
-    print("")
-    print("SPEED   cairosvg=%.2fs   resvg=%.2fs   speedup=%.1fx" % (tc, tr, tc / max(tr, 1e-6)))
-    print("DIFF    mean_abs=%.3f / 255   max=%d   pixels_differing>8=%.3f%%"
+    print("FULL render (resvg)    = %.2fs   speedup=%.1fx" % (tr, tc / max(tr, 1e-6)))
+    print("DIFF mean_abs=%.3f / 255   max=%d   pixels_differing>8=%.3f%%"
           % (d.mean(), int(d.max()), 100.0 * (d.max(2) > 8).mean()))
-    print("        (mean_abs < ~1-2 and pixels_differing ~0%% => visually identical)")
-    A.save("/tmp/ab_cairosvg.png")
     B.save("/tmp/ab_resvg.png")
-    print("IMAGES  /tmp/ab_cairosvg.png  and  /tmp/ab_resvg.png  (docker cp them out to eyeball)")
+    print("wrote /tmp/ab_resvg.png")
 
 
 if __name__ == "__main__":
