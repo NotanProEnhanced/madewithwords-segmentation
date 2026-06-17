@@ -2144,7 +2144,7 @@ def terms():
             "<li>it does not depict a minor without the consent of their parent or guardian.</li></ul>"
             "<p>You are solely responsible for the images and words you submit. You grant Typortrait a limited license to process your image and text only to create and deliver your portrait.</p>"),
         ("4. Prohibited uses", "<p>Do not use the Service for unlawful, infringing, deceptive, or harmful purposes; do not upload other people&rsquo;s images without permission; do not resell or redistribute the Service itself.</p>"),
-        ("5. Purchases and downloads", "<p>Prices are shown at checkout and processed securely by Stripe. The preview is free and watermarked; payment unlocks a watermark-free, high-resolution download for your personal and gift use. Because files are delivered immediately, sales are final once the file is delivered &mdash; but if anything is wrong with your file, contact us and we&rsquo;ll make it right.</p>"),
+        ("5. Purchases and refunds", "<p>Prices are shown at checkout and processed securely by Stripe. The preview is free and watermarked; payment unlocks a watermark-free, high-resolution download for your personal and gift use. Digital files are delivered immediately: by purchasing you agree to that immediate delivery and, where applicable, acknowledge that you waive your 14-day right of withdrawal once the download begins. Personalised prints are made to order. If anything is wrong &mdash; a quality issue with your file, or a print that arrives damaged or not as ordered &mdash; <b>we&rsquo;ll fix it or refund it</b>. See our <a href=\"/refunds\">Refund Policy</a> for the details.</p>"),
         ("6. Intellectual property", "<p>You receive a license to use your generated portrait for personal, non-commercial purposes, including printing and gifting. Typortrait retains all rights in the Service, software, and brand.</p>"),
         ("6.5 Optional social-sharing license", "<p>After purchase you may, at your option, generate a short shareable &ldquo;reel&rdquo; version of your portrait. At that step you will see two checkboxes:</p><ul>"
             "<li><b>Personal use</b> &mdash; confirms that you will share the reel yourself. This does not transfer any rights to Typortrait.</li>"
@@ -2156,6 +2156,18 @@ def terms():
         ("10. Changes and governing law", "<p>We may update these Terms; continued use means you accept the changes. These Terms are governed by the laws of New York State, United States of America.</p>"),
     ]
     return _policy_page("Terms of Use", blocks)
+
+
+@app.get("/refunds", response_class=HTMLResponse)
+def refunds():
+    blocks = [
+        ("Our promise", "<p>We want you to love your portrait. If anything is wrong, tell us &mdash; <b>we&rsquo;ll fix it or refund it.</b> Email <a href='mailto:support@typortrait.com'>support@typortrait.com</a>.</p>"),
+        ("Digital downloads", "<p>Your watermark-free download is delivered instantly, so purchases are generally final once delivered. But if the file has a quality problem &mdash; a poor likeness, a rendering glitch, or the wrong file &mdash; we will <b>re-create it or refund you in full</b>. Just contact us with your order details.</p>"),
+        ("Prints &amp; physical products", "<p>Prints are made to order, so we don&rsquo;t accept &ldquo;changed my mind&rdquo; returns on a personalised item. But if your print arrives <b>damaged, defective, or not as ordered</b>, we&rsquo;ll <b>reprint or refund it</b> &mdash; send us a photo of the issue and we&rsquo;ll make it right.</p>"),
+        ("How to request a refund", "<p>Email <a href='mailto:support@typortrait.com'>support@typortrait.com</a> with your order number (and a photo, for print issues). Approved refunds go back to your original payment method via Stripe, usually within a few business days.</p>"),
+        ("EU/UK customers", "<p>For digital downloads you agree at checkout to immediate delivery and acknowledge that you lose your 14-day right of withdrawal once the download begins. Personalised prints are likewise exempt from the 14-day withdrawal right. None of this affects your statutory rights regarding faulty goods, which we always honour.</p>"),
+    ]
+    return _policy_page("Refund Policy", blocks)
 
 
 @app.get("/privacy", response_class=HTMLResponse)
