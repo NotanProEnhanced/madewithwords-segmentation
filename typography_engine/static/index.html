@@ -204,6 +204,21 @@
   /* Quiet text link (e.g. switch to writing a message) — not a loud button. */
   .linklike{display:inline-block;background:none;border:none;color:var(--navy);font-family:var(--sans);font-size:13.5px;font-weight:600;padding:10px 2px 2px;margin:0;cursor:pointer;letter-spacing:-.01em}
   .linklike:hover{opacity:.75}
+  /* Memorial "Share their story" step (lovedinwords only). A gentle paste-a-tribute
+     box that suggests words, shown above the words field. */
+  .story-step{margin:4px 0 20px;padding:20px;background:var(--soft);border-radius:22px}
+  .story-h{font-size:18px;font-weight:650;letter-spacing:-.02em;color:var(--ink)}
+  .story-p{color:var(--muted);font-size:13.5px;line-height:1.5;margin:6px 0 14px;max-width:46ch}
+  .story-step textarea{background:#fff;min-height:120px}
+  #suggestWords{margin-top:12px}
+  #suggestWords[disabled]{opacity:.55;cursor:default}
+  .story-msg{font-size:13px;color:var(--muted);margin-top:10px;min-height:0}
+  .chips{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
+  .chip{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);
+    border-radius:999px;padding:7px 11px;font-size:13px;letter-spacing:.4px;color:var(--ink)}
+  .chip button{background:none;border:none;color:var(--muted);font-size:15px;line-height:1;
+    padding:0;margin:0;cursor:pointer}
+  .chip button:hover{color:var(--heart,#c85b57)}
   .actions{display:flex;gap:12px;margin-top:16px}.actions .btn{margin-top:0}
   .btn.secondary{margin-top:12px}
   .sharepanel{display:none;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px}
@@ -315,6 +330,17 @@
           <button id="cropApply" type="button" class="btn">Use this crop</button>
         </div>
       </div>
+    </div>
+    <!-- Memorial "Share their story" step: paste a tribute, get suggested words.
+         Shown only for the lovedinwords brand (see brand-apply JS). Convenience
+         layer over the words field below; fails soft to manual entry. -->
+    <div id="storyStep" class="story-step" style="display:none">
+      <div class="story-h">Share their story</div>
+      <div class="story-p">Paste an obituary, a tribute, or just a few memories. We&rsquo;ll suggest meaningful words &mdash; you can edit anything before you preview.</div>
+      <textarea id="storyText" rows="5" placeholder="Tell us about your loved one &mdash; who they were, what they meant to you&hellip;"></textarea>
+      <button type="button" id="suggestWords" class="btn secondary">Suggest words</button>
+      <div id="storyMsg" class="story-msg" aria-live="polite"></div>
+      <div id="storyChips" class="chips" style="display:none" aria-label="Suggested words"></div>
     </div>
     <label class="field">
       <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
@@ -543,7 +569,10 @@ if(BRAND){
     document.title=BRAND.title||BRAND.name;
     const _bn=document.querySelector("header .brand-name"); if(_bn) _bn.textContent=BRAND.name;
     const _tg=document.querySelector("header .tag"); if(_tg) _tg.textContent=BRAND.tag;
-    if(BRAND_ID==="lovedinwords"){ const _h=document.querySelector(".brand-heart"); if(_h) _h.style.display="inline-flex"; }   // heart lockup = memorial brand only
+    if(BRAND_ID==="lovedinwords"){
+      const _h=document.querySelector(".brand-heart"); if(_h) _h.style.display="inline-flex";   // heart lockup = memorial brand only
+      const _ss=document.getElementById("storyStep"); if(_ss) _ss.style.display="block";          // "Share their story" suggest step = memorial only
+    }
     if(BRAND.theme){ const rs=document.documentElement.style; for(const k in BRAND.theme) rs.setProperty(k, BRAND.theme[k]); }
   }catch(e){}
 }
@@ -585,6 +614,54 @@ function inputErr(m){ const e=document.getElementById("errInput"); e.textContent
 function refreshCreate(){ if(state.file && words.value.trim() && consent.checked){ const e=document.getElementById("errInput"); if(e) e.style.display="none"; } }
 words.addEventListener("input", refreshCreate);
 consent.addEventListener("change", refreshCreate);
+/* ---------- "Share their story" -> suggested words (memorial brand) ----------
+   Paste a tribute, POST to /suggest-words, drop the returned words into the
+   words field as removable chips. The #words textarea stays the canonical
+   input (what's rendered); chips are a convenience echo. Fails soft: on no
+   suggestion / error / no key, we just nudge the user to type words below. */
+(function(){
+  const btn=document.getElementById("suggestWords"), story=document.getElementById("storyText"),
+        chipsBox=document.getElementById("storyChips"), msg=document.getElementById("storyMsg");
+  if(!btn||!story) return;
+  let chipWords=[];
+  function syncWordsField(){ words.value = chipWords.join(", "); refreshCreate(); }
+  function renderChips(){
+    chipsBox.innerHTML="";
+    if(!chipWords.length){ chipsBox.style.display="none"; return; }
+    chipWords.forEach((w,i)=>{
+      const c=document.createElement("span"); c.className="chip";
+      const t=document.createElement("span"); t.textContent=w; c.appendChild(t);
+      const x=document.createElement("button"); x.type="button"; x.textContent="×";
+      x.setAttribute("aria-label","Remove "+w);
+      x.addEventListener("click",()=>{ chipWords.splice(i,1); renderChips(); syncWordsField(); });
+      c.appendChild(x); chipsBox.appendChild(c);
+    });
+    chipsBox.style.display="flex";
+  }
+  btn.addEventListener("click", async ()=>{
+    const text=(story.value||"").trim();
+    if(!text){ msg.textContent="Paste a few words about them first, or type the words yourself below."; story.focus(); return; }
+    btn.disabled=true; const label=btn.textContent; btn.textContent="Finding words…"; msg.textContent="";
+    try{
+      const fd=new FormData(); fd.append("story", text);
+      const r=await fetch("/suggest-words",{method:"POST",body:fd});
+      const j=await r.json();
+      const ws=(j&&j.words)||[];
+      if(ws.length){
+        chipWords=ws.slice(); renderChips(); syncWordsField();
+        msg.textContent="Suggested words added below. Remove any that don’t fit, or add your own.";
+        tp_track("story_suggest_ok",{n:ws.length});
+      }else{
+        msg.textContent="We couldn’t suggest words from that — please add the words yourself below.";
+        tp_track("story_suggest_empty");
+      }
+    }catch(e){
+      msg.textContent="Couldn’t reach the suggestion service — please add the words yourself below.";
+    }finally{
+      btn.disabled=false; btn.textContent=label;
+    }
+  });
+})();
 // Style toggle: word mosaic vs continuous-prose story.
 const wordsLbl=$("#wordsLbl"), wordsHint=$("#wordsHint");
 const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch");

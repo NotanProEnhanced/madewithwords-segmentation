@@ -21,6 +21,7 @@ from . import __version__
 from . import admin as admin_mod
 from . import orders as orders_db
 from . import moderation
+from . import suggest
 from . import printful, products
 from .config import (
     BIOMETRIC_CONSENT_VERSION,
@@ -505,6 +506,22 @@ async def measure(request: Request, image: UploadFile = File(...), crop: Optiona
                          "sizes": _allowed_size_mf(face_frac), "default": _recommended_size_mf(face_frac)})
 
 
+@app.post("/suggest-words")
+async def suggest_words_endpoint(request: Request, story: str = Form("")) -> JSONResponse:
+    """Memorial 'Share their story' step: take a pasted tribute/obituary and
+    return suggested portrait words. Convenience only -- fails soft to an empty
+    list (no key / API error / empty input), so the studio falls back to manual
+    entry and the flow never blocks on it. Only the words are returned, never the
+    story. See suggest.py for the (billed) OpenAI call and caching."""
+    text = (story or "").strip()
+    if not text:
+        return JSONResponse({"ok": True, "words": []})
+    if not suggest.enabled():
+        return JSONResponse({"ok": True, "words": [], "available": False})
+    words = await asyncio.to_thread(suggest.suggest_words, text)
+    return JSONResponse({"ok": True, "words": words, "available": True})
+
+
 @app.get("/mask/{job}")
 def auto_mask(job: str):
     """Return the AUTOMATIC background mask (PNG, white = subject) for a stored
@@ -516,6 +533,11 @@ def auto_mask(job: str):
     src = PRIVATE_DIR / f"{job}.src"
     if not src.exists():
         raise HTTPException(status_code=404)
+    # Resume from the user's last saved manual mask if there is one, so re-opening
+    # the editor continues their edit instead of resetting to the auto cutout.
+    bgm = PRIVATE_DIR / f"{job}.bgmask.png"
+    if bgm.exists():
+        return Response(content=bgm.read_bytes(), media_type="image/png")
     try:
         import cv2
         from .pipeline.preprocess import load_and_normalize

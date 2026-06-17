@@ -223,3 +223,9 @@ RENDER_CONCURRENCY = _render_concurrency()
 # not a classifier. See COMPLIANCE.md.
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 MODERATION_MODEL = os.environ.get("TYPO_MODERATION_MODEL", "omni-moderation-latest")
+
+# Word suggestion for the memorial "Share their story" step (paste a tribute ->
+# suggested words). Reuses OPENAI_API_KEY. NOTE: unlike moderation, chat
+# completions ARE billed -- tiny (gpt-4o-mini, a few hundred tokens, well under a
+# cent per call), but not free; the usage cap on the key bounds it.
+SUGGEST_MODEL = os.environ.get("TYPO_SUGGEST_MODEL", "gpt-4o-mini")
