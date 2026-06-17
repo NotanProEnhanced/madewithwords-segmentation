@@ -242,6 +242,18 @@
   body.lw-guided .gstep:not(.open) .gstep-body{display:none}
   body.lw-guided .story-step{background:none;padding:0;margin:0}
   body.lw-guided .story-h{display:none}   /* the step header already titles this card */
+  /* One consistent input style across the guided flow: the photo drop box (was
+     dashed) and the story + words boxes (were border-transparent-until-focus) now
+     share a soft, always-visible outline + fill. Text boxes still deepen to navy
+     on focus. */
+  body.lw-guided .drop{border:1px solid var(--line);background:var(--soft);margin-top:18px}
+  body.lw-guided textarea,
+  body.lw-guided input[type=text]{border-color:var(--line)}
+  body.lw-guided .story-step textarea{background:var(--soft)}
+  /* Keep the focus highlight winning over the resting-border overrides above
+     (equal specificity, so these must come after). */
+  body.lw-guided textarea:focus,
+  body.lw-guided input:focus{border-color:var(--navy);background:#fff}
   body.lw-guided .gstep-continue{margin-top:18px;width:100%}
   /* Calmer result screen for the memorial brand: more breathing room, a gentler
      width, softer controls, the portrait + primary action given presence. Purely
