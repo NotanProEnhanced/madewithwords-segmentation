@@ -1619,7 +1619,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     prewarmSizes();          // fill the other size chips for this ink in the background
     if(!recoStarted){ recoStarted=true; recommendStyle(); }   // probe + badge the best style
   }catch(e){ if(!background && !thumb){
-      const m=(e&&e.name==="AbortError") ? "This is taking longer than usual — please try again." : "Network error — please try again.";
+      const m=(e&&e.name==="AbortError") ? "This is taking longer than usual — it may still be finishing. Please give it a moment, then try again." : "Network error — please try again.";
       // On a first render with no portrait yet, surface on the input screen
       // (mirrors the server-error path) rather than an empty result frame.
       if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; errInput.textContent=m; errInput.style.display="block"; }
@@ -1745,8 +1745,10 @@ function friendly(code){ return ({no_words:"Add a few words first.",
   image_too_large:IMG_TOO_LARGE_MSG,
   empty_upload:"Please add a photo."})[code]; }
 // Bound every render so a stuck request can't spin forever. Renders are a few
-// seconds; first-ever render may fetch face models, so the ceiling is generous.
-const RENDER_TIMEOUT_MS=90000;
+// seconds; the FIRST render after a (re)start cold-loads the face models, which
+// can take a while, so the ceiling is generous. If renders routinely approach
+// this, the server is the bottleneck (cold models / degraded rasterizer), not us.
+const RENDER_TIMEOUT_MS=120000;
 function fetchWithTimeout(url, opts, ms){
   if(typeof AbortController==="undefined") return fetch(url, opts);   // very old browsers: no timeout
   const ac=new AbortController(), t=setTimeout(()=>ac.abort(), ms);
@@ -1842,7 +1844,7 @@ function fetchWithTimeout(url, opts, ms){
    Grieving families do better with a gentle, one-thing-at-a-time flow than a
    dense single form. For lovedinwords ONLY, we regroup the existing input
    controls at runtime into collapsible step cards revealed in sequence:
-     1 A favorite photo  2 Share their story  3 The words  4 Create
+     1 A favorite photo  2 The words (with an optional paste-their-story helper)  3 Create
    Nodes are MOVED (appendChild), not cloned, so every existing listener and
    validation stays attached. GATED to lovedinwords -> the generic studio never
    enters this path; if anything is unexpected we bail and keep the flat flow. */
@@ -1876,21 +1878,26 @@ function fetchWithTimeout(url, opts, ms){
       s.appendChild(h); s.appendChild(b);
       return {n:n,s:s,h:h,b:b,sub:h.querySelector(".gstep-sub")};
     }
-    const S=[null, mkStep(1,"A favorite photo"), mkStep(2,"Share their story"),
-             mkStep(3,"The words that describe them"), mkStep(4,"See their portrait")];
+    const S=[null, mkStep(1,"A favorite photo"),
+             mkStep(2,"The words that describe them"),
+             mkStep(3,"See their portrait")];
 
     S[1].b.append(elBio, elDrop, elPrev, elNote);
-    S[2].b.append(elStory);
-    S[3].b.append(elChips, elWords, elToggle, elSize);
-    S[4].b.append(elConsent, elCreate, elFree);
+    // The "paste their story" helper folds INTO the words step (it used to be its
+    // own step 2, which felt redundant with the words): optional story box ->
+    // suggested chips -> the editable words field.
+    S[2].b.append(elStory, elChips, elWords, elToggle, elSize);
+    S[3].b.append(elConsent, elCreate, elFree);
     if(elCreate) elCreate.textContent="Create their portrait";   // warmer than the generic "Create portrait"; guided brand only
+    var _sp=elStory.querySelector(".story-p");
+    if(_sp) _sp.textContent="Optional — paste an obituary, a tribute, or a few memories and we’ll suggest words you can edit. Or just type them below.";
 
     function contBtn(label){ const x=document.createElement("button"); x.type="button"; x.className="btn gstep-continue"; x.textContent=label; return x; }
-    const cont2=contBtn("Continue"), cont3=contBtn("Continue");
-    S[2].b.appendChild(cont2); S[3].b.appendChild(cont3);
+    const contWords=contBtn("Continue");
+    S[2].b.appendChild(contWords);
 
     // Lay the steps into #input; errInput stays outside (always visible for errors).
-    input.append(S[1].s, S[2].s, S[3].s, S[4].s);
+    input.append(S[1].s, S[2].s, S[3].s);
     if(elErr) input.appendChild(elErr);
 
     let maxReached=1, openStep=1;
@@ -1899,12 +1906,11 @@ function fetchWithTimeout(url, opts, ms){
     function summarize(){
       S[1].sub.textContent = state.file ? "Photo chosen" : "A clear photo you love — older family photos are welcome.";
       const wv=wordsVal();
-      S[2].sub.textContent = (maxReached>2) ? (wv ? "Story shared" : "Words added by hand") : "An obituary, a few memories — we’ll find the words.";
-      S[3].sub.textContent = wv ? (wv.length>42 ? wv.slice(0,42)+"…" : wv) : "Their name, roles, the qualities you loved";
-      S[4].sub.textContent = "Free preview — no payment until you love it";
+      S[2].sub.textContent = wv ? (wv.length>42 ? wv.slice(0,42)+"…" : wv) : "Their name, roles, the qualities you loved";
+      S[3].sub.textContent = "Free preview — no payment until you love it";
     }
     function paint(){
-      for(let i=1;i<=4;i++){
+      for(let i=1;i<=3;i++){
         const locked=i>maxReached, open=(i===openStep)&&!locked, done=i<maxReached;
         S[i].s.classList.toggle("locked",locked);
         S[i].s.classList.toggle("open",open);
@@ -1912,16 +1918,16 @@ function fetchWithTimeout(url, opts, ms){
       }
       summarize();
     }
-    function goTo(n){ n=Math.max(1,Math.min(4,n)); maxReached=Math.max(maxReached,n); openStep=n; paint();
+    function goTo(n){ n=Math.max(1,Math.min(3,n)); maxReached=Math.max(maxReached,n); openStep=n; paint();
       try{ S[n].s.scrollIntoView({block:"start",behavior:"smooth"}); }catch(e){} }
 
     S.forEach(function(st){ if(!st) return; st.h.addEventListener("click",function(){ if(st.n<=maxReached){ openStep=st.n; paint(); } }); });
-    // Photo lands -> auto-advance from step 1 (preview becomes visible).
+    // Photo lands -> auto-advance from step 1 to the words step.
     try{ new MutationObserver(function(){ if(state.file && getComputedStyle(elPrev).display!=="none" && openStep===1){ goTo(2); } })
           .observe(elPrev,{attributes:true,attributeFilter:["style"]}); }catch(e){}
-    document.addEventListener("lw:words-suggested",function(){ goTo(3); });
-    cont2.addEventListener("click",function(){ goTo(3); });   // story is optional
-    cont3.addEventListener("click",function(){ if(!wordsVal()){ if(wordsEl) wordsEl.focus(); S[3].sub.textContent="Add a few words to continue"; return; } goTo(4); });
+    // Suggest fills the words field in this same step -> just bring it into view.
+    document.addEventListener("lw:words-suggested",function(){ try{ elWords.scrollIntoView({block:"center",behavior:"smooth"}); }catch(e){} });
+    contWords.addEventListener("click",function(){ if(!wordsVal()){ if(wordsEl) wordsEl.focus(); S[2].sub.textContent="Add a few words to continue"; return; } goTo(3); });
 
     paint();
   }catch(e){ /* leave the flat flow intact on any failure */ }
