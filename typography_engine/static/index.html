@@ -1890,9 +1890,10 @@ function fetchWithTimeout(url, opts, ms){
   try{
     if(typeof BRAND_ID==="undefined") return;
     const MEM=(BRAND_ID==="lovedinwords");
-    // Memorial is always guided; the GENERIC studio opts in with ?flow=guided, so
-    // the step flow can be A/B'd before it becomes the default for everyone.
-    if(!MEM && (new URLSearchParams(location.search).get("flow")||"")!=="guided") return;
+    // The guided step flow is the DEFAULT everywhere now. Memorial is always
+    // guided; the generic studio is guided too, but keeps a ?flow=classic escape
+    // hatch (instant fallback to the old single-page form -- no redeploy).
+    if(!MEM && (new URLSearchParams(location.search).get("flow")||"")==="classic") return;
     const input=document.getElementById("input"); if(!input) return;
     const g=id=>document.getElementById(id);
     const elDrop=g("drop"), elPrev=g("preview"), elNote=g("photoNote"),
