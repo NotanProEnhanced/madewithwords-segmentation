@@ -1580,6 +1580,11 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     // A 74px chip needs only the colour and rough likeness; a small canvas
     // renders fast even on a slow single core.
     fd.append("png_width","380"); fd.append("render_w","760");
+  } else if(_isLovedBrand){
+    // Memorial: a LIGHT preview (smaller + less dense) renders in a few seconds
+    // instead of ~16s; the paid download recomposes at full render_w server-side,
+    // so the file you buy stays full-detail.
+    fd.append("png_width","900"); fd.append("render_w","1500");
   } else {
     fd.append("png_width","1500");
   }

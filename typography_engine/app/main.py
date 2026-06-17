@@ -852,7 +852,11 @@ async def render(
                     (PRIVATE_DIR / f"{job_id}.bgmask.png").write_bytes(_buf.tobytes())
             except Exception:  # noqa: BLE001
                 pass
-        if mask_svg:
+        # Only persist the layout mask for FULL-density renders. A light preview
+        # (low render_w -- used for a fast on-screen preview) deliberately does NOT
+        # store its mask, so the paid /download recomposes from the recipe at full
+        # render_w=2600 (the no-mask path) -- preview is fast, paid file stays crisp.
+        if mask_svg and render_w_eff >= 2000:
             (PRIVATE_DIR / f"{job_id}.mask.svg").write_text(mask_svg, encoding="utf-8")
         # Record the biometric-processing consent (BIPA written release / GDPR
         # explicit consent), versioned to the exact notice wording the user saw.
