@@ -11,6 +11,8 @@ warn on (or refuse to ship) a degraded rasterizer instead of shipping silently.
 from __future__ import annotations
 
 import logging
+import os
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -53,26 +55,50 @@ def _note_fallback(reason: str) -> None:
             "full-fidelity output.", reason)
 
 
+def _rasterizer_pref() -> str:
+    """Which backend to use, from TYPO_RASTERIZER:
+      'auto' (default) -- CairoSVG, fall back to resvg if cairo is unavailable;
+      'resvg'          -- force resvg (MUCH faster; for the current solid-fill
+                          text SVGs -- no blend/mask/gradient -- output matches
+                          CairoSVG, so this is the fast path);
+      'cairosvg'       -- force CairoSVG (full fidelity, slower).
+    Env-driven so the backend can be flipped + A/B'd without a code change."""
+    return os.environ.get("TYPO_RASTERIZER", "auto").strip().lower()
+
+
 def svg_to_png_bytes(svg_text: str, output_width: Optional[int] = None) -> bytes:
     global _last_backend
-    try:
-        import cairosvg
-    except (ImportError, OSError) as e:
-        _note_fallback(f"import failed: {e}")
+    pref = _rasterizer_pref()
+    t0 = time.time()
+    if pref == "resvg":
         _last_backend = "resvg"
-        return _resvg_png_bytes(svg_text, output_width)
-    kwargs = {}
-    if output_width:
-        kwargs["output_width"] = int(output_width)
-    try:
-        data = cairosvg.svg2png(bytestring=svg_text.encode("utf-8"), **kwargs)
-        _last_backend = "cairosvg"
-        return data
-    except OSError as e:
-        # cairosvg imported but its native cairo library is missing at call time.
-        _note_fallback(f"native lib missing: {e}")
-        _last_backend = "resvg"
-        return _resvg_png_bytes(svg_text, output_width)
+        data = _resvg_png_bytes(svg_text, output_width)
+    else:
+        try:
+            import cairosvg
+        except (ImportError, OSError) as e:
+            if pref == "cairosvg":
+                raise
+            _note_fallback(f"import failed: {e}")
+            _last_backend = "resvg"
+            data = _resvg_png_bytes(svg_text, output_width)
+        else:
+            kwargs = {"output_width": int(output_width)} if output_width else {}
+            try:
+                data = cairosvg.svg2png(bytestring=svg_text.encode("utf-8"), **kwargs)
+                _last_backend = "cairosvg"
+            except OSError as e:
+                # cairosvg imported but its native cairo library is missing at call time.
+                if pref == "cairosvg":
+                    raise
+                _note_fallback(f"native lib missing: {e}")
+                _last_backend = "resvg"
+                data = _resvg_png_bytes(svg_text, output_width)
+    dt = time.time() - t0
+    if dt > 1.0:   # surface slow rasterizations (the usual render bottleneck)
+        _log.warning("raster backend=%s out_width=%s svg_kb=%d took=%.2fs",
+                     _last_backend, output_width, len(svg_text) // 1024, dt)
+    return data
 
 
 def _resvg_png_bytes(svg_text: str, output_width: Optional[int] = None) -> bytes:
