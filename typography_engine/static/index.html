@@ -307,6 +307,13 @@
   .drop.locked{opacity:.5;cursor:not-allowed}
   .drop.locked .big,.drop.locked .ico{color:var(--muted)}
   .consent.flash{box-shadow:0 0 0 2px #c9a24a;border-radius:8px}
+  /* Biometric consent: compact summary + collapsible full notice. */
+  .bio-consent{display:block}
+  .bio-sum{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+  .bio-more{display:inline-block;background:none;border:0;color:var(--navy);font-family:var(--sans);
+    font-weight:600;font-size:12.5px;padding:8px 0 0 28px;cursor:pointer;letter-spacing:-.01em}
+  .bio-more:hover{opacity:.75}
+  .bio-full{padding:8px 0 0 28px;font-size:12.5px;color:var(--muted);line-height:1.55}
   .bg-tools{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin:12px 0}
   .bg-tools .bg-brush{font-size:13px;color:var(--muted)}
   .bg-tools .btn.secondary{padding:6px 12px;font-size:13px}
@@ -362,10 +369,20 @@
     </div>
     <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
     <div id="photoNote" class="photo-note" style="display:none"></div>
-    <label class="consent" id="bioConsentRow">
-      <input type="checkbox" id="bioConsent" />
-      <span>I understand Typortrait analyses facial geometry from this photo solely to create the artwork, keeps no faceprint, and auto&#8209;deletes the photo. I confirm I am at least 13, that I have the right to upload this image, and &mdash; if it shows a child &mdash; that I am their parent or legal guardian (or have their guardian&rsquo;s consent). I consent to this processing. <a href="/biometric-policy" target="_blank" rel="noopener">Biometric Data Policy</a>.</span>
-    </label>
+    <!-- Biometric consent: a short, tick-at-a-glance summary with the full legal
+         notice tucked behind a disclosure, so it doesn't dominate the step. The
+         checkbox stays visible (consent is one tap); "Full privacy notice"
+         expands the detail (guardian clause, policy link). Versioned in config. -->
+    <div class="consent bio-consent" id="bioConsentRow">
+      <label class="bio-sum">
+        <input type="checkbox" id="bioConsent" />
+        <span>I&rsquo;m 13+, I have the right to use this photo, and I consent to the facial&#8209;geometry analysis that creates the artwork &mdash; no faceprint is kept and the photo is auto&#8209;deleted.</span>
+      </label>
+      <button type="button" class="bio-more" id="bioMore" aria-expanded="false" aria-controls="bioFull">Full privacy notice &rsaquo;</button>
+      <div class="bio-full" id="bioFull" hidden>
+        If the photo shows a child, I confirm I am their parent or legal guardian (or have their guardian&rsquo;s consent). We analyse facial geometry solely to create the artwork, keep no faceprint, and auto&#8209;delete the photo afterwards. Full details in our <a href="/biometric-policy" target="_blank" rel="noopener">Biometric Data Policy</a>.
+      </div>
+    </div>
     <input id="file" type="file" accept="image/*" hidden />
     <!-- Crop editor: opens on every upload, pre-framed on the detected face (so a
          photo OF a framed picture is auto-cropped to the person), locked to the
@@ -906,6 +923,16 @@ function syncBioLock(){
   if(_dropSmall) _dropSmall.textContent = ok ? _dropSmallDefault : "First, tick the consent box below — then add your photo.";
 }
 (function(){ var b=document.getElementById("bioConsent"); if(b) b.addEventListener("change", syncBioLock); syncBioLock(); })();
+// Toggle the collapsible full biometric notice (the summary + checkbox stay visible).
+(function(){
+  var m=document.getElementById("bioMore"), f=document.getElementById("bioFull");
+  if(!m||!f) return;
+  m.addEventListener("click", function(){
+    var hidden=f.hasAttribute("hidden");
+    if(hidden){ f.removeAttribute("hidden"); m.setAttribute("aria-expanded","true"); m.innerHTML="Hide notice &rsaquo;"; }
+    else { f.setAttribute("hidden",""); m.setAttribute("aria-expanded","false"); m.innerHTML="Full privacy notice &rsaquo;"; }
+  });
+})();
 function setFile(f){
   if(window.__regionBlocked){ inputErr("Sorry — Typortrait isn’t available in your location."); return; }
   if(!f.type.startsWith("image/")){ inputErr("That file isn't an image — please choose a JPG, PNG or HEIC photo."); return; }
