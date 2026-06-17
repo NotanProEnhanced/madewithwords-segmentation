@@ -34,10 +34,14 @@ SKIP = ("preview", "thumb", "swatch", "mask", "overlay")
 def _pick_image():
     if len(sys.argv) > 1 and os.path.exists(sys.argv[1]):
         return sys.argv[1]
-    pool = glob.glob("data/uploads/*.*") + glob.glob("tools/*.png") + glob.glob("tools/*.jpg")
-    imgs = [c for c in pool
-            if c.lower().endswith((".png", ".jpg", ".jpeg"))
-            and not any(x in c.lower() for x in SKIP)]
+    # search data/ and tools/ recursively (uploads may live under a job subdir),
+    # skip rendered artifacts, and prefer the largest file (most likely a photo).
+    pool = []
+    for base in ("data", "tools"):
+        for ext in ("jpg", "jpeg", "png"):
+            pool += glob.glob("%s/**/*.%s" % (base, ext), recursive=True)
+    imgs = [c for c in pool if not any(x in c.lower() for x in SKIP)]
+    imgs.sort(key=lambda p: os.path.getsize(p) if os.path.exists(p) else 0, reverse=True)
     return imgs[0] if imgs else None
 
 
