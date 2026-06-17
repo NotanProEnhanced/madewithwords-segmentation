@@ -1600,10 +1600,19 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     showImage(cache[ink]);   // watermarked preview (clean art is unlocked via Stripe)
     if(typeof data.likeness==="number") styleScores[state.style]=data.likeness;
     if(!window._tpPreviewTracked){ window._tpPreviewTracked=true; tp_track("preview_ready", {style: state.style}); }
-    prewarm();               // fill the other swatch thumbnails in the background
-    refreshSizeStrip();      // reflect this preview in the selected size chip
-    prewarmSizes();          // fill the other size chips for this ink in the background
-    if(!recoStarted){ recoStarted=true; recommendStyle(); }   // probe + badge the best style
+    // The result screen normally renders a BURST in the background: a thumbnail
+    // for every swatch, every size chip, and a 3-style "best style" probe. On a
+    // single render slot that burst serializes into 20-30s of grinding after the
+    // preview. For the memorial brand we skip the eager work -- the preview shows
+    // fast, and swatches/sizes render on demand when tapped (selectInk/size click).
+    if(!_isLovedBrand){
+      prewarm();               // fill the other swatch thumbnails in the background
+      refreshSizeStrip();      // reflect this preview in the selected size chip
+      prewarmSizes();          // fill the other size chips for this ink in the background
+      if(!recoStarted){ recoStarted=true; recommendStyle(); }   // probe + badge the best style
+    } else {
+      refreshSizeStrip();      // cheap: just reflects the current size; no extra renders
+    }
   }catch(e){ if(!background && !thumb){
       const m=(e&&e.name==="AbortError") ? "This is taking longer than usual — it may still be finishing. Please give it a moment, then try again." : "Network error — please try again.";
       // On a first render with no portrait yet, surface on the input screen
