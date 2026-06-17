@@ -638,7 +638,17 @@ const GROUNDS_SW=[["g_navy","#0d1b3a","Navy"],["g_black","#111317","Black"]];
 // Sculpted now uses the same ink palette as Words/Passage (minus the gradient
 // inks, which don't drape cleanly over the form): Photo + solid/duotone tints.
 const SCULPT_INKS=INKS.filter(s=>s[0]!=="spectrum" && s[0]!=="aurora");
-function currentSwatches(){ return state.style==="displacement" ? SCULPT_INKS : INKS; }
+// Memorial brand (lovedinwords) shows a calm, curated palette instead of all nine
+// swatches: Noir, Sepia, Navy, Sage, Photo -- timeless, restrained tones with no
+// loud rainbow gradients. Same set across every style; the generic studio keeps
+// the full palette.
+const MEMORIAL_INK_IDS=["mono","sepia","navy","forest","photo"];
+const MEMORIAL_INKS=MEMORIAL_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
+const _isLovedBrand=(typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords");
+function currentSwatches(){
+  if(_isLovedBrand) return MEMORIAL_INKS;                 // curated calm palette, all styles
+  return state.style==="displacement" ? SCULPT_INKS : INKS;
+}
 function variantPost(id){ return state.style==="displacement"
   ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
   : {ink:id, style:state.style, ground:"navy"}; }
