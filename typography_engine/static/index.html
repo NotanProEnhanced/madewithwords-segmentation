@@ -330,12 +330,19 @@
   .crop-stage img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
   .crop-box{position:absolute;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,.5);
     cursor:move;box-sizing:border-box}
-  .crop-grip{position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;
-    box-shadow:0 1px 5px rgba(0,0,0,.45);touch-action:none}
-  .crop-grip.tl{top:-11px;left:-11px;cursor:nwse-resize}
-  .crop-grip.tr{top:-11px;right:-11px;cursor:nesw-resize}
-  .crop-grip.bl{bottom:-11px;left:-11px;cursor:nesw-resize}
-  .crop-grip.br{bottom:-11px;right:-11px;cursor:nwse-resize}
+  /* 44px touch target (iOS minimum) with a small visible dot centred on the
+     corner. The old 22px dot was too small to grab on a phone, so finger taps
+     landed on the box (move) instead of the grip (resize). The hit area extends
+     inward too, so it stays grabbable even when overflow:hidden clips the outer
+     half at a stage edge. */
+  .crop-grip{position:absolute;width:44px;height:44px;background:transparent;touch-action:none;
+    display:flex;align-items:center;justify-content:center;z-index:5}
+  .crop-grip::after{content:"";display:block;width:20px;height:20px;background:#fff;border-radius:50%;
+    box-shadow:0 1px 5px rgba(0,0,0,.45)}
+  .crop-grip.tl{top:-22px;left:-22px;cursor:nwse-resize}
+  .crop-grip.tr{top:-22px;right:-22px;cursor:nesw-resize}
+  .crop-grip.bl{bottom:-22px;left:-22px;cursor:nesw-resize}
+  .crop-grip.br{bottom:-22px;right:-22px;cursor:nwse-resize}
   .crop-actions{display:flex;gap:10px;margin-top:16px}
   .crop-actions .btn{margin-top:0}
 </style>
@@ -820,7 +827,11 @@ cropBox.addEventListener("pointerdown", e=>{
     ax:cropRect.x+(g.dataset.h.indexOf("l")>=0?cropRect.w:0),
     ay:cropRect.y+(g.dataset.h.indexOf("t")>=0?cropRect.h:0)};
 }));
-cropStage.addEventListener("pointermove", e=>{
+// Listen on window (not cropStage) so a pointer captured by a small grip still
+// delivers move/up events here on every platform -- iOS can be flaky about
+// bubbling captured events to an ancestor. Guarded by the active pointer id, so
+// it's inert unless a crop drag is in progress.
+window.addEventListener("pointermove", e=>{
   if(!cropDrag || e.pointerId!==cropDrag.id) return;
   const p=cropXY(e);
   if(cropDrag.mode==="move"){ cropRect.x=p.x-cropDrag.ox; cropRect.y=p.y-cropDrag.oy; clampRect(); drawBox(); return; }
@@ -830,8 +841,8 @@ cropStage.addEventListener("pointermove", e=>{
   if(w>26){ cropRect={x:left?cropDrag.ax-w:cropDrag.ax, y:top?cropDrag.ay-h:cropDrag.ay, w:w, h:h}; clampRect(); drawBox(); }
 });
 function cropEnd(e){ if(cropDrag && e.pointerId===cropDrag.id) cropDrag=null; }
-cropStage.addEventListener("pointerup", cropEnd);
-cropStage.addEventListener("pointercancel", cropEnd);
+window.addEventListener("pointerup", cropEnd);
+window.addEventListener("pointercancel", cropEnd);
 cropCancelBtn.addEventListener("click", ()=>{ cropModal.classList.remove("on"); cropImg.src=""; cropPending=null;
   fileInput.value=""; fileInput.click(); });
 cropApplyBtn.addEventListener("click", ()=>{
