@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -505,6 +505,37 @@ async def measure(request: Request, image: UploadFile = File(...), crop: Optiona
                          "sizes": _allowed_size_mf(face_frac), "default": _recommended_size_mf(face_frac)})
 
 
+@app.get("/mask/{job}")
+def auto_mask(job: str):
+    """Return the AUTOMATIC background mask (PNG, white = subject) for a stored
+    job, so the manual background editor can open pre-loaded with the auto cutout
+    to refine. Computed from the stored (cropped) source; consent/geo were already
+    cleared when the job was created."""
+    if not _JOB_RE.match((job or "").strip().lower()):
+        raise HTTPException(status_code=404)
+    src = PRIVATE_DIR / f"{job}.src"
+    if not src.exists():
+        raise HTTPException(status_code=404)
+    try:
+        import cv2
+        from .pipeline.preprocess import load_and_normalize
+        from .pipeline.landmarks import detect_faces, haar_face_bbox
+        from .pipeline.silhouette import extract_silhouette
+        warns = WarningCollector()
+        img = load_and_normalize(src.read_bytes(), RenderConfig().work_max_dim, warns)
+        faces = detect_faces(img, warns)
+        fbox = faces[0].bbox if faces else haar_face_bbox(img, warns)
+        sil = extract_silhouette(img, warns, face_bbox=fbox)
+        ok_enc, buf = cv2.imencode(".png", sil.mask)
+        if not ok_enc:
+            raise HTTPException(status_code=500, detail="encode_failed")
+        return Response(content=buf.tobytes(), media_type="image/png")
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/render")
 async def render(
     request: Request,
@@ -530,6 +561,7 @@ async def render(
     brand: str = Form(""),
     crop: Optional[str] = Form(None),
     biometric_consent: str = Form(""),
+    mask: Optional[str] = Form(None),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
@@ -579,8 +611,22 @@ async def render(
     except ValueError as e:
         return JSONResponse({"ok": False, "error": "bad_config", "detail": str(e)}, status_code=400)
 
+    # Manual background mask (optional): a user-painted cutout that overrides auto
+    # segmentation. A malformed mask just falls back to automatic.
+    manual_mask_arr = None
+    if mask:
+        try:
+            import base64
+            import cv2
+            import numpy as _np
+            _b64 = mask.split(",", 1)[1] if "," in mask else mask
+            _arr = cv2.imdecode(_np.frombuffer(base64.b64decode(_b64), _np.uint8), cv2.IMREAD_GRAYSCALE)
+            if _arr is not None and _arr.size:
+                manual_mask_arr = _arr
+        except Exception:  # noqa: BLE001
+            manual_mask_arr = None
     try:
-        an = await _bounded_to_thread(analyze_image, img_bytes, cfg, warns)
+        an = await _bounded_to_thread(analyze_image, img_bytes, cfg, warns, manual_mask=manual_mask_arr)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
 
@@ -662,6 +708,16 @@ async def render(
     # download (after payment). Skip for throwaway swatch-thumbnail renders.
     if not is_thumb:
         (PRIVATE_DIR / f"{job_id}.src").write_bytes(img_bytes)
+        if manual_mask_arr is not None:
+            # Persist the manual background mask so the paid high-res recompose
+            # reproduces the same cutout the buyer saw in the preview.
+            try:
+                import cv2
+                ok_enc, _buf = cv2.imencode(".png", manual_mask_arr)
+                if ok_enc:
+                    (PRIVATE_DIR / f"{job_id}.bgmask.png").write_bytes(_buf.tobytes())
+            except Exception:  # noqa: BLE001
+                pass
         if mask_svg:
             (PRIVATE_DIR / f"{job_id}.mask.svg").write_text(mask_svg, encoding="utf-8")
         # Record the biometric-processing consent (BIPA written release / GDPR
@@ -926,7 +982,16 @@ def _ensure_clean_png(job: str, aspect: float = _PRINT_ASPECT) -> Optional[Path]
         from .pipeline.tonal import compose_layered, render_layered_png
         r = json.loads(recipe_path.read_text(encoding="utf-8"))
         warns2 = WarningCollector()
-        an = analyze_image(src_path.read_bytes(), RenderConfig(), warns2)
+        _bgmask = None
+        _bgm_path = PRIVATE_DIR / f"{job}.bgmask.png"
+        if _bgm_path.exists():
+            try:
+                import cv2
+                import numpy as _np
+                _bgmask = cv2.imdecode(_np.frombuffer(_bgm_path.read_bytes(), _np.uint8), cv2.IMREAD_GRAYSCALE)
+            except Exception:  # noqa: BLE001
+                _bgmask = None
+        an = analyze_image(src_path.read_bytes(), RenderConfig(), warns2, manual_mask=_bgmask)
         if r.get("style") == "displacement":
             from .pipeline.displacement import render_displacement_portrait
             png_bytes = render_displacement_portrait(

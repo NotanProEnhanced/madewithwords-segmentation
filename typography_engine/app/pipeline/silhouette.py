@@ -154,6 +154,23 @@ def _confidence(mask: np.ndarray, bbox, coverage: float) -> float:
     return float(max(0.0, min(1.0, conf)))
 
 
+def silhouette_from_mask(mask: np.ndarray, w: int, h: int) -> Silhouette:
+    """Build a Silhouette from a user-supplied mask (manual background removal),
+    bypassing automatic segmentation. `mask` may be any size or channel count;
+    pixels > 127 are treated as subject (keep). Resized to the working (w, h) with
+    nearest-neighbour so hard painted edges stay crisp. Confidence is high (0.99)
+    because the user drew it deliberately."""
+    m = mask
+    if m.ndim == 3:
+        m = m[..., 0]
+    if m.shape[:2] != (h, w):
+        m = cv2.resize(m, (w, h), interpolation=cv2.INTER_NEAREST)
+    binm = (m > 127).astype(np.uint8) * 255
+    bbox = _bbox_of(binm)
+    coverage = float((binm > 127).sum()) / float(max(1, w * h))
+    return Silhouette(mask=binm, bbox=bbox, coverage=coverage, confidence=0.99)
+
+
 def extract_silhouette(
     img: LoadedImage,
     warns: WarningCollector,
