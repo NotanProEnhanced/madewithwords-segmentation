@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LovedInWords - Memorial Portraits</title>
+<style>
+:root{
+  --bg:#f8f6f3;
+  --card:#ffffff;
+  --text:#1d1d1f;
+  --muted:#6f6a66;
+  --soft:#f3f1ee;
+  --line:#ded8d2;
+  --heart:#c85b57;
+  --blue:#0071e3;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,Arial,sans-serif;
+}
+.wrap{
+  max-width:760px;
+  margin:0 auto;
+  padding:34px 24px 84px;
+}
+.logo-wrap{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  margin-bottom:30px;
+}
+.heart{
+  width:38px;
+  height:38px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+.heart svg{
+  width:38px;
+  height:38px;
+  overflow:visible;
+}
+.logo-text{
+  font-size:39px;
+  font-weight:760;
+  letter-spacing:-1.4px;
+  line-height:1;
+}
+.logo-sub{
+  text-align:center;
+  margin-top:-20px;
+  margin-bottom:30px;
+  font-size:12px;
+  letter-spacing:2.6px;
+  text-transform:uppercase;
+  color:#8b8580;
+}
+.hero{
+  text-align:center;
+  margin:34px 0 32px;
+}
+.hero h1{
+  font-size:55px;
+  line-height:1.05;
+  letter-spacing:-2.2px;
+  margin:0 0 16px;
+}
+.hero p{
+  max-width:585px;
+  margin:0 auto;
+  color:var(--muted);
+  font-size:20px;
+  line-height:1.45;
+}
+.reassurance{
+  text-align:center;
+  color:var(--muted);
+  font-size:15px;
+  margin:24px 0 36px;
+}
+.card{
+  background:var(--card);
+  border-radius:32px;
+  padding:34px;
+  box-shadow:0 1px 8px rgba(45,38,31,.055);
+  margin-bottom:18px;
+  transition:opacity .25s ease, transform .25s ease;
+}
+.card h2{
+  font-size:29px;
+  letter-spacing:-.7px;
+  margin:0 0 8px;
+}
+.card p{
+  color:var(--muted);
+  font-size:16px;
+  line-height:1.5;
+  margin:0 0 22px;
+}
+.upload{
+  border:2px dashed var(--line);
+  background:#fbfaf8;
+  border-radius:22px;
+  min-height:168px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  color:var(--muted);
+  padding:30px;
+}
+.upload strong{
+  color:var(--text);
+  display:block;
+  font-size:19px;
+  margin-bottom:7px;
+}
+.btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border:0;
+  background:var(--blue);
+  color:white;
+  padding:14px 28px;
+  border-radius:999px;
+  text-decoration:none;
+  font-weight:650;
+  font-size:16px;
+  margin-top:20px;
+  cursor:pointer;
+}
+.btn.secondary{
+  background:var(--soft);
+  color:var(--text);
+  margin-left:8px;
+}
+.next-card{
+  opacity:.28;
+  transform:scale(.985);
+  pointer-events:none;
+}
+textarea{
+  width:100%;
+  height:185px;
+  border:0;
+  outline:0;
+  background:var(--soft);
+  border-radius:22px;
+  padding:18px;
+  font-size:16px;
+  line-height:1.45;
+  color:var(--text);
+  resize:none;
+}
+.chips{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin:20px 0 2px;
+}
+.chip{
+  background:var(--soft);
+  border-radius:999px;
+  padding:10px 14px;
+  font-size:14px;
+  letter-spacing:.3px;
+}
+.preview{
+  height:270px;
+  border-radius:26px;
+  background:linear-gradient(135deg,#efebe6,#ffffff);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--muted);
+  margin-top:18px;
+}
+.note{
+  font-size:13px;
+  color:var(--muted);
+  margin-top:13px;
+}
+.footer{
+  text-align:center;
+  color:var(--muted);
+  margin-top:22px;
+  font-size:14px;
+}
+@media(max-width:640px){
+  .wrap{padding:28px 18px 70px}
+  .logo-text{font-size:31px}
+  .heart,.heart svg{width:31px;height:31px}
+  .hero h1{font-size:39px;letter-spacing:-1.4px}
+  .hero p{font-size:18px}
+  .card{padding:25px;border-radius:26px}
+  .btn{width:100%}
+  .btn.secondary{margin-left:0}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="logo-wrap" aria-label="LovedInWords">
+    <span class="heart" aria-hidden="true">
+      <svg viewBox="0 0 64 64" fill="none">
+        <path d="M32 54s-1.2-1-3.3-2.7C16.8 41.7 8 34 8 23.8 8 16.6 13.4 11 20.4 11c4.3 0 8.5 2.2 11.6 6.1C35.1 13.2 39.3 11 43.6 11 50.6 11 56 16.6 56 23.8 56 34 47.2 41.7 35.3 51.3 33.2 53 32 54 32 54z" stroke="#c85b57" stroke-width="3.3" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <span class="logo-text">LovedInWords</span>
+  </div>
+  <div class="logo-sub">Memorial Portraits</div>
+
+  <section class="hero">
+    <h1>A portrait of a life,<br>in the words that describe them.</h1>
+    <p>Turn a favorite photo and cherished memories into a personalized memorial portrait.</p>
+  </section>
+
+  <div class="reassurance">Free Preview • Private & Secure • No payment until you love the result</div>
+
+  <section class="card">
+    <h2>Add a Favorite Photo</h2>
+    <p>Choose a clear photo of your loved one. Older family photos are welcome.</p>
+    <div class="upload">
+      <div>
+        <strong>Choose a photo</strong>
+        Drag a photo here or tap to browse
+      </div>
+    </div>
+    <button class="btn">Continue</button>
+    <div class="note">Your photo stays private and is only used to create this portrait.</div>
+  </section>
+
+  <section class="card next-card">
+    <h2>Share Their Story</h2>
+    <p>Paste an obituary, tribute, or a few memories. We'll suggest meaningful words automatically.</p>
+    <textarea placeholder="Tell us about your loved one..."></textarea>
+    <button class="btn">Suggest Words</button>
+  </section>
+
+  <section class="card next-card">
+    <h2>Words That Tell Their Story</h2>
+    <p>We found these words from the story you shared. You can edit anything before previewing.</p>
+    <div class="chips">
+      <span class="chip">LOVING</span>
+      <span class="chip">MOTHER</span>
+      <span class="chip">GRANDMOTHER</span>
+      <span class="chip">FAITHFUL</span>
+      <span class="chip">FAMILY</span>
+      <span class="chip">KIND</span>
+    </div>
+    <button class="btn">Preview Their Portrait</button>
+    <button class="btn secondary">Edit Words</button>
+  </section>
+
+  <section class="card next-card">
+    <h2>Preview Their Portrait</h2>
+    <p>Review the portrait before ordering a digital file or print.</p>
+    <div class="preview">Portrait preview appears here</div>
+    <button class="btn">Continue to Options</button>
+  </section>
+
+  <div class="footer">A gentle guided experience — one step at a time.</div>
+
+</div>
+</body>
+</html>

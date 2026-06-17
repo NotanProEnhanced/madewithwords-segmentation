@@ -1,0 +1,1677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Typortrait — someone you love, made from your words</title>
+<!-- Umami analytics (cookieless, no consent banner needed). Replace the
+     data-website-id with your Umami Cloud website ID. Until then it 404s
+     harmlessly and the tp_track() calls below silently no-op. -->
+<script defer src="https://cloud.umami.is/script.js" data-website-id="b9cb9a2d-2145-426f-b71b-a23cf218ada7"></script>
+<style>
+  /* Self-hosted Inter — the open-source San Francisco stand-in (Apple's UI font).
+     One variable file covers every weight 100–900; served from /static/fonts/. */
+  @font-face{
+    font-family:'Inter';font-style:normal;font-weight:100 900;
+    font-display:swap;src:url('/static/fonts/InterVariable.woff2') format('woff2');
+  }
+  @font-face{
+    font-family:'Inter';font-style:italic;font-weight:100 900;
+    font-display:swap;src:url('/static/fonts/InterVariable-Italic.woff2') format('woff2');
+  }
+  :root{
+    --navy:#0d1b3a; --ink:#16203a; --paper:#faf9f7; --card:#ffffff;
+    --muted:#6b7280; --line:#ece9e3; --radius:20px;
+    --shadow:0 10px 40px rgba(20,30,60,.10);
+    /* All-sans, Apple style. --serif kept as a name for headings but now points
+       to Inter so every headline/brand renders in the Apple typeface. */
+    --serif:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-optical-sizing:auto;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+  body{min-height:100dvh;display:flex;flex-direction:column;align-items:center}
+  .wrap{width:100%;max-width:560px;padding:24px 20px 64px;flex:1;display:flex;flex-direction:column}
+  header{text-align:center;padding:18px 0 8px}
+  .brand{font-family:var(--serif);font-size:30px;letter-spacing:-.02em;color:var(--navy);font-weight:700}
+  .tag{color:var(--muted);font-size:15px;margin-top:6px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-top:22px}
+
+  .drop{border:2px dashed #d8d3c8;border-radius:16px;padding:34px 18px;text-align:center;cursor:pointer;transition:.18s;background:#fcfbf9}
+  .drop.drag{border-color:var(--navy);background:#f3f5fa}
+  .drop .ico{font-size:13px;letter-spacing:.18em;color:var(--muted);text-transform:uppercase}
+  .drop .big{font-weight:600;margin-top:8px;font-size:17px}
+  .drop .small{color:var(--muted);font-size:13px;margin-top:4px}
+  .preview{position:relative;border-radius:16px;overflow:hidden;display:none}
+  .preview img{width:100%;display:block}
+  .preview .change{position:absolute;right:10px;bottom:10px;background:rgba(255,255,255,.92);border:none;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.15)}
+
+  label.field{display:block;margin-top:18px}
+  .field .lbl{font-weight:600;font-size:15px}
+  .field .hint{color:var(--muted);font-size:13px;margin:2px 0 8px}
+  /* Labelled control group: a quiet label + one human line under each choice. */
+  .ctl{margin-top:20px}
+  .ctl-lbl{font-weight:600;font-size:15px;color:var(--ink);margin-bottom:8px}
+  #styleGallery>.ctl-lbl, #caseCtl>.ctl-lbl{text-align:center}
+  .ctl-hint{color:var(--muted);font-size:13px;line-height:1.45;margin-top:8px}
+  .photo-note{margin-top:10px;padding:10px 12px;border-radius:10px;background:#f4f1e8;
+    border:1px solid #e7e1d2;color:#6a5b39;font-size:13px;line-height:1.45}
+  textarea,input[type=text]{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:16px;font-family:var(--sans);resize:none;background:#fff;color:var(--ink)}
+  textarea:focus,input:focus{outline:none;border-color:var(--navy)}
+
+  .btn{display:block;width:100%;border:none;border-radius:999px;background:var(--navy);color:#fff;font-size:17px;font-weight:600;padding:15px;margin-top:22px;cursor:pointer;transition:.15s;text-align:center;text-decoration:none}
+  .btn:disabled{opacity:.4;cursor:default}
+  .btn.secondary{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}
+  .btn.ghost{background:none;color:var(--muted);box-shadow:none;font-weight:500;font-size:15px;margin-top:14px}
+
+  #result{display:none}
+  /* Gallery presentation: a beveled frame + mat themed to the selected ink. */
+  .frame{margin-top:16px;padding:13px;border-radius:9px;
+    background:linear-gradient(135deg,var(--fr-hi,#46537e) 0%,var(--fr,#2b3559) 42%,var(--fr-lo,#141b30) 100%);
+    box-shadow:0 18px 48px rgba(20,30,60,.24), inset 0 0 0 1px rgba(0,0,0,.32), inset 0 2px 2px rgba(255,255,255,.14);
+    transition:background .35s ease}
+  .mat{padding:22px;border-radius:2px;background:var(--mat,#f5f3ec);
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.05), inset 0 3px 10px rgba(0,0,0,.13);transition:background .35s ease}
+  .stage{position:relative;border-radius:2px;overflow:hidden;background:#fff;border:1px solid rgba(0,0,0,.14);min-height:240px}
+  .compare{position:relative;width:100%;line-height:0}
+  #portrait{width:100%;display:block;opacity:0;transition:opacity .45s ease}
+  #portrait.shown{opacity:1}
+  /* Before/after reveal: the uploaded photo clipped over the typographic art. */
+  .before-wrap{position:absolute;inset:0;clip-path:inset(0 50% 0 0);pointer-events:none}
+  #beforeImg{width:100%;height:100%;display:block;object-fit:fill}
+  .cmp-handle{position:absolute;top:0;bottom:0;left:50%;width:2px;background:rgba(255,255,255,.92);
+    box-shadow:0 0 0 1px rgba(0,0,0,.18);transform:translateX(-1px);cursor:ew-resize;touch-action:none;z-index:3}
+  .cmp-grip{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;
+    background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;
+    color:var(--navy);font-size:16px;font-weight:700;line-height:1}
+  .cmp-tag{position:absolute;top:10px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    padding:3px 9px;border-radius:999px;background:rgba(13,27,58,.74);color:#fff;z-index:2;pointer-events:none}
+  .cmp-tag-l{left:10px}.cmp-tag-r{right:10px}
+  .compare.hide-cmp .before-wrap,.compare.hide-cmp .cmp-handle,.compare.hide-cmp .cmp-tag{display:none}
+  #overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .3s ease;pointer-events:none;z-index:4}
+  #assembly{position:absolute;inset:0;width:100%;height:100%;display:none}
+  .busy{position:absolute;inset:0;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+  .busy.hide{opacity:0;pointer-events:none;transition:opacity .5s ease}
+  .spin{width:30px;height:30px;border-radius:50%;border:3px solid #d9d6cf;border-top-color:var(--navy);animation:spin .9s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .msg{font-family:var(--serif);color:var(--navy);font-size:16px}
+  /* ---- Ever Loved keepsake presentation (only when ?ref=everloved) ----------
+     The finished portrait is shown in-situ as a memorial keepsake: a vertical
+     portrait sits in a real framed photo on a desk (lit candle + green plant); a
+     square/landscape one sits on a soft eucalyptus backdrop with leaves peeking
+     around the frame. PREVIEW ONLY -- the file the customer downloads/prints is
+     the clean portrait, untouched. Gated entirely by the kp-* class on #result. */
+  #result.kp-desk .frame{position:relative;margin-top:16px;padding:0;border-radius:6px;overflow:hidden;
+    aspect-ratio:960/1200;background:#efe9e1 url('/static/everloved/scene-desk.jpg') center/cover no-repeat;
+    box-shadow:0 22px 54px rgba(20,30,60,.20)}
+  /* Mat opening = exactly 4:5, matching the renderer's standard print canvas
+     (16x20) -- the art fills the opening edge-to-edge, no letterbox gaps. */
+  #result.kp-desk .mat{position:absolute;top:20.6%;left:21.9%;right:22.7%;bottom:24.0%;
+    padding:0;border-radius:0;background:#0d0d0f;box-shadow:none;display:flex;align-items:center;justify-content:center}
+  #result.kp-desk .stage{width:100%;height:100%;min-height:0;border:none;background:#0d0d0f}
+  #result.kp-desk .compare{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+  #result.kp-desk #portrait{width:100%;height:100%;object-fit:contain}
+  /* Placeholder shown in the empty mat while composing: dark like the art ground
+     (no cream flash), with a calm light message about what's taking shape. */
+  #result.kp-desk .busy{background:#0d0d0f}
+  #result.kp-desk .busy .msg{color:#f3efe8;font-size:13.5px;line-height:1.5;padding:0 16px;text-align:center}
+  #result.kp-desk .busy .spin{border-color:rgba(255,255,255,.22);border-top-color:#fff}
+  /* Before/after slider works inside the mat: the "before" photo letterboxes the
+     same way the render does (shared aspect), so the two line up pixel-for-pixel. */
+  #result.kp-desk #beforeImg{object-fit:contain}
+  #result.kp-leaf{position:relative;margin-top:16px;padding:30px 26px;border-radius:16px;overflow:hidden;
+    background:radial-gradient(125% 120% at 50% 0%,#eef2e9 0%,#dde6d2 52%,#c8d5b7 100%)}
+  #result.kp-leaf::before,#result.kp-leaf::after{content:"";position:absolute;width:150px;height:330px;
+    background:url('/static/everloved/leaf-sprig.png') center/contain no-repeat;mix-blend-mode:multiply;opacity:.92;z-index:1;pointer-events:none}
+  #result.kp-leaf::before{top:-28px;left:-24px;transform:scaleX(-1) rotate(-8deg)}
+  #result.kp-leaf::after{bottom:-32px;right:-22px;transform:rotate(6deg)}
+  #result.kp-leaf .frame{position:relative;z-index:2;margin-top:0;max-width:86%;margin-left:auto;margin-right:auto}
+  /* Quiet caption beneath the frame: tells the customer the room/frame is a
+     preview and the file they receive is the artwork itself. */
+  .frame-note{margin-top:11px;text-align:center;font-size:12.5px;line-height:1.45;color:var(--muted);letter-spacing:.005em;padding:0 16px}
+  /* Animated "composing from your words" loader: words drift in over the dimmed
+     photo on the #assembly canvas, instead of a generic spinner. */
+  .busy.anim{background:transparent}
+  .busy.anim .spin{display:none}
+  .busy.anim .msg{display:none}   /* status text moves out of the canvas -> .compose-status below the frame */
+  .compose-status{display:none;flex-direction:column;align-items:center;margin-top:16px}
+  .compose-status.on{display:flex}
+  .compose-status .cs-line{display:flex;align-items:center;gap:10px;font-family:var(--serif);color:var(--navy);font-size:16px}
+  .compose-status .dot{width:9px;height:9px;border-radius:50%;background:var(--navy);animation:cpulse 1s ease-in-out infinite}
+  @keyframes cpulse{0%,100%{opacity:.25;transform:scale(.65)}50%{opacity:1;transform:scale(1)}}
+  .compose-bar{position:relative;height:3px;width:180px;margin-top:12px;border-radius:999px;background:var(--line);overflow:hidden}
+  .compose-bar::after{content:"";position:absolute;top:0;left:-40%;height:100%;width:40%;border-radius:999px;background:var(--navy);animation:cbar 1.15s ease-in-out infinite}
+  @keyframes cbar{to{left:100%}}
+  .opts{margin-top:10px;border-top:1px solid var(--line);padding-top:4px}
+
+  /* iOS-style filter carousel: each swatch is a live thumbnail of THIS portrait */
+  .swatches{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;
+    padding:18px 6px 6px;margin:6px -6px 0;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .swatches::-webkit-scrollbar{display:none}
+  .thumb{flex:0 0 auto;width:74px;border:none;background:none;padding:0;cursor:pointer;
+    scroll-snap-align:center;display:flex;flex-direction:column;align-items:center;gap:7px}
+  .thumb .pic{width:74px;height:74px;border-radius:16px;background-size:cover;background-position:center;
+    box-shadow:0 0 0 1.5px var(--line);transition:transform .2s ease, box-shadow .2s ease;background-color:#fff}
+  .thumb.sel .pic{box-shadow:0 0 0 3px var(--navy);transform:scale(1.07)}
+  .thumb .pic.loading{position:relative;overflow:hidden}
+  .thumb .pic.loading::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(110deg,rgba(255,255,255,0) 30%,rgba(255,255,255,.55) 50%,rgba(255,255,255,0) 70%);
+    transform:translateX(-100%);animation:shimmer 1.2s infinite}
+  @keyframes shimmer{to{transform:translateX(100%)}}
+  .thumb .nm{font-size:11px;color:var(--muted)}
+  .thumb.sel .nm{color:var(--navy);font-weight:700}
+  .carousel{position:relative}
+  .arrow{position:absolute;top:42px;width:32px;height:32px;border-radius:50%;border:1px solid var(--line);
+    background:rgba(255,255,255,.96);box-shadow:0 2px 8px rgba(0,0,0,.14);cursor:pointer;z-index:2;
+    display:flex;align-items:center;justify-content:center;color:var(--navy);font-size:18px;font-weight:700;padding:0}
+  .arrow.left{left:-6px}.arrow.right{right:-6px}
+  @media(hover:none){.arrow{display:none}}
+  /* Relief has only 2 grounds -> centre them, no scroll arrows */
+  .carousel.relief .arrow{display:none}
+  .carousel.relief .swatches{justify-content:center}
+  .thumb-status{display:flex;align-items:center;justify-content:center;gap:8px;min-height:18px;
+    text-align:center;color:var(--muted);font-size:13px;margin-top:10px;opacity:0;transition:opacity .2s}
+  .thumb-status.on{opacity:1}
+  .thumb-status .dot{width:12px;height:12px;border-radius:50%;border:2px solid #d9d6cf;border-top-color:var(--navy);animation:spin .9s linear infinite;flex:0 0 auto}
+  .sizefilm{margin-top:20px}
+  .film-lbl{font-weight:600;font-size:14px;color:var(--ink);margin-bottom:12px;text-align:center}
+  .sizestrip{justify-content:center}
+
+  .keepsake{margin-top:18px}
+  .toggle{display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:14px}
+  .toggle .t-lbl{font-weight:600}.toggle .t-sub{color:var(--muted);font-size:13px}
+  .sw-switch{width:48px;height:28px;border-radius:999px;background:#d8d3c8;position:relative;transition:.18s;flex:0 0 auto}
+  .sw-switch::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:.18s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .sw-switch.on{background:var(--navy)}.sw-switch.on::after{transform:translateX(20px)}
+  .keepfields{display:none;margin-top:6px}.keepfields.show{display:block}
+
+  /* iOS-style segmented control: full width, equal segments, so every option
+     reads as the same kind of choice (no clipping / cramped last item). */
+  .seg{display:flex;gap:4px;background:#f1efe9;border-radius:999px;padding:4px;margin:8px auto 0;width:100%}
+  .seg button{flex:1 1 0;min-width:0;border:none;background:none;border-radius:999px;padding:9px 6px;font-size:13.5px;font-weight:600;color:var(--muted);font-family:var(--sans);cursor:pointer;white-space:nowrap;letter-spacing:-.01em;transition:background .18s ease,color .18s ease}
+  .seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  /* "Best for this photo" recommendation badge (set by the likeness scorer). */
+  .seg button.best::after{content:"\2726";margin-left:5px;color:#c9a227;font-size:11px;vertical-align:1px}
+  #bestNote{color:#8a6d1f}
+  /* Center the style caption + recommendation note under the style picker. */
+  #styleCaption,#bestNote{text-align:center}
+  /* Quiet text link (e.g. switch to writing a message) — not a loud button. */
+  .linklike{display:inline-block;background:none;border:none;color:var(--navy);font-family:var(--sans);font-size:13.5px;font-weight:600;padding:10px 2px 2px;margin:0;cursor:pointer;letter-spacing:-.01em}
+  .linklike:hover{opacity:.75}
+  .actions{display:flex;gap:12px;margin-top:16px}.actions .btn{margin-top:0}
+  .btn.secondary{margin-top:12px}
+  .sharepanel{display:none;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px}
+  .sharepanel.on{display:flex}
+  .sharepanel button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:9px 16px;
+    font-size:14px;font-weight:600;color:var(--navy);cursor:pointer;font-family:var(--sans)}
+  .fmt{display:flex;gap:10px;margin-top:20px}
+  .fmt-opt{flex:1;text-align:left;border:1.5px solid var(--line);border-radius:14px;background:#fff;
+    padding:12px 14px;cursor:pointer;transition:.15s;display:flex;flex-direction:column;gap:3px;font-family:var(--sans)}
+  .fmt-opt.on{border-color:var(--navy);box-shadow:0 0 0 3px rgba(13,27,58,.08)}
+  .fmt-t{font-weight:700;font-size:14px;color:var(--ink)}
+  .fmt-d{font-size:12px;color:var(--muted)}
+  .fmt-note{font-size:13px;color:var(--muted);margin:10px 2px 0;line-height:1.5;transition:opacity .2s}
+  /* Product picker (print-on-demand). Hidden until the server reports physical
+     fulfillment is configured, so the digital-only flow is unchanged by default. */
+  .prodlist{display:flex;flex-direction:column;gap:8px}
+  .prod{display:flex;align-items:flex-start;gap:12px;text-align:left;border:1.5px solid var(--line);
+    border-radius:14px;background:#fff;padding:12px 14px;cursor:pointer;transition:.15s;width:100%;font-family:var(--sans)}
+  .prod.on{border-color:var(--navy);box-shadow:0 0 0 3px rgba(13,27,58,.08)}
+  .prod .pinfo{flex:1}
+  .prod .pname{font-weight:600;color:var(--ink);font-size:15px}
+  .prod .pblurb{color:var(--muted);font-size:12.5px;margin-top:2px;line-height:1.4}
+  .prod .pinc{color:var(--navy);font-size:11.5px;font-weight:600;margin-top:5px;letter-spacing:.01em}
+  .prod .pprice{font-weight:700;color:var(--navy);font-size:15px;white-space:nowrap;text-align:right}
+  .prod .pship{font-weight:500;color:var(--muted);font-size:11px}
+  .prod .ptag{display:inline-block;background:#0d1b3a;color:#fff;font-size:10px;font-weight:600;
+    border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle}
+  .sizerow{margin-top:10px;display:flex;align-items:center;gap:10px}
+  .sizerow select{flex:0 0 auto;border:1px solid var(--line);border-radius:10px;padding:8px 12px;
+    font-family:var(--sans);font-size:14px;background:#fff;color:var(--ink)}
+  .err{display:none;background:#fff;border:1px solid #f0d9d9;border-left:4px solid #c0392b;border-radius:12px;padding:14px 16px;margin-top:18px;color:#7a2e2e;font-size:15px}
+  .consent{display:flex;gap:10px;align-items:flex-start;margin-top:16px;font-size:13px;color:var(--muted);line-height:1.45;cursor:pointer}
+  .consent input{margin-top:2px;width:18px;height:18px;flex:0 0 auto;accent-color:var(--navy)}
+  .consent a{color:var(--navy);font-weight:600}
+  footer{color:var(--muted);font-size:12px;text-align:center;margin-top:30px}
+  footer a{color:var(--muted)}
+  .drop.locked{opacity:.5;cursor:not-allowed}
+  .drop.locked .big,.drop.locked .ico{color:var(--muted)}
+  .consent.flash{box-shadow:0 0 0 2px #c9a24a;border-radius:8px}
+  .bg-tools{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin:12px 0}
+  .bg-tools .bg-brush{font-size:13px;color:var(--muted)}
+  .bg-tools .btn.secondary{padding:6px 12px;font-size:13px}
+  .zoomlink{display:block;margin:12px auto 0;background:none;border:none;color:var(--navy);font-size:14px;
+    font-weight:600;cursor:pointer;font-family:var(--sans)}
+  .zoomview{position:fixed;inset:0;background:rgba(8,8,10,.95);z-index:50;display:none;overflow:auto;-webkit-overflow-scrolling:touch}
+  .zoomview.on{display:block}
+  #zoomImg{display:block;margin:0 auto;width:100%;cursor:zoom-in}
+  .zoomclose{position:fixed;top:14px;right:16px;z-index:51;width:42px;height:42px;border-radius:50%;border:none;
+    background:rgba(255,255,255,.92);color:var(--navy);font-size:24px;line-height:1;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.3)}
+  /* ---- Crop editor (opens on upload; 4:5 print frame; mouse/touch/stylus) ---- */
+  .crop-modal{position:fixed;inset:0;z-index:80;background:rgba(10,12,18,.72);display:none;
+    align-items:center;justify-content:center;padding:18px}
+  .crop-modal.on{display:flex}
+  .crop-card{background:var(--card);border-radius:18px;box-shadow:0 24px 70px rgba(0,0,0,.4);
+    padding:18px;max-width:520px;width:100%;max-height:94vh;overflow:auto}
+  .crop-h1{font-weight:800;font-size:20px;color:var(--navy);letter-spacing:-.02em;text-align:center}
+  .crop-p{color:var(--muted);font-size:13.5px;text-align:center;margin:6px 0 14px;line-height:1.5}
+  .crop-stage{position:relative;margin:0 auto;touch-action:none;user-select:none;-webkit-user-select:none;
+    line-height:0;border-radius:8px;overflow:hidden;background:#0d0d0f}
+  .crop-stage img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
+  .crop-box{position:absolute;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,.5);
+    cursor:move;box-sizing:border-box}
+  .crop-grip{position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;
+    box-shadow:0 1px 5px rgba(0,0,0,.45);touch-action:none}
+  .crop-grip.tl{top:-11px;left:-11px;cursor:nwse-resize}
+  .crop-grip.tr{top:-11px;right:-11px;cursor:nesw-resize}
+  .crop-grip.bl{bottom:-11px;left:-11px;cursor:nesw-resize}
+  .crop-grip.br{bottom:-11px;right:-11px;cursor:nwse-resize}
+  .crop-actions{display:flex;gap:10px;margin-top:16px}
+  .crop-actions .btn{margin-top:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><div class="brand">Typortrait</div><div class="tag">Someone you love, made from your words.</div></header>
+
+  <section id="input" class="card">
+    <div id="drop" class="drop">
+      <div class="ico">Photo</div><div class="big">Add a photo</div>
+      <div class="small">A clear head-and-shoulders shot works best. Tap to choose or take one.</div>
+    </div>
+    <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
+    <div id="photoNote" class="photo-note" style="display:none"></div>
+    <label class="consent" id="bioConsentRow">
+      <input type="checkbox" id="bioConsent" />
+      <span>I understand Typortrait analyses facial geometry from this photo solely to create the artwork, keeps no faceprint, and auto&#8209;deletes the photo. I confirm I am at least 13, that I have the right to upload this image, and &mdash; if it shows a child &mdash; that I am their parent or legal guardian (or have their guardian&rsquo;s consent). I consent to this processing. <a href="/biometric-policy" target="_blank" rel="noopener">Biometric Data Policy</a>.</span>
+    </label>
+    <input id="file" type="file" accept="image/*" hidden />
+    <!-- Crop editor: opens on every upload, pre-framed on the detected face (so a
+         photo OF a framed picture is auto-cropped to the person), locked to the
+         16x20 / 4:5 print shape, adjustable with mouse, touch, or stylus. -->
+    <div id="cropModal" class="crop-modal" aria-hidden="true">
+      <div class="crop-card">
+        <div class="crop-h1">Frame the portrait</div>
+        <div class="crop-p">Drag to move, pull a corner to resize. The box is the 16×20 print — what's inside becomes the portrait.</div>
+        <div id="cropStage" class="crop-stage">
+          <img id="cropImg" alt="" draggable="false" />
+          <div id="cropBox" class="crop-box">
+            <span class="crop-grip tl" data-h="tl"></span><span class="crop-grip tr" data-h="tr"></span>
+            <span class="crop-grip bl" data-h="bl"></span><span class="crop-grip br" data-h="br"></span>
+          </div>
+        </div>
+        <div class="crop-actions">
+          <button id="cropCancel" type="button" class="btn secondary">Different photo</button>
+          <button id="cropApply" type="button" class="btn">Use this crop</button>
+        </div>
+      </div>
+    </div>
+    <label class="field">
+      <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
+      <span class="hint" id="wordsHint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
+      <textarea id="words" rows="3" placeholder="GRACE, KIND, BRILLIANT, MOM, ALWAYS"></textarea>
+    </label>
+    <button type="button" id="contentToggle" class="linklike">Writing a letter or a message instead? &rarr;</button>
+    <div class="ctl" id="inputSizeCtl" style="display:none">
+      <div class="ctl-lbl">Word size</div>
+      <div class="seg" id="sizeSeg" aria-label="Word size">
+        <button type="button" data-mf="120">Giant</button>
+        <button type="button" data-mf="57">Large</button>
+        <button type="button" data-mf="27" class="on">Medium</button>
+        <button type="button" data-mf="13">Small</button>
+      </div>
+      <div class="ctl-hint">Larger words look bold and graphic; smaller words add fine detail.</div>
+    </div>
+    <label class="consent" id="consentRow">
+      <input type="checkbox" id="consent" />
+      <span>I confirm I own or have rights to this image, it contains no copyrighted characters, celebrities or explicit material. I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Use</a>.</span>
+    </label>
+    <button id="create" class="btn">Create portrait</button>
+    <p id="freenote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Free to create &amp; preview.</p>
+    <div id="errInput" class="err"></div>
+  </section>
+
+  <section id="result">
+    <div class="frame" id="frame">
+      <div class="mat">
+        <div class="stage" id="stage">
+          <div id="compare" class="compare">
+            <img id="portrait" alt="your typortrait" />
+            <div class="before-wrap" id="beforeWrap"><img id="beforeImg" alt="your photo" /></div>
+            <div class="cmp-tag cmp-tag-l">Photo</div>
+            <div class="cmp-tag cmp-tag-r">Typortrait</div>
+            <div class="cmp-handle" id="cmpHandle"><div class="cmp-grip">&#8596;</div></div>
+          </div>
+          <img id="overlay" alt="" />
+          <canvas id="assembly"></canvas>
+          <div id="busy" class="busy"><div class="spin"></div><div class="msg">Composing from your words…</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="frame-note" id="frameNote">Shown framed for preview — your download is the print‑ready artwork.</div>
+    <div id="composeStatus" class="compose-status" aria-live="polite">
+      <div class="cs-line"><span class="dot"></span><span id="composeMsg">Finding the face&hellip;</span></div>
+      <div class="compose-bar"></div>
+    </div>
+    <button type="button" id="zoomBtn" class="zoomlink">&#128269; View up close</button>
+    <div class="ctl" id="styleGallery" style="margin-top:6px">
+      <div class="ctl-lbl">Choose your style</div>
+      <div class="seg" id="styleSegResult" aria-label="Choose your style">
+        <button type="button" data-style="words" class="on">Words</button>
+        <button type="button" data-style="message">Message</button>
+        <button type="button" data-style="displacement">Sculpted</button>
+      </div>
+      <div class="ctl-hint" id="styleCaption">Words you love, scattered to form their face.</div>
+      <div class="ctl-hint" id="bestNote" style="display:none"></div>
+    </div>
+    <div class="carousel">
+      <button type="button" class="arrow left" id="arrowL" aria-label="Previous colours">&#8249;</button>
+      <div id="swatches" class="swatches"></div>
+      <button type="button" class="arrow right" id="arrowR" aria-label="More colours">&#8250;</button>
+    </div>
+    <div id="thumbStatus" class="thumb-status" aria-live="polite"></div>
+    <div class="sizefilm" id="sizeFilm">
+      <div class="film-lbl">Word size — tap to resize the type</div>
+      <div id="sizeStrip" class="swatches sizestrip"></div>
+    </div>
+    <div class="ctl" id="caseCtl" style="margin-top:16px">
+      <div class="ctl-lbl">Letter case</div>
+      <div class="seg" id="caseSeg" aria-label="Letter case">
+        <button type="button" data-uc="1" class="on">ALL CAPS</button>
+        <button type="button" data-uc="0">As typed</button>
+      </div>
+    </div>
+    <div class="opts">
+      <div id="bgRow" class="toggle" style="margin-top:14px;display:none">
+        <div><div class="t-lbl">Remove background</div><div class="t-sub">Keep the words on the subject only, clean ground.</div></div>
+        <div id="bgSwitch" class="sw-switch on"></div>
+      </div>
+    </div>
+    <!-- Product picker: revealed only when physical fulfillment is configured
+         (a Printful token is set). Until then the studio stays digital-only and
+         this block stays hidden, so the live checkout is unchanged. -->
+    <div id="productPicker" class="opts" style="display:none;margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+      <div class="film-lbl">Choose your keepsake</div>
+      <div class="t-sub" style="margin-bottom:10px">Every print comes with the high-res digital file, free — keep it, reprint it, share it.</div>
+      <div id="productList" class="prodlist"></div>
+      <div id="sizeRow" class="sizerow" style="display:none">
+        <label class="t-sub" for="sizeSel" style="margin:0">Size</label>
+        <select id="sizeSel" aria-label="Size"></select>
+      </div>
+    </div>
+    <button id="bgTouchup" class="btn secondary" type="button" style="display:none">Touch up background</button>
+    <div class="actions"><button id="buy" class="btn">Download</button></div>
+    <button id="shareBtn" class="btn secondary" type="button">Share</button>
+    <div id="sharePanel" class="sharepanel">
+      <button type="button" data-share="x">X</button>
+      <button type="button" data-share="facebook">Facebook</button>
+      <button type="button" data-share="pinterest">Pinterest</button>
+      <button type="button" data-share="email">Email</button>
+      <button type="button" data-share="copy">Copy link</button>
+      <button type="button" data-share="save">Save image</button>
+      <button type="button" data-share="native" id="shareNative" style="display:none">More apps…</button>
+    </div>
+    <p class="note" id="shareHint" style="display:none;text-align:center;color:var(--muted);font-size:12px;margin-top:8px">For Instagram or TikTok, tap <b>Save image</b> and post it from the app.</p>
+    <p class="note" id="buynote" style="text-align:center;color:var(--muted);font-size:13px;margin-top:10px">Preview is free · your download is watermark-free and print-quality.</p>
+    <p class="note" id="buyterms" style="text-align:center;color:var(--muted);font-size:11px;margin-top:4px">By purchasing you agree to immediate delivery (waiving the 14‑day EU/UK withdrawal right) and our <a href="/refunds" target="_blank" rel="noopener">Refund Policy</a>. Not happy? We'll fix it or refund it.</p>
+    <button id="restart" class="btn ghost">Start a new portrait</button>
+    <div id="errResult" class="err"></div>
+  </section>
+
+  <div id="bgModal" class="crop-modal" aria-hidden="true">
+    <div class="crop-card">
+      <div class="crop-h1">Touch up the background</div>
+      <div class="crop-p">Paint to fix the cutout. <b>Erase</b> removes background; <b>Keep</b> brings the subject back. Then re‑render.</div>
+      <div id="bgStage" class="crop-stage" style="touch-action:none;display:flex;justify-content:center"><canvas id="bgCanvas" style="touch-action:none;cursor:crosshair;border-radius:8px;max-width:100%"></canvas></div>
+      <div class="bg-tools">
+        <div class="seg" id="bgMode" aria-label="Brush mode">
+          <button type="button" data-m="remove" class="on">Erase</button>
+          <button type="button" data-m="keep">Keep</button>
+        </div>
+        <label class="bg-brush">Brush <input type="range" id="bgBrush" min="8" max="90" value="34" style="vertical-align:middle"></label>
+        <button type="button" id="bgUndo" class="btn secondary">Undo</button>
+        <button type="button" id="bgReset" class="btn secondary">Reset</button>
+      </div>
+      <div class="crop-actions">
+        <button id="bgCancel" type="button" class="btn secondary">Cancel</button>
+        <button id="bgApply" type="button" class="btn">Apply &amp; re-render</button>
+      </div>
+    </div>
+  </div>
+  <footer>Typortrait · typortrait.com<br><a href="/terms" target="_blank" rel="noopener">Terms of Use</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> · <a href="/refunds" target="_blank" rel="noopener">Refund Policy</a> · <a href="/biometric-policy" target="_blank" rel="noopener">Biometric Data Policy</a> · <a href="/data-request" target="_blank" rel="noopener">Manage my data</a></footer>
+</div>
+
+<div id="zoomView" class="zoomview">
+  <button id="zoomClose" class="zoomclose" aria-label="Close">&times;</button>
+  <img id="zoomImg" alt="your typortrait, up close" />
+</div>
+
+<div id="saveModal" class="savemodal" role="dialog" aria-modal="true" aria-labelledby="saveTitle">
+  <div class="savecard">
+    <button type="button" class="saveclose" id="saveClose" aria-label="Close">&times;</button>
+    <h2 id="saveTitle">Leaving? Don&rsquo;t lose your portrait.</h2>
+    <p class="savesub">We&rsquo;ll email you a private link so you can come back anytime &mdash; download your high-res file or order a print.</p>
+    <form id="saveForm" novalidate>
+      <input type="hidden" id="saveJob" name="job" value="">
+      <input type="email" id="saveEmail" name="email" inputmode="email" autocomplete="email" placeholder="you@email.com" aria-label="Your email" required>
+      <button type="submit" class="btn" id="saveSubmit">Save my portrait</button>
+    </form>
+    <p class="savefine" id="saveFine">Your photo is automatically deleted after about 30 days. One email, no spam.</p>
+  </div>
+</div>
+
+<style>
+.savemodal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(10,10,12,.55);padding:20px;opacity:0;transition:opacity .2s ease}
+.savemodal.on{opacity:1}
+.savecard{position:relative;background:var(--card);border-radius:18px;max-width:380px;width:100%;padding:26px 22px 20px;box-shadow:0 24px 70px rgba(0,0,0,.4);transform:translateY(10px);transition:transform .2s ease}
+.savemodal.on .savecard{transform:translateY(0)}
+.saveclose{position:absolute;top:8px;right:12px;border:none;background:none;font-size:26px;line-height:1;color:var(--muted);cursor:pointer}
+.savecard h2{font-family:var(--serif);color:var(--navy);font-size:21px;margin:2px 0 8px;padding-right:18px;line-height:1.25}
+.savesub{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 16px}
+.savecard input[type=email]{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:13px 14px;font-size:16px;font-family:var(--sans);color:var(--ink);margin-bottom:10px}
+.savecard input[type=email]:focus{outline:none;border-color:var(--navy)}
+.savecard .btn{display:block;width:100%;text-align:center}
+.savecard .btn:disabled{opacity:.6;cursor:default}
+.savefine{color:var(--muted);font-size:11.5px;line-height:1.5;margin:12px 0 0;text-align:center}
+.saveok h2{margin-bottom:6px}
+</style>
+
+<script>
+const $ = s => document.querySelector(s);
+const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+const ANIM_CAP = 2600;                 // max glyphs animated (perf); image shows all
+const INKS = [["mono","#555555","Noir"],["gold_noir","gold","Ember"],["navy","#0d1b3a","Navy"],
+  ["sepia","#5a3a1a","Sepia"],["burgundy","#4a0d18","Rose"],["forest","#0f2e1e","Sage"],
+  ["spectrum","spectrum","Spectrum"],["aurora","aurora","Aurora"],["photo","conic","Photo"]];
+function placeholderBg(col){
+  if(col==="conic") return "conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)";
+  if(col==="gold") return "radial-gradient(circle at 50% 42%, #e8c66a 0 40%, #0d0f13 44%)";
+  if(col==="spectrum") return "linear-gradient(180deg,#f2b705,#f25c05,#e6002e,#b5179e,#6a1fb5,#1f3fb5)";
+  if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
+  return col;
+}
+const state = { file:null, crop:null, ink:"photo", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true, maskData:null };
+// Referral/source tag (?ref=everloved) AND brand skin. A brand re-dresses this
+// same engine as a partner identity (name + tagline). The brand is resolved from
+// the ?brand param FIRST (reliable, and it persists in this single-page URL),
+// with the REFERRING DOMAIN as a fallback (e.g. arriving from lovedinwords.com
+// without the param). Referrer is best-effort — browsers often strip it and it's
+// lost on a refresh — so the ?brand param stays on the storefront links as the
+// source of truth. The resolved source rides every render -> recipe -> order into
+// the admin Referral funnel, so each brand/partner's sales are attributable.
+const _qp=new URLSearchParams(location.search);
+// Registry of brand front-ends — same engine, different face. `host` lets the
+// studio also recognize the brand from the referring domain. Add partners here.
+// A brand re-dresses this one engine: name/tagline/title, an optional softer
+// colour theme (CSS-var overrides), and an opening default look. `style`/`ink`
+// set the first render; `pinStyle` keeps that style (the recommender still hints
+// the best fit as a badge, but doesn't auto-switch away from the brand's look).
+const BRANDS={
+  lovedinwords:{ name:"Loved in Words", tag:"A portrait of a life, in the words that describe them.", title:"Loved in Words — a remembrance portrait made from words", host:"lovedinwords.com",
+    style:"displacement", ink:"photo", pinStyle:true,
+    theme:{ "--navy":"#42525f", "--ink":"#2f3742", "--paper":"#f4efe8", "--card":"#fffdf9", "--line":"#e7e0d5", "--muted":"#776f64" } }
+};
+function _brandFromReferrer(){
+  try{
+    if(!document.referrer) return "";
+    const h=new URL(document.referrer).hostname.replace(/^www\./,"");
+    for(const id in BRANDS){ if(BRANDS[id].host===h) return id; }
+  }catch(e){}
+  return "";
+}
+// Brand id: explicit ?brand param first (reliable + survives refresh in the URL),
+// else the referring brand domain. Skin is URL/referrer-driven only — it never
+// sticks to a later direct visit.
+const BRAND_ID=((_qp.get("brand")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40)) || _brandFromReferrer();
+// Attribution source: an explicit ?ref wins; else the brand; else the persisted
+// last-touch tag.
+const REF=(_qp.get("ref")||BRAND_ID||localStorage.getItem("typo_ref")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
+if(REF){ try{ localStorage.setItem("typo_ref", REF); }catch(e){} }
+const BRAND=BRANDS[BRAND_ID]||null;
+if(BRAND){
+  try{
+    document.title=BRAND.title||BRAND.name;
+    const _bn=document.querySelector("header .brand"); if(_bn) _bn.textContent=BRAND.name;
+    const _tg=document.querySelector("header .tag"); if(_tg) _tg.textContent=BRAND.tag;
+    if(BRAND.theme){ const rs=document.documentElement.style; for(const k in BRAND.theme) rs.setProperty(k, BRAND.theme[k]); }
+  }catch(e){}
+}
+// Every render is presented as a framed keepsake in a room: a portrait shot
+// drops into a real framed photo on a desk (candle + plant); a square/landscape
+// one sits on a soft greenery backdrop. It reads as a real product rather than a
+// synthetic gradient frame. Presentation ONLY -- the downloaded/printed file is
+// always the clean portrait. (REF is still captured for partner attribution.)
+const KEEPSAKE = true;
+// The Displacement style uses 3 "grounds" instead of the 9 inks; they ride the
+// same swatch filmstrip. Ground ids are prefixed (g_*) so they never collide
+// with ink ids. state.ink holds the active variant id (an ink name, or g_*).
+const GROUNDS_SW=[["g_navy","#0d1b3a","Navy"],["g_black","#111317","Black"]];
+// Sculpted now uses the same ink palette as Words/Passage (minus the gradient
+// inks, which don't drape cleanly over the form): Photo + solid/duotone tints.
+const SCULPT_INKS=INKS.filter(s=>s[0]!=="spectrum" && s[0]!=="aurora");
+function currentSwatches(){ return state.style==="displacement" ? SCULPT_INKS : INKS; }
+function variantPost(id){ return state.style==="displacement"
+  ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
+  : {ink:id, style:state.style, ground:"navy"}; }
+// Umami funnel event helper. No-ops silently if the script is blocked, still
+// loading, or unconfigured — analytics must never break the app.
+function tp_track(name, data){ try{ if(window.umami) window.umami.track(name, data||{}); }catch(e){} }
+function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
+// Free to create & preview (no price shown up front).
+(function(){
+  const fn=document.getElementById("freenote");
+  if(fn) fn.textContent = "Free to create & preview.";
+})();
+let cache = {};
+let thumbCache = {};  // coarse, fast renders just for the 74px swatch chips
+let gen = 0;          // bumped whenever photo/words/poster change, to drop stale renders
+
+/* ---------- input ---------- */
+const drop=$("#drop"), fileInput=$("#file"), preview=$("#preview"), previewImg=$("#previewImg"), words=$("#words"), createBtn=$("#create"), consent=$("#consent");
+function inputErr(m){ const e=document.getElementById("errInput"); e.textContent=m; e.style.display="block"; }
+// Button stays enabled; we validate on click with actionable guidance instead
+// of a dead disabled button the user can't diagnose.
+function refreshCreate(){ if(state.file && words.value.trim() && consent.checked){ const e=document.getElementById("errInput"); if(e) e.style.display="none"; } }
+words.addEventListener("input", refreshCreate);
+consent.addEventListener("change", refreshCreate);
+// Style toggle: word mosaic vs continuous-prose story.
+const wordsLbl=$("#wordsLbl"), wordsHint=$("#wordsHint");
+const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch");
+// Shared style switcher — used by the style control on BOTH the input screen and
+// the result screen (the result one re-renders in place). Keeps both segments in sync.
+function setStyle(newStyle, rerender){
+  const wasDisp = state.style==="displacement";
+  state.style=newStyle;
+  document.querySelectorAll('#styleSeg button, #styleSegResult button')
+    .forEach(c=>c.classList.toggle("on", c.dataset.style===newStyle));
+  const prose = newStyle==="message", disp = newStyle==="displacement";
+  wordsLbl.innerHTML = disp ? "The words to sculpt the face"
+    : prose ? "A passage, in your words" : "The words that make them <em>them</em>";
+  wordsHint.textContent = disp
+    ? "Their name and the traits you love — sculpted across the face and draped over its form. Separate with commas."
+    : prose ? "A letter, lyrics, a poem, a tribute, your vows — it becomes the portrait."
+    : "Their name, what you love, a date, an inside joke. Separate with commas.";
+  words.rows = prose ? 5 : 3;
+  words.placeholder = prose
+    ? "You are the kindest soul I know. From the day you were born…"
+    : "GRACE, KIND, BRILLIANT, MOM, ALWAYS";
+  bgRow.style.display = prose ? "flex" : "none";   // background toggle = Passage only
+  // Input-screen content link reflects the current mode.
+  const ct=document.getElementById("contentToggle");
+  if(ct) ct.innerHTML = prose ? "&larr; Use a few words instead" : "Writing a letter or a message instead? &rarr;";
+  // Result-screen gallery caption — plain-language description of the chosen look.
+  const cap=document.getElementById("styleCaption");
+  if(cap) cap.textContent = disp ? "Words sculpted along the face's contours — a dimensional, carved look."
+    : prose ? "A whole message, letter, or story — shaped into their portrait."
+    : "Words you love, scattered to form their face.";
+  if(disp !== wasDisp) rebuildSwatches();          // swap the swatch strip: inks <-> grounds
+  applySizes(null);                                // restock/hide the size strip for this style
+  if(rerender && resultView.style.display==="block" && state.file){ invalidate(); render(state.ink,{animate:false}); }
+}
+// Input screen: a quiet link to switch between a few words and a written message.
+// No context-free style toggle here — style exploration happens on the result gallery.
+const contentToggle=$("#contentToggle");
+if(contentToggle){ contentToggle.addEventListener("click", ()=>{
+  setStyle(state.style==="message" ? "words" : "message", false);
+}); }
+$("#styleSegResult").addEventListener("click", e=>{ const b=e.target.closest("button"); if(b){ userTouched=true; setStyle(b.dataset.style, true); } });
+// Word-size scale: sets the floor font size; the body/mid/face/eye tiers all
+// scale from it, so "Giant" = bold/dramatic with fewer words, "Small" = fine and
+// detailed with many. (min_font_px is honored server-side by the render endpoint.)
+const sizeSeg=$("#sizeSeg");
+if(sizeSeg){ sizeSeg.addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  state.minFont=parseFloat(b.dataset.mf)||20;
+  [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
+}); }
+// ---------- Crop editor: opens on upload, 4:5 print frame, pointer/stylus ------
+// Pre-frames on the detected face (so an upload that is itself a photo of a
+// framed picture gets cropped down to the person), locks to 16x20 / 4:5, and is
+// adjustable with mouse, touch, or stylus (Pointer Events cover pen natively).
+const cropModal=$("#cropModal"), cropStage=$("#cropStage"), cropImg=$("#cropImg"),
+      cropBox=$("#cropBox"), cropApplyBtn=$("#cropApply"), cropCancelBtn=$("#cropCancel");
+const CROP_AR=0.8;                      // width/height = 4:5, matching the print canvas
+let cropPending=null, cropRect={x:0,y:0,w:0,h:0}, stageW=0, stageH=0, cropDrag=null;
+function openCrop(f){
+  cropPending=f; state.crop=null; sourcePreview=null;   // new photo -> no crop, no stale "before"
+  const url=URL.createObjectURL(f);
+  cropImg.onload=()=>{ URL.revokeObjectURL(url); layoutStage(); initCropBox(null);
+    cropModal.classList.add("on"); cropModal.setAttribute("aria-hidden","false"); measureFaceBox(f); };
+  cropImg.onerror=()=>{ URL.revokeObjectURL(url); useCroppedFile(f); };   // can't preview (e.g. HEIC) -> skip crop, let the server decode
+  cropImg.src=url;
+}
+function layoutStage(){
+  const natW=cropImg.naturalWidth||1, natH=cropImg.naturalHeight||1;
+  const maxW=Math.min(460,(window.innerWidth||460)-72), maxH=Math.min(560,(window.innerHeight||560)-230);
+  let w=maxW, h=w*natH/natW; if(h>maxH){ h=maxH; w=h*natW/natH; }
+  stageW=Math.round(w); stageH=Math.round(h);
+  cropStage.style.width=stageW+"px"; cropStage.style.height=stageH+"px";
+}
+// Place the 4:5 box: head-and-shoulders around the face (fractions), else centred.
+function initCropBox(fb){
+  let cw,ch,cx,cy;
+  if(fb){
+    const fx=fb[0]*stageW, fy=fb[1]*stageH, fw=fb[2]*stageW, fh=fb[3]*stageH;
+    ch=Math.min(stageH, fh*3.0); cw=ch*CROP_AR;            // face ~ a third of the height
+    if(cw>stageW){ cw=stageW; ch=cw/CROP_AR; }
+    if(cw<fw*1.2){ cw=Math.min(stageW,fw*1.2); ch=cw/CROP_AR; if(ch>stageH){ ch=stageH; cw=ch*CROP_AR; } }
+    cx=(fx+fw/2)-cw/2; cy=(fy+fh/2)-ch*0.42;               // face a touch above centre
+  } else if(stageW/stageH>CROP_AR){ ch=stageH; cw=ch*CROP_AR; cx=(stageW-cw)/2; cy=0; }
+  else { cw=stageW; ch=cw/CROP_AR; cx=0; cy=(stageH-ch)/2; }
+  cropRect={x:cx,y:cy,w:cw,h:ch}; clampRect(); drawBox();
+}
+function clampRect(){
+  let {x,y,w,h}=cropRect;
+  w=Math.min(w,stageW); h=w/CROP_AR; if(h>stageH){ h=stageH; w=h*CROP_AR; }
+  x=Math.max(0,Math.min(x,stageW-w)); y=Math.max(0,Math.min(y,stageH-h));
+  cropRect={x,y,w,h};
+}
+function drawBox(){ cropBox.style.left=cropRect.x+"px"; cropBox.style.top=cropRect.y+"px";
+  cropBox.style.width=cropRect.w+"px"; cropBox.style.height=cropRect.h+"px"; }
+async function measureFaceBox(f){
+  try{ const fd=new FormData(); fd.append("image",f); fd.append("biometric_consent", bioOK()?"on":"");
+    const d=await (await fetch("/measure",{method:"POST",body:fd})).json();
+    if(d && d.ok && d.face_box && cropModal.classList.contains("on")) initCropBox(d.face_box);
+  }catch(e){}
+}
+function cropXY(e){ const r=cropStage.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
+cropBox.addEventListener("pointerdown", e=>{
+  if(e.target.classList.contains("crop-grip")) return;
+  e.preventDefault(); cropBox.setPointerCapture(e.pointerId);
+  const p=cropXY(e); cropDrag={mode:"move",ox:p.x-cropRect.x,oy:p.y-cropRect.y,id:e.pointerId};
+});
+[...cropBox.querySelectorAll(".crop-grip")].forEach(g=>g.addEventListener("pointerdown", e=>{
+  e.preventDefault(); e.stopPropagation(); g.setPointerCapture(e.pointerId);
+  cropDrag={mode:"resize",h:g.dataset.h,id:e.pointerId,
+    ax:cropRect.x+(g.dataset.h.indexOf("l")>=0?cropRect.w:0),
+    ay:cropRect.y+(g.dataset.h.indexOf("t")>=0?cropRect.h:0)};
+}));
+cropStage.addEventListener("pointermove", e=>{
+  if(!cropDrag || e.pointerId!==cropDrag.id) return;
+  const p=cropXY(e);
+  if(cropDrag.mode==="move"){ cropRect.x=p.x-cropDrag.ox; cropRect.y=p.y-cropDrag.oy; clampRect(); drawBox(); return; }
+  const left=cropDrag.h.indexOf("l")>=0, top=cropDrag.h.indexOf("t")>=0;
+  const maxW=left?cropDrag.ax:(stageW-cropDrag.ax), maxH=top?cropDrag.ay:(stageH-cropDrag.ay);
+  let w=Math.min(Math.abs(p.x-cropDrag.ax), maxW, maxH*CROP_AR); let h=w/CROP_AR;
+  if(w>26){ cropRect={x:left?cropDrag.ax-w:cropDrag.ax, y:top?cropDrag.ay-h:cropDrag.ay, w:w, h:h}; clampRect(); drawBox(); }
+});
+function cropEnd(e){ if(cropDrag && e.pointerId===cropDrag.id) cropDrag=null; }
+cropStage.addEventListener("pointerup", cropEnd);
+cropStage.addEventListener("pointercancel", cropEnd);
+cropCancelBtn.addEventListener("click", ()=>{ cropModal.classList.remove("on"); cropImg.src=""; cropPending=null;
+  fileInput.value=""; fileInput.click(); });
+cropApplyBtn.addEventListener("click", ()=>{
+  if(!cropPending){ cropModal.classList.remove("on"); return; }
+  const original=cropPending, img=cropImg, rect={x:cropRect.x,y:cropRect.y,w:cropRect.w,h:cropRect.h}, sw=stageW, sh=stageH;
+  // Record the crop as fractions of the image. The SERVER crops the source at
+  // render time (robust, full-resolution, every format) -- state.file stays the
+  // ORIGINAL upload and `crop` rides along on each request.
+  state.crop=[rect.x/sw, rect.y/sh, rect.w/sw, rect.h/sh].map(v=>Math.max(0,Math.min(1,v)).toFixed(5)).join(",");
+  cropModal.classList.remove("on");
+  // A small cropped thumbnail JUST for the on-screen preview + before/after slider
+  // (the real render is server-cropped). Best-effort: fall back to the full image
+  // if the canvas can't encode -- the render is cropped either way.
+  let previewUrl=null;
+  try{
+    const sx=img.naturalWidth/sw, sy=img.naturalHeight/sh;
+    const PW=Math.min(540, Math.max(1, Math.round(rect.w*sx))), PH=Math.max(1, Math.round(PW/CROP_AR));
+    const cv=document.createElement("canvas"); cv.width=PW; cv.height=PH;
+    cv.getContext("2d").drawImage(img, Math.round(rect.x*sx), Math.round(rect.y*sy), Math.round(rect.w*sx), Math.round(rect.h*sy), 0, 0, PW, PH);
+    const durl=cv.toDataURL("image/jpeg", 0.9);
+    if(durl && durl.length>64) previewUrl=durl;
+  }catch(e){}
+  img.src="";
+  if(previewImg.src && previewImg.src.indexOf("blob:")===0) URL.revokeObjectURL(previewImg.src);
+  state.file=original; previewImg.src=previewUrl || URL.createObjectURL(original);
+  preview.style.display="block"; drop.style.display="none"; setPhotoNote("");
+  refreshCreate(); tp_track("photo_selected");
+  measureSubject(original);
+});
+
+// Options now live on the result screen: toggling re-renders the current ink
+// (and re-warms the swatch thumbnails) so the change is immediate.
+function optionChanged(){ if(resultView.style.display==="block"){ invalidate(); render(state.ink,{animate:false}); } }
+bgSwitch.addEventListener("click", ()=>{ userTouched=true; state.removeBg=!state.removeBg; bgSwitch.classList.toggle("on",state.removeBg); optionChanged(); });
+// Letter case: render the words ALL CAPS, or exactly as the user typed them.
+const caseSeg=$("#caseSeg");
+if(caseSeg){ caseSeg.addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  userTouched=true;
+  state.uppercase = b.dataset.uc==="1";
+  [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
+  optionChanged();
+}); }
+drop.addEventListener("click", ()=>{ if(!bioOK()){ nudgeBio(); return; } fileInput.click(); });
+$("#changePhoto").addEventListener("click", e=>{e.stopPropagation();fileInput.click();});
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));
+drop.addEventListener("drop", e=>{ if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener("change", e=>{ if(e.target.files[0]) setFile(e.target.files[0]); });
+const MAX_UPLOAD_BYTES=25*1024*1024;   // keep in step with TYPO_MAX_UPLOAD_BYTES on the server
+function bioOK(){ var b=document.getElementById("bioConsent"); return !!(b && b.checked); }
+// Lock the photo drop zone until biometric consent is given, so the requirement
+// is obvious up front instead of surfacing as an error after a file is picked.
+var _dropSmall=drop?drop.querySelector(".small"):null;
+var _dropSmallDefault=_dropSmall?_dropSmall.textContent:"";
+function nudgeBio(){ var r=document.getElementById("bioConsentRow"); if(r){ r.scrollIntoView({block:"center",behavior:"smooth"}); r.classList.add("flash"); setTimeout(function(){r.classList.remove("flash");},1400); } }
+function syncBioLock(){
+  if(window.__regionBlocked) return;            // region block owns the drop zone
+  var ok=bioOK();
+  if(drop) drop.classList.toggle("locked", !ok);
+  if(_dropSmall) _dropSmall.textContent = ok ? _dropSmallDefault : "First, tick the consent box below — then add your photo.";
+}
+(function(){ var b=document.getElementById("bioConsent"); if(b) b.addEventListener("change", syncBioLock); syncBioLock(); })();
+function setFile(f){
+  if(window.__regionBlocked){ inputErr("Sorry — Typortrait isn’t available in your location."); return; }
+  if(!f.type.startsWith("image/")){ inputErr("That file isn't an image — please choose a JPG, PNG or HEIC photo."); return; }
+  if(f.size>MAX_UPLOAD_BYTES){ inputErr("That photo is too large (max 25 MB). Try a smaller image or a screenshot."); return; }
+  // Biometric consent must be given BEFORE the face is analysed (BIPA/GDPR).
+  if(!bioOK()){
+    inputErr("Please tick the box confirming you consent to the facial‑geometry analysis before uploading.");
+    var row=document.getElementById("bioConsentRow"); if(row) row.scrollIntoView({block:"center",behavior:"smooth"});
+    return;
+  }
+  errInput.style.display="none";
+  openCrop(f);                          // crop first (auto-framed on the face), then use the result
+}
+// The cropped image becomes the render source; from here the flow is as before.
+function useCroppedFile(f){
+  if(previewImg.src && previewImg.src.indexOf("blob:")===0) URL.revokeObjectURL(previewImg.src);   // free the prior upload
+  state.file=f; state.maskData=null; previewImg.src=URL.createObjectURL(f);   // new photo -> drop any prior manual mask
+  preview.style.display="block"; drop.style.display="none"; setPhotoNote("");
+  refreshCreate(); tp_track("photo_selected");
+  measureSubject(f);
+}
+
+// Offer only the word sizes that stay readable for THIS photo's framing: small
+// type on a far/small subject is unreadable, so the server measures the face
+// size and tells us which sizes to enable. Disabled sizes grey out.
+let measuredSizes=null;                       // last /measure word-size gate (Words values)
+function applySizes(allowed, recommended){
+  if(allowed) measuredSizes=allowed;
+  const gate=new Set((measuredSizes||[120,57,27,13]).map(Number));
+  const full=sizesForStyle().map(s=>Number(s[0]));
+  // Words honors the /measure readability gate (small WORDS on a far subject are
+  // unreadable). Letter is prose read up close, so every fine size forms a face.
+  let usable=(state.style==="message") ? full : full.filter(mf=>gate.has(mf));
+  if(!usable.length) usable=[full[0]];
+  allowedMf=usable.slice().sort((a,b)=>b-a);
+  if(recommended!=null && state.style!=="message" && allowedMf.includes(Number(recommended))){
+    state.minFont=Number(recommended);                 // framing-based default (close-up -> Large)
+  } else if(!allowedMf.includes(Number(state.minFont))){   // current pick invalid -> re-default
+    const def=(state.style==="message") ? 20
+              : ([57,27,120].find(v=>allowedMf.includes(v))||allowedMf[0]);   // Large, else Medium
+    state.minFont=allowedMf.includes(def)?def:allowedMf[0];
+  }
+  // Keep the hidden Words segment in rough sync (cosmetic; state.minFont rules).
+  document.querySelectorAll('#sizeSeg button').forEach(b=>{
+    const mf=parseFloat(b.dataset.mf);
+    b.style.display=gate.has(mf)?"":"none";
+    b.classList.toggle("on",mf===Number(state.minFont));
+  });
+  buildSizeStrip();
+}
+function setPhotoNote(msg){
+  const el=document.getElementById("photoNote"); if(!el) return;
+  if(msg){ el.textContent=msg; el.style.display=""; } else { el.style.display="none"; el.textContent=""; }
+}
+function measureSubject(f){
+  applySizes(null);                          // optimistic: all enabled while measuring
+  const fd=new FormData(); fd.append("image",f); if(state.crop) fd.append("crop",state.crop); fd.append("biometric_consent", bioOK()?"on":"");
+  fetch("/measure",{method:"POST",body:fd}).then(r=>r.json())
+    .then(d=>{ if(d&&d.ok){
+        applySizes(d.sizes, d.default);
+        setPhotoNote((d.faces||0)>=2 ? "More than one face detected — we'll feature the largest. Crop to one person for the sharpest portrait." : "");
+      } })
+    .catch(()=>applySizes([120,57,27]));     // network failure: be conservative (skip unreadable Small)
+}
+
+/* ---------- swatch filmstrip (live thumbnails per ink, or per ground for
+   the Displacement style — same machinery, different items) ---------------- */
+const swatchEl=$("#swatches");
+const carouselEl=document.querySelector(".carousel");
+function buildSwatches(){
+  if(carouselEl) carouselEl.classList.toggle("relief", false);  // Sculpted now uses the full ink carousel
+  swatchEl.innerHTML="";
+  currentSwatches().forEach(([id,col,label])=>{
+    const el=document.createElement("button"); el.type="button";
+    el.className="thumb"+(id===state.ink?" sel":""); el.dataset.ink=id;
+    const pic=document.createElement("div"); pic.className="pic"; pic.dataset.ink=id;
+    // Set the colour/gradient placeholder on its own longhand -- the `background`
+    // shorthand would reset background-size to auto and break the cover crop when
+    // the thumbnail image is applied later.
+    const ph=placeholderBg(col);
+    if(ph.indexOf("gradient")>=0) pic.style.backgroundImage=ph; else pic.style.backgroundColor=ph;
+    const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
+    el.append(pic,nm); el.addEventListener("click", ()=>selectInk(id)); swatchEl.append(el);
+  });
+}
+buildSwatches();
+function rebuildSwatches(){
+  const ids=currentSwatches().map(s=>s[0]);
+  if(!ids.includes(state.ink)) state.ink = (ids.includes("photo") ? "photo" : (state.style==="displacement" ? "g_navy" : "mono"));
+  invalidate();            // renders depend on style+variant -> drop stale caches
+  buildSwatches();
+}
+function markSel(){
+  [...swatchEl.children].forEach(c=>c.classList.toggle("sel",c.dataset.ink===state.ink));
+  const sel=swatchEl.querySelector(".thumb.sel");
+  if(sel && sel.scrollIntoView) sel.scrollIntoView({behavior:"smooth",inline:"center",block:"nearest"});
+}
+function updateThumb(ink){
+  const pic=swatchEl.querySelector(`.pic[data-ink="${ink}"]`);
+  const src=(cache[ink] && cache[ink].preview) || thumbCache[ink];   // full preview wins over coarse
+  if(pic && src){
+    pic.style.backgroundImage=`url(${src})`;
+    pic.style.backgroundSize="cover"; pic.style.backgroundPosition="center";
+    pic.classList.remove("loading");
+  }
+}
+function resetThumbs(){ swatchEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.remove("loading"); }); }
+
+/* ---------- word-size filmstrip (live previews of THIS portrait per size) ----
+   Mirrors the ink-swatch mechanism: each chip is a fast, coarse render of the
+   user's own photo at that word size, in the currently-selected ink. Tapping a
+   chip re-renders the main portrait at that size. Only the sizes that stay
+   readable for this photo's framing (from /measure) get a chip. */
+// Word size means different things per style. Words is a tonal mosaic that
+// forms a face at any scale, so it gets the full dramatic range. Letter is the
+// user's prose laid in rows, which only resolves into a face with enough rows
+// (fine type) -- so it gets a finer set; Giant/Large would be a wall of text.
+const WORD_SIZES=[[120,"Giant"],[57,"Large"],[27,"Medium"]];
+const LETTER_SIZES=[[20,"Readable"],[13,"Balanced"]];
+function sizesForStyle(){ return state.style==="message" ? LETTER_SIZES : WORD_SIZES; }
+const sizeStripEl=$("#sizeStrip"), sizeFilmEl=$("#sizeFilm");
+let allowedMf=[120,57,27,13];
+let sizeThumbCache={};                 // coarse renders of the CURRENT ink, keyed by size
+function buildSizeStrip(){
+  if(!sizeStripEl) return;
+  // Sculpted is auto-scaled; Message auto-sizes from text length (build_poster
+  // repeats to fill, so the type size is the renderer's call, not the user's).
+  if(state.style==="displacement" || state.style==="message"){ if(sizeFilmEl) sizeFilmEl.style.display="none"; return; }  // no size control
+  sizeStripEl.innerHTML="";
+  const set=new Set(allowedMf.map(Number));
+  sizesForStyle().forEach(([mf,label])=>{
+    if(!set.has(Number(mf))) return;
+    const el=document.createElement("button"); el.type="button";
+    el.className="thumb"+(Number(mf)===Number(state.minFont)?" sel":""); el.dataset.mf=mf;
+    const pic=document.createElement("div"); pic.className="pic"; pic.dataset.mf=mf;
+    pic.style.backgroundColor="#ece9e2";
+    const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
+    el.append(pic,nm); el.addEventListener("click",()=>selectSize(mf)); sizeStripEl.append(el);
+  });
+  const lbl=sizeFilmEl && sizeFilmEl.querySelector(".film-lbl");
+  if(lbl) lbl.textContent=(state.style==="message"?"Text size":"Word size")+" — tap to resize the type";
+  // Nothing to choose between -> hide the strip (one usable size for this photo).
+  if(sizeFilmEl) sizeFilmEl.style.display=(sizeStripEl.children.length>1)?"":"none";
+}
+function markSizeSel(){
+  if(!sizeStripEl) return;
+  [...sizeStripEl.children].forEach(c=>c.classList.toggle("sel",Number(c.dataset.mf)===Number(state.minFont)));
+}
+function updateSizeThumb(mf){
+  if(!sizeStripEl) return;
+  const pic=sizeStripEl.querySelector(`.pic[data-mf="${mf}"]`); if(!pic) return;
+  // The selected size IS the main view -> reuse its full preview (no extra render).
+  let src=sizeThumbCache[mf];
+  if(Number(mf)===Number(state.minFont)) src=(cache[state.ink]&&cache[state.ink].preview)||src;
+  if(src){ pic.style.backgroundImage=`url(${src})`; pic.style.backgroundSize="cover"; pic.style.backgroundPosition="center"; pic.classList.remove("loading"); }
+}
+function refreshSizeStrip(){ markSizeSel(); allowedMf.forEach(mf=>updateSizeThumb(mf)); }
+function resetSizeThumbs(){ if(sizeStripEl) sizeStripEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.remove("loading"); }); }
+async function renderSizeThumb(mf){
+  if(!state.file) return;
+  const myGen=gen;
+  const fd=new FormData();
+  fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim());
+  const vp=variantPost(state.ink); fd.append("ink",vp.ink); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
+  fd.append("min_font_px", String(mf));
+  fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
+  try{
+    const r=await fetchWithTimeout("/render",{method:"POST",body:fd}, RENDER_TIMEOUT_MS); const data=await r.json();
+    if(myGen!==gen) return;                       // photo/words/ink/size changed -> drop
+    if(!r.ok||!data.ok) return;
+    sizeThumbCache[mf]=data.preview; updateSizeThumb(mf);
+  }catch(e){}
+}
+let prewarmingSizes=false;
+async function prewarmSizes(){
+  if(prewarmingSizes || resultView.style.display!=="block" || state.style==="displacement" || state.style==="message") return;
+  prewarmingSizes=true;
+  const myGen=gen;
+  for(const mf of allowedMf){
+    if(gen!==myGen) break;
+    if(Number(mf)===Number(state.minFont)){ updateSizeThumb(mf); continue; }   // selected = main preview
+    if(sizeThumbCache[mf]){ updateSizeThumb(mf); continue; }
+    const pic=sizeStripEl&&sizeStripEl.querySelector(`.pic[data-mf="${mf}"]`); if(pic) pic.classList.add("loading");
+    await renderSizeThumb(mf);
+  }
+  prewarmingSizes=false;
+}
+
+/* ---------- style recommendation: measure, don't guess --------------------
+   After the first reveal, each style is probed with a coarse render and the
+   server scores how well it preserves the face (the /render "likeness" field).
+   The winner gets a quiet gold badge; if the user hasn't touched anything yet,
+   the studio adopts it with a gentle crossfade -- never a spinner over the
+   portrait they're already looking at. */
+let styleScores={}, recoStarted=false, recoDone=false, userTouched=false;
+const STYLE_NAMES={words:"Words",message:"Message",displacement:"Sculpted Style"};
+function resetReco(){
+  styleScores={}; recoStarted=false; recoDone=false; userTouched=false;
+  document.querySelectorAll('#styleSegResult button').forEach(b=>b.classList.remove("best"));
+  const n=$("#bestNote"); if(n){ n.style.display="none"; n.textContent=""; }
+}
+function recoFd(style, coarse){
+  const fd=new FormData();
+  fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim()); fd.append("message",words.value.trim());
+  let ink=state.ink||"photo";
+  if(style==="displacement" && (ink==="spectrum"||ink==="aurora")) ink="photo";  // gradients don't drape
+  fd.append("ink",ink); fd.append("style",style); fd.append("ground","navy");
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
+  fd.append("min_font_px", style==="message" ? "20" : String(state.minFont||57));
+  if(coarse){ fd.append("png_width","380"); fd.append("render_w","760"); } else { fd.append("png_width","1500"); }
+  return fd;
+}
+async function recommendStyle(){
+  if(recoDone) return;
+  const myGen=gen;
+  for(const st of ["words","message","displacement"]){
+    if(typeof styleScores[st]==="number") continue;
+    try{
+      const r=await fetchWithTimeout("/render",{method:"POST",body:recoFd(st,true)}, RENDER_TIMEOUT_MS);
+      const d=await r.json();
+      if(myGen!==gen) return;                       // photo/words changed -> abandon
+      if(r.ok && d.ok && typeof d.likeness==="number") styleScores[st]=d.likeness;
+    }catch(e){}
+  }
+  const ranked=Object.keys(styleScores).filter(s=>typeof styleScores[s]==="number")
+    .sort((a,b)=>styleScores[b]-styleScores[a]);
+  if(ranked.length<2) return;                       // not enough signal to recommend
+  recoDone=true;
+  const best=ranked[0];
+  document.querySelectorAll('#styleSegResult button').forEach(b=>b.classList.toggle("best", b.dataset.style===best));
+  tp_track("style_reco",{best:best,current:state.style});
+  const note=$("#bestNote");
+  if(best===state.style){
+    if(note){ note.textContent="✦ "+STYLE_NAMES[best]+" suits this photo best."; note.style.display=""; }
+    return;
+  }
+  if(userTouched){
+    if(note){ note.textContent="✦ "+STYLE_NAMES[best]+" suits this photo best — tap to see."; note.style.display=""; }
+    return;
+  }
+  if(BRAND && BRAND.pinStyle){
+    // Brand pins its opening look (e.g. Loved in Words -> Sculpt): hint the best
+    // fit as a tappable badge, but never auto-switch away from the brand's style.
+    if(note){ note.textContent="✦ "+STYLE_NAMES[best]+" suits this photo best — tap to see."; note.style.display=""; }
+    return;
+  }
+  // Adopt quietly: render the winner at full size in the background, then a
+  // gentle crossfade if the user STILL hasn't interacted when it lands.
+  try{
+    const r=await fetchWithTimeout("/render",{method:"POST",body:recoFd(best,false)}, RENDER_TIMEOUT_MS);
+    const d=await r.json();
+    if(myGen!==gen || userTouched) return;          // they moved on -> leave them be
+    if(!(r.ok && d.ok && d.preview)) return;
+    setStyle(best,false);                            // UI follows; no re-render, no busy
+    cache[state.ink]={preview:d.preview, job:d.job, price:d.price_cents, currency:d.currency};
+    showImage(cache[state.ink], true);               // crossfade swap
+    document.querySelectorAll('#styleSegResult button').forEach(b=>b.classList.toggle("best", b.dataset.style===best));
+    if(note){ note.textContent="✦ Showing "+STYLE_NAMES[best]+" — it suits this photo best."; note.style.display=""; }
+    tp_track("style_reco_adopted",{best:best});
+    prewarm(); refreshSizeStrip(); prewarmSizes();
+  }catch(e){}
+}
+function selectSize(mf){
+  mf=Number(mf); if(mf===Number(state.minFont)) return;
+  userTouched=true;
+  state.minFont=mf;
+  // keep the hidden input segment in sync (drives downloads / recipe)
+  document.querySelectorAll('#sizeSeg button').forEach(b=>b.classList.toggle("on",Number(b.dataset.mf)===mf));
+  markSizeSel();
+  // word size feeds the whole layout -> every ink render at the old size is stale.
+  invalidate(); render(state.ink,{animate:false});
+}
+
+
+
+/* ---------- views ---------- */
+const inputView=$("#input"), resultView=$("#result"), portrait=$("#portrait"), busy=$("#busy");
+const canvas=$("#assembly"), buy=$("#buy"), buynote=$("#buynote"), errResult=$("#errResult"), errInput=$("#errInput");
+let currentJob=null, priceLabel="", sourcePreview=null;   // sourcePreview = server-cropped "before" image
+// Keepsake presentation: the framed-on-a-desk scene, shown THROUGHOUT — from the
+// moment Create is clicked, through the compose, to the reveal. Every finished
+// portrait is now 4:5 (the standard print canvas), so it always drops cleanly
+// into the desk frame's 4:5 mat opening; there's no longer any need to guess the
+// scene from the photo's shape or fall back to the greenery card, and doing so
+// caused a visible mid-compose flip (the input photo's aspect guessed one frame,
+// then the 4:5 render revealed in another). Always the desk -> no flip.
+function applyKeepsake(prelim){
+  if(!KEEPSAKE) return;
+  resultView.classList.remove("kp-leaf");
+  resultView.classList.add("kp-desk");
+}
+buy.addEventListener("click", async ()=>{
+  if(!currentJob) return;
+  buy.disabled=true; const old=buy.textContent; buy.textContent="Opening secure checkout…";
+  try{
+    const fd=new FormData(); fd.append("job",currentJob); fd.append("fmt",state.fmt);
+    fd.append("sku", state.sku||"digital");
+    if(state.size) fd.append("size", state.size);
+    const r=await fetch("/checkout",{method:"POST",body:fd}); const d=await r.json();
+    if(d.ok && d.url){ tp_track("checkout_start", {sku: state.sku||"digital", fmt: state.fmt}); window.location.href=d.url; return; }
+    const msg = {
+      payments_unconfigured: "Checkout isn’t set up yet (add your Stripe key).",
+      fulfillment_unconfigured: "Print orders aren’t available right now — try the digital download.",
+      missing_or_invalid_size: "Please pick a size first.",
+    }[d.error] || "Couldn’t start checkout — please try again.";
+    buynote.textContent = msg;
+  }catch(e){ buynote.textContent="Network error — please try again."; }
+  buy.disabled=false; buy.textContent=old;
+});
+
+// --- Product picker (print-on-demand) ---------------------------------------
+// Populated from /products. The picker only appears when the server reports
+// fulfillment_configured (a Printful token is present); otherwise the studio
+// stays digital-only and the buy button keeps its original behavior.
+let CATALOG = [];
+function updateBuyLabel(){
+  const p = CATALOG.find(x=>x.sku===state.sku);
+  if(!p) return;
+  buy.textContent = (p.physical ? "Order — " : "Download — ") + money(p.price_cents, p.currency);
+}
+function selectProduct(sku){
+  const p = CATALOG.find(x=>x.sku===sku) || CATALOG.find(x=>x.sku==="digital");
+  if(!p) return;
+  state.sku = p.sku;
+  const sizeRow=$("#sizeRow"), sizeSel=$("#sizeSel");
+  if(p.sizes && p.sizes.length){
+    sizeSel.innerHTML = p.sizes.map(s=>`<option value="${s}">${s}</option>`).join("");
+    if(!p.sizes.includes(state.size)) state.size = p.sizes[0];
+    sizeSel.value = state.size; sizeRow.style.display="flex";
+  } else { state.size=null; sizeRow.style.display="none"; }
+  document.querySelectorAll(".prod").forEach(el=>el.classList.toggle("on", el.dataset.sku===p.sku));
+  updateBuyLabel();
+}
+function renderProducts(data){
+  const cur = data.currency || "usd";
+  CATALOG = (data.products||[]).map(p=>({...p, currency:cur}));
+  if(!data.fulfillment_configured) return;               // stay digital-only
+  // Presentation is brand-aware. Loved in Words is a memorial keepsake brand, so:
+  //  - apparel (a t-shirt of someone who has passed) is tonally off -> hidden;
+  //  - the lineup leads with the framed/print keepsakes and puts the digital
+  //    download BENEATH them (the print is the hero; digital is the alternative).
+  // Every other brand shows the full catalog with the digital download first (the
+  // entry product). Sort key is physical-first (0) vs digital (1), flipped per brand.
+  const isLoved = (typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords");
+  let items = CATALOG.slice();
+  if(isLoved) items = items.filter(p=>!String(p.sku).startsWith("tshirt"));
+  const order = items.sort((a,b)=>{
+    const av=a.physical?0:1, bv=b.physical?0:1;
+    return isLoved ? (av-bv) : (bv-av);
+  });
+  const list = $("#productList"); list.innerHTML="";
+  order.forEach(p=>{
+    const el=document.createElement("button");
+    el.type="button"; el.className="prod"+(p.sku===state.sku?" on":""); el.dataset.sku=p.sku;
+    const tag = p.tag ? `<span class="ptag">${p.tag}</span>` : "";
+    const ship = p.shipping_cents>0 ? `<div class="pship">+${money(p.shipping_cents,cur)} ship</div>` : "";
+    const inc = p.physical ? `<div class="pinc">&#10003; High-res digital file included, free</div>` : "";
+    el.innerHTML = `<div class="pinfo"><div class="pname">${p.name}${tag}</div>`+
+      `<div class="pblurb">${p.blurb}</div>${inc}</div>`+
+      `<div class="pprice">${money(p.price_cents,cur)}${ship}</div>`;
+    el.addEventListener("click",()=>selectProduct(p.sku));
+    list.appendChild(el);
+  });
+  $("#sizeSel").addEventListener("change", e=>{ state.size=e.target.value; });
+  $("#productPicker").style.display="block";
+  selectProduct(state.sku);
+}
+fetch("/products").then(r=>r.json()).then(renderProducts).catch(()=>{});
+// Region gate (BIPA): disable upload up front for blocked locations. The server
+// still enforces this on /measure and /render regardless of the client.
+fetch("/compliance/region").then(r=>r.json()).then(g=>{
+  if(g && g.blocked){
+    window.__regionBlocked=true;
+    var d=document.getElementById("drop");
+    if(d){ d.innerHTML='<div class="big">Not available in your area</div><div class="small">'+(g.detail||"This service isn’t available in your location.")+'</div>'; d.style.cursor="default"; }
+    var bc=document.getElementById("bioConsentRow"); if(bc) bc.style.display="none";
+    var cb=document.getElementById("create"); if(cb) cb.disabled=true;
+  }
+}).catch(()=>{});
+createBtn.addEventListener("click", ()=>{
+  if(!state.file){ inputErr("Add a photo to start — a clear head-and-shoulders shot works best."); drop.scrollIntoView({behavior:"smooth",block:"center"}); return; }
+  if(!words.value.trim()){ inputErr(state.style==="message" ? "Add the passage first — a letter, lyrics, a poem, or a tribute." : "Add a few words first — a name, traits, a date."); words.focus(); return; }
+  if(!consent.checked){ inputErr("Please confirm you have the rights to this photo and agree to the Terms."); document.getElementById("consentRow").scrollIntoView({behavior:"smooth",block:"center"}); return; }
+  errInput.style.display="none";
+  inputView.style.display="none"; resultView.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
+  applyKeepsake(true);                 // show the framed desk/greenery scene instantly while composing
+  resetReco();                         // fresh style recommendation for this photo
+  invalidate(); render(state.ink,{animate:true}); });
+$("#restart").addEventListener("click", ()=>{ resultView.style.display="none"; inputView.style.display="block";
+  invalidate(); portrait.src=""; portrait.className=""; stopAssembly(); });
+// Brand opening look: e.g. Loved in Words opens on Sculpt + Photo (the most
+// lifelike for a remembrance portrait). Run LAST -- after every const + listener
+// is defined -- because setStyle() reaches size-strip state; calling it during
+// early init would throw on those not-yet-initialised bindings and abort the rest
+// of the script (leaving the Create button without its handler).
+if(BRAND){
+  if(BRAND.ink) state.ink=BRAND.ink;
+  if(BRAND.style && BRAND.style!==state.style) setStyle(BRAND.style, false);
+}
+function invalidate(){ gen++; cache={}; thumbCache={}; resetThumbs(); }
+
+function selectInk(id){
+  if(id===state.ink) return; userTouched=true; state.ink=id; markSel();
+  sizeThumbCache={}; resetSizeThumbs();        // size chips show the current ink -> now stale
+  if(cache[id]) showImage(cache[id], true);    // instant crossfade
+  else { const pic=swatchEl.querySelector(`.pic[data-ink="${id}"]`); if(pic) pic.classList.add("loading"); render(id,{animate:false}); }
+  refreshSizeStrip(); prewarmSizes();          // reflect new ink in the size strip
+}
+
+const overlay=$("#overlay");
+function setBuy(entry){
+  currentJob = entry.job || null;
+  if(currentJob && window.armExitIntent) window.armExitIntent();
+  buy.textContent = "Download — " + money(entry.price, entry.currency);
+  // If the product picker is active, reflect the chosen product instead.
+  if(CATALOG.length) updateBuyLabel();
+  var _bt=document.getElementById("bgTouchup"); if(_bt) _bt.style.display = currentJob ? "" : "none";
+}
+
+// ---- Manual background touch-up: refine the auto cutout with Keep/Erase brushes ----
+(function(){
+  var modal=document.getElementById("bgModal"); if(!modal) return;
+  var canvas=document.getElementById("bgCanvas"), ctx=canvas.getContext("2d");
+  var maskC=document.createElement("canvas"), maskX=maskC.getContext("2d");   // alpha mask: opaque white = keep
+  var ov=document.createElement("canvas");
+  var srcImg=new Image(); srcImg.crossOrigin="anonymous";
+  var mode="remove", brush=34, painting=false, undo=[], W=0, H=0;
+  function fit(iw,ih){
+    iw=iw||1; ih=ih||1;
+    var card=modal.querySelector(".crop-card");
+    var base=(card && card.clientWidth) ? card.clientWidth : 340;   // measured only when visible
+    var maxW=Math.max(200, Math.min(380, base-32)), maxH=460;
+    var s=Math.min(maxW/iw, maxH/ih); W=Math.max(40,Math.round(iw*s)); H=Math.max(40,Math.round(ih*s));
+    canvas.width=W; canvas.height=H; maskC.width=W; maskC.height=H; ov.width=W; ov.height=H;
+  }
+  function redraw(){
+    ctx.clearRect(0,0,W,H); ctx.drawImage(srcImg,0,0,W,H);
+    var o=ov.getContext("2d"); o.globalCompositeOperation="source-over";
+    o.clearRect(0,0,W,H); o.fillStyle="rgba(18,26,60,0.55)"; o.fillRect(0,0,W,H);
+    o.globalCompositeOperation="destination-out"; o.drawImage(maskC,0,0);     // cut the tint where kept
+    ctx.drawImage(ov,0,0);
+  }
+  function paint(x,y){
+    maskX.globalCompositeOperation = (mode==="keep") ? "source-over" : "destination-out";
+    maskX.fillStyle="#fff"; maskX.beginPath(); maskX.arc(x,y,brush/2,0,7); maskX.fill();
+    redraw();
+  }
+  function pos(e){ var r=canvas.getBoundingClientRect(); return {x:(e.clientX-r.left)*(W/r.width), y:(e.clientY-r.top)*(H/r.height)}; }
+  function snap(){ try{ undo.push(maskX.getImageData(0,0,W,H)); if(undo.length>15) undo.shift(); }catch(e){} }
+  canvas.addEventListener("pointerdown",function(e){ e.preventDefault(); painting=true; snap(); try{canvas.setPointerCapture(e.pointerId);}catch(_){} var p=pos(e); paint(p.x,p.y); });
+  canvas.addEventListener("pointermove",function(e){ if(!painting)return; var p=pos(e); paint(p.x,p.y); });
+  ["pointerup","pointercancel"].forEach(function(ev){ canvas.addEventListener(ev,function(){ painting=false; }); });
+  function loadAuto(){
+    var am=new Image(); am.crossOrigin="anonymous";
+    am.onload=function(){
+      maskX.clearRect(0,0,W,H); maskX.drawImage(am,0,0,W,H);
+      var d=maskX.getImageData(0,0,W,H), p=d.data;
+      for(var i=0;i<p.length;i+=4){ var keep=p[i]>127; p[i]=p[i+1]=p[i+2]=255; p[i+3]=keep?255:0; }
+      maskX.putImageData(d,0,0); redraw();
+    };
+    am.onerror=function(){ maskX.clearRect(0,0,W,H); maskX.fillStyle="#fff"; maskX.fillRect(0,0,W,H); redraw(); };
+    am.src="/mask/"+encodeURIComponent(currentJob)+"?t="+Date.now();
+  }
+  window.openBgEditor=function(){
+    if(!currentJob) return;
+    var bg = sourcePreview || (state.file ? URL.createObjectURL(state.file) : null);
+    if(!bg) return;
+    srcImg.onload=function(){ modal.classList.add("on"); modal.setAttribute("aria-hidden","false"); fit(srcImg.naturalWidth||srcImg.width, srcImg.naturalHeight||srcImg.height); undo=[]; loadAuto(); };
+    srcImg.src=bg;
+  };
+  function close(){ modal.classList.remove("on"); modal.setAttribute("aria-hidden","true"); }
+  var seg=document.getElementById("bgMode");
+  seg.addEventListener("click",function(e){ var b=e.target.closest("button"); if(!b)return; mode=b.dataset.m; [].forEach.call(seg.children,function(c){c.classList.toggle("on",c===b);}); });
+  document.getElementById("bgBrush").addEventListener("input",function(){ brush=+this.value; });
+  document.getElementById("bgUndo").addEventListener("click",function(){ if(undo.length){ maskX.putImageData(undo.pop(),0,0); redraw(); } });
+  document.getElementById("bgReset").addEventListener("click",function(){ undo=[]; loadAuto(); });
+  document.getElementById("bgCancel").addEventListener("click",close);
+  document.getElementById("bgApply").addEventListener("click",function(){
+    var ex=document.createElement("canvas"); ex.width=W; ex.height=H; var ec=ex.getContext("2d");
+    ec.fillStyle="#000"; ec.fillRect(0,0,W,H); ec.drawImage(maskC,0,0);     // white=keep over black=remove (binary)
+    state.maskData = ex.toDataURL("image/png");
+    close(); invalidate(); render(state.ink,{animate:false});
+  });
+  var trigger=document.getElementById("bgTouchup"); if(trigger) trigger.addEventListener("click", window.openBgEditor);
+})();
+/* Show the watermarked preview. crossfade=true does an iOS-style dissolve
+   between the current image and the newly-selected ink. */
+/* Frame + mat themed to each ink: a complementary moulding tone (with a bevel
+   highlight/shadow) and a gallery mat -- light for the paper inks, dark for the
+   dark-ground gold noir -- so the presentation feels designed, not generic. */
+const FRAMES={
+  navy:     {fr:"#2b3559",hi:"#46537e",lo:"#141b30",mat:"#f5f3ec"},
+  photo:    {fr:"#34343a",hi:"#52525c",lo:"#1b1b1f",mat:"#f6f5f3"},
+  sepia:    {fr:"#6b4a24",hi:"#90673a",lo:"#3f2a12",mat:"#f1e7d2"},
+  burgundy: {fr:"#5a1622",hi:"#7c2a37",lo:"#360b12",mat:"#f6ebe8"},
+  forest:   {fr:"#1c4630",hi:"#2e6044",lo:"#0f2a1c",mat:"#edf2ec"},
+  gold_noir:{fr:"#1b1d23",hi:"#d9bd6e",lo:"#0b0c10",mat:"#15171c"},
+  spectrum: {fr:"#20212f",hi:"#363852",lo:"#101019",mat:"#f7f6f4"},
+  aurora:   {fr:"#16202e",hi:"#274057",lo:"#0a121c",mat:"#f4f7fa"},
+  mono:     {fr:"#3a3a3a",hi:"#585858",lo:"#1c1c1c",mat:"#f6f5f3"},
+  g_navy:   {fr:"#2b3559",hi:"#46537e",lo:"#141b30",mat:"#0d1b3a"},
+  g_black:  {fr:"#262626",hi:"#3f3f3f",lo:"#0c0c0c",mat:"#111317"},
+  g_paper:  {fr:"#6b5b3a",hi:"#8f7c52",lo:"#3f3525",mat:"#efe9da"}
+};
+const frameEl=$("#frame");
+function applyFrame(ink){
+  const t=FRAMES[ink]||FRAMES.navy;
+  frameEl.style.setProperty("--fr",t.fr); frameEl.style.setProperty("--fr-hi",t.hi);
+  frameEl.style.setProperty("--fr-lo",t.lo); frameEl.style.setProperty("--mat",t.mat);
+}
+applyFrame("navy");
+function showImage(entry, crossfade){
+  // If the word-assembly loader is running, dissolve it straight into the
+  // rendered portrait (motion continues until the reveal). Otherwise reveal plainly.
+  if(animRAF){ revealFromAssembly(entry); return; }
+  revealPlain(entry, crossfade);
+}
+function revealPlain(entry, crossfade){
+  setBuy(entry);
+  applyFrame(state.ink);
+  stopAssembly();
+  // Before/after reveal: show the uploaded photo under the slider.
+  compareEl.classList.remove("hide-cmp");
+  { const bsrc=sourcePreview||previewImg.src; if(bsrc) beforeImg.src=bsrc; }   // server-cropped "before" when available
+  const url = entry.preview + "?t=" + Date.now();
+  if(crossfade && portrait.getAttribute("src")){
+    overlay.onload=()=>{
+      overlay.style.opacity=1;
+      setTimeout(()=>{ portrait.src=overlay.src; overlay.style.opacity=0; }, 300);
+    };
+    overlay.src=url; busy.classList.add("hide");
+  } else {
+    portrait.classList.remove("shown");
+    portrait.onload=()=>{ portrait.classList.add("shown"); busy.classList.add("hide"); applyKeepsake(); };
+    portrait.src=url;
+  }
+}
+function revealFromAssembly(entry){
+  // Words have just landed; preload the portrait so the swap is instant, then
+  // crossfade: portrait fades up beneath while the word-canvas dissolves away.
+  setBuy(entry);
+  applyFrame(state.ink);
+  compareEl.classList.remove("hide-cmp");
+  { const bsrc=sourcePreview||previewImg.src; if(bsrc) beforeImg.src=bsrc; }   // server-cropped "before" when available
+  const url = entry.preview + "?t=" + Date.now();
+  const im=new Image();
+  im.onload=()=>{
+    portrait.onload=null; portrait.src=url; portrait.classList.add("shown"); applyKeepsake();
+    canvas.style.transition="opacity .5s ease"; canvas.style.opacity="0";
+    busy.classList.add("hide"); stopComposeStatus();
+    setTimeout(()=>{ stopAssembly(); canvas.style.opacity=""; canvas.style.transition=""; }, 540);
+  };
+  im.onerror=im.onload;   // fall back to revealing even if the preview fails to load
+  im.src=url;
+}
+
+
+/* ---------- render ---------- */
+/* "Composing from your words" loader: the photo resolves into the user's actual
+   words, laid out in readable rows and shimmering in and out. Each word's
+   visibility tracks the photo luminance beneath it, so the words cluster into the
+   subject and the face emerges from the text. It LOOPS (no beginning or end), so
+   it never finishes-and-waits; showImage() dissolves it into the rendered
+   portrait the instant that image is ready. */
+let animRAF=0;
+function startAssembly(){
+  const stage=$("#stage"), ctx=canvas.getContext && canvas.getContext("2d"); if(!stage||!ctx) return;
+  const dpr=Math.min(2, window.devicePixelRatio||1), r=stage.getBoundingClientRect();
+  const W=Math.max(1,Math.round(r.width*dpr)), H=Math.max(1,Math.round((r.height||240)*dpr));
+  canvas.width=W; canvas.height=H; canvas.style.display="block"; canvas.style.opacity="";
+  const img=new Image(); if(previewImg.src) img.src=previewImg.src;
+  let vocab=words.value.toUpperCase().split(/[\s,]+/).filter(Boolean); if(!vocab.length) vocab=["LOVE"];
+  const fs=Math.max(15*dpr, Math.round(Math.min(W,H)/17)), lineH=Math.round(fs*1.25);
+  const FONT="600 "+fs+"px Georgia,'Times New Roman',serif";
+  const sw=Math.max(1,Math.round(W/8)), sh=Math.max(1,Math.round(H/8));
+  let lumData=null, layout=null;
+  function sample(){
+    try{ const oc=document.createElement("canvas"); oc.width=sw; oc.height=sh;
+      const octx=oc.getContext("2d"), s=Math.max(sw/img.naturalWidth, sh/img.naturalHeight);
+      octx.drawImage(img,(sw-img.naturalWidth*s)/2,(sh-img.naturalHeight*s)/2,img.naturalWidth*s,img.naturalHeight*s);
+      lumData=octx.getImageData(0,0,sw,sh).data;
+    }catch(_){ lumData=null; }
+  }
+  function inkAt(px,py){ if(!lumData) return 0.5;
+    const ix=Math.min(sw-1,Math.max(0,(px/W*sw)|0)), iy=Math.min(sh-1,Math.max(0,(py/H*sh)|0)), i=(iy*sw+ix)*4;
+    return 1-(0.299*lumData[i]+0.587*lumData[i+1]+0.114*lumData[i+2])/255; }   // 0 light .. 1 dark
+  function buildLayout(){               // lay whole words in centered rows, once, so they stay put and readable
+    ctx.font=FONT; const sp=(ctx.measureText(" ").width||fs*0.3)*2.2, margin=lineH*0.3;
+    layout=[]; let wi=0;
+    for(let y=lineH*0.7; y<H; y+=lineH){
+      const row=[]; let total=0;
+      while(true){
+        const w=vocab[wi%vocab.length], ww=ctx.measureText(w).width;
+        if(total+ww > W-margin*2) break;
+        row.push({w,ww}); total+=ww+sp; wi++;
+      }
+      if(!row.length){ wi++; continue; }            // a single word too wide for the row
+      total-=sp;                                    // no trailing gap after the last word
+      let x=(W-total)/2;                            // center the row horizontally
+      for(const it of row){ const cx=x+it.ww/2; layout.push({ w:it.w, cx, y, ink:inkAt(cx,y), ph:cx*0.03+y*0.05 }); x+=it.ww+sp; }
+    }
+  }
+  function prep(){ sample(); buildLayout(); }
+  if(img.complete && img.naturalWidth) prep(); else img.onload=prep;
+  const t0=performance.now();
+  (function frame(now){
+    const el=(now-t0)/1000;
+    ctx.clearRect(0,0,W,H);
+    if(img.complete && img.naturalWidth){
+      if(!layout) prep();
+      const s=Math.max(W/img.naturalWidth, H/img.naturalHeight), dw=img.naturalWidth*s, dh=img.naturalHeight*s;
+      ctx.drawImage(img,(W-dw)/2,(H-dh)/2,dw,dh);
+      ctx.fillStyle="rgba(250,249,247,.58)"; ctx.fillRect(0,0,W,H);   // faint photo behind the words
+    } else { ctx.fillStyle="#faf9f7"; ctx.fillRect(0,0,W,H); }
+    if(layout){
+      ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillStyle="#0d1b3a"; ctx.font=FONT;
+      for(const it of layout){
+        if(it.ink<0.32) continue;                                    // background stays blank; subject emerges
+        const wv=0.5+0.5*Math.sin(el*3.6 + it.ph);                   // shimmer: words resolve in and out, looping
+        ctx.globalAlpha=Math.min(1, it.ink*(0.55+0.6*wv));
+        ctx.fillText(it.w, it.cx, it.y);
+      }
+      ctx.globalAlpha=1;
+    }
+    animRAF=requestAnimationFrame(frame);
+  })(t0);
+}
+function stopAssembly(){ if(animRAF){ cancelAnimationFrame(animRAF); animRAF=0; } canvas.style.display="none"; busy.classList.remove("anim"); stopComposeStatus(); }
+let msgTimer=0;
+// The animated multi-step compose narration is superseded by the framed-desk
+// keepsake: KEEPSAKE=true forces animate=false in render(), so this path no longer
+// runs. The live progress text is the single style-aware line set in showBusy().
+// Kept as an inert no-op so the (dead) animate branch + cleanup calls stay valid.
+function startComposeStatus(){ /* inert: keepsake presentation replaced the narration */ }
+function stopComposeStatus(){ clearInterval(msgTimer); msgTimer=0; const cs=document.getElementById("composeStatus"); if(cs) cs.classList.remove("on"); }
+function showBusy(animate){
+  errResult.style.display="none";
+  // In the framed presentation the empty mat shows a calm line about what's
+  // taking shape on the desk; the classic frame keeps the shorter status. The
+  // memorial brand stays especially gentle and unhurried (no exclamation/upsell).
+  // This single line is the live progress text (the framed-desk keepsake replaced
+  // the animated narration). Make it style-aware so the slow Sculpted render sets
+  // its own ~30s expectation; Loved in Words stays gentle (no clinical countdown
+  // in a grief context).
+  var _slow=false; try{ _slow = variantPost(state.ink).style==="displacement"; }catch(e){}
+  $(".msg").textContent = (typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords")
+    ? (_slow ? "Composing their portrait — this takes a moment…" : "Composing their portrait, in your words…")
+    : (_slow ? "Sculpting your portrait — this takes about 30 seconds…" : "Composing your portrait, woven from your words…");
+  busy.classList.remove("hide");
+  // Show the word-assembly for the first Create — meaningful progress feedback,
+  // played for everyone (it's brief and on-brand, not gratuitous motion).
+  if(animate){ busy.classList.add("anim"); compareEl.classList.add("hide-cmp"); startComposeStatus(); startAssembly(); }
+  else { stopAssembly(); if(KEEPSAKE) compareEl.classList.add("hide-cmp"); }   // no stray slider handle over the placeholder
+}
+async function render(ink,{animate=false,background=false,thumb=false}={}){
+  if(!state.file) return;
+  if(KEEPSAKE) animate=false;   // keepsake shows the portrait in a scene; skip the canvas fly-in
+  const myGen=gen;
+  if(!background && !thumb) showBusy(animate);
+  const fd=new FormData();
+  fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim());
+  const vp=variantPost(ink); fd.append("ink",vp.ink); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
+  fd.append("min_font_px", String(state.minFont||20));
+  if(thumb){
+    // A 74px chip needs only the colour and rough likeness; a small canvas
+    // renders fast even on a slow single core.
+    fd.append("png_width","380"); fd.append("render_w","760");
+  } else {
+    fd.append("png_width","1500");
+  }
+  try{
+    const r=await fetchWithTimeout("/render",{method:"POST",body:fd}, RENDER_TIMEOUT_MS); const data=await r.json();
+    if(myGen!==gen) return;                 // photo/words/poster changed mid-render -> drop
+    if(!r.ok||!data.ok){
+      if(background || thumb) return;
+      const msg=data.detail||friendly(data.error)||"Something went wrong. Try another photo.";
+      if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; errInput.textContent=msg; errInput.style.display="block"; }
+      else { errResult.textContent=msg; errResult.style.display="block"; }
+      stopAssembly(); busy.classList.add("hide"); return;
+    }
+    if(thumb){ thumbCache[ink]=data.preview; updateThumb(ink); return; }
+    cache[ink]={preview:data.preview, job:data.job, price:data.price_cents, currency:data.currency}; updateThumb(ink);
+    if(data.source){ sourcePreview=data.source; if(beforeImg) beforeImg.src=sourcePreview; }   // cropped "before"
+    if(background || ink!==state.ink) return;
+    showImage(cache[ink]);   // watermarked preview (clean art is unlocked via Stripe)
+    if(typeof data.likeness==="number") styleScores[state.style]=data.likeness;
+    if(!window._tpPreviewTracked){ window._tpPreviewTracked=true; tp_track("preview_ready", {style: state.style}); }
+    prewarm();               // fill the other swatch thumbnails in the background
+    refreshSizeStrip();      // reflect this preview in the selected size chip
+    prewarmSizes();          // fill the other size chips for this ink in the background
+    if(!recoStarted){ recoStarted=true; recommendStyle(); }   // probe + badge the best style
+  }catch(e){ if(!background && !thumb){
+      const m=(e&&e.name==="AbortError") ? "This is taking longer than usual — please try again." : "Network error — please try again.";
+      // On a first render with no portrait yet, surface on the input screen
+      // (mirrors the server-error path) rather than an empty result frame.
+      if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; errInput.textContent=m; errInput.style.display="block"; }
+      else { errResult.textContent=m; errResult.style.display="block"; }
+      stopAssembly(); busy.classList.add("hide");
+    } }
+}
+/* Fill each swatch with a fast, coarse thumbnail of THIS portrait in that ink,
+   one at a time, without blocking the selected view. Tapping a swatch renders it
+   at full detail. A generation token drops the queue when the photo/words change. */
+const thumbStatus=$("#thumbStatus");
+function setThumbStatus(label){
+  if(!thumbStatus) return;
+  if(label){ thumbStatus.innerHTML=`<span class="dot"></span><span>Typortrait is rendering your <b>${label}</b> portrait — a second or two…</span>`; thumbStatus.classList.add("on"); }
+  else { thumbStatus.classList.remove("on"); thumbStatus.textContent=""; }
+}
+let prewarming=false, prewarmAgain=false;
+async function prewarm(){
+  // Don't run two passes at once -- but if a prewarm is requested WHILE one is
+  // running, flag a re-run instead of dropping it. That covers a style/variant
+  // switch mid-prewarm (e.g. the recommender adopting Sculpt after the Words
+  // render): the in-flight Words pass breaks on the gen bump, then the do-while
+  // runs again for the NEW swatch set so the Sculpt thumbnails actually fill.
+  if(prewarming){ prewarmAgain=true; return; }
+  prewarming=true;
+  do {
+    prewarmAgain=false;
+    const myGen=gen;
+    for(const [id, , label] of currentSwatches()){
+      if(gen!==myGen) break;
+      if(id===state.ink || cache[id] || thumbCache[id]){ updateThumb(id); continue; }
+      const pic=swatchEl.querySelector(`.pic[data-ink="${id}"]`); if(pic) pic.classList.add("loading");
+      setThumbStatus(label);
+      await render(id,{thumb:true});
+    }
+  } while(prewarmAgain);
+  setThumbStatus("");
+  prewarming=false;
+}
+
+/* ---------- before/after reveal slider ---------- */
+const compareEl=$("#compare"), cmpHandle=$("#cmpHandle"), beforeWrap=$("#beforeWrap"), beforeImg=$("#beforeImg");
+let cmpDragging=false;
+function setCmp(p){ p=Math.max(2,Math.min(98,p)); beforeWrap.style.clipPath=`inset(0 ${100-p}% 0 0)`; cmpHandle.style.left=p+"%"; }
+function cmpFromX(x){ const r=compareEl.getBoundingClientRect(); if(r.width) setCmp((x-r.left)/r.width*100); }
+cmpHandle.addEventListener("pointerdown", e=>{ cmpDragging=true; try{cmpHandle.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault(); });
+window.addEventListener("pointermove", e=>{ if(cmpDragging) cmpFromX(e.clientX); });
+window.addEventListener("pointerup", ()=>{ cmpDragging=false; });
+setCmp(50);
+
+/* ---------- swatch carousel arrows ---------- */
+$("#arrowL").addEventListener("click", ()=> swatchEl.scrollBy({left:-200,behavior:"smooth"}));
+$("#arrowR").addEventListener("click", ()=> swatchEl.scrollBy({left:200,behavior:"smooth"}));
+
+/* ---------- zoom / view up close ---------- */
+const zoomView=$("#zoomView"), zoomImg=$("#zoomImg"); let zScale=1;
+function applyZoom(){ zoomImg.style.width=(zScale*100)+"%"; zoomImg.style.cursor = zScale>=3 ? "zoom-out" : "zoom-in"; }
+$("#zoomBtn").addEventListener("click", ()=>{
+  const src=portrait.getAttribute("src"); if(!src) return;
+  zoomImg.src=src; zScale=1; applyZoom(); zoomView.classList.add("on"); zoomView.scrollTop=0;
+});
+zoomImg.addEventListener("click", e=>{ e.stopPropagation(); zScale = zScale>=3 ? 1 : zScale+1; applyZoom(); });
+function closeZoom(){ zoomView.classList.remove("on"); }
+$("#zoomClose").addEventListener("click", closeZoom);
+zoomView.addEventListener("click", e=>{ if(e.target===zoomView) closeZoom(); });
+window.addEventListener("keydown", e=>{ if(e.key==="Escape") closeZoom(); });
+
+/* ---------- share ---------- */
+const sharePanel=$("#sharePanel"), shareHint=$("#shareHint");
+const SHARE_TEXT="Someone I love, made from our words — with Typortrait.";
+// Use the native OS share sheet only on touch/mobile (where it surfaces real
+// apps like Instagram/TikTok). On desktop the OS sheet has no social targets,
+// so we show explicit web buttons instead.
+const IS_MOBILE = (window.matchMedia && matchMedia("(pointer:coarse)").matches)
+  || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");
+function shareUrl(){ return location.origin + "/p/" + (currentJob||""); }
+function previewAbs(){ const p=cache[state.ink] && cache[state.ink].preview; return p ? (location.origin+p) : ""; }
+async function nativeShareImage(){
+  const prev=cache[state.ink] && cache[state.ink].preview; if(!prev || !navigator.canShare) return false;
+  try{
+    const blob=await (await fetch(prev)).blob();
+    const file=new File([blob],"typortrait.png",{type:"image/png"});
+    if(navigator.canShare({files:[file]})){ await navigator.share({title:"Typortrait",text:SHARE_TEXT,url:shareUrl(),files:[file]}); return true; }
+  }catch(e){ if(e && e.name==="AbortError") return true; }
+  return false;
+}
+$("#shareBtn").addEventListener("click", async ()=>{
+  if(!currentJob) return;
+  if(IS_MOBILE && await nativeShareImage()) return;        // mobile: native app sheet
+  const open=!sharePanel.classList.contains("on");          // desktop: explicit social buttons
+  sharePanel.classList.toggle("on", open);
+  shareHint.style.display = open ? "block" : "none";
+  $("#shareNative").style.display = (open && navigator.canShare) ? "inline-block" : "none";
+});
+sharePanel.addEventListener("click", async e=>{
+  const b=e.target.closest("button[data-share]"); if(!b) return;
+  const url=shareUrl(), t=encodeURIComponent(SHARE_TEXT), u=encodeURIComponent(url);
+  const kind=b.dataset.share;
+  if(kind==="copy"){
+    try{ await navigator.clipboard.writeText(url); b.textContent="Copied!"; setTimeout(()=>b.textContent="Copy link",1500);}catch(_){ prompt("Copy this link:", url); }
+    return;
+  }
+  if(kind==="save"){
+    const p=cache[state.ink] && cache[state.ink].preview;
+    if(p){ const a=document.createElement("a"); a.href=p+"?dl=1"; a.download="typortrait.png"; document.body.appendChild(a); a.click(); a.remove(); }
+    return;
+  }
+  if(kind==="native"){ await nativeShareImage(); return; }
+  const map={
+    email:"mailto:?subject="+encodeURIComponent("A Typortrait for you")+"&body="+t+"%20"+u,
+    x:"https://twitter.com/intent/tweet?text="+t+"&url="+u,
+    facebook:"https://www.facebook.com/sharer/sharer.php?u="+u,
+    pinterest:"https://pinterest.com/pin/create/button/?url="+u+"&media="+encodeURIComponent(previewAbs())+"&description="+t
+  };
+  window.open(map[kind], "_blank", "noopener,width=600,height=560");
+});
+
+function friendly(code){ return ({no_words:"Add a few words first.",
+  unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",
+  could_not_decode_image:"We couldn't read that image — please try a JPG or PNG.",
+  displacement_needs_face:"The Sculpted style needs a clear, front-facing face — try another photo, or pick Words or Passage.",
+  file_too_large:"That photo is too large (max 25 MB). Try a smaller image or a screenshot.",
+  empty_upload:"Please add a photo."})[code]; }
+// Bound every render so a stuck request can't spin forever. Renders are a few
+// seconds; first-ever render may fetch face models, so the ceiling is generous.
+const RENDER_TIMEOUT_MS=90000;
+function fetchWithTimeout(url, opts, ms){
+  if(typeof AbortController==="undefined") return fetch(url, opts);   // very old browsers: no timeout
+  const ac=new AbortController(), t=setTimeout(()=>ac.abort(), ms);
+  return fetch(url, Object.assign({}, opts, {signal:ac.signal})).finally(()=>clearTimeout(t));
+}
+
+/* ---- Exit-intent: "save your portrait" capture ----------------------------
+   Fires once, only after a free preview exists (currentJob set) and the result
+   view is showing. Desktop: pointer leaves toward the top chrome. Mobile (no
+   mouseleave): back-button gesture, a fast upward swipe near the top, or a
+   30s lull. Offers to email a private /p/{job} link before the ~30-day auto
+   delete — saving the work, not discounting it. Shown at most once per device. */
+(function(){
+  const KEY="tp_save_shown";
+  const modal=$("#saveModal"), form=$("#saveForm"), emailEl=$("#saveEmail"),
+        submitEl=$("#saveSubmit"), fineEl=$("#saveFine");
+  let armed=false, shown=false, lastY=null, lastT=0, idleTimer=null;
+  function already(){ try{ return localStorage.getItem(KEY)==="1"; }catch(e){ return false; } }
+  function mark(){ try{ localStorage.setItem(KEY,"1"); }catch(e){} }
+  function resultShowing(){ return resultView && resultView.style.display!=="none"; }
+  function canShow(){ return armed && !shown && !!currentJob && !already() && resultShowing(); }
+  function openModal(){
+    if(!canShow()) return;
+    shown=true; mark();
+    $("#saveJob").value=currentJob;
+    modal.style.display="flex";
+    requestAnimationFrame(()=>modal.classList.add("on"));
+    if(!IS_MOBILE) setTimeout(()=>{ try{ emailEl.focus(); }catch(e){} },140);
+  }
+  function closeModal(){ modal.classList.remove("on"); setTimeout(()=>{ modal.style.display="none"; },200); }
+  function resetIdle(){
+    if(!armed || IS_MOBILE===false) return;
+    clearTimeout(idleTimer);
+    idleTimer=setTimeout(()=>{ if(canShow()) openModal(); }, 30000);
+  }
+  window.armExitIntent=function(){
+    if(armed || already()) { armed=true; return; }
+    armed=true;
+    // Desktop: pointer exits past the top edge of the viewport.
+    document.addEventListener("mouseleave", e=>{ if((e.clientY||0)<=0) openModal(); });
+    // Mobile back-button trap: park one extra history entry to catch the gesture.
+    try{ history.pushState({tp:1},""); }catch(e){}
+    window.addEventListener("popstate", ()=>{
+      if(canShow()){ openModal(); try{ history.pushState({tp:1},""); }catch(e){} }
+    });
+    // Mobile: a quick flick upward while near the top of the page.
+    window.addEventListener("scroll", ()=>{
+      const y=window.scrollY||0, t=Date.now();
+      if(lastY!==null && y<40 && (lastY-y)>26 && (t-lastT)<350) openModal();
+      lastY=y; lastT=t;
+    }, {passive:true});
+    // Mobile: a 30s lull on the result view.
+    if(IS_MOBILE){
+      ["touchstart","scroll","keydown","click"].forEach(ev=>
+        window.addEventListener(ev, resetIdle, {passive:true}));
+      resetIdle();
+    }
+  };
+  $("#saveClose").addEventListener("click", closeModal);
+  modal.addEventListener("click", e=>{ if(e.target===modal) closeModal(); });
+  window.addEventListener("keydown", e=>{ if(e.key==="Escape" && modal.style.display==="flex") closeModal(); });
+  form.addEventListener("submit", async e=>{
+    e.preventDefault();
+    const email=(emailEl.value||"").trim();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ emailEl.focus(); emailEl.style.borderColor="#c0392b"; return; }
+    emailEl.style.borderColor="";
+    submitEl.disabled=true; submitEl.textContent="Saving…";
+    try{
+      const fd=new FormData(); fd.append("email",email); fd.append("job",currentJob||"");
+      const r=await fetch("/save-link",{method:"POST",body:fd});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok && d.ok){
+        tp_track("save_capture");
+        modal.querySelector(".savecard").classList.add("saveok");
+        $("#saveTitle").textContent="Check your inbox.";
+        form.style.display="none";
+        fineEl.textContent = d.emailed
+          ? "We just emailed your private link. It opens your portrait anytime."
+          : "Saved. We’ll hold your portrait — your link is on its way.";
+        setTimeout(closeModal, 2600);
+      } else {
+        submitEl.disabled=false; submitEl.textContent="Save my portrait";
+        fineEl.textContent="Hmm, that didn’t go through. Try again in a moment.";
+      }
+    }catch(err){
+      submitEl.disabled=false; submitEl.textContent="Save my portrait";
+      fineEl.textContent="Network hiccup — please try again.";
+    }
+  });
+})();
+</script>
+</body>
+</html>
