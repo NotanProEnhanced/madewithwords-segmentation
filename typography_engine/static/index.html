@@ -910,8 +910,24 @@ function setFile(f){
     return;
   }
   errInput.style.display="none";
-  openCrop(f);                          // crop first (auto-framed on the face), then use the result
+  // Instant guard for absurdly large photos (e.g. a 200+ MP phone shot): a file can
+  // be small on disk yet huge in pixels, which the server can't process. Check the
+  // dimensions here for immediate, friendly feedback; the server enforces the same
+  // cap as a backstop. If we can't read the size, let the server decide.
+  var _u=URL.createObjectURL(f), _im=new Image();
+  _im.onload=function(){
+    var px=(_im.naturalWidth||0)*(_im.naturalHeight||0);
+    try{ URL.revokeObjectURL(_u); }catch(e){}
+    if(px > MAX_IMAGE_PIXELS){ inputErr(IMG_TOO_LARGE_MSG); return; }
+    openCrop(f);                        // crop first (auto-framed on the face), then use the result
+  };
+  _im.onerror=function(){ try{ URL.revokeObjectURL(_u); }catch(e){} openCrop(f); };
+  _im.src=_u;
 }
+// ~100 MP cap (mirrors the server's TYPO_MAX_IMAGE_MP default). One friendly,
+// actionable message shared by the client pre-check and the server-error mapping.
+var MAX_IMAGE_PIXELS = 100*1000*1000;
+var IMG_TOO_LARGE_MSG = "This photo is very large and can’t be processed. Please use a smaller copy — on a phone, take a screenshot of the photo and upload that; on a computer, resize or export it smaller, then add it again.";
 // The cropped image becomes the render source; from here the flow is as before.
 function useCroppedFile(f){
   if(previewImg.src && previewImg.src.indexOf("blob:")===0) URL.revokeObjectURL(previewImg.src);   // free the prior upload
@@ -1716,6 +1732,7 @@ function friendly(code){ return ({no_words:"Add a few words first.",
   could_not_decode_image:"We couldn't read that image — please try a JPG or PNG.",
   displacement_needs_face:"The Sculpted style needs a clear, front-facing face — try another photo, or pick Words or Passage.",
   file_too_large:"That photo is too large (max 25 MB). Try a smaller image or a screenshot.",
+  image_too_large:IMG_TOO_LARGE_MSG,
   empty_upload:"Please add a photo."})[code]; }
 // Bound every render so a stuck request can't spin forever. Renders are a few
 // seconds; first-ever render may fetch face models, so the ceiling is generous.

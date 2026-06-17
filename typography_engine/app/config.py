@@ -86,6 +86,15 @@ PORT = env_int("TYPO_PORT", 8077)
 # enforces the same limit as defense-in-depth.
 MAX_UPLOAD_BYTES = env_int("TYPO_MAX_UPLOAD_BYTES", 25 * 1024 * 1024)   # 25 MB
 
+# A file can be small on disk (heavily-compressed JPEG) yet enormous in pixels.
+# Decoding a 200+ megapixel photo costs hundreds of MB of RAM and trips Pillow's
+# decompression-bomb guard, whose raw error used to leak to users. We cap by
+# pixel count and reject oversize photos early with a friendly message. 100 MP
+# clears every mainstream phone (incl. 48/64 MP) and most high-res modes; only
+# 200 MP shots and big scans are asked to be resized.
+MAX_IMAGE_MP = env_int("TYPO_MAX_IMAGE_MP", 100)
+MAX_IMAGE_PIXELS = MAX_IMAGE_MP * 1_000_000
+
 # --- Analytics (Umami Cloud) ------------------------------------------------
 # Privacy-first, cookieless funnel analytics. The website ID is NOT secret (it
 # is exposed in the browser tracking script); it lives here only so the

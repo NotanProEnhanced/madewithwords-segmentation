@@ -35,6 +35,8 @@ from .config import (
     DOWNLOAD_PRICE_CENTS,
     GEO_COUNTRY_HEADER,
     GEO_REGION_HEADER,
+    MAX_IMAGE_MP,
+    MAX_IMAGE_PIXELS,
     MAX_UPLOAD_BYTES,
     OUTPUTS_DIR,
     PREVIEW_PNG_WIDTH,
@@ -345,6 +347,23 @@ def _recommended_size_mf(face_frac):
     return 57.0 if 57.0 in allowed else allowed[0]   # Large (always offered)
 
 
+def _image_too_large(data: bytes) -> bool:
+    """True if the upload's pixel count exceeds MAX_IMAGE_PIXELS. We read only the
+    header dimensions (no pixel decode), so this is cheap and -- crucially -- runs
+    BEFORE any OpenCV/Pillow decode, so a 200+ MP photo is rejected with a friendly
+    message instead of tripping Pillow's decompression-bomb guard (whose raw error
+    used to leak to users) or ballooning the worker's memory. Fails OPEN (returns
+    False) if dimensions can't be read -- the byte-size cap is the backstop."""
+    try:
+        from io import BytesIO
+        from PIL import Image
+        with Image.open(BytesIO(data)) as im:
+            w, h = im.size
+        return bool(int(w) * int(h) > MAX_IMAGE_PIXELS)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _apply_crop(data: bytes, crop: Optional[str]) -> bytes:
     """Crop image bytes to a rectangle given as four comma-separated fractions
     'x,y,w,h' (of the whole image), re-encoded as PNG. Returns the original bytes
@@ -479,6 +498,9 @@ async def measure(request: Request, image: UploadFile = File(...), crop: Optiona
         return JSONResponse({"ok": False, "error": "empty_upload"}, status_code=400)
     if len(data) > MAX_UPLOAD_BYTES:
         return JSONResponse({"ok": False, "error": "file_too_large"}, status_code=413)
+    # Surface the too-large case at upload (not after Create) so the user learns early.
+    if _image_too_large(data):
+        return JSONResponse({"ok": False, "error": "image_too_large"}, status_code=413)
     data = _apply_crop(data, crop)         # size-gate on the cropped framing when a crop is set
     warns = WarningCollector()
     try:
@@ -599,6 +621,16 @@ async def render(
         return JSONResponse(
             {"ok": False, "error": "file_too_large",
              "detail": "That image is too large — please use one under 25 MB."},
+            status_code=413,
+        )
+    # Reject extreme pixel counts BEFORE any decode (a small file can still be a
+    # 200+ MP photo). Friendly message; the frontend maps the code too.
+    if _image_too_large(img_bytes):
+        return JSONResponse(
+            {"ok": False, "error": "image_too_large",
+             "detail": (f"This photo is very large (over {MAX_IMAGE_MP} megapixels) and can’t be "
+                        "processed. Please use a smaller copy — on a phone, take a screenshot of "
+                        "the photo and upload that; on a computer, resize or export it smaller.")},
             status_code=413,
         )
     # Crop to the studio's framing BEFORE anything else, so the stored source and
