@@ -219,42 +219,42 @@
   .chip button{background:none;border:none;color:var(--muted);font-size:15px;line-height:1;
     padding:0;margin:0;cursor:pointer}
   .chip button:hover{color:var(--heart,#c85b57)}
-  /* Guided step-wise onboarding (memorial brand only). Everything is scoped to
-     body.lw-guided; the generic studio never gets these nodes or classes, so its
-     single-card flow is provably unchanged. */
-  body.lw-guided #input{background:none;box-shadow:none;border:none;padding:0;border-radius:0;margin-top:14px}
-  body.lw-guided .gstep{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
+  /* Guided step-wise onboarding. STRUCTURAL styles are scoped to body.guided so
+     they apply to ANY guided flow (memorial always, generic via ?flow=guided);
+     memorial-only extras (calmer result, below) stay on body.lw-guided. The
+     classic single-card studio gets neither, so it's provably unchanged. */
+  body.guided #input{background:none;box-shadow:none;border:none;padding:0;border-radius:0;margin-top:14px}
+  body.guided .gstep{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
     margin-bottom:16px;overflow:hidden;transition:opacity .28s ease, transform .28s ease}
-  body.lw-guided .gstep.locked{opacity:.3;transform:scale(.99);pointer-events:none}
-  body.lw-guided .gstep-head{display:flex;align-items:center;gap:14px;width:100%;text-align:left;
+  body.guided .gstep.locked{opacity:.3;transform:scale(.99);pointer-events:none}
+  body.guided .gstep-head{display:flex;align-items:center;gap:14px;width:100%;text-align:left;
     background:none;border:0;cursor:pointer;padding:22px 26px;font-family:var(--sans)}
-  body.lw-guided .gstep-num{flex:none;width:30px;height:30px;border-radius:50%;background:var(--soft);
+  body.guided .gstep-num{flex:none;width:30px;height:30px;border-radius:50%;background:var(--soft);
     color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:650}
-  body.lw-guided .gstep.open .gstep-num{background:var(--navy);color:#fff}
-  body.lw-guided .gstep.done .gstep-num{background:var(--navy);color:#fff;font-size:0}
-  body.lw-guided .gstep.done .gstep-num::after{content:"\2713";font-size:14px}
-  body.lw-guided .gstep-tt{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
-  body.lw-guided .gstep-title{font-size:18px;font-weight:650;letter-spacing:-.02em;color:var(--ink)}
-  body.lw-guided .gstep-sub{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  body.lw-guided .gstep-chev{flex:none;color:var(--muted);font-size:22px;line-height:1;transition:transform .2s ease}
-  body.lw-guided .gstep.open .gstep-chev{transform:rotate(90deg)}
-  body.lw-guided .gstep-body{padding:0 26px 26px}
-  body.lw-guided .gstep:not(.open) .gstep-body{display:none}
-  body.lw-guided .story-step{background:none;padding:0;margin:0}
-  body.lw-guided .story-h{display:none}   /* the step header already titles this card */
+  body.guided .gstep.open .gstep-num{background:var(--navy);color:#fff}
+  body.guided .gstep.done .gstep-num{background:var(--navy);color:#fff;font-size:0}
+  body.guided .gstep.done .gstep-num::after{content:"\2713";font-size:14px}
+  body.guided .gstep-tt{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+  body.guided .gstep-title{font-size:18px;font-weight:650;letter-spacing:-.02em;color:var(--ink)}
+  body.guided .gstep-sub{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  body.guided .gstep-chev{flex:none;color:var(--muted);font-size:22px;line-height:1;transition:transform .2s ease}
+  body.guided .gstep.open .gstep-chev{transform:rotate(90deg)}
+  body.guided .gstep-body{padding:0 26px 26px}
+  body.guided .gstep:not(.open) .gstep-body{display:none}
+  body.guided .story-step{background:none;padding:0;margin:0}
+  body.guided .story-h{display:none}   /* the step header already titles this card */
   /* One consistent input style across the guided flow: the photo drop box (was
-     dashed) and the story + words boxes (were border-transparent-until-focus) now
-     share a soft, always-visible outline + fill. Text boxes still deepen to navy
-     on focus. */
-  body.lw-guided .drop{border:1px solid var(--line);background:var(--soft);margin-top:18px}
-  body.lw-guided textarea,
-  body.lw-guided input[type=text]{border-color:var(--line)}
-  body.lw-guided .story-step textarea{background:var(--soft)}
+     dashed) and the words box (was border-transparent-until-focus) now share a
+     soft, always-visible outline + fill. Text boxes still deepen to navy on focus. */
+  body.guided .drop{border:1px solid var(--line);background:var(--soft);margin-top:18px}
+  body.guided textarea,
+  body.guided input[type=text]{border-color:var(--line)}
+  body.guided .story-step textarea{background:var(--soft)}
   /* Keep the focus highlight winning over the resting-border overrides above
      (equal specificity, so these must come after). */
-  body.lw-guided textarea:focus,
-  body.lw-guided input:focus{border-color:var(--navy);background:#fff}
-  body.lw-guided .gstep-continue{margin-top:18px;width:100%}
+  body.guided textarea:focus,
+  body.guided input:focus{border-color:var(--navy);background:#fff}
+  body.guided .gstep-continue{margin-top:18px;width:100%}
   /* Calmer result screen for the memorial brand: more breathing room, a gentler
      width, softer controls, the portrait + primary action given presence. Purely
      presentational -- no controls hidden, nothing rewired. */
@@ -1888,7 +1888,11 @@ function fetchWithTimeout(url, opts, ms){
    enters this path; if anything is unexpected we bail and keep the flat flow. */
 (function initGuided(){
   try{
-    if(typeof BRAND_ID==="undefined" || BRAND_ID!=="lovedinwords") return;
+    if(typeof BRAND_ID==="undefined") return;
+    const MEM=(BRAND_ID==="lovedinwords");
+    // Memorial is always guided; the GENERIC studio opts in with ?flow=guided, so
+    // the step flow can be A/B'd before it becomes the default for everyone.
+    if(!MEM && (new URLSearchParams(location.search).get("flow")||"")!=="guided") return;
     const input=document.getElementById("input"); if(!input) return;
     const g=id=>document.getElementById(id);
     const elDrop=g("drop"), elPrev=g("preview"), elNote=g("photoNote"),
@@ -1899,7 +1903,8 @@ function fetchWithTimeout(url, opts, ms){
           elConsent=g("consentRow"), elCreate=g("create"), elFree=g("freenote"), elErr=g("errInput");
     if(!elDrop||!elWords||!elCreate||!elSuggest){ return; }   // markup changed -> keep flat flow
 
-    document.body.classList.add("lw-guided");
+    document.body.classList.add("guided");              // structural step styling (any guided flow)
+    if(MEM) document.body.classList.add("lw-guided");   // memorial-only extras (calmer result screen)
     // Crop modal + hidden file input float free of the accordion so a collapsed
     // step never hides them (both are fixed/hidden; position in DOM is irrelevant).
     if(elCrop) document.body.appendChild(elCrop);
@@ -1929,7 +1934,9 @@ function fetchWithTimeout(url, opts, ms){
     if(_wl) _wl.style.display="none";
     if(_wh) _wh.style.display="none";
     const _help=document.createElement("div"); _help.className="story-p";
-    _help.textContent="A few words, separated by commas — their name, who they were, the qualities you loved. Not sure where to start? Paste an obituary or a tribute and tap Suggest words to pull them out.";
+    _help.textContent = MEM
+      ? "A few words, separated by commas — their name, who they were, the qualities you loved. Not sure where to start? Paste an obituary or a tribute and tap Suggest words to pull them out."
+      : "A few words, separated by commas — their name, traits, a date, an inside joke. Not sure where to start? Paste a few sentences about them and tap Suggest words to pull them out.";
     S[2].b.append.apply(S[2].b, [_help, elWords, elSuggest, elStoryMsg, elToggle, elSize].filter(Boolean));
     if(elStory && elStory.parentNode) elStory.parentNode.removeChild(elStory);   // drop the now-unused story-box container
     S[3].b.append(elConsent, elCreate, elFree);
@@ -1949,7 +1956,7 @@ function fetchWithTimeout(url, opts, ms){
     function summarize(){
       S[1].sub.textContent = state.file ? "Photo chosen" : "A clear photo you love — older family photos are welcome.";
       const wv=wordsVal();
-      S[2].sub.textContent = wv ? (wv.length>42 ? wv.slice(0,42)+"…" : wv) : "Their name, roles, the qualities you loved";
+      S[2].sub.textContent = wv ? (wv.length>42 ? wv.slice(0,42)+"…" : wv) : (MEM ? "Their name, roles, the qualities you loved" : "Their name, traits, a date, an inside joke");
       S[3].sub.textContent = "Free preview — no payment until you love it";
     }
     function paint(){
