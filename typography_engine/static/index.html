@@ -667,11 +667,13 @@ const SCULPT_INKS=INKS.filter(s=>s[0]!=="spectrum" && s[0]!=="aurora");
 // the full palette.
 const MEMORIAL_INK_IDS=["photo","mono","sepia","navy","forest"];
 const MEMORIAL_INKS=MEMORIAL_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
+// Generic studio: a tight curated palette (Original + Noir/Sepia/Navy) + the
+// Custom picker (added in buildSwatches). The full nine-swatch list, incl. the
+// loud gradients, was more than needed now that Custom covers any colour.
+const GENERIC_INK_IDS=["photo","mono","sepia","navy"];
+const GENERIC_INKS=GENERIC_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
 const _isLovedBrand=(typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords");
-function currentSwatches(){
-  if(_isLovedBrand) return MEMORIAL_INKS;                 // curated calm palette, all styles
-  return state.style==="displacement" ? SCULPT_INKS : INKS;
-}
+function currentSwatches(){ return _isLovedBrand ? MEMORIAL_INKS : GENERIC_INKS; }   // + Custom chip (buildSwatches)
 function variantPost(id){ return state.style==="displacement"
   ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
   : {ink:id, style:state.style, ground:"navy"}; }
@@ -1149,7 +1151,13 @@ async function renderSizeThumb(mf){
   }catch(e){}
 }
 let prewarmingSizes=false;
+// Lazy thumbnails: don't eagerly pre-render swatch/size thumbnails on the result
+// screen (a burst of background renders through the single render slot). They
+// render on demand when the user taps a swatch/size. Set false to restore eager
+// prewarming.
+const LAZY_THUMBS = true;
 async function prewarmSizes(){
+  if(LAZY_THUMBS) return;
   if(prewarmingSizes || resultView.style.display!=="block" || state.style==="displacement" || state.style==="message") return;
   prewarmingSizes=true;
   const myGen=gen;
@@ -1701,6 +1709,7 @@ function setThumbStatus(label){
 }
 let prewarming=false, prewarmAgain=false;
 async function prewarm(){
+  if(LAZY_THUMBS) return;                 // thumbnails render on tap, not eagerly
   // Don't run two passes at once -- but if a prewarm is requested WHILE one is
   // running, flag a re-run instead of dropping it. That covers a style/variant
   // switch mid-prewarm (e.g. the recommender adopting Sculpt after the Words
