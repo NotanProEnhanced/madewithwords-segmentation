@@ -135,11 +135,11 @@ footer .by{display:block; margin-top:8px; font-size:12px; color:var(--muted); op
     <div class="eyebrow">The gallery</div>
     <h1>A portrait of a life, in the words that describe them.</h1>
     <p class="sub">Every remembrance below is composed entirely of the words a family would choose — a name, the roles they filled, the way they were loved. Drag to see the change, and tap any portrait to read the words up close.</p>
-    <div class="ba" id="ba" aria-label="Drag to compare the photograph and the portrait made from words">
-      <img class="ba-after" src="portrait.png" alt="A portrait made from the words that describe her" />
-      <div class="ba-before" id="baBefore"><img src="before.jpg" alt="The original photograph" /></div>
-      <div class="ba-line" id="baLine"></div>
-      <div class="ba-grip" id="baGrip">&#8596;</div>
+    <div class="ba" aria-label="Drag to compare the photograph and the portrait made from words">
+      <img class="ba-after" src="grace-after.png" alt="A portrait of a grandmother made from the words that describe her" />
+      <div class="ba-before"><img src="grace-before.jpg" alt="The original photograph" /></div>
+      <div class="ba-line"></div>
+      <div class="ba-grip">&#8596;</div>
       <span class="ba-tag l">their photo</span>
       <span class="ba-tag r">in their words</span>
     </div>
@@ -150,10 +150,24 @@ footer .by{display:block; margin-top:8px; font-size:12px; color:var(--muted); op
     <h2>A few remembrances</h2>
     <p class="lede">Up close you read the words that tell their story; from across the room, you see them. Tap any portrait to look closely.</p>
     <div class="gallery">
-      <figure class="gcard"><img src="example-1.jpg" loading="lazy" alt="A memorial word-portrait of a grandmother, formed from words like mama, grandma, faithful and kind" /><figcaption>Mama, Grandma, Faithful, Patient — the words that were her.</figcaption></figure>
-      <figure class="gcard"><img src="example-2.jpg" loading="lazy" alt="A memorial word-portrait of a mother, formed from words like mother, grace, devoted and faith" /><figcaption>Mother, Grace, Devoted, Faith — woven into her likeness.</figcaption></figure>
-      <figure class="gcard"><img src="example-3.jpg" loading="lazy" alt="A memorial word-portrait of a man, formed from words like father, grandpa, mentor and wise" /><figcaption>Father, Grandpa, Mentor, Wise — every word that was him.</figcaption></figure>
-      <figure class="gcard"><img src="portrait.png" loading="lazy" alt="A memorial word-portrait shown up close so the words are legible" /><figcaption>Her name, her dates, a line you'd keep — read them up close.</figcaption></figure>
+      <figure class="gcard"><img src="grace-after.png" loading="lazy" alt="A memorial word-portrait of a grandmother, formed from words like mother, grandmother, grace, kind and faithful" /><figcaption>Mother, Grandmother, Faithful, Kind — the words that were her.</figcaption></figure>
+      <figure class="gcard"><img src="ruth-after.png" loading="lazy" alt="A sculpted memorial portrait of a grandmother, her likeness drawn from words like nana, joyful, devoted and tender" /><figcaption>Mom, Nana, Devoted, Tender — her likeness, in her words.</figcaption></figure>
+      <figure class="gcard"><img src="james-after.png" loading="lazy" alt="A memorial portrait of a father formed from a written tribute to him" /><figcaption>A father's tribute, shaped gently into his likeness.</figcaption></figure>
+      <figure class="gcard"><img src="robert-after.png" loading="lazy" alt="A memorial word-portrait of a father, formed from words like father, grandpa, mentor and wise" /><figcaption>Father, Grandpa, Mentor, Wise — every word that was him.</figcaption></figure>
+      <figure class="gcard"><img src="eleanor-after.png" loading="lazy" alt="A memorial word-portrait of a mother, formed from words like mother, grandmother, grace, faith and tender" /><figcaption>Mother, Grace, Faith, Tender — woven into her likeness.</figcaption></figure>
+    </div>
+  </section>
+
+  <section style="padding-top:8px">
+    <h2>And another, in his words</h2>
+    <p class="lede">A father, a grandfather — his face drawn from the words his family chose. Drag to see the change.</p>
+    <div class="ba" aria-label="Drag to compare the photograph and the portrait made from words">
+      <img class="ba-after" src="robert-after.png" alt="A portrait of a father made from the words that describe him" />
+      <div class="ba-before"><img src="robert-before.jpg" alt="The original photograph" /></div>
+      <div class="ba-line"></div>
+      <div class="ba-grip">&#8596;</div>
+      <span class="ba-tag l">his photo</span>
+      <span class="ba-tag r">in his words</span>
     </div>
   </section>
 
@@ -214,29 +228,32 @@ footer .by{display:block; margin-top:8px; font-size:12px; color:var(--muted); op
 
 <div class="zoomview" id="zoomView">
   <button class="zoomclose" id="zoomClose" aria-label="Close">&times;</button>
-  <img id="zoomImg" src="portrait.png" alt="A memorial portrait up close — made from the words that describe them" />
+  <img id="zoomImg" src="grace-after.png" alt="A memorial portrait up close — made from the words that describe them" />
 </div>
 
 <script>
-/* Before / after drag-to-compare. */
+/* Before / after drag-to-compare — initialise every .ba slider on the page. */
 (function(){
-  var ba=document.getElementById('ba'); if(!ba) return;
-  var before=document.getElementById('baBefore'), line=document.getElementById('baLine'), grip=document.getElementById('baGrip');
-  function set(pct){ pct=Math.max(6,Math.min(94,pct)); before.style.width=pct+'%'; line.style.left=pct+'%'; grip.style.left=pct+'%'; }
-  function at(e){ var r=ba.getBoundingClientRect(); var cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left; set(cx/r.width*100); }
-  var on=false;
-  ba.addEventListener('pointerdown', function(e){ on=true; try{ba.setPointerCapture(e.pointerId);}catch(_){} at(e); });
-  ba.addEventListener('pointermove', function(e){ if(on) at(e); });
-  window.addEventListener('pointerup', function(){ on=false; });
-  set(45);   // lead with the finished portrait
+  document.querySelectorAll('.ba').forEach(function(ba){
+    var before=ba.querySelector('.ba-before'), line=ba.querySelector('.ba-line'), grip=ba.querySelector('.ba-grip');
+    if(!before||!line||!grip) return;
+    function set(pct){ pct=Math.max(6,Math.min(94,pct)); before.style.width=pct+'%'; line.style.left=pct+'%'; grip.style.left=pct+'%'; }
+    function at(e){ var r=ba.getBoundingClientRect(); var cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left; set(cx/r.width*100); }
+    var on=false;
+    ba.addEventListener('pointerdown', function(e){ on=true; try{ba.setPointerCapture(e.pointerId);}catch(_){} at(e); });
+    ba.addEventListener('pointermove', function(e){ if(on) at(e); });
+    window.addEventListener('pointerup', function(){ on=false; });
+    set(45);   // lead with the finished portrait
+  });
 })();
-/* Lightbox — tap any portrait (gallery, the scene, or the after image) to read the words up close. */
+/* Lightbox — tap any portrait in the grid or the scene to read the words up close.
+   (The sliders stay drag-only so a drag never opens the lightbox.) */
 (function(){
   var z=document.getElementById('zoomView'), zi=document.getElementById('zoomImg'), cls=document.getElementById('zoomClose');
   if(!z||!zi) return;
   function open(src, alt){ zi.src=src; if(alt) zi.alt=alt; z.classList.add('on'); document.body.style.overflow='hidden'; }
   function close(){ z.classList.remove('on'); document.body.style.overflow=''; }
-  document.querySelectorAll('.gcard img, .kept img, .ba .ba-after').forEach(function(img){
+  document.querySelectorAll('.gcard img, .kept img').forEach(function(img){
     img.style.cursor='zoom-in';
     img.addEventListener('click', function(e){ e.stopPropagation(); open(img.getAttribute('src'), img.getAttribute('alt')); });
   });

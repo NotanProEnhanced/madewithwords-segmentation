@@ -19,6 +19,11 @@ marketing/reel.mp4
 /Margot-Source.JPG
 /marketing/index-org.html
 
+# lovedinwords gallery: raw source photos + working renders. The deployed picks
+# ({name}-before.jpg / {name}-after.png) ARE committed; these working dirs are not.
+marketing/lovedinwords/_src/
+marketing/lovedinwords/_gallery/
+
 # Local timestamped backups — git history is the real backup
 *.bak
 *.bak-*
