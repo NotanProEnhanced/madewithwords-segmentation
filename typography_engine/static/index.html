@@ -51,6 +51,8 @@
   .preview{position:relative;border-radius:16px;overflow:hidden;display:none}
   .preview img{width:100%;display:block}
   .preview .change{position:absolute;right:10px;bottom:10px;background:rgba(255,255,255,.92);border:none;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.15)}
+  .preview .change.adjust{left:10px;right:auto}
+  .preview .change.toggle{top:10px;bottom:auto;right:10px}
 
   label.field{display:block;margin-top:18px}
   .field .lbl{font-weight:600;font-size:15px}
@@ -397,7 +399,7 @@
       <div class="ico">Photo</div><div class="big">Add a photo</div>
       <div class="small">A clear head-and-shoulders shot works best. Tap to choose or take one.</div>
     </div>
-    <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="changePhoto" class="change">Change photo</button></div>
+    <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="origToggle" class="change toggle" type="button" style="display:none">See full photo</button><button id="adjustCrop" class="change adjust" type="button" style="display:none">Adjust crop</button><button id="changePhoto" class="change">Change photo</button></div>
     <div id="photoNote" class="photo-note" style="display:none"></div>
     <!-- Biometric consent: a short, tick-at-a-glance summary with the full legal
          notice tucked behind a disclosure, so it doesn't dominate the step. The
@@ -824,13 +826,25 @@ const cropModal=$("#cropModal"), cropStage=$("#cropStage"), cropImg=$("#cropImg"
       cropBox=$("#cropBox"), cropApplyBtn=$("#cropApply"), cropCancelBtn=$("#cropCancel");
 const CROP_AR=0.8;                      // width/height = 4:5, matching the print canvas
 let cropPending=null, cropRect={x:0,y:0,w:0,h:0}, stageW=0, stageH=0, cropDrag=null;
-function openCrop(f){
-  cropPending=f; state.crop=null; sourcePreview=null;   // new photo -> no crop, no stale "before"
+let cropReopen=false, _origUrl=null, _cropUrl=null, _showingOrig=false;   // re-crop + cropped/original toggle
+// `restore` (a stored crop string) reopens the cropper on the SAME photo with the
+// previous box -- so the user can readjust without re-uploading. A brand-new photo
+// (no restore) resets the crop and auto-frames on the face.
+function openCrop(f, restore){
+  cropPending=f; cropReopen=!!restore;
+  if(!restore){ state.crop=null; sourcePreview=null; }   // new photo -> no crop, no stale "before"
   const url=URL.createObjectURL(f);
-  cropImg.onload=()=>{ URL.revokeObjectURL(url); layoutStage(); initCropBox(null);
-    cropModal.classList.add("on"); cropModal.setAttribute("aria-hidden","false"); measureFaceBox(f); };
+  cropImg.onload=()=>{ URL.revokeObjectURL(url); layoutStage();
+    if(restore){ initCropBoxFromCrop(restore); } else { initCropBox(null); measureFaceBox(f); }
+    cropModal.classList.add("on"); cropModal.setAttribute("aria-hidden","false"); };
   cropImg.onerror=()=>{ URL.revokeObjectURL(url); useCroppedFile(f); };   // can't preview (e.g. HEIC) -> skip crop, let the server decode
   cropImg.src=url;
+}
+// Restore a saved crop ("x,y,w,h" fractions of the image) into the stage box.
+function initCropBoxFromCrop(cropStr){
+  const p=(""+cropStr).split(",").map(Number);
+  if(p.length<4 || p.some(v=>isNaN(v))){ initCropBox(null); return; }
+  cropRect={x:p[0]*stageW, y:p[1]*stageH, w:p[2]*stageW, h:p[3]*stageH}; clampRect(); drawBox();
 }
 function layoutStage(){
   const natW=cropImg.naturalWidth||1, natH=cropImg.naturalHeight||1;
@@ -894,8 +908,11 @@ window.addEventListener("pointermove", e=>{
 function cropEnd(e){ if(cropDrag && e.pointerId===cropDrag.id) cropDrag=null; }
 window.addEventListener("pointerup", cropEnd);
 window.addEventListener("pointercancel", cropEnd);
-cropCancelBtn.addEventListener("click", ()=>{ cropModal.classList.remove("on"); cropImg.src=""; cropPending=null;
-  fileInput.value=""; fileInput.click(); });
+cropCancelBtn.addEventListener("click", ()=>{
+  cropModal.classList.remove("on"); cropImg.onload=cropImg.onerror=null; cropImg.src="";
+  if(cropReopen){ cropReopen=false; return; }      // re-crop cancelled -> keep the existing crop + preview
+  cropPending=null; fileInput.value=""; fileInput.click();   // new-photo cancel -> pick a different photo
+});
 cropApplyBtn.addEventListener("click", ()=>{
   if(!cropPending){ cropModal.classList.remove("on"); return; }
   const original=cropPending, img=cropImg, rect={x:cropRect.x,y:cropRect.y,w:cropRect.w,h:cropRect.h}, sw=stageW, sh=stageH;
@@ -916,13 +933,29 @@ cropApplyBtn.addEventListener("click", ()=>{
     const durl=cv.toDataURL("image/jpeg", 0.9);
     if(durl && durl.length>64) previewUrl=durl;
   }catch(e){}
-  img.src="";
+  img.onload=img.onerror=null; img.src="";   // clear handlers first: blanking src fires a stale onerror -> useCroppedFile, which would clobber the cropped preview
   if(previewImg.src && previewImg.src.indexOf("blob:")===0) URL.revokeObjectURL(previewImg.src);
-  state.file=original; previewImg.src=previewUrl || URL.createObjectURL(original);
+  if(_origUrl){ try{ URL.revokeObjectURL(_origUrl); }catch(e){} }
+  state.file=original;
+  _cropUrl=previewUrl||null;                 // the 4:5 cropped thumbnail
+  _origUrl=URL.createObjectURL(original);     // the full, uncropped source (for the toggle)
+  _showingOrig=false;
+  previewImg.src=_cropUrl || _origUrl;        // container shows the cropped result
+  updatePhotoControls();                      // reveal "Adjust crop" + "See full photo"
   preview.style.display="block"; drop.style.display="none"; setPhotoNote("");
+  if(cropReopen){ invalidate(); }             // re-crop -> drop stale renders so the next Create uses the new crop
+  cropReopen=false;
   refreshCreate(); tp_track("photo_selected");
   measureSubject(original);
 });
+// Show/hide the cropped-preview controls; only meaningful once a crop exists.
+function updatePhotoControls(){
+  const adj=document.getElementById("adjustCrop"), tog=document.getElementById("origToggle");
+  const canAdjust=!!(state.file && state.crop);          // re-crop only needs the source + a saved crop
+  const canToggle=!!(_cropUrl && _origUrl && state.crop); // switching needs both a cropped and a full image
+  if(adj) adj.style.display = canAdjust ? "" : "none";
+  if(tog){ tog.style.display = canToggle ? "" : "none"; tog.textContent = _showingOrig ? "See cropped" : "See full photo"; }
+}
 
 // Options now live on the result screen: toggling re-renders the current ink
 // (and re-warms the swatch thumbnails) so the change is immediate.
@@ -939,6 +972,14 @@ if(caseSeg){ caseSeg.addEventListener("click", e=>{
 }); }
 drop.addEventListener("click", ()=>{ if(!bioOK()){ nudgeBio(); return; } fileInput.click(); });
 $("#changePhoto").addEventListener("click", e=>{e.stopPropagation();fileInput.click();});
+// Re-crop the SAME photo: reopen the cropper with the previous box restored.
+$("#adjustCrop").addEventListener("click", e=>{ e.stopPropagation(); if(state.file && state.crop) openCrop(state.file, state.crop); });
+// Switch the container between the cropped result and the full source.
+$("#origToggle").addEventListener("click", e=>{ e.stopPropagation();
+  _showingOrig=!_showingOrig;
+  previewImg.src = _showingOrig ? (_origUrl||_cropUrl) : (_cropUrl||_origUrl);
+  updatePhotoControls();
+});
 ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
 ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));
 drop.addEventListener("drop", e=>{ if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
@@ -1000,6 +1041,7 @@ var IMG_TOO_LARGE_MSG = "This photo is very large and can’t be processed. Plea
 function useCroppedFile(f){
   if(previewImg.src && previewImg.src.indexOf("blob:")===0) URL.revokeObjectURL(previewImg.src);   // free the prior upload
   state.file=f; state.maskData=null; previewImg.src=URL.createObjectURL(f);   // new photo -> drop any prior manual mask
+  _cropUrl=null; _showingOrig=false; updatePhotoControls();   // no crop applied -> hide the crop controls
   preview.style.display="block"; drop.style.display="none"; setPhotoNote("");
   refreshCreate(); tp_track("photo_selected");
   measureSubject(f);
