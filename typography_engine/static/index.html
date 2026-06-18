@@ -339,6 +339,11 @@
   .bg-tools .btn.secondary{padding:6px 12px;font-size:13px}
   .zoomlink{display:block;margin:12px auto 0;background:none;border:none;color:var(--navy);font-size:14px;
     font-weight:600;cursor:pointer;font-family:var(--sans)}
+  /* Quiet, contextual "fix the cutout" link under the portrait — only the few who
+     need it go looking; it must not compete with the Download CTA. */
+  .touchup-link{display:block;margin:8px auto 0;background:none;border:none;color:var(--muted);
+    font-size:13px;cursor:pointer;font-family:var(--sans);text-decoration:underline;text-underline-offset:2px}
+  .touchup-link:hover{color:var(--navy)}
   .zoomview{position:fixed;inset:0;background:rgba(8,8,10,.95);z-index:50;display:none;overflow:auto;-webkit-overflow-scrolling:touch}
   .zoomview.on{display:block}
   #zoomImg{display:block;margin:0 auto;width:100%;cursor:zoom-in}
@@ -482,6 +487,7 @@
       <div class="compose-bar"></div>
     </div>
     <button type="button" id="zoomBtn" class="zoomlink">&#128269; View up close</button>
+    <button type="button" id="bgTouchup" class="touchup-link" style="display:none">Edges not perfect? Touch up the background</button>
     <div class="result-card" id="makeYours">
     <div class="result-card-h">Make it yours</div>
     <div class="ctl" id="styleGallery" style="margin-top:6px">
@@ -530,7 +536,6 @@
       </div>
     </div>
     </div><!-- /.result-card #makeYours -->
-    <button id="bgTouchup" class="btn secondary" type="button" style="display:none">Touch up background</button>
     <div class="actions"><button id="buy" class="btn">Download</button></div>
     <button id="shareBtn" class="btn secondary" type="button">Share</button>
     <div id="sharePanel" class="sharepanel">
