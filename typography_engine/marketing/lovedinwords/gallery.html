@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The gallery — remembrances made from the words that describe them · Loved in Words</title>
+<meta name="description" content="A gallery of memorial portraits, each composed entirely of a family's own words — a name, the dates, the way they were loved. Drag to see the change; tap any portrait to read the words up close. Free to create and preview; archival prints and high-resolution downloads." />
+<link rel="canonical" href="https://lovedinwords.com/gallery.html" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="The gallery — a portrait of a life, in the words that describe them" />
+<meta property="og:description" content="Memorial portraits made from a photo and the words that captured who they were. Drag to compare; tap to read the words up close." />
+<meta property="og:image" content="https://lovedinwords.com/scene.jpg" />
+<meta property="og:url" content="https://lovedinwords.com/gallery.html" />
+<meta name="twitter:card" content="summary_large_image" />
+<style>
+/* Self-hosted Inter — matches the Loved in Words homepage + studio skin. */
+@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;src:url('InterVariable.woff2') format('woff2')}
+:root{
+  --navy:#42525f; --ink:#2f3742; --paper:#f4efe8; --card:#fffdf9;
+  --muted:#776f64; --line:#e7e0d5;
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --shadow:0 18px 50px rgba(60,55,45,.10);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--sans); line-height:1.6; letter-spacing:-.011em;
+  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+}
+.wrap{max-width:860px; margin:0 auto; padding:0 22px}
+a{color:var(--navy)}
+
+/* Brand strip + back link */
+.brandbar{display:flex; align-items:center; justify-content:space-between; gap:14px;
+  padding:24px 0 6px; color:var(--muted); font-size:13px}
+.brandbar .b{font-weight:800; color:var(--navy); letter-spacing:-.02em; font-size:18px; text-decoration:none}
+.brandbar .home{color:var(--muted); text-decoration:none; font-size:13.5px}
+.brandbar .home:hover{color:var(--navy)}
+
+/* Hero */
+.hero{text-align:center; padding:30px 0 8px}
+.hero .eyebrow{color:var(--muted); font-size:13px; letter-spacing:.14em; text-transform:uppercase; margin-bottom:16px}
+.hero h1{font-weight:800; letter-spacing:-.035em; font-size:clamp(28px,5.4vw,42px);
+  line-height:1.1; color:var(--navy); margin:0 auto 16px; max-width:18ch}
+.hero p.sub{color:var(--ink); font-size:clamp(16px,2.4vw,19px); max-width:52ch; margin:0 auto 4px}
+
+/* Before / after — calm, leads with the finished portrait. */
+.ba{position:relative; width:100%; max-width:480px; border-radius:18px; overflow:hidden;
+  box-shadow:var(--shadow); margin:26px auto 6px; touch-action:none; user-select:none; cursor:ew-resize}
+.ba img{display:block; width:100%; pointer-events:none}
+.ba-before{position:absolute; top:0; left:0; height:100%; width:45%; overflow:hidden}
+.ba-before img{position:absolute; top:0; left:0; height:100%; width:auto; max-width:none}
+.ba-line{position:absolute; top:0; bottom:0; left:45%; width:2px; background:rgba(255,255,255,.92);
+  transform:translateX(-1px); box-shadow:0 0 6px rgba(0,0,0,.25)}
+.ba-grip{position:absolute; top:50%; left:45%; width:38px; height:38px; margin:-19px 0 0 -19px;
+  border-radius:50%; background:rgba(255,255,255,.96); box-shadow:0 2px 10px rgba(0,0,0,.28);
+  display:flex; align-items:center; justify-content:center; color:var(--navy); font-size:16px}
+.ba-tag{position:absolute; top:12px; font-size:10.5px; letter-spacing:.09em; text-transform:uppercase;
+  color:#fff; background:rgba(66,82,95,.6); padding:4px 9px; border-radius:999px}
+.ba-tag.l{left:12px} .ba-tag.r{right:12px}
+.hint{text-align:center; color:var(--muted); font-size:13px; margin:0 auto}
+
+/* Sections */
+section{padding:42px 0}
+h2{font-weight:800; letter-spacing:-.03em; font-size:clamp(21px,3.4vw,28px); color:var(--navy); text-align:center; margin:0 0 8px}
+.lede{color:var(--muted); text-align:center; max-width:52ch; margin:0 auto 28px}
+
+/* Examples gallery */
+.gallery{display:grid; gap:16px; margin:0; grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.gcard{margin:0; background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden; box-shadow:var(--shadow)}
+.gcard img{width:100%; display:block; aspect-ratio:4/5; object-fit:cover; cursor:zoom-in; transition:opacity .15s ease}
+.gcard img:hover{opacity:.94}
+.gcard figcaption{padding:13px 16px; color:var(--muted); font-size:13.5px; text-align:center; font-style:italic; line-height:1.45}
+
+/* "Made to keep" framed scene */
+.kept{display:grid; gap:22px; align-items:center}
+@media(min-width:680px){.kept{grid-template-columns:1.1fr .9fr}}
+.kept img{width:100%; border-radius:16px; box-shadow:var(--shadow); display:block; cursor:zoom-in}
+.kept .kt{color:var(--ink)}
+.kept .kt h2{text-align:left; margin-bottom:10px}
+.kept .kt p{color:var(--muted); margin:0 0 14px}
+
+/* Pillars */
+.pillars{display:grid; gap:16px}
+@media(min-width:640px){.pillars{grid-template-columns:repeat(3,1fr)}}
+.pill{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px; text-align:center}
+.pill h3{margin:0 0 6px; font-size:16px; color:var(--navy); font-weight:700; letter-spacing:-.01em}
+.pill p{margin:0; color:var(--muted); font-size:14.5px}
+
+/* Range of styles — text chips, no extra images needed */
+.chips{display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin-top:4px}
+.chip{background:var(--card); border:1px solid var(--line); border-radius:999px; padding:8px 16px; color:var(--ink); font-size:14px}
+.chip b{color:var(--navy)}
+
+/* Plainly stated */
+.facts{display:flex; flex-wrap:wrap; justify-content:center; gap:10px 18px; color:var(--ink); font-size:15px; text-align:center}
+.facts b{color:var(--navy)}
+.dot{color:var(--line)}
+
+/* CTA */
+.btn{display:inline-block; background:var(--navy); color:#fff; text-decoration:none;
+  font-weight:700; font-size:17px; letter-spacing:-.01em; padding:15px 34px;
+  border-radius:999px; transition:transform .15s ease, box-shadow .15s ease;
+  box-shadow:0 8px 24px rgba(66,82,95,.18)}
+.btn:hover{transform:translateY(-1px); box-shadow:0 12px 30px rgba(66,82,95,.24)}
+.free{display:block; color:var(--muted); font-size:13.5px; margin-top:12px}
+.close{text-align:center; padding:6px 0 54px}
+.reassure{text-align:center; color:var(--muted); max-width:48ch; margin:0 auto 22px}
+
+/* Lightbox — read the words up close */
+.zoomview{position:fixed; inset:0; background:rgba(8,8,10,.95); z-index:60; display:none;
+  align-items:flex-start; justify-content:center; overflow:auto; padding:30px 16px}
+.zoomview.on{display:flex}
+.zoomview img{max-width:660px; width:100%; height:auto; border-radius:8px; display:block;
+  box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.zoomclose{position:fixed; top:14px; right:16px; width:42px; height:42px; border-radius:50%; border:none;
+  background:rgba(255,255,255,.94); color:var(--navy); font-size:24px; line-height:1; cursor:pointer; z-index:61;
+  box-shadow:0 2px 10px rgba(0,0,0,.3)}
+
+footer{border-top:1px solid var(--line); padding:26px 0 40px; text-align:center; color:var(--muted); font-size:13px}
+footer a{color:var(--muted); text-decoration:none}
+footer .by{display:block; margin-top:8px; font-size:12px; color:var(--muted); opacity:.85}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="brandbar">
+    <a class="b" href="https://lovedinwords.com/">Loved in Words</a>
+    <a class="home" href="https://lovedinwords.com/">&larr; Home</a>
+  </div>
+
+  <header class="hero">
+    <div class="eyebrow">The gallery</div>
+    <h1>A portrait of a life, in the words that describe them.</h1>
+    <p class="sub">Every remembrance below is composed entirely of the words a family would choose — a name, the roles they filled, the way they were loved. Drag to see the change, and tap any portrait to read the words up close.</p>
+    <div class="ba" id="ba" aria-label="Drag to compare the photograph and the portrait made from words">
+      <img class="ba-after" src="portrait.png" alt="A portrait made from the words that describe her" />
+      <div class="ba-before" id="baBefore"><img src="before.jpg" alt="The original photograph" /></div>
+      <div class="ba-line" id="baLine"></div>
+      <div class="ba-grip" id="baGrip">&#8596;</div>
+      <span class="ba-tag l">their photo</span>
+      <span class="ba-tag r">in their words</span>
+    </div>
+    <p class="hint">Drag the handle &middot; tap the portrait to read the words</p>
+  </header>
+
+  <section>
+    <h2>A few remembrances</h2>
+    <p class="lede">Up close you read the words that tell their story; from across the room, you see them. Tap any portrait to look closely.</p>
+    <div class="gallery">
+      <figure class="gcard"><img src="example-1.jpg" loading="lazy" alt="A memorial word-portrait of a grandmother, formed from words like mama, grandma, faithful and kind" /><figcaption>Mama, Grandma, Faithful, Patient — the words that were her.</figcaption></figure>
+      <figure class="gcard"><img src="example-2.jpg" loading="lazy" alt="A memorial word-portrait of a mother, formed from words like mother, grace, devoted and faith" /><figcaption>Mother, Grace, Devoted, Faith — woven into her likeness.</figcaption></figure>
+      <figure class="gcard"><img src="example-3.jpg" loading="lazy" alt="A memorial word-portrait of a man, formed from words like father, grandpa, mentor and wise" /><figcaption>Father, Grandpa, Mentor, Wise — every word that was him.</figcaption></figure>
+      <figure class="gcard"><img src="portrait.png" loading="lazy" alt="A memorial word-portrait shown up close so the words are legible" /><figcaption>Her name, her dates, a line you'd keep — read them up close.</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <div class="kept">
+      <img src="scene.jpg" alt="A memorial word-portrait, printed and framed on a desk beside a candle and flowers" />
+      <div class="kt">
+        <h2>Made to be kept</h2>
+        <p>Printed on archival stock and framed, it becomes a quiet place for the eyes to rest — at the service, in the home, on the wall for years after.</p>
+        <p>Every print includes the high-resolution digital file, free — to reprint, to share with family, or to keep close on a phone.</p>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:8px">
+    <h2>One photo, told three ways</h2>
+    <p class="lede">Choose the feeling that fits them — and a calm palette to match a memorial program or the room it will hang in.</p>
+    <div class="chips">
+      <span class="chip"><b>Words</b> — their face, formed of scattered words</span>
+      <span class="chip"><b>Message</b> — a passage shaped into their likeness</span>
+      <span class="chip"><b>Sculpted</b> — soft, lifelike, photographic</span>
+    </div>
+  </section>
+
+  <section style="padding-top:14px">
+    <div class="pillars">
+      <div class="pill"><h3>From your own words</h3><p>Nothing generic — every portrait is built from the words only a family can give.</p></div>
+      <div class="pill"><h3>Free to preview</h3><p>See the finished portrait before you pay. There's no cost until it feels right.</p></div>
+      <div class="pill"><h3>Private &amp; gentle</h3><p>The photo stays private and is never shared. Made with care for a tender moment.</p></div>
+    </div>
+  </section>
+
+  <section style="padding-top:18px">
+    <div class="facts">
+      <span>Framed &amp; archival prints from <b>$29</b></span><span class="dot">&bull;</span>
+      <span>High-res digital file <b>included free</b></span><span class="dot">&bull;</span>
+      <span><b>Watermark-free</b></span><span class="dot">&bull;</span>
+      <span>Or a digital keepsake <b>$14.99</b></span>
+    </div>
+  </section>
+
+  <section style="padding-top:6px">
+    <p class="reassure">Free to create and preview — there's no cost until you decide to order. Your photo stays private, and nothing is shared.</p>
+    <div class="close">
+      <a class="btn" href="https://app.typortrait.com/static/index.html?brand=lovedinwords">Create a remembrance keepsake</a>
+      <span class="free">Free to create and preview — you only order it if it feels right.</span>
+    </div>
+  </section>
+
+</div>
+<footer>
+  Loved in Words &nbsp;&middot;&nbsp;
+  <a href="https://lovedinwords.com/">Home</a> &middot;
+  <a href="https://app.typortrait.com/terms">Terms</a> &middot;
+  <a href="https://app.typortrait.com/privacy">Privacy</a>
+  <span class="by">A remembrance keepsake, powered by Typortrait.</span>
+</footer>
+
+<div class="zoomview" id="zoomView">
+  <button class="zoomclose" id="zoomClose" aria-label="Close">&times;</button>
+  <img id="zoomImg" src="portrait.png" alt="A memorial portrait up close — made from the words that describe them" />
+</div>
+
+<script>
+/* Before / after drag-to-compare. */
+(function(){
+  var ba=document.getElementById('ba'); if(!ba) return;
+  var before=document.getElementById('baBefore'), line=document.getElementById('baLine'), grip=document.getElementById('baGrip');
+  function set(pct){ pct=Math.max(6,Math.min(94,pct)); before.style.width=pct+'%'; line.style.left=pct+'%'; grip.style.left=pct+'%'; }
+  function at(e){ var r=ba.getBoundingClientRect(); var cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left; set(cx/r.width*100); }
+  var on=false;
+  ba.addEventListener('pointerdown', function(e){ on=true; try{ba.setPointerCapture(e.pointerId);}catch(_){} at(e); });
+  ba.addEventListener('pointermove', function(e){ if(on) at(e); });
+  window.addEventListener('pointerup', function(){ on=false; });
+  set(45);   // lead with the finished portrait
+})();
+/* Lightbox — tap any portrait (gallery, the scene, or the after image) to read the words up close. */
+(function(){
+  var z=document.getElementById('zoomView'), zi=document.getElementById('zoomImg'), cls=document.getElementById('zoomClose');
+  if(!z||!zi) return;
+  function open(src, alt){ zi.src=src; if(alt) zi.alt=alt; z.classList.add('on'); document.body.style.overflow='hidden'; }
+  function close(){ z.classList.remove('on'); document.body.style.overflow=''; }
+  document.querySelectorAll('.gcard img, .kept img, .ba .ba-after').forEach(function(img){
+    img.style.cursor='zoom-in';
+    img.addEventListener('click', function(e){ e.stopPropagation(); open(img.getAttribute('src'), img.getAttribute('alt')); });
+  });
+  cls.addEventListener('click', close);
+  z.addEventListener('click', function(e){ if(e.target===z) close(); });
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape') close(); });
+})();
+</script>
+</body>
+</html>
