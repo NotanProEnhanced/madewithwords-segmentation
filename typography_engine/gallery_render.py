@@ -39,23 +39,28 @@ AR = 0.8  # 4:5 print aspect (width / height)
 # ink:     palette key -- mono (noir) | sepia | navy   (sculpt uses it as ground)
 # text:    space-separated WORDS for words/sculpt; a sentence for message
 # caption: the gallery caption
+# All five: Words style, Medium size (min_font 57), Original ink (photo) -- the
+# full-colour lifelike look. NOTE: "photo" ink encodes the image as per-glyph
+# tonal modulation in the mask, which the resvg fallback flattens -> muddy. Render
+# this on a host WITH cairosvg (the VPS container or any cairo box) for the wow.
+MIN_FONT = 57   # Medium
+
 JOBS = {
-    "grace": dict(file="1.jpg.jpeg", style="words", ink="mono",
+    "grace": dict(file="1.jpg.jpeg", style="words", ink="photo",
                   text="MOTHER GRANDMOTHER GRACE KIND FAITHFUL GENTLE BELOVED ALWAYS",
                   caption="Mother, Grandmother, Faithful, Kind — the words that were her."),
-    "ruth":  dict(file="2.jpg.jpeg", style="sculpt", ink="mono",
+    "ruth":  dict(file="2.jpg.jpeg", style="words", ink="photo",
                   text="MOM NANA JOYFUL DEVOTED WARM TENDER BELOVED ALWAYS LOVE",
-                  caption="Mom, Nana, Devoted — her likeness, drawn in her words."),
-    "james": dict(file="3.jpg.jpeg", style="message", ink="sepia",
-                  text="Father, grandfather, and friend to everyone he met — steady, "
-                       "generous, quick to laugh, and loved beyond measure.",
-                  caption="A father's tribute, shaped gently into his likeness."),
-    "robert": dict(file="4.jpg.jpeg", style="words", ink="sepia",
+                  caption="Mom, Nana, Devoted, Tender — her likeness, in her words."),
+    "james": dict(file="3.jpg.jpeg", style="words", ink="photo",
+                  text="FATHER GRANDFATHER FRIEND STEADY GENEROUS KIND BELOVED ALWAYS",
+                  caption="Father, Grandfather, Steady, Generous — every word that was him."),
+    "robert": dict(file="4.jpg.jpeg", style="words", ink="photo",
                    text="FATHER GRANDPA MENTOR STRONG WISE GENEROUS BELOVED ALWAYS",
                    caption="Father, Grandpa, Mentor, Wise — every word that was him."),
-    "eleanor": dict(file="5.jpg.jpeg", style="words", ink="navy",
+    "eleanor": dict(file="5.jpg.jpeg", style="words", ink="photo",
                     text="MOTHER GRANDMOTHER GRACE FAITH TENDER KIND BELOVED ALWAYS",
-                    caption="Mother, Grace, Faith — woven into her likeness."),
+                    caption="Mother, Grace, Faith, Tender — woven into her likeness."),
 }
 
 
@@ -84,17 +89,17 @@ def face_crop_45(orig: Image.Image, an) -> Image.Image:
 
 def render_after(an, job) -> bytes:
     style, ink, text = job["style"], job["ink"], job["text"]
+    cfg = RenderConfig(); cfg.min_font_px = job.get("min_font", MIN_FONT)   # Medium
+    warns = WarningCollector()
     if style == "sculpt":
         # Sculpt has a separate ground (paper/navy/black) and ink (word colour).
-        # Noir look: white words on black, consistent with the rest of the gallery.
         return render_displacement_portrait(an, text.split(), ground="black", ink=ink,
                                             out_width=1200, supersample=2, uppercase=True)
-    cfg = RenderConfig(); warns = WarningCollector()
     tonal._SUPERSAMPLE = 2
     png, runs, ground, mask = render_layered_png(
         an, text, ("message" if style == "message" else "words"), cfg, warns,
-        ink=ink, remove_bg=False, light=False,
-        out_width=1200, render_w=2000, tone_density=0.62)
+        ink=ink, remove_bg=job.get("remove_bg", True), light=False,
+        out_width=1200, render_w=2000, tone_density=job.get("density", 0.6))
     return png
 
 
