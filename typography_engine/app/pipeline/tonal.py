@@ -1449,22 +1449,25 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         sel = np.zeros((H, W), np.float32)
         ircs = _iris_circles(an, fscale)
         if ircs:
-            # Colour ONLY the iris (the eye's actual colour) -- never the sclera or
-            # the warm eyelid/under-eye skin, which is what read as pink patches.
+            # Colour the iris only, SMALLER than the iris radius so it can never spill
+            # past the eyeball onto the lower lid / under-eye skin (the pink patches).
             for (cx, cy, r) in ircs:
-                cv2.circle(sel, (int(round(cx)), int(round(cy))), max(2, int(round(r * 1.30))), 1.0, -1)
+                cv2.circle(sel, (int(round(cx)), int(round(cy))), max(2, int(round(r * 0.85))), 1.0, -1)
         else:
-            # No iris landmarks: fall back to a SMALL central-eyeball ellipse (stays
-            # off the lids), rather than skipping eyes entirely.
+            # No iris landmarks: fall back to a TINY central-eyeball ellipse.
             for (cx, cy, rx, ry) in _eye_ellipses(an, fscale):
                 cv2.ellipse(sel, (int(round(cx)), int(round(cy))),
-                            (max(2, int(round(rx * 0.55))), max(2, int(round(ry * 0.50)))), 0, 0, 360, 1.0, -1)
+                            (max(2, int(round(rx * 0.45))), max(2, int(round(ry * 0.40)))), 0, 0, 360, 1.0, -1)
         if an.landmarks is not None:
             tmask = _teeth_mask(an.landmarks.points * fscale, H, W)   # inner mouth (None if closed)
             if tmask is not None:
-                # Only the BRIGHTEST teeth, not the darker (pink) lips inside the mask.
-                tmask = tmask * np.clip((v - 0.58) / 0.30, 0.0, 1.0)
-                sel = np.maximum(sel, tmask)
+                # Teeth are bright AND neutral; the lip is bright but SATURATED (pink).
+                # Gate on both so only teeth take colour, never the lip.
+                _b2 = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+                _sat = (_b2.max(2) - _b2.min(2)) / (_b2.max(2) + 1e-3)
+                bright = np.clip((v - 0.55) / 0.30, 0.0, 1.0)
+                lowsat = np.clip((0.30 - _sat) / 0.18, 0.0, 1.0)
+                sel = np.maximum(sel, tmask * bright * lowsat)
         if float(sel.max()) > 0.0:
             # Tight feather so the colour stays on the eyeball/teeth, not bleeding
             # onto surrounding skin.
