@@ -1447,16 +1447,23 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     # natural), in light/engraving mode, and when _SELCOLOR is 0.
     if not light and ink != "photo" and _SELCOLOR > 0:   # all colour inks incl. Custom; not Original
         sel = np.zeros((H, W), np.float32)
-        for (cx, cy, rx, ry) in _eye_ellipses(an, fscale):
-            # Shrink inside the eyeball (sclera + iris) so we don't paint the warm
-            # eyelid/under-eye skin -- that's what read as unnatural pink patches.
-            cv2.ellipse(sel, (int(round(cx)), int(round(cy))),
-                        (max(2, int(round(rx * 0.88))), max(2, int(round(ry * 0.82)))), 0, 0, 360, 1.0, -1)
+        ircs = _iris_circles(an, fscale)
+        if ircs:
+            # Colour ONLY the iris (the eye's actual colour) -- never the sclera or
+            # the warm eyelid/under-eye skin, which is what read as pink patches.
+            for (cx, cy, r) in ircs:
+                cv2.circle(sel, (int(round(cx)), int(round(cy))), max(2, int(round(r * 1.30))), 1.0, -1)
+        else:
+            # No iris landmarks: fall back to a SMALL central-eyeball ellipse (stays
+            # off the lids), rather than skipping eyes entirely.
+            for (cx, cy, rx, ry) in _eye_ellipses(an, fscale):
+                cv2.ellipse(sel, (int(round(cx)), int(round(cy))),
+                            (max(2, int(round(rx * 0.55))), max(2, int(round(ry * 0.50)))), 0, 0, 360, 1.0, -1)
         if an.landmarks is not None:
             tmask = _teeth_mask(an.landmarks.points * fscale, H, W)   # inner mouth (None if closed)
             if tmask is not None:
-                # Only the BRIGHT teeth, not the darker (pink) lips inside the mask.
-                tmask = tmask * np.clip((v - 0.52) / 0.33, 0.0, 1.0)
+                # Only the BRIGHTEST teeth, not the darker (pink) lips inside the mask.
+                tmask = tmask * np.clip((v - 0.58) / 0.30, 0.0, 1.0)
                 sel = np.maximum(sel, tmask)
         if float(sel.max()) > 0.0:
             # Tight feather so the colour stays on the eyeball/teeth, not bleeding
