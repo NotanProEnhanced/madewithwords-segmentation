@@ -240,6 +240,24 @@ _POSTER = {
     "photo":     ("#0a0a0c", None),       # tint from the source colour
 }
 
+
+def custom_poster(hex_in: str):
+    """Build a (ground, ink) poster pair from a user-picked colour for the 'custom'
+    ink. The near-black ground is fixed; the chosen hue is lifted toward white if
+    it's too dark to read on that ground (hue preserved, just brightened). Returns
+    None on a malformed hex so the caller can fall back."""
+    try:
+        r, g, b = _hex_to_rgb(hex_in)
+    except Exception:  # noqa: BLE001
+        return None
+    lum = 0.2126 * r + 0.7152 * g + 0.0722 * b        # 0..255
+    if lum < 150:                                      # too dark for the dark ground -> lift
+        t = min(0.78, (150.0 - lum) / 200.0)
+        r = int(round(r + (255 - r) * t))
+        g = int(round(g + (255 - g) * t))
+        b = int(round(b + (255 - b) * t))
+    return ("#0a0a0c", "#%02x%02x%02x" % (r, g, b))
+
 # MediaPipe 478-point mesh index groups for the recognition features we deepen.
 _EYE_L = (33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246)
 _EYE_R = (362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398)
@@ -1343,7 +1361,8 @@ def build_poster(
 # CairoSVG does not honour SVG masks.
 # ---------------------------------------------------------------------------
 
-def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = False) -> np.ndarray:
+def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = False,
+                custom=None) -> np.ndarray:
     """Processed, ink-tinted photo that shows through the text mask.
 
     Dark ground (default): brightness-positive -- lit areas are the bright ink,
@@ -1376,6 +1395,8 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     if light:
         ck = _CALLIGRAM.get(ink, ("#15202b", "#ffffff"))   # (dark ink, light paper)
         ground_hex, ink_hex = ck[1], ck[0]
+    elif ink == "custom" and custom:
+        ground_hex, ink_hex = custom                       # (ground, ink) from a user-picked colour
     else:
         ground_hex, ink_hex = _POSTER.get(ink, ("#0a0a0c", "#f2ece0"))
     ground = np.array(_hex_to_rgb(ground_hex), dtype=np.float32)
@@ -1446,16 +1467,18 @@ def _mask_svg(colored_svg: str) -> str:
     return s
 
 
-def _ground_hex(ink: str, light: bool) -> str:
+def _ground_hex(ink: str, light: bool, custom=None) -> str:
     if light:
         return _CALLIGRAM.get(ink, ("#15202b", "#ffffff"))[1]
+    if ink == "custom" and custom:
+        return custom[0]
     return _POSTER.get(ink, ("#0a0a0c", None))[0]
 
 
 def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: WarningCollector,
                        ink: str = "mono", remove_bg: bool = True, light: bool = False,
                        out_width: int = 1400, render_w: int = 2200, tone_density: float = 0.6,
-                       uppercase: bool = True, print_aspect: float = _PRINT_ASPECT):
+                       uppercase: bool = True, print_aspect: float = _PRINT_ASPECT, custom=None):
     """Layered portrait -> PNG bytes. style='message' = poster rows; else Words
     (mosaic) layout. Returns (png_bytes, runs, ground_hex, mask_svg)."""
     # --- Dedicated light/engraving renderer (Words style) --------------------
@@ -1516,19 +1539,19 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
                              render_w=render_w, tone_density=eff_density,
                              gap_fill=True, gap_fill_passes=12)
         colored, runs = res.svg, res.runs
-    ground_hex = _ground_hex(ink, light)
+    ground_hex = _ground_hex(ink, light, custom)
     if not colored:
         return b"", runs, ground_hex, ""
     mask_svg = _mask_svg(colored)
     boost = _MSG_BOOST if style == "message" else 0.0
     png = compose_layered(mask_svg, an, ink, remove_bg, out_width, light=light, boost=boost,
-                          print_aspect=print_aspect)
+                          print_aspect=print_aspect, custom=custom)
     return png, runs, ground_hex, mask_svg
 
 
 def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int,
                     light: bool = False, boost: float = 0.0,
-                    print_aspect: float = _PRINT_ASPECT) -> bytes:
+                    print_aspect: float = _PRINT_ASPECT, custom=None) -> bytes:
     """Composite the tinted photo through a prebuilt white-text mask SVG. Reused
     at download from the stored mask, so the costly layout build runs only once
     (at render), not again per sale. `boost` (>0) gamma-lifts the finished
@@ -1542,8 +1565,8 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     mpng = svg_to_png_bytes(mask_svg, output_width=render_w)
     mask = np.asarray(Image.open(io.BytesIO(mpng)).convert("L"))
     H, W = mask.shape[:2]
-    photo = _tint_photo(an, W, H, ink, remove_bg, light=light).astype(np.float32)
-    ground = np.array(_hex_to_rgb(_ground_hex(ink, light)), dtype=np.float32)
+    photo = _tint_photo(an, W, H, ink, remove_bg, light=light, custom=custom).astype(np.float32)
+    ground = np.array(_hex_to_rgb(_ground_hex(ink, light, custom)), dtype=np.float32)
     m = (mask.astype(np.float32) / 255.0)[..., None]
     out = (ground + (photo - ground) * m).clip(0, 255).astype(np.uint8)
     # Catchlight: a SPECULAR white glint at the eye's real brightest pixel inside

@@ -671,6 +671,7 @@ async def render(
     background_hex: Optional[str] = Form(None),
     foreground_hex: Optional[str] = Form(None),
     ink: str = Form("navy"),
+    ink_hex: Optional[str] = Form(None),   # for ink="custom": the user-picked colour
     style: str = Form("mosaic"),
     message: Optional[str] = Form(None),
     poster: bool = Form(False),
@@ -777,8 +778,17 @@ async def render(
             status_code=422,
         )
 
-    from .pipeline.tonal import _PALETTES, _GRADIENTS, render_layered_png
-    ink_choice = ink if (ink in _PALETTES or ink in _GRADIENTS or ink == "photo") else "navy"
+    from .pipeline.tonal import _PALETTES, _GRADIENTS, render_layered_png, custom_poster
+    # "custom" = a user-picked colour (a (ground, ink) poster pair built from the
+    # hex). Only the layered Words/Message renderer honours it; everything else
+    # falls back. Invalid/absent hex -> not custom.
+    custom_tuple = custom_poster(ink_hex) if (ink == "custom" and ink_hex) else None
+    if ink in _PALETTES or ink in _GRADIENTS or ink == "photo":
+        ink_choice = ink
+    elif custom_tuple:
+        ink_choice = "custom"
+    else:
+        ink_choice = "navy"
     # User-facing styles: "displacement" = type-follows-the-form portrait (its own
     # raster renderer + ground choice); "message" = poster rows; anything else =
     # "words" (the scattered mosaic). Words/Passage share the layered renderer.
@@ -807,13 +817,14 @@ async def render(
             png_bytes = await _bounded_to_thread(
                 render_displacement_portrait, an, disp_words, ground=ground_choice,
                 out_width=max(320, preview_w), supersample=disp_ss,
-                uppercase=uppercase, ink=ink_choice)
+                uppercase=uppercase, ink=("photo" if ink_choice == "custom" else ink_choice))
             runs, ground_hex, mask_svg = [], None, None
         else:
             png_bytes, runs, ground_hex, mask_svg = await _bounded_to_thread(
                 render_layered_png, an, text, style_choice, cfg, warns,
                 ink=ink_choice, remove_bg=remove_bg, light=light,
-                out_width=max(320, preview_w), render_w=render_w_eff, uppercase=uppercase)
+                out_width=max(320, preview_w), render_w=render_w_eff, uppercase=uppercase,
+                custom=custom_tuple)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
     except Exception as e:  # noqa: BLE001
@@ -881,6 +892,7 @@ async def render(
             "style": style_choice, "ink": ink_choice, "remove_bg": bool(remove_bg),
             "light": bool(light), "text": text, "uppercase": bool(uppercase),
             "min_font_px": float(cfg.min_font_px), "ground": ground_choice,
+            "ink_hex": ink_hex if ink_choice == "custom" else None,   # rebuild the custom colour at download
             "ref": ref_clean, "brand": brand_clean,
         }), encoding="utf-8")
 
@@ -1124,8 +1136,11 @@ def _ensure_clean_png(job: str, aspect: float = _PRINT_ASPECT) -> Optional[Path]
     if path.exists():
         return path
     try:
-        from .pipeline.tonal import compose_layered, render_layered_png
+        from .pipeline.tonal import compose_layered, render_layered_png, custom_poster
         r = json.loads(recipe_path.read_text(encoding="utf-8"))
+        # Rebuild the user-picked colour for a "custom" ink so the paid file matches
+        # the preview.
+        dl_custom = custom_poster(r.get("ink_hex")) if (r.get("ink") == "custom" and r.get("ink_hex")) else None
         warns2 = WarningCollector()
         _bgmask = None
         _bgm_path = PRIVATE_DIR / f"{job}.bgmask.png"
@@ -1142,7 +1157,8 @@ def _ensure_clean_png(job: str, aspect: float = _PRINT_ASPECT) -> Optional[Path]
             png_bytes = render_displacement_portrait(
                 an, (r.get("text", "") or "").split(),
                 ground=r.get("ground", "navy"), out_width=DOWNLOAD_PNG_WIDTH,
-                uppercase=bool(r.get("uppercase", True)), ink=r.get("ink"),
+                uppercase=bool(r.get("uppercase", True)),
+                ink=("photo" if r.get("ink") == "custom" else r.get("ink")),
                 print_aspect=aspect)
             if not png_bytes:
                 return None
@@ -1155,7 +1171,8 @@ def _ensure_clean_png(job: str, aspect: float = _PRINT_ASPECT) -> Optional[Path]
             png_bytes = compose_layered(
                 mask_path.read_text(encoding="utf-8"), an,
                 r.get("ink", "navy"), bool(r.get("remove_bg", True)), DOWNLOAD_PNG_WIDTH,
-                light=bool(r.get("light", False)), boost=dl_boost, print_aspect=aspect)
+                light=bool(r.get("light", False)), boost=dl_boost, print_aspect=aspect,
+                custom=dl_custom)
         else:  # no stored mask (e.g. light/engraving renders) or older jobs:
             # recompose at print size. Reuse the chosen word size so the paid
             # download matches the preview (light mode has no baked mask).
@@ -1169,7 +1186,7 @@ def _ensure_clean_png(job: str, aspect: float = _PRINT_ASPECT) -> Optional[Path]
                 an, r["text"], r.get("style", "words"), cfg2, warns2,
                 ink=r.get("ink", "navy"), remove_bg=bool(r.get("remove_bg", True)),
                 light=bool(r.get("light", False)), out_width=DOWNLOAD_PNG_WIDTH, render_w=2600,
-                uppercase=bool(r.get("uppercase", True)), print_aspect=aspect)
+                uppercase=bool(r.get("uppercase", True)), print_aspect=aspect, custom=dl_custom)
         if not png_bytes:
             return None
         path.write_bytes(png_bytes)
