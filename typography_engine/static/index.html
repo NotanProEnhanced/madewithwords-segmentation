@@ -172,6 +172,10 @@
     display:flex;align-items:center;justify-content:center;color:var(--navy);font-size:18px;font-weight:700;padding:0}
   .arrow.left{left:-6px}.arrow.right{right:-6px}
   @media(hover:none){.arrow{display:none}}
+  /* No scroll arrows when the swatches fit (the curated palette doesn't overflow
+     on desktop) -- they read as a missing swatch otherwise. Set by JS on overflow. */
+  .carousel.no-arrows .arrow{display:none}
+  .carousel.no-arrows .swatches{justify-content:center}
   /* Relief has only 2 grounds -> centre them, no scroll arrows */
   .carousel.relief .arrow{display:none}
   .carousel.relief .swatches{justify-content:center}
@@ -1051,7 +1055,17 @@ function buildSwatches(){
     cin.addEventListener("change", ()=>pickCustom(cin.value));
     swatchEl.append(cel);
   }
+  requestAnimationFrame(updateCarouselArrows);   // hide the scroll arrows unless the strip overflows
 }
+// Show the carousel arrows ONLY when the swatches overflow their track. With the
+// curated palette they fit on desktop, so the arrows hide (they otherwise read as
+// a cut-off / missing swatch). Re-checked on (re)build, resize, and when shown.
+function updateCarouselArrows(){
+  if(!carouselEl || !swatchEl) return;
+  const overflow = swatchEl.scrollWidth - swatchEl.clientWidth > 4;
+  carouselEl.classList.toggle("no-arrows", !overflow);
+}
+window.addEventListener("resize", updateCarouselArrows);
 function pickCustom(hex){
   userTouched=true; state.inkHex=hex; state.ink="custom";
   sizeThumbCache={}; resetSizeThumbs();
@@ -1368,6 +1382,7 @@ createBtn.addEventListener("click", ()=>{
   if(!consent.checked){ inputErr("Please confirm you have the rights to this photo and agree to the Terms."); document.getElementById("consentRow").scrollIntoView({behavior:"smooth",block:"center"}); return; }
   errInput.style.display="none";
   inputView.style.display="none"; resultView.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
+  requestAnimationFrame(updateCarouselArrows);   // strip now has real width -> set arrow visibility
   applyKeepsake(true);                 // show the framed desk/greenery scene instantly while composing
   resetReco();                         // fresh style recommendation for this photo
   invalidate(); render(state.ink,{animate:true}); });
