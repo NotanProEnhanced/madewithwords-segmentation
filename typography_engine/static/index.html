@@ -319,6 +319,11 @@
   .sizerow select{flex:0 0 auto;border:1px solid var(--line);border-radius:10px;padding:8px 12px;
     font-family:var(--sans);font-size:14px;background:#fff;color:var(--ink)}
   .err{display:none;background:#fff;border:1px solid #f0d9d9;border-left:4px solid #c0392b;border-radius:12px;padding:14px 16px;margin-top:18px;color:#7a2e2e;font-size:15px}
+  .err-row{display:flex;gap:10px;align-items:flex-start}
+  .err-ic{flex:none;width:20px;height:20px;border-radius:50%;background:#c0392b;color:#fff;font-weight:800;font-size:13px;line-height:20px;text-align:center}
+  .err-msg{flex:1;line-height:1.42}
+  .err-act{margin:12px 0 0 30px;background:#c0392b;color:#fff;border:none;border-radius:9px;padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--sans)}
+  .err-act:hover{background:#a93226}
   .consent{display:flex;gap:10px;align-items:flex-start;margin-top:16px;font-size:13px;color:var(--muted);line-height:1.45;cursor:pointer}
   .consent input{margin-top:2px;width:18px;height:18px;flex:0 0 auto;accent-color:var(--navy)}
   .consent a{color:var(--navy);font-weight:600}
@@ -720,7 +725,7 @@ let gen = 0;          // bumped whenever photo/words/poster change, to drop stal
 
 /* ---------- input ---------- */
 const drop=$("#drop"), fileInput=$("#file"), preview=$("#preview"), previewImg=$("#previewImg"), words=$("#words"), createBtn=$("#create"), consent=$("#consent");
-function inputErr(m){ const e=document.getElementById("errInput"); e.textContent=m; e.style.display="block"; }
+function inputErr(m){ showInputError(m, null, null); }   // upgraded: icon + scroll into view (top of form)
 // Button stays enabled; we validate on click with actionable guidance instead
 // of a dead disabled button the user can't diagnose.
 function refreshCreate(){ if(state.file && words.value.trim() && consent.checked){ const e=document.getElementById("errInput"); if(e) e.style.display="none"; } }
@@ -1401,9 +1406,9 @@ fetch("/compliance/region").then(r=>r.json()).then(g=>{
   }
 }).catch(()=>{});
 createBtn.addEventListener("click", ()=>{
-  if(!state.file){ inputErr("Add a photo to start — a clear head-and-shoulders shot works best."); drop.scrollIntoView({behavior:"smooth",block:"center"}); return; }
-  if(!words.value.trim()){ inputErr(state.style==="message" ? "Add the passage first — a letter, lyrics, a poem, or a tribute." : "Add a few words first — a name, traits, a date."); words.focus(); return; }
-  if(!consent.checked){ inputErr("Please confirm you have the rights to this photo and agree to the Terms."); document.getElementById("consentRow").scrollIntoView({behavior:"smooth",block:"center"}); return; }
+  if(!state.file){ showInputError("Add a photo to start — a clear head-and-shoulders shot works best.", "photo", {label:"Choose a photo", fn:pickPhoto}); return; }
+  if(!words.value.trim()){ showInputError(state.style==="message" ? "Add the passage first — a letter, lyrics, a poem, or a tribute." : "Add a few words first — a name, traits, a date.", "words", null); setTimeout(()=>{ try{ words.focus({preventScroll:true}); }catch(_){ words.focus(); } }, 450); return; }
+  if(!consent.checked){ showInputError("Please confirm you have the rights to this photo and agree to the Terms.", "consent", null); return; }
   errInput.style.display="none";
   inputView.style.display="none"; resultView.style.display="block"; document.body.classList.add("result-active");
   window.scrollTo({top:0,behavior:"smooth"});
@@ -1706,8 +1711,8 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     if(!r.ok||!data.ok){
       if(background || thumb) return;
       const msg=data.detail||friendly(data.error)||"Something went wrong. Try another photo.";
-      if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; document.body.classList.remove("result-active"); errInput.textContent=msg; errInput.style.display="block"; }
-      else { errResult.textContent=msg; errResult.style.display="block"; }
+      if(!portrait.src){ showServerInputError(msg, data.error); }   // first render failed -> route to the photo/words step
+      else { showResultError(msg); }                               // re-render failed -> alert on the result, scrolled in
       stopAssembly(); busy.classList.add("hide"); return;
     }
     if(thumb){ thumbCache[ink]=data.preview; updateThumb(ink); return; }
@@ -1733,9 +1738,10 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   }catch(e){ if(!background && !thumb){
       const m=(e&&e.name==="AbortError") ? "This is taking longer than usual — it may still be finishing. Please give it a moment, then try again." : "Network error — please try again.";
       // On a first render with no portrait yet, surface on the input screen
-      // (mirrors the server-error path) rather than an empty result frame.
-      if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; document.body.classList.remove("result-active"); errInput.textContent=m; errInput.style.display="block"; }
-      else { errResult.textContent=m; errResult.style.display="block"; }
+      // (mirrors the server-error path) rather than an empty result frame. This is
+      // a network/timeout, not a photo fault -> generic placement (top of form).
+      if(!portrait.src){ showInputError(m, null, null); }
+      else { showResultError(m); }
       stopAssembly(); busy.classList.add("hide");
     } }
 }
@@ -1857,6 +1863,55 @@ function friendly(code){ return ({no_words:"Add a few words first.",
   file_too_large:"That photo is too large (max 25 MB). Try a smaller image or a screenshot.",
   image_too_large:IMG_TOO_LARGE_MSG,
   empty_upload:"Please add a photo."})[code]; }
+
+// ---- Smart error surfacing -------------------------------------------------
+// Instead of dropping the message at the bottom of the page, route it to the
+// step/field that needs fixing: plant a contextual alert (icon + message + an
+// optional one-tap recovery) right under that field, open its guided step, and
+// scroll it into view. Falls back to the top of the form for generic errors.
+const _PHOTO_ERR=["unsuitable_image","could_not_decode_image","displacement_needs_face","file_too_large","image_too_large","empty_upload"];
+function _errAnchor(target){
+  if(target==="photo")   return document.getElementById("drop");
+  if(target==="words")   return document.getElementById("words");
+  if(target==="consent") return document.getElementById("consentRow");
+  return null;
+}
+function pickPhoto(){ const f=document.getElementById("file"); if(f) f.click(); }
+function showInputError(msg, target, action){
+  resultView.style.display="none"; inputView.style.display="block"; document.body.classList.remove("result-active");
+  const e=document.getElementById("errInput"); if(!e) return;
+  e.innerHTML='<div class="err-row"><span class="err-ic" aria-hidden="true">!</span><span class="err-msg"></span></div>';
+  e.querySelector(".err-msg").textContent=msg;
+  if(action && action.label){
+    const b=document.createElement("button"); b.type="button"; b.className="err-act";
+    b.textContent=action.label; b.addEventListener("click", action.fn||function(){});
+    e.appendChild(b);
+  }
+  e.style.display="block";
+  const anchor=_errAnchor(target), input=document.getElementById("input");
+  if(anchor){
+    const step=anchor.closest ? anchor.closest(".gstep") : null;          // guided: open the owning step
+    if(step && window.guidedOpenStep){ window.guidedOpenStep(parseInt(step.dataset.step,10)||1); }
+    if(anchor.parentNode) anchor.parentNode.insertBefore(e, anchor.nextSibling);   // sit right under the field
+  } else if(input){
+    input.insertBefore(e, input.firstChild);                              // generic: top of the form
+  }
+  setTimeout(function(){ try{ e.scrollIntoView({behavior:"smooth", block:"center"}); }catch(_){ } }, 60);
+}
+// Map a server error code -> contextual target + a recovery action.
+function showServerInputError(msg, code){
+  const photo=_PHOTO_ERR.indexOf(code)>=0;
+  showInputError(msg, photo?"photo":(code==="no_words"?"words":null),
+    photo?{label:"Choose another photo", fn:pickPhoto}:null);
+}
+// Re-render errors (a portrait already exists): keep them on the result view but
+// scroll the alert into view so it isn't stranded at the bottom.
+function showResultError(msg){
+  const e=document.getElementById("errResult"); if(!e) return;
+  e.innerHTML='<div class="err-row"><span class="err-ic" aria-hidden="true">!</span><span class="err-msg"></span></div>';
+  e.querySelector(".err-msg").textContent=msg; e.style.display="block";
+  setTimeout(function(){ try{ e.scrollIntoView({behavior:"smooth", block:"center"}); }catch(_){ } }, 60);
+}
 // Bound every render so a stuck request can't spin forever. Renders are a few
 // seconds; the FIRST render after a (re)start cold-loads the face models, which
 // can take a while, so the ceiling is generous. If renders routinely approach
@@ -2046,6 +2101,9 @@ function fetchWithTimeout(url, opts, ms){
     }
     function goTo(n){ n=Math.max(1,Math.min(3,n)); maxReached=Math.max(maxReached,n); openStep=n; paint();
       try{ S[n].s.scrollIntoView({block:"start",behavior:"smooth"}); }catch(e){} }
+    // Let the error router open the step that needs fixing (no scroll of its own;
+    // the router scrolls to the contextual alert it plants inside that step).
+    window.guidedOpenStep=function(n){ n=Math.max(1,Math.min(3,n)); maxReached=Math.max(maxReached,n); openStep=n; paint(); };
 
     S.forEach(function(st){ if(!st) return; st.h.addEventListener("click",function(){ if(st.n<=maxReached){ openStep=st.n; paint(); } }); });
     // Photo lands -> auto-advance from step 1 to the words step.
