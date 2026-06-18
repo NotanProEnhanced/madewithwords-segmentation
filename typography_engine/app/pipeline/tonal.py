@@ -1447,22 +1447,30 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     # natural), in light/engraving mode, and when _SELCOLOR is 0.
     if not light and ink != "photo" and _SELCOLOR > 0:   # all colour inks incl. Custom; not Original
         sel = np.zeros((H, W), np.float32)
-        for (cx, cy, rx, ry) in _eye_ellipses(an, fscale):    # whole eyeball, not just iris
+        for (cx, cy, rx, ry) in _eye_ellipses(an, fscale):
+            # Shrink inside the eyeball (sclera + iris) so we don't paint the warm
+            # eyelid/under-eye skin -- that's what read as unnatural pink patches.
             cv2.ellipse(sel, (int(round(cx)), int(round(cy))),
-                        (max(2, int(round(rx))), max(2, int(round(ry)))), 0, 0, 360, 1.0, -1)
+                        (max(2, int(round(rx * 0.88))), max(2, int(round(ry * 0.82)))), 0, 0, 360, 1.0, -1)
         if an.landmarks is not None:
             tmask = _teeth_mask(an.landmarks.points * fscale, H, W)   # inner mouth (None if closed)
             if tmask is not None:
+                # Only the BRIGHT teeth, not the darker (pink) lips inside the mask.
+                tmask = tmask * np.clip((v - 0.52) / 0.33, 0.0, 1.0)
                 sel = np.maximum(sel, tmask)
         if float(sel.max()) > 0.0:
-            sel = np.clip(cv2.GaussianBlur(sel, (0, 0), max(1.5, W * 0.004)), 0.0, 1.0) * float(_SELCOLOR)
-            # Natural photo colour at the SAME tonal field v -> byte-matches what
-            # "Original" shows in these pixels (iris colour, white sclera, white teeth).
+            # Tight feather so the colour stays on the eyeball/teeth, not bleeding
+            # onto surrounding skin.
+            sel = np.clip(cv2.GaussianBlur(sel, (0, 0), max(1.0, W * 0.0016)), 0.0, 1.0) * float(_SELCOLOR)
+            # Render these pixels as the photo ink would, but on a NEUTRAL dark
+            # ground (not the tinted ink ground) so the hue matches the source
+            # instead of picking up the ink colour in the shadows. Mild saturation.
+            ngd = np.array(_hex_to_rgb("#0a0a0c"), dtype=np.float32)
             bgr2 = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
             rgb2 = bgr2[..., ::-1]
             gg = rgb2.mean(axis=2, keepdims=True)
-            nat_tip = np.clip(gg + (rgb2 - gg) * 1.5, 0.0, 255.0)     # +50% saturation, as the photo path
-            nat = ground + (nat_tip - ground) * v[..., None]
+            nat_tip = np.clip(gg + (rgb2 - gg) * 1.2, 0.0, 255.0)
+            nat = ngd + (nat_tip - ngd) * v[..., None]
             out = out * (1.0 - sel[..., None]) + nat * sel[..., None]
     if remove_bg:
         m = an.silhouette.mask
