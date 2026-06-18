@@ -272,6 +272,22 @@
   body.lw-guided #result .opts{margin-top:26px}
   body.lw-guided #result .actions{margin-top:30px}
   body.lw-guided #result #buynote{margin-top:14px}
+  /* "Make it yours" — group the result controls into ONE warm card so the result
+     screen matches the carded input steps (body.guided is the default flow for
+     both brands; uses the same --card/--radius/--shadow as the step cards). */
+  body.guided #result .result-card{background:var(--card);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:22px 24px;margin-top:26px}
+  body.guided #result .result-card-h{font-family:var(--serif);font-size:20px;font-weight:740;
+    letter-spacing:-.02em;color:var(--navy);margin:0 0 2px}
+  body.guided #result .result-card>#styleGallery{margin-top:14px!important}  /* no double top gap */
+  /* Compact sticky brand bar on the result view: reuse the real header (so the
+     per-brand name + heart stay correct) shrunk to a pinned logo strip. */
+  body.guided.result-active header{position:sticky;top:0;z-index:50;padding:11px 0;margin-bottom:8px;
+    background:var(--paper);border-bottom:1px solid var(--line)}
+  body.guided.result-active header .tag,
+  body.guided.result-active header .reassure{display:none}
+  body.guided.result-active header .brand{font-size:22px}
+  body.guided.result-active header .brand-heart svg{width:20px;height:20px}
   .actions{display:flex;gap:12px;margin-top:16px}.actions .btn{margin-top:0}
   .btn.secondary{margin-top:12px}
   .sharepanel{display:none;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px}
@@ -466,6 +482,8 @@
       <div class="compose-bar"></div>
     </div>
     <button type="button" id="zoomBtn" class="zoomlink">&#128269; View up close</button>
+    <div class="result-card" id="makeYours">
+    <div class="result-card-h">Make it yours</div>
     <div class="ctl" id="styleGallery" style="margin-top:6px">
       <div class="ctl-lbl">Choose your style</div>
       <div class="seg" id="styleSegResult" aria-label="Choose your style">
@@ -511,6 +529,7 @@
         <select id="sizeSel" aria-label="Size"></select>
       </div>
     </div>
+    </div><!-- /.result-card #makeYours -->
     <button id="bgTouchup" class="btn secondary" type="button" style="display:none">Touch up background</button>
     <div class="actions"><button id="buy" class="btn">Download</button></div>
     <button id="shareBtn" class="btn secondary" type="button">Share</button>
@@ -1381,12 +1400,14 @@ createBtn.addEventListener("click", ()=>{
   if(!words.value.trim()){ inputErr(state.style==="message" ? "Add the passage first — a letter, lyrics, a poem, or a tribute." : "Add a few words first — a name, traits, a date."); words.focus(); return; }
   if(!consent.checked){ inputErr("Please confirm you have the rights to this photo and agree to the Terms."); document.getElementById("consentRow").scrollIntoView({behavior:"smooth",block:"center"}); return; }
   errInput.style.display="none";
-  inputView.style.display="none"; resultView.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
+  inputView.style.display="none"; resultView.style.display="block"; document.body.classList.add("result-active");
+  window.scrollTo({top:0,behavior:"smooth"});
   requestAnimationFrame(updateCarouselArrows);   // strip now has real width -> set arrow visibility
   applyKeepsake(true);                 // show the framed desk/greenery scene instantly while composing
   resetReco();                         // fresh style recommendation for this photo
   invalidate(); render(state.ink,{animate:true}); });
 $("#restart").addEventListener("click", ()=>{ resultView.style.display="none"; inputView.style.display="block";
+  document.body.classList.remove("result-active");
   invalidate(); portrait.src=""; portrait.className=""; stopAssembly(); });
 // Brand opening look: e.g. Loved in Words opens on Sculpt + Photo (the most
 // lifelike for a remembrance portrait). Run LAST -- after every const + listener
@@ -1680,7 +1701,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     if(!r.ok||!data.ok){
       if(background || thumb) return;
       const msg=data.detail||friendly(data.error)||"Something went wrong. Try another photo.";
-      if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; errInput.textContent=msg; errInput.style.display="block"; }
+      if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; document.body.classList.remove("result-active"); errInput.textContent=msg; errInput.style.display="block"; }
       else { errResult.textContent=msg; errResult.style.display="block"; }
       stopAssembly(); busy.classList.add("hide"); return;
     }
@@ -1708,7 +1729,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
       const m=(e&&e.name==="AbortError") ? "This is taking longer than usual — it may still be finishing. Please give it a moment, then try again." : "Network error — please try again.";
       // On a first render with no portrait yet, surface on the input screen
       // (mirrors the server-error path) rather than an empty result frame.
-      if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; errInput.textContent=m; errInput.style.display="block"; }
+      if(!portrait.src){ resultView.style.display="none"; inputView.style.display="block"; document.body.classList.remove("result-active"); errInput.textContent=m; errInput.style.display="block"; }
       else { errResult.textContent=m; errResult.style.display="block"; }
       stopAssembly(); busy.classList.add("hide");
     } }
