@@ -48,6 +48,12 @@ _ROW_HEIGHT_FRAC = 0.88
 _SUPERSAMPLE = 2
 _SS_MAX_RENDER_W = 3200
 
+# Selective colour: in the COLOUR inks (and Custom), the eyes + teeth keep their
+# true photo colours (the same look "Original" gives) so they pop against the
+# tinted face. 0 = off (fully monochrome ink), 1 = full natural in those regions;
+# values between dial the strength. Edges are always feathered.
+_SELCOLOR = 1.0
+
 
 def _eff_supersample(out_width: int) -> int:
     """Effective supersample factor for this output width (1 = off). Drops to 1
@@ -1434,24 +1440,30 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     # ink hue changes, feathered at the iris edge. Dark ground only: the dormant
     # light/engraving path uses dark ink on paper, where a brightness-lifted
     # tint would read wrong.
-    if not light:
-        iris = _iris_tint(an)
-        if iris is not None:
-            circles, itip = iris
-            imask = np.zeros((H, W), np.float32)
-            rmax = 2.0
-            for cx, cy, r in circles:
-                rr = max(2, int(round(r * fscale)))
-                rmax = max(rmax, float(rr))
-                cv2.circle(imask, (int(round(cx * fscale)), int(round(cy * fscale))), rr, 1.0, -1)
-            imask = cv2.GaussianBlur(imask, (0, 0), max(1.0, rmax * 0.22))
-            # Gentle brightness floor inside the iris so the eye colour actually
-            # reads -- the iris is tonally dark, so without a floor the tinted
-            # glyphs barely glow. Feathered by the same mask; catchlight (v~1)
-            # and pupil structure still dominate above the floor.
-            v_eye = np.maximum(v, 0.38 * imask)
-            iout = ground + (itip - ground) * v_eye[..., None]
-            out = out * (1.0 - imask[..., None]) + iout * imask[..., None]
+    # Selective colour: bring the EYES (whole eyeball) and TEETH back to their TRUE
+    # photo colours -- the exact natural rendering "Original" (photo ink) produces,
+    # confined to those regions and feathered -- so they pop against the tinted
+    # face (living eyes, a natural smile). Skipped for the photo ink (already fully
+    # natural), in light/engraving mode, and when _SELCOLOR is 0.
+    if not light and ink != "photo" and _SELCOLOR > 0:   # all colour inks incl. Custom; not Original
+        sel = np.zeros((H, W), np.float32)
+        for (cx, cy, rx, ry) in _eye_ellipses(an, fscale):    # whole eyeball, not just iris
+            cv2.ellipse(sel, (int(round(cx)), int(round(cy))),
+                        (max(2, int(round(rx))), max(2, int(round(ry)))), 0, 0, 360, 1.0, -1)
+        if an.landmarks is not None:
+            tmask = _teeth_mask(an.landmarks.points * fscale, H, W)   # inner mouth (None if closed)
+            if tmask is not None:
+                sel = np.maximum(sel, tmask)
+        if float(sel.max()) > 0.0:
+            sel = np.clip(cv2.GaussianBlur(sel, (0, 0), max(1.5, W * 0.004)), 0.0, 1.0) * float(_SELCOLOR)
+            # Natural photo colour at the SAME tonal field v -> byte-matches what
+            # "Original" shows in these pixels (iris colour, white sclera, white teeth).
+            bgr2 = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+            rgb2 = bgr2[..., ::-1]
+            gg = rgb2.mean(axis=2, keepdims=True)
+            nat_tip = np.clip(gg + (rgb2 - gg) * 1.5, 0.0, 255.0)     # +50% saturation, as the photo path
+            nat = ground + (nat_tip - ground) * v[..., None]
+            out = out * (1.0 - sel[..., None]) + nat * sel[..., None]
     if remove_bg:
         m = an.silhouette.mask
         if m.shape[:2] != (H, W):
