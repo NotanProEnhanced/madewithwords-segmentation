@@ -710,9 +710,15 @@ const GENERIC_INK_IDS=["photo","photo_paper","mono","sepia","navy"];
 const GENERIC_INKS=GENERIC_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
 const _isLovedBrand=(typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords");
 function currentSwatches(){ return _isLovedBrand ? MEMORIAL_INKS : GENERIC_INKS; }   // + Custom chip (buildSwatches)
-function variantPost(id){ return state.style==="displacement"
-  ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
-  : {ink:id, style:state.style, ground:"navy"}; }
+function variantPost(id){
+  // "Paper" = the photographic Sculpt-on-white look: the displacement renderer on
+  // a paper ground, photo colour -- regardless of the style segment. The flat Words
+  // engraving can't carry a light-eyed face on white; Sculpt/paper renders the eyes
+  // and likeness beautifully. (The dark grounds stay the dense Words/Sculpt looks.)
+  if(id==="photo_paper") return {ink:"photo", style:"displacement", ground:"paper"};
+  return state.style==="displacement"
+    ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
+    : {ink:id, style:state.style, ground:"navy"}; }
 // Umami funnel event helper. No-ops silently if the script is blocked, still
 // loading, or unconfigured — analytics must never break the app.
 function tp_track(name, data){ try{ if(window.umami) window.umami.track(name, data||{}); }catch(e){} }
