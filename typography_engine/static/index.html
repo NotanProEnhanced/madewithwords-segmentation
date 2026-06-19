@@ -634,7 +634,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, crop:null, ink:"photo", inkHex:"#3a6df0", style:"words", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true, maskData:null };
+const state = { file:null, crop:null, ink:"photo_paper", inkHex:"#3a6df0", style:"displacement", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true, maskData:null };
 // Referral/source tag (?ref=everloved) AND brand skin. A brand re-dresses this
 // same engine as a partner identity (name + tagline). The brand is resolved from
 // the ?brand param FIRST (reliable, and it persists in this single-page URL),
@@ -652,7 +652,7 @@ const _qp=new URLSearchParams(location.search);
 // the best fit as a badge, but doesn't auto-switch away from the brand's look).
 const BRANDS={
   lovedinwords:{ name:"Loved in Words", tag:"A portrait of a life, in the words that describe them.", title:"Loved in Words — a remembrance portrait made from words", host:"lovedinwords.com",
-    style:"displacement", ink:"photo", pinStyle:true,
+    style:"displacement", ink:"photo_paper", pinStyle:true,
     theme:{ "--navy":"#42525f", "--ink":"#2f3742", "--paper":"#f4efe8", "--card":"#fffdf9", "--line":"#e7e0d5", "--muted":"#776f64" } }
 };
 function _brandFromReferrer(){

@@ -378,6 +378,18 @@ def render_displacement_portrait(
             iout = np.array(g["bg"], np.float32) * (1 - al) + tip * al
             im3 = iris_m[..., None]
             out = out * (1.0 - im3) + iout * im3
+    elif irises and iris_m is not None and ground == "paper" and ink == "photo":
+        # Paper: keep the iris its TRUE source colour. The Keep-Paper-Light lift
+        # mutes everything toward the paper, which would wash the eye colour out --
+        # so re-lay the source's own iris pixels here, saturated but NOT lifted, so
+        # the real hue (her green/hazel/blue) pops against the airy face.
+        bf = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+        hv = cv2.cvtColor(np.clip(bf, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
+        hv[..., 1] = np.clip(hv[..., 1] * 1.45, 0, 255)      # vivid, true hue
+        iris_col = cv2.cvtColor(hv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
+        iout = np.array(g["bg"], np.float32) * (1 - al) + iris_col * al
+        im3 = iris_m[..., None]
+        out = out * (1.0 - im3) + iout * im3
     # Limbal ring: a dark rim at the iris edge -- the single strongest cue that
     # reads as a real iris rather than a flat tinted disc. Darken toward the
     # ground in that thin annulus.
