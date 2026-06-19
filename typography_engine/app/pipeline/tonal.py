@@ -1615,6 +1615,14 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         # becomes white (sparse, invisible non-face areas), so disable it in light
         # mode and keep full dark-ink-on-paper shadows (the engraving look).
         eff_density = 0.0 if light else tone_density
+        # Paper engraving needs FINER words than the dark hero: features like eyes
+        # span only a word or two at the larger sizes, too coarse to resolve an
+        # iris/pupil/lids. Pin photo_paper to a small min-font (more, smaller words
+        # = the resolution the eyes need). Save/restore so the shared cfg + recipe
+        # are untouched; the download re-renders through here and pins identically.
+        _orig_mf = cfg.min_font_px
+        if ink == "photo_paper":
+            cfg.min_font_px = min(float(cfg.min_font_px), 28.0)
         # Multi-scale gap-fill packs the full size range into the silhouette in
         # both modes. In light/engraving mode the lit face is pushed to white
         # (see _tint_photo), so the dense fill there renders as white paper and
@@ -1624,6 +1632,7 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         res = build_portrait(an, words, cfg, warns, uppercase=uppercase, ink="mono",
                              render_w=render_w, tone_density=eff_density,
                              gap_fill=True, gap_fill_passes=12)
+        cfg.min_font_px = _orig_mf
         colored, runs = res.svg, res.runs
     ground_hex = _ground_hex(ink, light, custom)
     if not colored:
