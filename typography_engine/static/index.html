@@ -271,7 +271,10 @@
   /* Calmer result screen for the memorial brand: more breathing room, a gentler
      width, softer controls, the portrait + primary action given presence. Purely
      presentational -- no controls hidden, nothing rewired. */
-  body.lw-guided #result{max-width:560px;margin-left:auto;margin-right:auto}
+  /* Stretch #result to the wrap like every other block. (Auto cross-axis margins
+     on a flex-column item make it size to content -> it rendered 560 wide even on a
+     375 screen, overflowing + misaligning with the header. width:100% aligns it.) */
+  body.lw-guided #result{width:100%}
   body.lw-guided #result .frame-note{margin-top:14px;font-size:13px}
   body.lw-guided #result .ctl,
   body.lw-guided #result .sizefilm{margin-top:32px}
