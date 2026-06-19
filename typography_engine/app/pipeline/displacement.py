@@ -37,12 +37,13 @@ GROUNDS = {
 # "Keep Paper Light": on the paper ground, fraction of each word's darkness to keep
 # (lower = airier). 0.52 -> a dark-haired photo's words land mid-tone, not heavy.
 _PAPER_DARK_KEEP = 0.72
-# Paper colour balance: warm skin renders orange/rust on the light ground, so pull
-# saturation DOWN for a natural, balanced face. The iris is re-laid separately and
-# kept a touch more saturated so the true eye colour still reads -- but close enough
-# to the face that the eyes don't look pasted on.
-_PAPER_SAT = 0.92
-_PAPER_IRIS_SAT = 1.15
+# Paper colour: match the Original (dark) saturation (1.25) so Paper carries the
+# same rich hue/chroma -- only the value differs (Keep Paper Light keeps it legible
+# on white instead of glowing on black). Iris a touch higher so the eyes stay
+# distinct against the now equally-rich face. Earlier orange came from a HEAVY lift
+# (keep 0.52) + sat; with keep 0.72 the truer tones hold even at full saturation.
+_PAPER_SAT = 1.25
+_PAPER_IRIS_SAT = 1.30
 
 # Sculpted ink colours: the WORD colour (BGR) draped on the dark ground. These are
 # light/bright tints (mirroring the studio's ink swatches) so they read on navy.
