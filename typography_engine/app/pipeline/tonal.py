@@ -1683,39 +1683,38 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
                 gm = np.clip(cv2.GaussianBlur(gm, (0, 0), sigmaX=sig), 0, 1)[..., None]
                 out = (out.astype(np.float32) * (1.0 - gm) + 250.0 * gm).clip(0, 255).astype(np.uint8)
     elif not light and ink == "photo_paper":
-        # White-ground eyes: on paper the iris/sclera would otherwise melt away.
-        # Paint paper-white sclera, the person's TRUE iris colour DARKENED so it
-        # reads as ink, a dark pupil + a white catchlight (which now reads on the
-        # dark iris). All numpy over the composite -- rasterizer-independent.
+        # White-ground eyes: build a believable eye on paper -- paper-white sclera,
+        # the iris in its TRUE colour framed by a dark LIMBAL RING (not a black
+        # disc), a small dark pupil, a white catchlight, and a dark UPPER LASH LINE
+        # for the lid. All numpy over the composite -- rasterizer-independent.
         fsc0 = W / float(an.img.gray.shape[1])
         eyes_e = _eye_ellipses(an, fsc0)
         iris_c = _iris_circles(an, fsc0)
+        DARK = np.array([28.0, 26.0, 24.0], np.float32)   # lash / limbal / pupil ink
         if eyes_e:
             ir_mean = float(np.mean([r for _, _, r in iris_c])) if iris_c else 1.0
-            # Sclera (eye ellipse minus iris): clear typography back to paper white.
-            sm = np.zeros((H, W), np.float32)
+            eye_r = float(np.mean([e[2] for e in eyes_e]))
+            # Lay the REAL photo eye into the eye region (feathered), contrast-lifted
+            # so the natural anatomy -- lids, lashes, sclera, iris, pupil, catchlight --
+            # reads on white. A synthetic disc looks like a flat dot; the photo's own
+            # eye reads as an eye. The ellipse is enlarged a touch to include the lash
+            # line and lid crease.
+            bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+            eye_photo = np.clip((bgr_full[..., ::-1] - 120.0) * 1.32 + 110.0, 0.0, 255.0)
+            em = np.zeros((H, W), np.float32)
             for ex, ey, rx, ry in eyes_e:
-                cv2.ellipse(sm, (int(round(ex)), int(round(ey))),
-                            (int(round(rx)), int(round(ry))), 0, 0, 360, 1.0, -1)
-            for icx, icy, irr in iris_c:
-                cv2.circle(sm, (int(round(icx)), int(round(icy))), int(round(irr)), 0.0, -1, cv2.LINE_AA)
-            sm = cv2.GaussianBlur(sm, (0, 0), sigmaX=max(1.0, float(np.mean([e[2] for e in eyes_e])) * 0.10))
-            wash = (sm * 0.90)[..., None]
-            out = (out.astype(np.float32) * (1.0 - wash) + ground * wash).clip(0, 255).astype(np.uint8)
-            if iris_c:
-                bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
-                iris_dark = np.clip(bgr_full[..., ::-1] * 0.42, 0.0, 255.0)   # true eye colour -> ink-dark
-                im = np.zeros((H, W), np.float32)
-                for icx, icy, irr in iris_c:
-                    cv2.circle(im, (int(round(icx)), int(round(icy))), max(2, int(round(irr * 0.90))), 1.0, -1, cv2.LINE_AA)
-                im = cv2.GaussianBlur(im, (0, 0), sigmaX=max(0.8, ir_mean * 0.08))[..., None]
-                out = (out.astype(np.float32) * (1.0 - im) + iris_dark * im).clip(0, 255).astype(np.uint8)
-                # Pupil: a near-black centre.
-                pm = np.zeros((H, W), np.float32)
-                for icx, icy, irr in iris_c:
-                    cv2.circle(pm, (int(round(icx)), int(round(icy))), max(1, int(round(irr * 0.40))), 1.0, -1, cv2.LINE_AA)
-                pm = cv2.GaussianBlur(pm, (0, 0), sigmaX=max(0.8, ir_mean * 0.05))[..., None]
-                out = (out.astype(np.float32) * (1.0 - 0.75 * pm) + 26.0 * (0.75 * pm)).clip(0, 255).astype(np.uint8)
+                cv2.ellipse(em, (int(round(ex)), int(round(ey))),
+                            (int(round(rx * 1.10)), int(round(ry * 1.22))), 0, 0, 360, 1.0, -1)
+            em = cv2.GaussianBlur(em, (0, 0), sigmaX=max(0.8, eye_r * 0.10))[..., None]
+            out = (out.astype(np.float32) * (1.0 - em) + eye_photo * em).clip(0, 255).astype(np.uint8)
+            # Upper lash line: a dark arc along the top of each eye -- the lid that
+            # frames it (without it the eye floats on blank paper).
+            ll = np.zeros((H, W), np.float32)
+            for ex, ey, rx, ry in eyes_e:
+                cv2.ellipse(ll, (int(round(ex)), int(round(ey))), (int(round(rx)), int(round(ry))),
+                            0, 182, 358, 1.0, max(2, int(round(ry * 0.22))), cv2.LINE_AA)
+            ll = cv2.GaussianBlur(ll, (0, 0), sigmaX=max(0.6, eye_r * 0.05))[..., None]
+            out = (out.astype(np.float32) * (1.0 - 0.85 * ll) + DARK * (0.85 * ll)).clip(0, 255).astype(np.uint8)
         glints = _catchlight_points(an)
         if glints:
             fsc = W / float(an.img.gray.shape[1])
@@ -1727,6 +1726,16 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
                 sig = max(1.0, float(np.mean([g[2] for g in glints])) * fsc * 0.55)
                 gm = np.clip(cv2.GaussianBlur(gm, (0, 0), sigmaX=sig), 0, 1)[..., None]
                 out = (out.astype(np.float32) * (1.0 - gm) + 250.0 * gm).clip(0, 255).astype(np.uint8)
+        # Teeth on paper: clear the inner mouth and lay the photo's OWN teeth tone
+        # back, darkened + unsharpened so the tooth gaps and gum line read on white
+        # (a defined smile, not a white blob). Closed mouths yield no mask -> untouched.
+        tm = _teeth_mask(_faces_of(an)[0].points * fsc0 if _faces_of(an) else None, H, W)
+        if tm is not None:
+            bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+            teeth = np.clip(bgr_full[..., ::-1] * 0.82, 0.0, 255.0)
+            teeth = cv2.addWeighted(teeth, 1.7, cv2.GaussianBlur(teeth, (0, 0), 1.4), -0.7, 0.0)
+            tw = (tm * 0.92)[..., None]
+            out = (out.astype(np.float32) * (1.0 - tw) + teeth * tw).clip(0, 255).astype(np.uint8)
     # Standard print canvas (4:5 = 16x20): pad with the ground BEFORE the boost
     # and vibrance passes so the band is processed identically to the interior
     # ground (no visible seam).
