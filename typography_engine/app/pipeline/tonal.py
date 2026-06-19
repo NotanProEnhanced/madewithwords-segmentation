@@ -1615,9 +1615,8 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     # each iris, painted over the finished composite (above the text mask) so the
     # eye looks back. Always white -- the lightest thing on the face -- never ink-
     # or iris-coloured. Dark grounds only; before the pad so coords hold.
-    # Skip for photo_paper: the catchlight/limbal treatment darkens toward the
-    # ground, which inverts on white paper -- the paper engraving keeps the photo's
-    # own eye tones instead.
+    # photo_paper takes its OWN white-ground eye treatment below -- the dark-ground
+    # catchlight/limbal here darkens toward the ground, which inverts on white.
     if not light and ink != "photo_paper":
         # Sclera wash: the whites of the eyes read LIGHT (carrying no typography),
         # painted as a soft warm-white modulated by the photo's own shading so the
@@ -1673,6 +1672,51 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             tw = (tm * 0.92)[..., None]
             out = (out.astype(np.float32) * (1.0 - tw) + ph_sharp * tw).clip(0, 255).astype(np.uint8)
         glints = _catchlight_points(an)                   # working coords
+        if glints:
+            fsc = W / float(an.img.gray.shape[1])
+            gm = np.zeros((H, W), np.float32)
+            for gx, gy, gr in glints:
+                cv2.circle(gm, (int(round(gx * fsc)), int(round(gy * fsc))),
+                           max(2, int(round(gr * fsc))), 1.0, -1, cv2.LINE_AA)
+            if gm.any():
+                sig = max(1.0, float(np.mean([g[2] for g in glints])) * fsc * 0.55)
+                gm = np.clip(cv2.GaussianBlur(gm, (0, 0), sigmaX=sig), 0, 1)[..., None]
+                out = (out.astype(np.float32) * (1.0 - gm) + 250.0 * gm).clip(0, 255).astype(np.uint8)
+    elif not light and ink == "photo_paper":
+        # White-ground eyes: on paper the iris/sclera would otherwise melt away.
+        # Paint paper-white sclera, the person's TRUE iris colour DARKENED so it
+        # reads as ink, a dark pupil + a white catchlight (which now reads on the
+        # dark iris). All numpy over the composite -- rasterizer-independent.
+        fsc0 = W / float(an.img.gray.shape[1])
+        eyes_e = _eye_ellipses(an, fsc0)
+        iris_c = _iris_circles(an, fsc0)
+        if eyes_e:
+            ir_mean = float(np.mean([r for _, _, r in iris_c])) if iris_c else 1.0
+            # Sclera (eye ellipse minus iris): clear typography back to paper white.
+            sm = np.zeros((H, W), np.float32)
+            for ex, ey, rx, ry in eyes_e:
+                cv2.ellipse(sm, (int(round(ex)), int(round(ey))),
+                            (int(round(rx)), int(round(ry))), 0, 0, 360, 1.0, -1)
+            for icx, icy, irr in iris_c:
+                cv2.circle(sm, (int(round(icx)), int(round(icy))), int(round(irr)), 0.0, -1, cv2.LINE_AA)
+            sm = cv2.GaussianBlur(sm, (0, 0), sigmaX=max(1.0, float(np.mean([e[2] for e in eyes_e])) * 0.10))
+            wash = (sm * 0.90)[..., None]
+            out = (out.astype(np.float32) * (1.0 - wash) + ground * wash).clip(0, 255).astype(np.uint8)
+            if iris_c:
+                bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+                iris_dark = np.clip(bgr_full[..., ::-1] * 0.42, 0.0, 255.0)   # true eye colour -> ink-dark
+                im = np.zeros((H, W), np.float32)
+                for icx, icy, irr in iris_c:
+                    cv2.circle(im, (int(round(icx)), int(round(icy))), max(2, int(round(irr * 0.90))), 1.0, -1, cv2.LINE_AA)
+                im = cv2.GaussianBlur(im, (0, 0), sigmaX=max(0.8, ir_mean * 0.08))[..., None]
+                out = (out.astype(np.float32) * (1.0 - im) + iris_dark * im).clip(0, 255).astype(np.uint8)
+                # Pupil: a near-black centre.
+                pm = np.zeros((H, W), np.float32)
+                for icx, icy, irr in iris_c:
+                    cv2.circle(pm, (int(round(icx)), int(round(icy))), max(1, int(round(irr * 0.40))), 1.0, -1, cv2.LINE_AA)
+                pm = cv2.GaussianBlur(pm, (0, 0), sigmaX=max(0.8, ir_mean * 0.05))[..., None]
+                out = (out.astype(np.float32) * (1.0 - 0.75 * pm) + 26.0 * (0.75 * pm)).clip(0, 255).astype(np.uint8)
+        glints = _catchlight_points(an)
         if glints:
             fsc = W / float(an.img.gray.shape[1])
             gm = np.zeros((H, W), np.float32)
