@@ -645,12 +645,14 @@ def send_save_link_email(job: str, to_email: str) -> bool:
   <a href="{link}" style="background:#0d1b3a;color:#fff;padding:13px 28px;border-radius:999px;text-decoration:none;display:inline-block;font-weight:700">Open my portrait</a>
 </p>
 <p style="color:#6b7280;font-size:13px;line-height:1.6">A heads-up: we automatically delete uploaded photos and generated files after about {RETENTION_DAYS} days, so don't wait too long. If this wasn't you, just ignore this email.</p>
+<p style="color:#9aa1ac;font-size:12px;line-height:1.6;margin-top:14px">You're in control of your data &mdash; <a href="{PUBLIC_BASE_URL}/data-request" style="color:#6b7280">manage or delete it anytime</a>.</p>
 </div>"""
     body_text = (
         "Your Typortrait is saved.\n\n"
         f"Open it anytime: {link}\n\n"
         f"Heads-up: we auto-delete uploaded photos and generated files after about "
-        f"{RETENTION_DAYS} days, so don't wait too long.\n"
+        f"{RETENTION_DAYS} days, so don't wait too long.\n\n"
+        f"You're in control of your data -- manage or delete it anytime: {PUBLIC_BASE_URL}/data-request\n\n"
         "If this wasn't you, just ignore this email.\n"
     )
     msg = EmailMessage()
