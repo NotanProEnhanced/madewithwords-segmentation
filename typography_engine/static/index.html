@@ -623,11 +623,12 @@
 const $ = s => document.querySelector(s);
 const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const ANIM_CAP = 2600;                 // max glyphs animated (perf); image shows all
-const INKS = [["photo","conic","Original"],["mono","#555555","Noir"],["gold_noir","gold","Ember"],
+const INKS = [["photo","conic","Original"],["photo_paper","conic_paper","Paper"],["mono","#555555","Noir"],["gold_noir","gold","Ember"],
   ["navy","#0d1b3a","Navy"],["sepia","#5a3a1a","Sepia"],["burgundy","#4a0d18","Rose"],
   ["forest","#0f2e1e","Sage"],["spectrum","spectrum","Spectrum"],["aurora","aurora","Aurora"]];
 function placeholderBg(col){
   if(col==="conic") return "conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)";
+  if(col==="conic_paper") return "radial-gradient(circle at 50% 50%, #f6f1e8 0 40%, rgba(246,241,232,0) 43%), conic-gradient(#c07a64,#b89a52,#5f9476,#6280ac,#8a6aa6,#c07a64)";
   if(col==="gold") return "radial-gradient(circle at 50% 42%, #e8c66a 0 40%, #0d0f13 44%)";
   if(col==="spectrum") return "linear-gradient(180deg,#f2b705,#f25c05,#e6002e,#b5179e,#6a1fb5,#1f3fb5)";
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
@@ -700,12 +701,12 @@ const SCULPT_INKS=INKS.filter(s=>s[0]!=="spectrum" && s[0]!=="aurora");
 // swatches: Noir, Sepia, Navy, Sage, Photo -- timeless, restrained tones with no
 // loud rainbow gradients. Same set across every style; the generic studio keeps
 // the full palette.
-const MEMORIAL_INK_IDS=["photo","mono","sepia","navy","forest"];
+const MEMORIAL_INK_IDS=["photo","photo_paper","mono","sepia","navy","forest"];
 const MEMORIAL_INKS=MEMORIAL_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
 // Generic studio: a tight curated palette (Original + Noir/Sepia/Navy) + the
 // Custom picker (added in buildSwatches). The full nine-swatch list, incl. the
 // loud gradients, was more than needed now that Custom covers any colour.
-const GENERIC_INK_IDS=["photo","mono","sepia","navy"];
+const GENERIC_INK_IDS=["photo","photo_paper","mono","sepia","navy"];
 const GENERIC_INKS=GENERIC_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
 const _isLovedBrand=(typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords");
 function currentSwatches(){ return _isLovedBrand ? MEMORIAL_INKS : GENERIC_INKS; }   // + Custom chip (buildSwatches)

@@ -783,7 +783,7 @@ async def render(
     # hex). Only the layered Words/Message renderer honours it; everything else
     # falls back. Invalid/absent hex -> not custom.
     custom_tuple = custom_poster(ink_hex) if (ink == "custom" and ink_hex) else None
-    if ink in _PALETTES or ink in _GRADIENTS or ink == "photo":
+    if ink in _PALETTES or ink in _GRADIENTS or ink in ("photo", "photo_paper"):
         ink_choice = ink
     elif custom_tuple:
         ink_choice = "custom"
@@ -817,7 +817,7 @@ async def render(
             png_bytes = await _bounded_to_thread(
                 render_displacement_portrait, an, disp_words, ground=ground_choice,
                 out_width=max(320, preview_w), supersample=disp_ss,
-                uppercase=uppercase, ink=("photo" if ink_choice == "custom" else ink_choice))
+                uppercase=uppercase, ink=("photo" if ink_choice in ("custom", "photo_paper") else ink_choice))
             runs, ground_hex, mask_svg = [], None, None
         else:
             png_bytes, runs, ground_hex, mask_svg = await _bounded_to_thread(
