@@ -61,6 +61,13 @@ JOBS = {
     "eleanor": dict(file="5.jpg.jpeg", style="words", ink="photo",
                     text="MOTHER GRANDMOTHER GRACE FAITH TENDER KIND BELOVED ALWAYS",
                     caption="Mother, Grace, Faith, Tender — woven into her likeness."),
+    # --- photo_paper (Original on white) test cases: light hair + dark hair ---
+    "grace_paper": dict(file="1.jpg.jpeg", style="words", ink="photo_paper",
+                        text="MOTHER GRANDMOTHER GRACE KIND FAITHFUL GENTLE BELOVED ALWAYS",
+                        caption="(paper test — light hair)"),
+    "james_paper": dict(file="3.jpg.jpeg", style="words", ink="photo_paper",
+                        text="FATHER GRANDFATHER FRIEND STEADY GENEROUS KIND BELOVED ALWAYS",
+                        caption="(paper test — dark hair)"),
 }
 
 

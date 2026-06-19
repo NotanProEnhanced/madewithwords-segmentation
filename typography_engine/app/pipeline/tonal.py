@@ -244,6 +244,10 @@ _POSTER = {
     "gold_noir": ("#0b0a06", "#e8c66a"),
     "mono":      ("#0a0a0a", "#f2ece0"),
     "photo":     ("#0a0a0c", None),       # tint from the source colour
+    # Original on PAPER: the source colour rendered as a coloured engraving on a
+    # warm white. Darkness drives the ink (shadows/features bold) with a floor so
+    # light skin + grey hair still tint instead of vanishing into the paper.
+    "photo_paper": ("#f6f1e8", None),
 }
 
 
@@ -1412,18 +1416,26 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         if not light:
             col = col + (255.0 - col) * 0.22    # lift toward white so hues stay luminous on the dark ground
         tip = col[:, None, :]
-    elif ink == "photo":
+    elif ink in ("photo", "photo_paper"):
         bgr = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
         rgb = bgr[..., ::-1]
         g = rgb.mean(axis=2, keepdims=True)
         tip = np.clip(g + (rgb - g) * 1.5, 0.0, 255.0)      # +50% saturation
+        if ink == "photo_paper":
+            tip = tip * 0.60        # darken the hue so it reads as ink on white paper
     else:
         tip = np.array(_hex_to_rgb(ink_hex), dtype=np.float32)
     # Dark ground: brightness drives ink. Light paper: darkness drives ink
     # (engraving). In light mode push highlights hard toward white (gamma<1) so
     # the lit face stays white paper even under dense gap-fill -- only shadows and
     # features pick up ink, so the portrait reads instead of becoming a gray mass.
-    if not light:
+    if ink == "photo_paper":
+        # Photo on PAPER: darkness drives the ink (features/shadows bold) with a
+        # 0.30 floor so the brightest skin + grey hair still carry a soft tint
+        # rather than vanishing into the white -- a coloured engraving that reads
+        # whole. (Distinct from the mono light-engraving formula below.)
+        v = np.clip(0.30 + 0.80 * (1.0 - lum), 0.0, 1.0)
+    elif not light:
         v = lum
     else:
         # Engraving: keep the lightest areas as faint near-white (small 0.08
@@ -1445,7 +1457,7 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     # confined to those regions and feathered -- so they pop against the tinted
     # face (living eyes, a natural smile). Skipped for the photo ink (already fully
     # natural), in light/engraving mode, and when _SELCOLOR is 0.
-    if not light and ink != "photo" and _SELCOLOR > 0:   # all colour inks incl. Custom; not Original
+    if not light and ink not in ("photo", "photo_paper") and _SELCOLOR > 0:   # all colour inks incl. Custom; not Original
         sel = np.zeros((H, W), np.float32)
         ircs = _iris_circles(an, fscale)
         if ircs:
@@ -1603,7 +1615,10 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     # each iris, painted over the finished composite (above the text mask) so the
     # eye looks back. Always white -- the lightest thing on the face -- never ink-
     # or iris-coloured. Dark grounds only; before the pad so coords hold.
-    if not light:
+    # Skip for photo_paper: the catchlight/limbal treatment darkens toward the
+    # ground, which inverts on white paper -- the paper engraving keeps the photo's
+    # own eye tones instead.
+    if not light and ink != "photo_paper":
         # Sclera wash: the whites of the eyes read LIGHT (carrying no typography),
         # painted as a soft warm-white modulated by the photo's own shading so the
         # eye keeps its natural gradient -- not a flat disc, dimmer than glyphs.
