@@ -500,11 +500,11 @@
     <div class="ctl" id="styleGallery" style="margin-top:6px">
       <div class="ctl-lbl">Choose your style</div>
       <div class="seg" id="styleSegResult" aria-label="Choose your style">
-        <button type="button" data-style="words" class="on">Words</button>
-        <button type="button" data-style="message">Message</button>
-        <button type="button" data-style="displacement">Sculpted</button>
+        <button type="button" data-style="displacement" class="on">Lifelike</button>
+        <button type="button" data-style="words">Mosaic</button>
+        <button type="button" data-style="message">Passage</button>
       </div>
-      <div class="ctl-hint" id="styleCaption">Words you love, scattered to form their face.</div>
+      <div class="ctl-hint" id="styleCaption">A lifelike portrait — the words follow their face.</div>
       <div class="ctl-hint" id="bestNote" style="display:none"></div>
     </div>
     <div class="carousel">
@@ -802,9 +802,9 @@ function setStyle(newStyle, rerender){
   if(ct) ct.innerHTML = prose ? "&larr; Use a few words instead" : "Writing a letter or a message instead? &rarr;";
   // Result-screen gallery caption — plain-language description of the chosen look.
   const cap=document.getElementById("styleCaption");
-  if(cap) cap.textContent = disp ? "Words sculpted along the face's contours — a dimensional, carved look."
-    : prose ? "A whole message, letter, or story — shaped into their portrait."
-    : "Words you love, scattered to form their face.";
+  if(cap) cap.textContent = disp ? "A lifelike portrait — the words shaped to follow their face."
+    : prose ? "Their face from a whole message — a letter, a poem, a tribute."
+    : "Their face from scattered words & names you choose.";
   if(disp !== wasDisp) rebuildSwatches();          // swap the swatch strip: inks <-> grounds
   applySizes(null);                                // restock/hide the size strip for this style
   if(rerender && resultView.style.display==="block" && state.file){ invalidate(); render(state.ink,{animate:false}); }
