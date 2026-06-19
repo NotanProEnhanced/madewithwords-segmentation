@@ -1449,22 +1449,44 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         v = np.clip(0.08 + 1.25 * (1.0 - np.clip(lum ** 0.8, 0.0, 1.0)), 0.0, 1.0)
     out = ground + (tip - ground) * v[..., None]
     if ink == "photo_paper":
-        # Eye detail, carried by the WORDS: set the eye region's ink to the real
-        # photo eye, contrast-lifted so iris + lashes stay dark and the sclera stays
-        # light on paper. This is the INK colour (pre-mask) -- compose() then renders
-        # it through the type, so the eye is photo-true (lids, sclera, iris) but made
-        # of words, consistent with the face. Never a smooth pasted patch.
+        # Eye STRUCTURE forced into the ink array (pre-mask), so it renders THROUGH
+        # the words (typographic, never a smooth patch). The photo's own eye is too
+        # light to read on paper for light-eyed/grey subjects, so we lay an explicit
+        # light sclera, a dark iris in the person's HUE, a near-black pupil, and dark
+        # upper+lower lids -- the gradation an eye needs. compose() then textures it
+        # with the type. Coarse at large word sizes (eye = a few words), finer as the
+        # word size drops.
         try:
-            _ee = _eye_ellipses(an, fscale)
+            _ee = _eye_ellipses(an, fscale); _ic = _iris_circles(an, fscale)
             if _ee:
                 _be = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)[..., ::-1]
-                eye_ink = np.clip((_be - 122.0) * 1.45 + 96.0, 0.0, 255.0)
-                em = np.zeros((H, W), np.float32)
-                for (ex, ey, rx, ry) in _ee:
-                    cv2.ellipse(em, (int(round(ex)), int(round(ey))),
-                                (int(round(rx * 1.06)), int(round(ry * 1.18))), 0, 0, 360, 1.0, -1)
-                em = cv2.GaussianBlur(em, (0, 0), sigmaX=max(0.6, float(np.mean([e[2] for e in _ee])) * 0.08))[..., None]
-                out = out * (1.0 - em) + eye_ink * em
+                eye_r = float(np.mean([e[2] for e in _ee]))
+                def _stamp(mask, colour, strength):
+                    nonlocal out
+                    m = cv2.GaussianBlur(mask, (0, 0), sigmaX=max(0.4, eye_r * 0.06))[..., None] * strength
+                    out = out * (1.0 - m) + np.asarray(colour, np.float32) * m
+                # 1) Sclera: a light base across the whole eye (the eye-white).
+                scl = np.zeros((H, W), np.float32)
+                for ex, ey, rx, ry in _ee:
+                    cv2.ellipse(scl, (int(round(ex)), int(round(ey))), (int(round(rx)), int(round(ry * 0.95))), 0, 0, 360, 1.0, -1)
+                _stamp(scl, (236.0, 233.0, 228.0), 0.92)
+                # 2) Iris (the person's hue, forced dark) + 3) near-black pupil.
+                for cx, cy, r in _ic:
+                    irm = np.zeros((H, W), np.float32)
+                    cv2.circle(irm, (int(round(cx)), int(round(cy))), max(2, int(round(r * 0.92))), 1.0, -1, cv2.LINE_AA)
+                    hue = _be[max(0, int(cy)) % H, max(0, int(cx)) % W]
+                    _stamp(irm, np.clip(hue * 0.34, 18.0, 120.0), 0.95)
+                    pum = np.zeros((H, W), np.float32)
+                    cv2.circle(pum, (int(round(cx)), int(round(cy))), max(1, int(round(r * 0.44))), 1.0, -1, cv2.LINE_AA)
+                    _stamp(pum, (20.0, 19.0, 18.0), 0.95)
+                # 4) Lids: dark upper + lower arcs frame the eye.
+                lid = np.zeros((H, W), np.float32)
+                for ex, ey, rx, ry in _ee:
+                    cv2.ellipse(lid, (int(round(ex)), int(round(ey))), (int(round(rx)), int(round(ry))),
+                                0, 180, 360, 1.0, max(2, int(round(ry * 0.26))), cv2.LINE_AA)
+                    cv2.ellipse(lid, (int(round(ex)), int(round(ey))), (int(round(rx * 0.94)), int(round(ry * 0.92))),
+                                0, 6, 174, 1.0, max(1, int(round(ry * 0.16))), cv2.LINE_AA)
+                _stamp(lid, (30.0, 28.0, 26.0), 0.88)
         except Exception:
             pass
     # Living eyes: inside each iris, carry the person's TRUE eye colour in the
