@@ -34,6 +34,10 @@ GROUNDS = {
     "black": {"bg": (14, 14, 14),    "ink": (248, 248, 248), "tone": "light"},  # white on black
 }
 
+# "Keep Paper Light": on the paper ground, fraction of each word's darkness to keep
+# (lower = airier). 0.52 -> a dark-haired photo's words land mid-tone, not heavy.
+_PAPER_DARK_KEEP = 0.52
+
 # Sculpted ink colours: the WORD colour (BGR) draped on the dark ground. These are
 # light/bright tints (mirroring the studio's ink swatches) so they read on navy.
 # "photo" is handled separately (per-pixel from the source). Keeps Sculpted's
@@ -344,8 +348,16 @@ def render_displacement_portrait(
         # Words take the photo's OWN colours, draped over the form, on the ground.
         bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
         hsv = cv2.cvtColor(np.clip(bgr_full, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
-        hsv[..., 1] = np.clip(hsv[..., 1] * 1.25, 0, 255)          # lift saturation
-        hsv[..., 2] = np.clip(hsv[..., 2] * 1.18 + 18, 0, 255)      # lift value vs dark ground
+        if ground == "paper":
+            # "Keep Paper Light": lift the darkest words toward the paper so the
+            # portrait stays delicate even from a dark/contrasty photo -- dark hair
+            # renders as soft mid-tone words, not heavy black. Keep _PAPER_DARK_KEEP
+            # of each word's darkness; gentle saturation so it isn't garish on white.
+            hsv[..., 1] = np.clip(hsv[..., 1] * 1.05, 0, 255)
+            hsv[..., 2] = 255.0 - (255.0 - hsv[..., 2]) * _PAPER_DARK_KEEP
+        else:
+            hsv[..., 1] = np.clip(hsv[..., 1] * 1.25, 0, 255)          # lift saturation
+            hsv[..., 2] = np.clip(hsv[..., 2] * 1.18 + 18, 0, 255)      # lift value vs dark ground
         ink_col = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
         out = np.array(g["bg"], np.float32) * (1 - al) + ink_col * al
     elif ink in _SCULPT_INK:
