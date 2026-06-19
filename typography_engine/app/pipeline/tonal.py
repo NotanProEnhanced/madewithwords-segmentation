@@ -1435,6 +1435,9 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         # rather than vanishing into the white -- a coloured engraving that reads
         # whole. (Distinct from the mono light-engraving formula below.)
         v = np.clip(0.30 + 0.80 * (1.0 - lum), 0.0, 1.0)
+        # Eye detail is injected into the ink array just below (after `out`), so it
+        # rides the SAME word mask in compose -> a photo-true eye made of type, never
+        # a smooth patch. Teeth stay the natural engraving (lips dark, teeth light).
     elif not light:
         v = lum
     else:
@@ -1445,6 +1448,25 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         # with white space, not a faint gray jumble.
         v = np.clip(0.08 + 1.25 * (1.0 - np.clip(lum ** 0.8, 0.0, 1.0)), 0.0, 1.0)
     out = ground + (tip - ground) * v[..., None]
+    if ink == "photo_paper":
+        # Eye detail, carried by the WORDS: set the eye region's ink to the real
+        # photo eye, contrast-lifted so iris + lashes stay dark and the sclera stays
+        # light on paper. This is the INK colour (pre-mask) -- compose() then renders
+        # it through the type, so the eye is photo-true (lids, sclera, iris) but made
+        # of words, consistent with the face. Never a smooth pasted patch.
+        try:
+            _ee = _eye_ellipses(an, fscale)
+            if _ee:
+                _be = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)[..., ::-1]
+                eye_ink = np.clip((_be - 122.0) * 1.45 + 96.0, 0.0, 255.0)
+                em = np.zeros((H, W), np.float32)
+                for (ex, ey, rx, ry) in _ee:
+                    cv2.ellipse(em, (int(round(ex)), int(round(ey))),
+                                (int(round(rx * 1.06)), int(round(ry * 1.18))), 0, 0, 360, 1.0, -1)
+                em = cv2.GaussianBlur(em, (0, 0), sigmaX=max(0.6, float(np.mean([e[2] for e in _ee])) * 0.08))[..., None]
+                out = out * (1.0 - em) + eye_ink * em
+        except Exception:
+            pass
     # Living eyes: inside each iris, carry the person's TRUE eye colour in the
     # glyphs (sampled, never invented -- _iris_tint gates on the photo actually
     # holding the colour; gated-off photos render byte-identical). The tonal
@@ -1682,60 +1704,9 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
                 sig = max(1.0, float(np.mean([g[2] for g in glints])) * fsc * 0.55)
                 gm = np.clip(cv2.GaussianBlur(gm, (0, 0), sigmaX=sig), 0, 1)[..., None]
                 out = (out.astype(np.float32) * (1.0 - gm) + 250.0 * gm).clip(0, 255).astype(np.uint8)
-    elif not light and ink == "photo_paper":
-        # White-ground eyes: build a believable eye on paper -- paper-white sclera,
-        # the iris in its TRUE colour framed by a dark LIMBAL RING (not a black
-        # disc), a small dark pupil, a white catchlight, and a dark UPPER LASH LINE
-        # for the lid. All numpy over the composite -- rasterizer-independent.
-        fsc0 = W / float(an.img.gray.shape[1])
-        eyes_e = _eye_ellipses(an, fsc0)
-        iris_c = _iris_circles(an, fsc0)
-        DARK = np.array([28.0, 26.0, 24.0], np.float32)   # lash / limbal / pupil ink
-        if eyes_e:
-            ir_mean = float(np.mean([r for _, _, r in iris_c])) if iris_c else 1.0
-            eye_r = float(np.mean([e[2] for e in eyes_e]))
-            # Lay the REAL photo eye into the eye region (feathered), contrast-lifted
-            # so the natural anatomy -- lids, lashes, sclera, iris, pupil, catchlight --
-            # reads on white. A synthetic disc looks like a flat dot; the photo's own
-            # eye reads as an eye. The ellipse is enlarged a touch to include the lash
-            # line and lid crease.
-            bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
-            eye_photo = np.clip((bgr_full[..., ::-1] - 120.0) * 1.32 + 110.0, 0.0, 255.0)
-            em = np.zeros((H, W), np.float32)
-            for ex, ey, rx, ry in eyes_e:
-                cv2.ellipse(em, (int(round(ex)), int(round(ey))),
-                            (int(round(rx * 1.10)), int(round(ry * 1.22))), 0, 0, 360, 1.0, -1)
-            em = cv2.GaussianBlur(em, (0, 0), sigmaX=max(0.8, eye_r * 0.10))[..., None]
-            out = (out.astype(np.float32) * (1.0 - em) + eye_photo * em).clip(0, 255).astype(np.uint8)
-            # Upper lash line: a dark arc along the top of each eye -- the lid that
-            # frames it (without it the eye floats on blank paper).
-            ll = np.zeros((H, W), np.float32)
-            for ex, ey, rx, ry in eyes_e:
-                cv2.ellipse(ll, (int(round(ex)), int(round(ey))), (int(round(rx)), int(round(ry))),
-                            0, 182, 358, 1.0, max(2, int(round(ry * 0.22))), cv2.LINE_AA)
-            ll = cv2.GaussianBlur(ll, (0, 0), sigmaX=max(0.6, eye_r * 0.05))[..., None]
-            out = (out.astype(np.float32) * (1.0 - 0.85 * ll) + DARK * (0.85 * ll)).clip(0, 255).astype(np.uint8)
-        glints = _catchlight_points(an)
-        if glints:
-            fsc = W / float(an.img.gray.shape[1])
-            gm = np.zeros((H, W), np.float32)
-            for gx, gy, gr in glints:
-                cv2.circle(gm, (int(round(gx * fsc)), int(round(gy * fsc))),
-                           max(2, int(round(gr * fsc))), 1.0, -1, cv2.LINE_AA)
-            if gm.any():
-                sig = max(1.0, float(np.mean([g[2] for g in glints])) * fsc * 0.55)
-                gm = np.clip(cv2.GaussianBlur(gm, (0, 0), sigmaX=sig), 0, 1)[..., None]
-                out = (out.astype(np.float32) * (1.0 - gm) + 250.0 * gm).clip(0, 255).astype(np.uint8)
-        # Teeth on paper: clear the inner mouth and lay the photo's OWN teeth tone
-        # back, darkened + unsharpened so the tooth gaps and gum line read on white
-        # (a defined smile, not a white blob). Closed mouths yield no mask -> untouched.
-        tm = _teeth_mask(_faces_of(an)[0].points * fsc0 if _faces_of(an) else None, H, W)
-        if tm is not None:
-            bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
-            teeth = np.clip(bgr_full[..., ::-1] * 0.82, 0.0, 255.0)
-            teeth = cv2.addWeighted(teeth, 1.7, cv2.GaussianBlur(teeth, (0, 0), 1.4), -0.7, 0.0)
-            tw = (tm * 0.92)[..., None]
-            out = (out.astype(np.float32) * (1.0 - tw) + teeth * tw).clip(0, 255).astype(np.uint8)
+    # (photo_paper paints NO compose-level eye/teeth patch -- that read as a sticker
+    # glued on the typography. Its eyes + smile are formed by the WORDS themselves,
+    # deepened in the tonal field in _tint_photo so the features emerge from type.)
     # Standard print canvas (4:5 = 16x20): pad with the ground BEFORE the boost
     # and vibrance passes so the band is processed identically to the interior
     # ground (no visible seam).
