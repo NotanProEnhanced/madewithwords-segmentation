@@ -181,6 +181,13 @@
   /* Relief has only 2 grounds -> centre them, no scroll arrows */
   .carousel.relief .arrow{display:none}
   .carousel.relief .swatches{justify-content:center}
+  /* A swatch not available in the current style (e.g. Paper outside Lifelike):
+     dimmed + struck through, and inert. */
+  .thumb.na{opacity:.5}
+  .thumb.na .pic{position:relative}
+  .thumb.na .pic::after{content:"";position:absolute;inset:0;border-radius:16px;
+    background:linear-gradient(135deg,transparent 44%,rgba(150,42,42,.85) 46% 54%,transparent 56%)}
+  .seg button.hint{box-shadow:inset 0 0 0 2px var(--navy)}
   .thumb-status{display:flex;align-items:center;justify-content:center;gap:8px;min-height:18px;
     text-align:center;color:var(--muted);font-size:13px;margin-top:10px;opacity:0;transition:opacity .2s}
   .thumb-status.on{opacity:1}
@@ -783,6 +790,9 @@ const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch");
 function setStyle(newStyle, rerender){
   const wasDisp = state.style==="displacement";
   state.style=newStyle;
+  // Paper is the Lifelike-on-white look; leaving Lifelike with it selected falls
+  // back to Original so Mosaic/Passage never render the (now struck-out) Paper.
+  if(newStyle!=="displacement" && state.ink==="photo_paper") state.ink="photo";
   document.querySelectorAll('#styleSeg button, #styleSegResult button')
     .forEach(c=>c.classList.toggle("on", c.dataset.style===newStyle));
   const prose = newStyle==="message", disp = newStyle==="displacement";
@@ -1106,7 +1116,11 @@ function buildSwatches(){
   swatchEl.innerHTML="";
   currentSwatches().forEach(([id,col,label])=>{
     const el=document.createElement("button"); el.type="button";
-    el.className="thumb"+(id===state.ink?" sel":""); el.dataset.ink=id;
+    // "Paper" is the Lifelike-on-white look (it drives the Sculpt renderer), so it
+    // only applies to Lifelike -- strike it out / make it inert under Mosaic & Passage.
+    const paperNA = (id==="photo_paper" && state.style!=="displacement");
+    el.className="thumb"+(id===state.ink?" sel":"")+(paperNA?" na":""); el.dataset.ink=id;
+    if(paperNA) el.title="Paper is available with the Lifelike style";
     const pic=document.createElement("div"); pic.className="pic"; pic.dataset.ink=id;
     // Set the colour/gradient placeholder on its own longhand -- the `background`
     // shorthand would reset background-size to auto and break the cover crop when
@@ -1114,7 +1128,9 @@ function buildSwatches(){
     const ph=placeholderBg(col);
     if(ph.indexOf("gradient")>=0) pic.style.backgroundImage=ph; else pic.style.backgroundColor=ph;
     const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
-    el.append(pic,nm); el.addEventListener("click", ()=>selectInk(id)); swatchEl.append(el);
+    el.append(pic,nm);
+    el.addEventListener("click", ()=>{ if(paperNA){ nudgePaper(); return; } selectInk(id); });
+    swatchEl.append(el);
   });
   // "Custom colour" chip (curated swatches stay; this is additive). The layered
   // Words/Message renderer honours a picked colour; Sculpt doesn't, so hide it there.
@@ -1134,6 +1150,12 @@ function buildSwatches(){
     swatchEl.append(cel);
   }
   requestAnimationFrame(updateCarouselArrows);   // hide the scroll arrows unless the strip overflows
+}
+// Tapping the struck-through Paper swatch (in Mosaic/Passage) hints where it lives:
+// briefly highlight the Lifelike style button.
+function nudgePaper(){
+  const b=document.querySelector('#styleSegResult button[data-style="displacement"]');
+  if(b){ b.classList.add("hint"); setTimeout(()=>{ b.classList.remove("hint"); }, 1100); }
 }
 // Show the carousel arrows ONLY when the swatches overflow their track. With the
 // curated palette they fit on desktop, so the arrows hide (they otherwise read as
