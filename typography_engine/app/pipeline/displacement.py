@@ -37,6 +37,12 @@ GROUNDS = {
 # "Keep Paper Light": on the paper ground, fraction of each word's darkness to keep
 # (lower = airier). 0.52 -> a dark-haired photo's words land mid-tone, not heavy.
 _PAPER_DARK_KEEP = 0.52
+# Paper colour balance: warm skin renders orange/rust on the light ground, so pull
+# saturation DOWN for a natural, balanced face. The iris is re-laid separately and
+# kept a touch more saturated so the true eye colour still reads -- but close enough
+# to the face that the eyes don't look pasted on.
+_PAPER_SAT = 0.70
+_PAPER_IRIS_SAT = 1.15
 
 # Sculpted ink colours: the WORD colour (BGR) draped on the dark ground. These are
 # light/bright tints (mirroring the studio's ink swatches) so they read on navy.
@@ -353,7 +359,7 @@ def render_displacement_portrait(
             # portrait stays delicate even from a dark/contrasty photo -- dark hair
             # renders as soft mid-tone words, not heavy black. Keep _PAPER_DARK_KEEP
             # of each word's darkness; gentle saturation so it isn't garish on white.
-            hsv[..., 1] = np.clip(hsv[..., 1] * 1.05, 0, 255)
+            hsv[..., 1] = np.clip(hsv[..., 1] * _PAPER_SAT, 0, 255)   # tame the warm/orange cast
             hsv[..., 2] = 255.0 - (255.0 - hsv[..., 2]) * _PAPER_DARK_KEEP
         else:
             hsv[..., 1] = np.clip(hsv[..., 1] * 1.25, 0, 255)          # lift saturation
@@ -385,7 +391,7 @@ def render_displacement_portrait(
         # the real hue (her green/hazel/blue) pops against the airy face.
         bf = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
         hv = cv2.cvtColor(np.clip(bf, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
-        hv[..., 1] = np.clip(hv[..., 1] * 1.45, 0, 255)      # vivid, true hue
+        hv[..., 1] = np.clip(hv[..., 1] * _PAPER_IRIS_SAT, 0, 255)   # true hue, balanced with the face
         iris_col = cv2.cvtColor(hv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
         iout = np.array(g["bg"], np.float32) * (1 - al) + iris_col * al
         im3 = iris_m[..., None]
