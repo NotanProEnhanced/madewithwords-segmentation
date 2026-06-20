@@ -29,19 +29,20 @@ from .analyze import Analysis
 # ink follows the photo's highlights ("light" -> light ink on a dark ground) or
 # its shadows ("dark" -> dark ink on a light ground).
 GROUNDS = {
-    "paper": {"bg": (240, 247, 250), "ink": (58, 33, 20), "tone": "dark"},   # near-black on cream
+    "paper": {"bg": (120, 132, 142), "ink": (58, 33, 20), "tone": "dark"},   # full-range tones on warm greige (BGR)
     "navy":  {"bg": (58, 27, 13),    "ink": (248, 248, 248), "tone": "light"},  # white on navy (hero)
     "black": {"bg": (14, 14, 14),    "ink": (248, 248, 248), "tone": "light"},  # white on black
 }
 
-# "Keep Paper Light": on the paper ground, fraction of each word's darkness to keep
-# (lower = airier). 0.52 -> a dark-haired photo's words land mid-tone, not heavy.
-_PAPER_DARK_KEEP = 0.72
+# Paper ground is now a warm MID-GREIGE (not near-white), so the words can carry
+# the photo's FULL tonal range: dark features read dark, light hair/skin read light
+# against the greige -- both ends show (white grounds drop highlights entirely, so
+# light-haired subjects lost their hair). 1.0 = keep all of each word's true value
+# (no muting); the mid ground does the legibility work instead of a tone lift.
+_PAPER_DARK_KEEP = 1.0
 # Paper colour: match the Original (dark) saturation (1.25) so Paper carries the
-# same rich hue/chroma -- only the value differs (Keep Paper Light keeps it legible
-# on white instead of glowing on black). Iris a touch higher so the eyes stay
-# distinct against the now equally-rich face. Earlier orange came from a HEAVY lift
-# (keep 0.52) + sat; with keep 0.72 the truer tones hold even at full saturation.
+# same rich hue/chroma. With true tones on the greige ground, the iris stays a
+# touch higher so the eyes read distinct against the equally-rich face.
 _PAPER_SAT = 1.25
 _PAPER_IRIS_SAT = 1.30
 
