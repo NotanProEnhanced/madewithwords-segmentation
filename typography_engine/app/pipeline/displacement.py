@@ -29,22 +29,25 @@ from .analyze import Analysis
 # ink follows the photo's highlights ("light" -> light ink on a dark ground) or
 # its shadows ("dark" -> dark ink on a light ground).
 GROUNDS = {
-    "paper": {"bg": (120, 132, 142), "ink": (58, 33, 20), "tone": "dark"},   # full-range tones on warm greige (BGR)
+    "paper": {"bg": (232, 240, 244), "ink": (58, 33, 20), "tone": "dark"},   # ink-drawing on warm ivory (BGR)
     "navy":  {"bg": (58, 27, 13),    "ink": (248, 248, 248), "tone": "light"},  # white on navy (hero)
     "black": {"bg": (14, 14, 14),    "ink": (248, 248, 248), "tone": "light"},  # white on black
 }
 
-# Paper ground is now a warm MID-GREIGE (not near-white), so the words can carry
-# the photo's FULL tonal range: dark features read dark, light hair/skin read light
-# against the greige -- both ends show (white grounds drop highlights entirely, so
-# light-haired subjects lost their hair). 1.0 = keep all of each word's true value
-# (no muting); the mid ground does the legibility work instead of a tone lift.
-_PAPER_DARK_KEEP = 1.0
-# Paper colour: match the Original (dark) saturation (1.25) so Paper carries the
-# same rich hue/chroma. With true tones on the greige ground, the iris stays a
-# touch higher so the eyes read distinct against the equally-rich face.
-_PAPER_SAT = 1.25
-_PAPER_IRIS_SAT = 1.30
+# Paper = an INK-DRAWING on warm ivory. Colouring words by the photo's brightness
+# fails on a light ground (light hair/skin are highlights -> they vanish), so here
+# tone comes from ink DENSITY instead: dark photo areas get heavy dark ink; light
+# areas fade to paper; and an EDGE pass adds ink along contours (hair strands,
+# silhouette, features) so light hair is DRAWN by its structure, not erased. The
+# ink itself is always dark (a warm hue) so wherever it lands it reads on the ivory.
+_PAPER_INK_VALUE = 72       # HSV V cap of the ink -- always dark enough to read
+_PAPER_INK_SAT = 1.30       # keep a warm hint of the photo's hue in the ink
+_PAPER_DARK_GAMMA = 0.80    # <1 lifts faint mid-darks so the face isn't too empty
+_PAPER_DARK_GAIN = 1.12     # overall ink weight from darkness
+_PAPER_EDGE_GAIN = 0.85     # extra ink along contours (this is what draws light hair)
+_PAPER_WASH = 0.62          # hand-tint: how strongly the photo's colour washes the face
+_PAPER_WASH_SAT = 1.10      # saturation of that wash (skin/lip warmth)
+_PAPER_IRIS_SAT = 1.36
 
 # Sculpted ink colours: the WORD colour (BGR) draped on the dark ground. These are
 # light/bright tints (mirroring the studio's ink swatches) so they read on navy.
@@ -351,18 +354,30 @@ def render_displacement_portrait(
     teeth = _teeth_mask(pts, H, W)
     if teeth is not None:
         a = a * (1.0 - 0.92 * teeth)
+    if ground == "paper":
+        # INK-DRAWING density: tone is how much ink lands, not its colour. Heavy ink
+        # where the photo is dark; fade to paper where it's light; an edge boost draws
+        # contours/hair strands so light hair isn't erased on the ivory.
+        valn = gray / 255.0
+        dark = np.clip(1.0 - valn, 0.0, 1.0) ** _PAPER_DARK_GAMMA
+        gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        edge = np.hypot(gx, gy)
+        edge = np.clip(edge / (float(np.percentile(edge, 99.0)) + 1e-6), 0.0, 1.0)
+        edge = cv2.GaussianBlur(edge, (0, 0), max(0.6, 0.8 * _ssn))
+        ink_amt = np.clip(dark * _PAPER_DARK_GAIN + edge * _PAPER_EDGE_GAIN, 0.0, 1.0)
+        a = a * ink_amt
     al = a[..., None]
     if ink == "photo":
         # Words take the photo's OWN colours, draped over the form, on the ground.
         bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
         hsv = cv2.cvtColor(np.clip(bgr_full, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
         if ground == "paper":
-            # "Keep Paper Light": lift the darkest words toward the paper so the
-            # portrait stays delicate even from a dark/contrasty photo -- dark hair
-            # renders as soft mid-tone words, not heavy black. Keep _PAPER_DARK_KEEP
-            # of each word's darkness; gentle saturation so it isn't garish on white.
-            hsv[..., 1] = np.clip(hsv[..., 1] * _PAPER_SAT, 0, 255)   # tame the warm/orange cast
-            hsv[..., 2] = 255.0 - (255.0 - hsv[..., 2]) * _PAPER_DARK_KEEP
+            # Ink-drawing: ONE dark warm ink (the photo's hue, forced dark) so wherever
+            # ink lands it reads on the ivory. Tone is the DENSITY applied above, not V.
+            # minimum() keeps deep shadows even deeper than the cap for richness.
+            hsv[..., 1] = np.clip(hsv[..., 1] * _PAPER_INK_SAT, 0, 255)
+            hsv[..., 2] = np.minimum(hsv[..., 2], np.float32(_PAPER_INK_VALUE))
         else:
             hsv[..., 1] = np.clip(hsv[..., 1] * 1.25, 0, 255)          # lift saturation
             hsv[..., 2] = np.clip(hsv[..., 2] * 1.18 + 18, 0, 255)      # lift value vs dark ground
@@ -373,6 +388,20 @@ def render_displacement_portrait(
         out = np.array(g["bg"], np.float32) * (1 - al) + word * al
     else:
         out = np.array(g["bg"], np.float32) * (1 - al) + np.array(g["ink"], np.float32) * al
+
+    # Hand-tint (paper only): wash the photo's real colour over the SUBJECT so the
+    # face carries skin/lip/cheek tone, like a colourist tinting a pen-and-ink
+    # portrait. Modulated by lightness so it tints the ivory between the words but
+    # leaves the dark ink crisp; masked to the silhouette so the paper stays clean.
+    # Applied BEFORE the eye/teeth fills so white sclera/teeth + true iris land on top.
+    if ground == "paper" and ink == "photo":
+        wcol = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+        whsv = cv2.cvtColor(np.clip(wcol, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
+        whsv[..., 1] = np.clip(whsv[..., 1] * _PAPER_WASH_SAT, 0, 255)
+        wash = cv2.cvtColor(whsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
+        light = np.clip(out.mean(axis=2) / 255.0, 0.0, 1.0)          # tint lights, spare ink
+        wmask = (mask01 * _PAPER_WASH * light)[..., None]
+        out = out * (1.0 - wmask) + wash * wmask
 
     # Living eyes, colour: glyphs inside the iris carry the person's TRUE eye
     # colour -- sampled by the shared gated helper (both irises saturated and
@@ -411,17 +440,24 @@ def render_displacement_portrait(
     # glowed and picked up the render's cast); the neutral tone never glows and
     # never takes the ink's colour. The iris still carries the subject's real eye
     # colour in Photo mode (handled separately above).
-    if g["tone"] == "light" and (irises or teeth is not None):
+    if (g["tone"] == "light" or ground == "paper") and (irises or teeth is not None):
         gshade = np.clip((gray / 255.0 - 0.20) / 0.55, 0.0, 1.0)
+        # On the mid greige paper ground the sclera/teeth must be painted brighter
+        # and stronger than on a dark ground, or they read as dirty greige instead
+        # of white -- this is what makes the eyes/smile come alive on paper.
+        paper_feat = ground == "paper"
+        s_str, t_str = (0.90, 0.92) if paper_feat else (0.60, 0.66)
+        s_col = (236, 238, 240) if paper_feat else (198, 200, 202)
+        t_col = (238, 240, 242) if paper_feat else (200, 202, 204)
         if irises:
-            sw = (scl * gshade * 0.60)[..., None]
-            out = out * (1.0 - sw) + np.array((198, 200, 202), np.float32) * sw
+            sw = (scl * gshade * s_str)[..., None]
+            out = out * (1.0 - sw) + np.array(s_col, np.float32) * sw
         if teeth is not None:
-            tw = (teeth * gshade * 0.66)[..., None]
-            out = out * (1.0 - tw) + np.array((200, 202, 204), np.float32) * tw
+            tw = (teeth * gshade * t_str)[..., None]
+            out = out * (1.0 - tw) + np.array(t_col, np.float32) * tw
     # Catchlight is a SPECULAR highlight: always white (the lightest thing on the
     # face), never ink- or iris-coloured -- painted over the colour composite.
-    if irises and g["tone"] == "light":
+    if irises and (g["tone"] == "light" or ground == "paper"):
         gl3 = glint[..., None]
         out = out * (1.0 - gl3) + np.float32(250.0) * gl3
     oh = max(1, int(out_width * h0 / w0))
