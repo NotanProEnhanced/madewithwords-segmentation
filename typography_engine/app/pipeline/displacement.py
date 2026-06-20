@@ -40,12 +40,12 @@ GROUNDS = {
 # areas fade to paper; and an EDGE pass adds ink along contours (hair strands,
 # silhouette, features) so light hair is DRAWN by its structure, not erased. The
 # ink itself is always dark (a warm hue) so wherever it lands it reads on the ivory.
-_PAPER_INK_VALUE = 92       # HSV V cap of the ink -- dark enough to read on ivory
-_PAPER_INK_SAT = 1.70       # COLOUR lives in the GLYPHS: push hue so skin/lips/eyes read
+_PAPER_INK_VALUE = 102      # HSV V cap of the ink -- dark enough to read on ivory
+_PAPER_INK_SAT = 1.95       # COLOUR lives in the GLYPHS: push hue so skin/lips/eyes read
 _PAPER_DARK_GAMMA = 0.80    # <1 lifts faint mid-darks so the face isn't too empty
 _PAPER_DARK_GAIN = 1.12     # overall ink weight from darkness
 _PAPER_EDGE_GAIN = 0.85     # extra ink along contours (this is what draws light hair)
-_PAPER_INK_FLOOR = 0.16     # minimum ink on the subject so the face stays typographic
+_PAPER_INK_FLOOR = 0.30     # minimum ink on the subject so the face stays densely typographic
 _PAPER_IRIS_SAT = 1.36
 
 # Sculpted ink colours: the WORD colour (BGR) draped on the dark ground. These are
