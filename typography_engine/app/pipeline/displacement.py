@@ -40,13 +40,12 @@ GROUNDS = {
 # areas fade to paper; and an EDGE pass adds ink along contours (hair strands,
 # silhouette, features) so light hair is DRAWN by its structure, not erased. The
 # ink itself is always dark (a warm hue) so wherever it lands it reads on the ivory.
-_PAPER_INK_VALUE = 72       # HSV V cap of the ink -- always dark enough to read
-_PAPER_INK_SAT = 1.30       # keep a warm hint of the photo's hue in the ink
+_PAPER_INK_VALUE = 92       # HSV V cap of the ink -- dark enough to read on ivory
+_PAPER_INK_SAT = 1.70       # COLOUR lives in the GLYPHS: push hue so skin/lips/eyes read
 _PAPER_DARK_GAMMA = 0.80    # <1 lifts faint mid-darks so the face isn't too empty
 _PAPER_DARK_GAIN = 1.12     # overall ink weight from darkness
 _PAPER_EDGE_GAIN = 0.85     # extra ink along contours (this is what draws light hair)
-_PAPER_WASH = 0.62          # hand-tint: how strongly the photo's colour washes the face
-_PAPER_WASH_SAT = 1.10      # saturation of that wash (skin/lip warmth)
+_PAPER_INK_FLOOR = 0.16     # minimum ink on the subject so the face stays typographic
 _PAPER_IRIS_SAT = 1.36
 
 # Sculpted ink colours: the WORD colour (BGR) draped on the dark ground. These are
@@ -365,7 +364,7 @@ def render_displacement_portrait(
         edge = np.hypot(gx, gy)
         edge = np.clip(edge / (float(np.percentile(edge, 99.0)) + 1e-6), 0.0, 1.0)
         edge = cv2.GaussianBlur(edge, (0, 0), max(0.6, 0.8 * _ssn))
-        ink_amt = np.clip(dark * _PAPER_DARK_GAIN + edge * _PAPER_EDGE_GAIN, 0.0, 1.0)
+        ink_amt = np.clip(dark * _PAPER_DARK_GAIN + edge * _PAPER_EDGE_GAIN + _PAPER_INK_FLOOR, 0.0, 1.0)
         a = a * ink_amt
     al = a[..., None]
     if ink == "photo":
@@ -373,9 +372,10 @@ def render_displacement_portrait(
         bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
         hsv = cv2.cvtColor(np.clip(bgr_full, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
         if ground == "paper":
-            # Ink-drawing: ONE dark warm ink (the photo's hue, forced dark) so wherever
-            # ink lands it reads on the ivory. Tone is the DENSITY applied above, not V.
-            # minimum() keeps deep shadows even deeper than the cap for richness.
+            # Ink-drawing with COLOURED glyphs: the words keep the photo's hue at high
+            # saturation but a capped dark value, so each word reads as coloured TYPE on
+            # ivory (skin/lips/eyes show) -- colour from the glyphs, not a photo overlay.
+            # Tone is the ink DENSITY applied above; minimum() keeps deep shadows deep.
             hsv[..., 1] = np.clip(hsv[..., 1] * _PAPER_INK_SAT, 0, 255)
             hsv[..., 2] = np.minimum(hsv[..., 2], np.float32(_PAPER_INK_VALUE))
         else:
@@ -388,20 +388,6 @@ def render_displacement_portrait(
         out = np.array(g["bg"], np.float32) * (1 - al) + word * al
     else:
         out = np.array(g["bg"], np.float32) * (1 - al) + np.array(g["ink"], np.float32) * al
-
-    # Hand-tint (paper only): wash the photo's real colour over the SUBJECT so the
-    # face carries skin/lip/cheek tone, like a colourist tinting a pen-and-ink
-    # portrait. Modulated by lightness so it tints the ivory between the words but
-    # leaves the dark ink crisp; masked to the silhouette so the paper stays clean.
-    # Applied BEFORE the eye/teeth fills so white sclera/teeth + true iris land on top.
-    if ground == "paper" and ink == "photo":
-        wcol = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
-        whsv = cv2.cvtColor(np.clip(wcol, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
-        whsv[..., 1] = np.clip(whsv[..., 1] * _PAPER_WASH_SAT, 0, 255)
-        wash = cv2.cvtColor(whsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
-        light = np.clip(out.mean(axis=2) / 255.0, 0.0, 1.0)          # tint lights, spare ink
-        wmask = (mask01 * _PAPER_WASH * light)[..., None]
-        out = out * (1.0 - wmask) + wash * wmask
 
     # Living eyes, colour: glyphs inside the iris carry the person's TRUE eye
     # colour -- sampled by the shared gated helper (both irises saturated and
