@@ -10,7 +10,7 @@ import math
 import sys
 from PIL import Image
 
-PAPER = (246, 244, 238)
+PAPER = (255, 255, 255)
 INK = (17, 20, 24)
 
 
@@ -34,9 +34,11 @@ def ci(v, lo, hi):
 def main():
     src = sys.argv[1]
     out = sys.argv[2]
-    density = float(sys.argv[3]) if len(sys.argv) > 3 else 0.85
-    gamma = float(sys.argv[4]) if len(sys.argv) > 4 else 1.55
-    flow, opacity, weight, baseLen = 0.80, 0.20, 0.95, 24
+    density = float(sys.argv[3]) if len(sys.argv) > 3 else 0.82
+    gamma = float(sys.argv[4]) if len(sys.argv) > 4 else 1.30
+    remove_bg = (sys.argv[5] != "0") if len(sys.argv) > 5 else True
+    matte_path = sys.argv[6] if len(sys.argv) > 6 else None
+    flow, opacity, weight, baseLen = 0.72, 0.20, 1.0, 58
 
     img = Image.open(src).convert("RGB")
     iw, ih = img.size
@@ -47,10 +49,47 @@ def main():
     px = small.load()
 
     tone = [0.0] * (mw * mh)
+    rgbm = [(0, 0, 0)] * (mw * mh)
     for y in range(mh):
         for x in range(mw):
             r_, g_, b_ = px[x, y]
+            rgbm[y * mw + x] = (r_, g_, b_)
             tone[y * mw + x] = (0.2126 * r_ + 0.7152 * g_ + 0.0722 * b_) / 255
+
+    # Foreground matte. If an external alpha matte is supplied (e.g. u2net),
+    # use it; otherwise fall back to the border flood-fill (mirrors app.js).
+    fg = [1] * (mw * mh)
+    if matte_path:
+        m = Image.open(matte_path).convert("L").resize((mw, mh), Image.LANCZOS)
+        mp = m.load()
+        fg = [1 if mp[x, y] > 90 else 0 for y in range(mh) for x in range(mw)]
+    elif remove_bg:
+        bg = [0] * (mw * mh)
+        stack = []
+        tol = 0.085 * 3 * 255
+
+        def pushb(i):
+            if not bg[i]:
+                bg[i] = 1
+                stack.append(i)
+        for x in range(mw):
+            pushb(x); pushb((mh - 1) * mw + x)
+        for y in range(mh):
+            pushb(y * mw); pushb(y * mw + mw - 1)
+        while stack:
+            i = stack.pop()
+            xx, yy = i % mw, i // mw
+            cr, cg, cb = rgbm[i]
+            for nx2, ny2 in ((xx-1,yy),(xx+1,yy),(xx,yy-1),(xx,yy+1)):
+                if nx2 < 0 or ny2 < 0 or nx2 >= mw or ny2 >= mh:
+                    continue
+                j = ny2 * mw + nx2
+                if bg[j]:
+                    continue
+                dr, dg, db = rgbm[j]
+                if abs(cr - dr) + abs(cg - dg) + abs(cb - db) < tol:
+                    pushb(j)
+        fg = [0 if bg[i] else 1 for i in range(mw * mh)]
 
     def t(x, y):
         return tone[ci(y, 0, mh - 1) * mw + ci(x, 0, mw - 1)]
@@ -65,6 +104,9 @@ def main():
     residual = [0.0] * (mw * mh)
     total = 0.0
     for i in range(len(tone)):
+        if not fg[i]:
+            residual[i] = 0.0
+            continue
         dd = (1 - tone[i]) ** gamma
         if dd < 0.015:
             dd = 0.0
@@ -104,7 +146,7 @@ def main():
 
     def deposit(x, y, amt):
         ix, iy = int(x), int(y)
-        k = amt * 1.35
+        k = amt * 0.5
         for dy in (-1, 0, 1):
             yy = iy + dy
             if yy < 0 or yy >= mh:
@@ -113,9 +155,16 @@ def main():
                 xx = ix + dx
                 if xx < 0 or xx >= mw:
                     continue
-                w = 1 if dx == 0 and dy == 0 else 0.4
+                w = 1 if dx == 0 and dy == 0 else 0.22
                 idx = yy * mw + xx
                 residual[idx] = max(0.0, residual[idx] - k * w)
+
+    def deposit_line(x0, y0, x1, y1, amt):
+        dist = math.hypot(x1 - x0, y1 - y0)
+        n = max(1, round(dist))
+        for s in range(1, n + 1):
+            tt = s / n
+            deposit(x0 + (x1 - x0) * tt, y0 + (y1 - y0) * tt, amt)
 
     def alerp(a, b, tt):
         d = b - a
@@ -148,12 +197,13 @@ def main():
             strokes += 1
             continue
         strength = best
-        segs = max(3, round(baseLen * (0.5 + 0.7 * strength)))
-        step = 0.9 + r() * 0.5
+        len_scale = baseLen / 26
+        segs = min(90, max(4, round(baseLen * (0.45 + 0.6 * strength))))
+        step = (0.9 + r() * 0.5) * len_scale
+        wob = (0.10 + (1 - flow) * 0.42) / max(1, len_scale * 0.6)
         x = sx + (r() - 0.5)
         y = sy + (r() - 0.5)
         ang = grad[ci(int(y),0,mh-1)*mw+ci(int(x),0,mw-1)] + (r()-0.5)*(1-flow)*math.pi*1.4
-        wob = 0.18 + (1 - flow) * 0.5
         a = min(0.85, max(0.02, opacity * (0.55 + 0.7 * strength)))
         pxn, pyn = x, y
         for i in range(segs):
@@ -163,10 +213,13 @@ def main():
             ny = pyn + math.sin(ang) * step
             if nx < 0 or ny < 0 or nx >= mw or ny >= mh:
                 break
-            if residual[int(ny) * mw + int(nx)] < 0.02 and i > 2:
+            idx = int(ny) * mw + int(nx)
+            if remove_bg and not fg[idx] and i > 0:
+                break
+            if residual[idx] < 0.02 and i > 2:
                 break
             seg(pxn, pyn, nx, ny, a)
-            deposit(nx, ny, a)
+            deposit_line(pxn, pyn, nx, ny, a)
             pxn, pyn = nx, ny
         strokes += 1
 

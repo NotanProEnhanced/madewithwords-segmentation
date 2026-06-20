@@ -10,10 +10,14 @@ Everything runs on the device — the photo is never uploaded anywhere.
 
 - **Upload by drag‑and‑drop, file picker, or paste** (Ctrl/⌘+V).
 - **Realtime animated sketching** — watch the strokes accumulate frame by frame.
-- **Contour‑aware scribbles** — strokes flow along the photo's tonal contours
-  (hair, jawline, cheekbones), piling up in dark regions, just like a
-  hand‑drawn scribble portrait.
-- **Live controls**: density, contrast, stroke length, flow (chaotic ↔ contour),
+- **Contour‑aware scribbles** — long, sweeping strokes flow along the photo's
+  tonal contours (hair, jawline, cheekbones), piling up in dark regions, just
+  like a hand‑drawn scribble portrait.
+- **Remove background (subject only)** — on‑device subject segmentation isolates
+  the person so ink stays on them and the background drops to clean paper. Uses
+  a u2net‑class model that runs in‑browser (WebAssembly) and caches itself after
+  first load; if it can't load, a lightweight border flood‑fill takes over.
+- **Live controls**: density, contrast, scribble size, flow (chaotic ↔ contour),
   line weight, ink opacity, plus ink/paper colours.
 - **Save PNG** of the finished artwork (high‑res).
 - **Installable & offline** — PWA manifest + service worker cache the app shell.
@@ -34,7 +38,18 @@ Everything runs on the device — the photo is never uploaded anywhere.
 Strokes are drawn in batches via `requestAnimationFrame`, which is what makes the
 drawing animate smoothly in realtime.
 
-All logic lives in [`app.js`](app.js); no build step, no dependencies.
+When **Remove background** is on, a u2net‑class segmentation model produces a
+subject matte first; the residual ink field is zeroed outside the subject so no
+strokes land on the background.
+
+All logic lives in [`app.js`](app.js); no build step. The only external
+dependency is the optional background‑removal model, loaded lazily from a CDN on
+first use and cached by the browser thereafter — so the very first background
+removal needs a network connection, but everything else (and all later runs)
+works offline.
+
+`_render_photo.py` is a dev‑only harness that mirrors the engine for eyeballing
+output without a browser; it is not part of the shipped app.
 
 ## Run it locally
 

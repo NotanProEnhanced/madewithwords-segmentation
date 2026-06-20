@@ -31,6 +31,7 @@
     opacity: $('opacity'),
     ink: $('inkColor'),
     paper: $('paperColor'),
+    removeBg: $('removeBg'),
     animate: $('animateChk'),
   };
   const labels = {
@@ -56,11 +57,19 @@
   let tone = null;             // Float32Array luminance 0..1 (mapW*mapH)
   let residual = null;         // Float32Array remaining ink demand
   let gradAngle = null;        // Float32Array contour direction (radians)
+  let fgMask = null;           // Uint8Array 1=subject, 0=background
   let initialInk = 0;          // sum of residual at start
   let strokeCount = 0;
   let rafId = 0;
   let paused = false;
   let running = false;
+  let lastFile = null;         // most recent upload, for re-matting on toggle
+  let matteImg = null;         // ML subject cutout (transparent bg), or null
+
+  // On-device subject segmentation (u2net-class model, runs in WebAssembly and
+  // caches itself after first load). Loaded lazily from CDN the first time the
+  // user removes a background; falls back to the flood-fill matte on failure.
+  const BG_REMOVAL_CDN = 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.8/+esm';
   const RAND_STATE = { s: 0x2545f491 };
 
   // Deterministic PRNG so a re-sketch with identical settings is reproducible.
@@ -75,18 +84,42 @@
   // ---- Image intake ----
   async function loadFile(file) {
     if (!file || !file.type.startsWith('image/')) return;
+    lastFile = file;
+    matteImg = null;
     const url = URL.createObjectURL(file);
     try {
-      const img = await loadImage(url);
-      sourceBitmap = img;
-      buildToneMap();
-      enableControls(true);
-      startSketch();
+      sourceBitmap = await loadImage(url);
     } catch (err) {
       console.error(err);
       alert('Could not read that image. Try a JPG or PNG.');
-    } finally {
       URL.revokeObjectURL(url);
+      return;
+    }
+    URL.revokeObjectURL(url);
+
+    canvas.hidden = false;
+    dropzone.style.display = 'none';
+    await prepareMatte();        // compute the ML cutout if "Remove background" is on
+    buildToneMap();
+    enableControls(true);
+    startSketch();
+  }
+
+  // Run on-device background removal for the current file. Best-effort: any
+  // failure (offline, model blocked) leaves matteImg null so we fall back.
+  async function prepareMatte() {
+    matteImg = null;
+    if (!controls.removeBg.checked || !lastFile) return;
+    busy('Isolating subject…');
+    try {
+      const mod = await import(BG_REMOVAL_CDN);
+      const blob = await mod.removeBackground(lastFile);
+      const u = URL.createObjectURL(blob);
+      matteImg = await loadImage(u);
+      URL.revokeObjectURL(u);
+    } catch (err) {
+      console.warn('On-device matte unavailable, using flood-fill fallback.', err);
+      matteImg = null;
     }
   }
 
@@ -121,6 +154,10 @@
       tone[i] = (0.2126 * data[p] + 0.7152 * data[p + 1] + 0.0722 * data[p + 2]) / 255;
     }
 
+    // Foreground matte: flood-fill inward from the border across smoothly
+    // connected colour (the studio background), leaving the subject as 1.
+    buildForegroundMask(data);
+
     // Lightly blur the tone map so strokes read regions, not pixel noise.
     tone = boxBlur(tone, mapW, mapH, 1);
 
@@ -152,11 +189,71 @@
     }
   }
 
+  // Build the foreground mask. Prefer the ML cutout's alpha channel; otherwise
+  // fall back to flood-fill background detection from the image border (region
+  // growing on colour smoothness — good on plain/graduated studio backdrops).
+  function buildForegroundMask(data) {
+    const N = mapW * mapH;
+
+    if (matteImg) {
+      const tc = document.createElement('canvas');
+      tc.width = mapW; tc.height = mapH;
+      const tx = tc.getContext('2d');
+      tx.drawImage(matteImg, 0, 0, mapW, mapH);
+      const md = tx.getImageData(0, 0, mapW, mapH).data;
+      fgMask = new Uint8Array(N);
+      for (let i = 0; i < N; i++) fgMask[i] = md[i * 4 + 3] > 100 ? 1 : 0;
+      return;
+    }
+
+    const bg = new Uint8Array(N);     // 1 = background
+    const stack = new Int32Array(N);
+    let sp = 0;
+    const tol = 0.085;                // per-channel-sum smoothness threshold
+    const push = (i) => { if (!bg[i]) { bg[i] = 1; stack[sp++] = i; } };
+
+    for (let x = 0; x < mapW; x++) { push(x); push((mapH - 1) * mapW + x); }
+    for (let y = 0; y < mapH; y++) { push(y * mapW); push(y * mapW + mapW - 1); }
+
+    while (sp > 0) {
+      const i = stack[--sp];
+      const x = i % mapW, y = (i / mapW) | 0;
+      const p = i * 4;
+      const cr = data[p], cg = data[p + 1], cb = data[p + 2];
+      // 4-neighbours
+      const ns = [i - 1, i + 1, i - mapW, i + mapW];
+      const ok = [x > 0, x < mapW - 1, y > 0, y < mapH - 1];
+      for (let k = 0; k < 4; k++) {
+        if (!ok[k]) continue;
+        const j = ns[k];
+        if (bg[j]) continue;
+        const q = j * 4;
+        const diff = (Math.abs(cr - data[q]) + Math.abs(cg - data[q + 1]) + Math.abs(cb - data[q + 2])) / 255;
+        if (diff < tol * 3) push(j);
+      }
+    }
+
+    // Erode the background by one cell so strokes don't halo the silhouette.
+    fgMask = new Uint8Array(N);
+    for (let y = 0; y < mapH; y++) {
+      for (let x = 0; x < mapW; x++) {
+        const i = y * mapW + x;
+        let fg = bg[i] ? 0 : 1;
+        if (!fg) {
+          // a background cell touching foreground stays background (no grow)
+        }
+        fgMask[i] = fg;
+      }
+    }
+  }
+
   function buildResidual() {
     const gamma = parseFloat(controls.contrast.value);
+    const removeBg = controls.removeBg.checked && fgMask;
     residual = new Float32Array(mapW * mapH);
     initialInk = 0;
     for (let i = 0; i < tone.length; i++) {
+      if (removeBg && !fgMask[i]) { residual[i] = 0; continue; }
       // Darkness demand, contrast-shaped. Pure white asks for almost no ink.
       let d = Math.pow(1 - tone[i], gamma);
       if (d < 0.015) d = 0;
@@ -255,15 +352,20 @@
     if (sx < 0 || best < 0.03) return false;
 
     // 2) Stroke geometry. Strength scales with how dark the start is.
+    // "baseLen" (Scribble size) drives both the reach per segment and the
+    // count, so bigger values give long, sweeping strokes like a real pen.
+    const matte = controls.removeBg.checked && fgMask;
     const strength = clamp(best, 0, 1);
-    const segs = Math.max(3, Math.round(baseLen * (0.5 + 0.7 * strength)));
-    const step = 0.9 + rnd() * 0.5;       // tone-map units per segment
+    const lenScale = baseLen / 26;                 // ~1 at the old default
+    const segs = Math.min(90, Math.max(4, Math.round(baseLen * (0.45 + 0.6 * strength))));
+    const step = (0.9 + rnd() * 0.5) * lenScale;   // tone-map units per segment
+    // Smoother heading for longer strokes so they flow instead of jitter.
+    const wobble = (0.10 + (1 - flow) * 0.42) / Math.max(1, lenScale * 0.6);
     let x = sx + (rnd() - 0.5);
     let y = sy + (rnd() - 0.5);
 
     // Initial heading: contour-following blended with chaos.
     let ang = sampleAngle(x, y) + (rnd() - 0.5) * (1 - flow) * Math.PI * 1.4;
-    const wobble = 0.18 + (1 - flow) * 0.5;
     const alpha = clamp(opacity * (0.55 + 0.7 * strength), 0.02, 0.85);
 
     ctx.globalAlpha = alpha;
@@ -280,11 +382,14 @@
       const ny = y + Math.sin(ang) * step;
       if (nx < 0 || ny < 0 || nx >= mapW || ny >= mapH) break;
 
+      const idx = (ny | 0) * mapW + (nx | 0);
+      // Don't let a stroke spill onto the background when matte is on.
+      if (matte && !fgMask[idx] && i > 0) break;
       // Stop if we've wandered into a light region this stroke shouldn't ink.
-      if (residual[(ny | 0) * mapW + (nx | 0)] < 0.02 && i > 2) break;
+      if (residual[idx] < 0.02 && i > 2) break;
 
       ctx.lineTo(nx, ny);
-      deposit(nx, ny, alpha);
+      depositLine(x, y, nx, ny, alpha);          // deduct ink along the run
       x = nx; y = ny; drawn = true;
     }
 
@@ -307,7 +412,7 @@
   // Subtract ink demand around a point (small soft disc) so coverage balances.
   function deposit(x, y, amt) {
     const ix = x | 0, iy = y | 0;
-    const k = amt * 1.35;
+    const k = amt * 0.5;
     for (let dy = -1; dy <= 1; dy++) {
       const yy = iy + dy;
       if (yy < 0 || yy >= mapH) continue;
@@ -315,9 +420,20 @@
         const xx = ix + dx;
         if (xx < 0 || xx >= mapW) continue;
         const idx = yy * mapW + xx;
-        const w = (dx === 0 && dy === 0) ? 1 : 0.4;
+        const w = (dx === 0 && dy === 0) ? 1 : 0.22;
         residual[idx] = Math.max(0, residual[idx] - k * w);
       }
+    }
+  }
+
+  // Deposit ink along a segment so long strokes deduct proportionally to their
+  // length (otherwise big sweeping strokes under-spend and over-scribble).
+  function depositLine(x0, y0, x1, y1, amt) {
+    const dist = Math.hypot(x1 - x0, y1 - y0);
+    const n = Math.max(1, Math.round(dist));
+    for (let s = 1; s <= n; s++) {
+      const t = s / n;
+      deposit(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, amt);
     }
   }
 
@@ -379,6 +495,13 @@
     barFill.style.width = (p * 100).toFixed(1) + '%';
     statusText.textContent = p >= 1 ? 'Done' : 'Sketching… ' + Math.round(p * 100) + '%';
   }
+  // Indeterminate status for slow steps like the first model load.
+  function busy(text) {
+    statusEl.hidden = false;
+    statusText.textContent = text;
+    barFill.style.width = '100%';
+    buttons.pause.disabled = true;
+  }
 
   function enableControls(on) {
     buttons.redraw.disabled = !on;
@@ -406,9 +529,19 @@
 
   // Sliders: update labels live, re-sketch shortly after the user settles.
   Object.values(controls).forEach((el) => {
-    if (!el) return;
+    if (!el || el === controls.removeBg) return;   // removeBg handled below
     const ev = el.type === 'checkbox' || el.type === 'color' ? 'change' : 'input';
     el.addEventListener(ev, () => { refreshLabels(); scheduleRedraw(); });
+  });
+
+  // Background toggle: turning it on may need a (one-time) matte computation.
+  controls.removeBg.addEventListener('change', async () => {
+    if (!sourceBitmap) return;
+    if (controls.removeBg.checked && !matteImg) {
+      await prepareMatte();
+      buildToneMap();
+    }
+    startSketch();
   });
 
   buttons.redraw.addEventListener('click', startSketch);
