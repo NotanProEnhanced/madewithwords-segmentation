@@ -39,7 +39,10 @@ def main():
     remove_bg = (sys.argv[5] != "0") if len(sys.argv) > 5 else True
     matte_path = sys.argv[6] if len(sys.argv) > 6 else None
     fill = float(sys.argv[7]) if len(sys.argv) > 7 else 0.18
-    flow, opacity, weight, baseLen = 0.72, 0.20, 1.0, 58
+    flow = float(sys.argv[8]) if len(sys.argv) > 8 else 0.72
+    weight = float(sys.argv[9]) if len(sys.argv) > 9 else 1.0
+    baseLen = float(sys.argv[10]) if len(sys.argv) > 10 else 58
+    opacity = float(sys.argv[11]) if len(sys.argv) > 11 else 0.20
 
     img = Image.open(src).convert("RGB")
     iw, ih = img.size
@@ -201,17 +204,23 @@ def main():
             continue
         strength = best
         len_scale = baseLen / 26
-        segs = min(90, max(4, round(baseLen * (0.45 + 0.6 * strength))))
-        step = (0.9 + r() * 0.5) * len_scale
-        wob = (0.10 + (1 - flow) * 0.42) / max(1, len_scale * 0.6)
+        stray = r() < 0.02
+        segs = min(170 if stray else 110,
+                   max(5, round(baseLen * (1.6 if stray else 0.5 + 0.7 * strength))))
+        step = (1.0 + r() * 0.5) * len_scale
+        a = min(0.85, max(0.02, opacity * (0.5 + 0.7 * strength) * (0.5 if stray else 1)))
+        steer = 0.12 if stray else flow * 0.35
+        drift = 0.05 + (1 - flow) * 0.10
         x = sx + (r() - 0.5)
         y = sy + (r() - 0.5)
-        ang = grad[ci(int(y),0,mh-1)*mw+ci(int(x),0,mw-1)] + (r()-0.5)*(1-flow)*math.pi*1.4
-        a = min(0.85, max(0.02, opacity * (0.55 + 0.7 * strength)))
+        ang = grad[ci(int(y),0,mh-1)*mw+ci(int(x),0,mw-1)] + (r()-0.5)*(1-flow)*math.pi*1.5
+        turn = (r() - 0.5) * 0.15
+        pts = [(x, y)]
         pxn, pyn = x, y
         for i in range(segs):
             fa = grad[ci(int(pyn),0,mh-1)*mw+ci(int(pxn),0,mw-1)]
-            ang = alerp(ang, fa, flow * 0.5) + (r() - 0.5) * wob
+            ang = alerp(ang, fa, steer) + turn
+            turn = max(-0.5, min(0.5, turn + (r() - 0.5) * drift))
             nx = pxn + math.cos(ang) * step
             ny = pyn + math.sin(ang) * step
             if nx < 0 or ny < 0 or nx >= mw or ny >= mh:
@@ -219,11 +228,19 @@ def main():
             idx = int(ny) * mw + int(nx)
             if remove_bg and not fg[idx] and i > 0:
                 break
-            if residual[idx] < 0.02 and i > 2:
+            if (not stray) and residual[idx] < 0.02 and i > 3:
                 break
-            seg(pxn, pyn, nx, ny, a)
             deposit_line(pxn, pyn, nx, ny, a)
             pxn, pyn = nx, ny
+            pts.append((nx, ny))
+        if len(pts) >= 2:
+            for k in range(1, len(pts)):
+                seg(pts[k-1][0], pts[k-1][1], pts[k][0], pts[k][1], a)
+            if (not stray) and strength > 0.35 and r() < 0.3:
+                a2 = a * 0.8
+                for k in range(1, len(pts)):
+                    seg(pts[k-1][0] + (r()-0.5)*0.8, pts[k-1][1] + (r()-0.5)*0.8,
+                        pts[k][0] + (r()-0.5)*0.8, pts[k][1] + (r()-0.5)*0.8, a2)
         strokes += 1
 
     Image.frombytes("RGB", (ow, oh), bytes(buf)).save(out)

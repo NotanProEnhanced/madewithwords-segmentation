@@ -138,6 +138,8 @@ html, body {
 .panel-group + .panel-group { border-top: 1px solid var(--line); padding-top: 16px; }
 
 .row.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.row.three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.row.three .ghost-btn { padding: 9px 6px; font-size: 13px; }
 
 .ctl { display: flex; flex-direction: column; gap: 7px; }
 .ctl-label {

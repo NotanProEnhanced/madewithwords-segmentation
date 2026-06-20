@@ -364,49 +364,70 @@
     const matte = controls.removeBg.checked && fgMask;
     const strength = clamp(best, 0, 1);
     const lenScale = baseLen / 26;                 // ~1 at the old default
-    const segs = Math.min(90, Math.max(4, Math.round(baseLen * (0.45 + 0.6 * strength))));
-    const step = (0.9 + rnd() * 0.5) * lenScale;   // tone-map units per segment
-    // Smoother heading for longer strokes so they flow instead of jitter.
-    const wobble = (0.10 + (1 - flow) * 0.42) / Math.max(1, lenScale * 0.6);
+
+    // Occasionally throw a long, light "stray" sweep across the subject — the
+    // kind of overshooting line a hand makes — for organic chaos.
+    const stray = rnd() < 0.02;
+    const segs = Math.min(stray ? 170 : 110,
+      Math.max(5, Math.round(baseLen * (stray ? 1.6 : 0.5 + 0.7 * strength))));
+    const step = (1.0 + rnd() * 0.5) * lenScale;   // tone-map units per segment
+    const alpha = clamp(opacity * (0.5 + 0.7 * strength) * (stray ? 0.5 : 1), 0.02, 0.85);
+    const steer = stray ? 0.12 : flow * 0.35;      // how hard it hugs contours
+    const drift = 0.05 + (1 - flow) * 0.10;        // how fast the curl wanders
+
     let x = sx + (rnd() - 0.5);
     let y = sy + (rnd() - 0.5);
+    let ang = sampleAngle(x, y) + (rnd() - 0.5) * (1 - flow) * Math.PI * 1.5;
+    let turn = (rnd() - 0.5) * 0.15;               // persistent turn rate (curl)
 
-    // Initial heading: contour-following blended with chaos.
-    let ang = sampleAngle(x, y) + (rnd() - 0.5) * (1 - flow) * Math.PI * 1.4;
-    const alpha = clamp(opacity * (0.55 + 0.7 * strength), 0.02, 0.85);
-
-    ctx.globalAlpha = alpha;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-
-    let drawn = false;
+    // Walk a path of points, then draw it as one flowing curve.
+    const pts = [{ x, y }];
     for (let i = 0; i < segs; i++) {
-      // Steer toward the local contour direction, plus a little jitter.
       const flowAng = sampleAngle(x, y);
-      ang = angleLerp(ang, flowAng, flow * 0.5) + (rnd() - 0.5) * wobble;
+      ang = angleLerp(ang, flowAng, steer) + turn; // contour pull + smooth curl
+      turn = clamp(turn + (rnd() - 0.5) * drift, -0.5, 0.5);
 
       const nx = x + Math.cos(ang) * step;
       const ny = y + Math.sin(ang) * step;
       if (nx < 0 || ny < 0 || nx >= mapW || ny >= mapH) break;
 
       const idx = (ny | 0) * mapW + (nx | 0);
-      // Don't let a stroke spill onto the background when matte is on.
-      if (matte && !fgMask[idx] && i > 0) break;
-      // Stop if we've wandered into a light region this stroke shouldn't ink.
-      if (residual[idx] < 0.02 && i > 2) break;
+      if (matte && !fgMask[idx] && i > 0) break;   // never spill onto background
+      // Stop once we wander into a light region (stray sweeps carry on).
+      if (!stray && residual[idx] < 0.02 && i > 3) break;
 
-      ctx.lineTo(nx, ny);
-      depositLine(x, y, nx, ny, alpha);          // deduct ink along the run
-      x = nx; y = ny; drawn = true;
+      depositLine(x, y, nx, ny, alpha);            // deduct ink along the run
+      x = nx; y = ny;
+      pts.push({ x, y });
     }
 
-    if (drawn) ctx.stroke();
-    // Occasional back-scribble over the same path for that hand-drawn density.
-    if (drawn && strength > 0.4 && rnd() < 0.25) {
-      ctx.stroke();
-      deposit(sx, sy, alpha * 0.5);
+    if (pts.length < 2) return false;
+    ctx.globalAlpha = alpha;
+    strokePath(pts);                               // smooth, hand-drawn curve
+    // Hand redraw: a second slightly-offset pass thickens darks like a real pen.
+    if (!stray && strength > 0.35 && rnd() < 0.3) {
+      ctx.globalAlpha = alpha * 0.8;
+      strokePath(pts.map((p) => ({ x: p.x + (rnd() - 0.5) * 0.8, y: p.y + (rnd() - 0.5) * 0.8 })));
     }
-    return drawn;
+    return true;
+  }
+
+  // Draw a point list as a smooth curve (quadratic through segment midpoints).
+  function strokePath(pts) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    if (pts.length === 2) {
+      ctx.lineTo(pts[1].x, pts[1].y);
+    } else {
+      for (let i = 1; i < pts.length - 1; i++) {
+        const mx = (pts[i].x + pts[i + 1].x) * 0.5;
+        const my = (pts[i].y + pts[i + 1].y) * 0.5;
+        ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+      }
+      const n = pts.length;
+      ctx.quadraticCurveTo(pts[n - 2].x, pts[n - 2].y, pts[n - 1].x, pts[n - 1].y);
+    }
+    ctx.stroke();
   }
 
   // Bilinear-ish contour angle lookup.
@@ -552,6 +573,22 @@
     }
     startSketch();
   });
+
+  // One-tap style presets — set every slider at once.
+  const PRESETS = {
+    sketch: { density: 0.80, contrast: 1.45, length: 54, flow: 0.82, weight: 0.9, opacity: 0.18, fill: 0.16 },
+    bold:   { density: 0.78, contrast: 1.75, length: 78, flow: 0.70, weight: 1.5, opacity: 0.28, fill: 0.10 },
+    storm:  { density: 0.91, contrast: 1.35, length: 64, flow: 0.55, weight: 1.0, opacity: 0.22, fill: 0.22 },
+  };
+  function applyPreset(name) {
+    const p = PRESETS[name];
+    if (!p) return;
+    for (const k in p) controls[k].value = p[k];
+    refreshLabels();
+    if (sourceBitmap) startSketch();
+  }
+  document.querySelectorAll('[data-preset]').forEach((b) =>
+    b.addEventListener('click', () => applyPreset(b.dataset.preset)));
 
   buttons.redraw.addEventListener('click', startSketch);
   buttons.download.addEventListener('click', downloadPng);

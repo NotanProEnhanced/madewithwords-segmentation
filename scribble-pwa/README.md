@@ -10,9 +10,14 @@ Everything runs on the device — the photo is never uploaded anywhere.
 
 - **Upload by drag‑and‑drop, file picker, or paste** (Ctrl/⌘+V).
 - **Realtime animated sketching** — watch the strokes accumulate frame by frame.
-- **Contour‑aware scribbles** — long, sweeping strokes flow along the photo's
-  tonal contours (hair, jawline, cheekbones), piling up in dark regions, just
-  like a hand‑drawn scribble portrait.
+- **Hand‑scribbled strokes** — long, sweeping curves flow along the photo's
+  tonal contours (hair, jawline, cheekbones) with a persistent "curl", a light
+  second pen‑retrace over darks, and occasional stray overshoot lines, so the
+  result reads like a real hand‑drawn scribble portrait rather than machine fuzz.
+- **One‑tap style presets** — *Sketch* (clean line‑art), *Bold* (heavier,
+  dramatic strokes), and *Ink‑storm* (dense) set every slider at once.
+- **Face fill** — a baseline ink demand across the subject so lit skin still
+  gets light scribbles and the face reads fuller.
 - **Remove background (subject only)** — on‑device subject segmentation isolates
   the person so ink stays on them and the background drops to clean paper. Uses
   a u2net‑class model that runs in‑browser (WebAssembly) and caches itself after
