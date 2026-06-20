@@ -15,7 +15,9 @@ Everything runs on the device — the photo is never uploaded anywhere.
   second pen‑retrace over darks, and occasional stray overshoot lines, so the
   result reads like a real hand‑drawn scribble portrait rather than machine fuzz.
 - **One‑tap style presets** — *Sketch* (clean line‑art), *Bold* (heavier,
-  dramatic strokes), and *Ink‑storm* (dense) set every slider at once.
+  dramatic strokes), and *Ink‑storm* (dense) set every slider at once. Your
+  choice (and any manual tweaks) is **remembered** between visits and
+  auto‑applied to the next photo.
 - **Face fill** — a baseline ink demand across the subject so lit skin still
   gets light scribbles and the face reads fuller.
 - **Remove background (subject only)** — on‑device subject segmentation isolates

@@ -140,6 +140,11 @@ html, body {
 .row.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .row.three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 .row.three .ghost-btn { padding: 9px 6px; font-size: 13px; }
+.ghost-btn.active {
+  border-color: var(--accent);
+  background: rgba(110, 168, 254, 0.14);
+  color: var(--text);
+}
 
 .ctl { display: flex; flex-direction: column; gap: 7px; }
 .ctl-label {

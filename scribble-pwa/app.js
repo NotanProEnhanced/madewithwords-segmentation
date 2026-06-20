@@ -67,6 +67,9 @@
   let running = false;
   let lastFile = null;         // most recent upload, for re-matting on toggle
   let matteImg = null;         // ML subject cutout (transparent bg), or null
+  let activePreset = null;     // currently selected style preset, if any
+  const STORE_KEY = 'scribbler.settings.v1';
+  const PRESET_KEYS = ['density', 'contrast', 'length', 'flow', 'weight', 'opacity', 'fill'];
 
   // On-device subject segmentation (u2net-class model, runs in WebAssembly and
   // caches itself after first load). Loaded lazily from CDN the first time the
@@ -558,14 +561,20 @@
   }
 
   // Sliders: update labels live, re-sketch shortly after the user settles.
-  Object.values(controls).forEach((el) => {
+  Object.entries(controls).forEach(([key, el]) => {
     if (!el || el === controls.removeBg) return;   // removeBg handled below
     const ev = el.type === 'checkbox' || el.type === 'color' ? 'change' : 'input';
-    el.addEventListener(ev, () => { refreshLabels(); scheduleRedraw(); });
+    el.addEventListener(ev, () => {
+      if (PRESET_KEYS.includes(key)) { activePreset = null; highlightPreset(); }
+      refreshLabels();
+      saveSettings();
+      scheduleRedraw();
+    });
   });
 
   // Background toggle: turning it on may need a (one-time) matte computation.
   controls.removeBg.addEventListener('change', async () => {
+    saveSettings();
     if (!sourceBitmap) return;
     if (controls.removeBg.checked && !matteImg) {
       await prepareMatte();
@@ -584,11 +593,46 @@
     const p = PRESETS[name];
     if (!p) return;
     for (const k in p) controls[k].value = p[k];
+    activePreset = name;
     refreshLabels();
+    highlightPreset();
+    saveSettings();
     if (sourceBitmap) startSketch();
   }
   document.querySelectorAll('[data-preset]').forEach((b) =>
     b.addEventListener('click', () => applyPreset(b.dataset.preset)));
+
+  function highlightPreset() {
+    document.querySelectorAll('[data-preset]').forEach((b) =>
+      b.classList.toggle('active', b.dataset.preset === activePreset));
+  }
+
+  // Persist all control values + the active preset so the app reopens, and
+  // sketches each new photo, with your last choice.
+  function saveSettings() {
+    try {
+      const values = {};
+      for (const k in controls) {
+        const el = controls[k];
+        if (el) values[k] = el.type === 'checkbox' ? el.checked : el.value;
+      }
+      localStorage.setItem(STORE_KEY, JSON.stringify({ values, preset: activePreset }));
+    } catch (e) { /* storage unavailable (e.g. private mode) — ignore */ }
+  }
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      for (const k in (s.values || {})) {
+        const el = controls[k];
+        if (!el) continue;
+        if (el.type === 'checkbox') el.checked = !!s.values[k];
+        else el.value = s.values[k];
+      }
+      activePreset = s.preset || null;
+    } catch (e) { /* ignore malformed/blocked storage */ }
+  }
 
   buttons.redraw.addEventListener('click', startSketch);
   buttons.download.addEventListener('click', downloadPng);
@@ -650,5 +694,7 @@
     });
   }
 
+  loadSettings();
   refreshLabels();
+  highlightPreset();
 })();
