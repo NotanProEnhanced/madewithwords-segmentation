@@ -16,19 +16,24 @@
 #   DOCROOT=/var/www/staging-lovedinwords
 set -euo pipefail
 
-BRANCH="${BRANCH:-feat/displacement-style}"
 DOCROOT="${DOCROOT:-/var/www/staging-lovedinwords}"
-SUBDIR="typography_engine/marketing/lovedinwords"
 
-# Work from inside the git repo (this file lives at typography_engine/deploy/).
+# Work from typography_engine (this file lives at typography_engine/deploy/).
+# Copy from the WORKING TREE rather than `git archive` so it's robust to how the
+# repo is rooted on the box; make sure the tree is current first.
 cd "$(dirname "$0")/.."
 
-echo "→ Fetching origin/$BRANCH …"
-git fetch origin --quiet
+SRC="marketing/lovedinwords"
+if [ ! -d "$SRC" ]; then
+  echo "✗ '$SRC' not found. Run this from the staging worktree (cd ~/typortrait-staging/typography_engine)."
+  exit 1
+fi
+echo "→ Updating the worktree …"
+git pull --ff-only --quiet || echo "  (skipping pull — not fast-forwardable; publishing the current tree)"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-git archive "origin/$BRANCH" "$SUBDIR" | tar -x -C "$TMP"
+rsync -a --exclude '_*' "$SRC/" "$TMP/"
 
 # PROD -> STAGING rewrites for the staging copy only:
 #   - app.typortrait.com   -> staging.typortrait.com  (studio CTAs + policy links)
@@ -36,11 +41,11 @@ git archive "origin/$BRANCH" "$SUBDIR" | tar -x -C "$TMP"
 sed -i \
   -e 's#https://app\.typortrait\.com#https://staging.typortrait.com#g' \
   -e 's#https://lovedinwords\.com/#https://staging.typortrait.com/lw/#g' \
-  "$TMP/$SUBDIR/index.html" "$TMP/$SUBDIR/gallery.html"
+  "$TMP/index.html" "$TMP/gallery.html"
 
 sudo mkdir -p "$DOCROOT"
 # --exclude '_*' drops the working/preview files; no --delete (leave unknowns).
-sudo rsync -av --exclude '_*' "$TMP/$SUBDIR/" "$DOCROOT/"
+sudo rsync -av --exclude '_*' "$TMP/" "$DOCROOT/"
 sudo chown -R www-data:www-data "$DOCROOT"
 
 echo "✓ Published to $DOCROOT"
