@@ -29,6 +29,7 @@
     flow: $('flow'),
     weight: $('weight'),
     opacity: $('opacity'),
+    fill: $('fill'),
     ink: $('inkColor'),
     paper: $('paperColor'),
     removeBg: $('removeBg'),
@@ -41,6 +42,7 @@
     flow: $('flowVal'),
     weight: $('weightVal'),
     opacity: $('opacityVal'),
+    fill: $('fillVal'),
   };
   const buttons = {
     pick: $('pickBtn'),
@@ -250,6 +252,7 @@
   function buildResidual() {
     const gamma = parseFloat(controls.contrast.value);
     const removeBg = controls.removeBg.checked && fgMask;
+    const fill = parseFloat(controls.fill.value);   // baseline ink for the subject
     residual = new Float32Array(mapW * mapH);
     initialInk = 0;
     for (let i = 0; i < tone.length; i++) {
@@ -257,6 +260,10 @@
       // Darkness demand, contrast-shaped. Pure white asks for almost no ink.
       let d = Math.pow(1 - tone[i], gamma);
       if (d < 0.015) d = 0;
+      // Fill boost: give the subject a baseline so lit skin still gets light
+      // contour scribbles instead of dropping to blank paper. Gated to the
+      // foreground (fgMask) so it never inks the background.
+      if (fill > 0 && fgMask && fgMask[i]) d = Math.max(d, fill);
       residual[i] = d;
       initialInk += d;
     }
@@ -525,6 +532,8 @@
     labels.flow.textContent = f < 0.33 ? 'chaotic' : f < 0.7 ? 'mixed' : 'contours';
     labels.weight.textContent = parseFloat(controls.weight.value).toFixed(2);
     labels.opacity.textContent = parseFloat(controls.opacity.value).toFixed(2);
+    const fv = parseFloat(controls.fill.value);
+    labels.fill.textContent = fv === 0 ? 'off' : fv.toFixed(2);
   }
 
   // Sliders: update labels live, re-sketch shortly after the user settles.

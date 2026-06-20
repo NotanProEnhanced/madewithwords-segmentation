@@ -38,6 +38,7 @@ def main():
     gamma = float(sys.argv[4]) if len(sys.argv) > 4 else 1.30
     remove_bg = (sys.argv[5] != "0") if len(sys.argv) > 5 else True
     matte_path = sys.argv[6] if len(sys.argv) > 6 else None
+    fill = float(sys.argv[7]) if len(sys.argv) > 7 else 0.18
     flow, opacity, weight, baseLen = 0.72, 0.20, 1.0, 58
 
     img = Image.open(src).convert("RGB")
@@ -110,6 +111,8 @@ def main():
         dd = (1 - tone[i]) ** gamma
         if dd < 0.015:
             dd = 0.0
+        if fill > 0 and fg[i]:
+            dd = max(dd, fill)
         residual[i] = dd
         total += dd
 
