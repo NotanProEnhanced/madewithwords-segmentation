@@ -197,10 +197,13 @@ def _start_admin_services() -> None:
 
 
 @app.get("/")
-def index() -> RedirectResponse:
+def index(request: Request) -> RedirectResponse:
     # This deployment (VPS / app.typortrait.com) is the studio app. The marketing
     # landing page is served separately from a static host (typortrait.com).
-    return RedirectResponse(url="/static/index.html")
+    # Forward the query string so the pretty URL (e.g. /?brand=lovedinwords)
+    # carries the brand through to the studio file instead of dropping it.
+    q = request.url.query
+    return RedirectResponse(url="/static/index.html" + (f"?{q}" if q else ""))
 
 
 @app.get("/health")
