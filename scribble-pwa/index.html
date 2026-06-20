@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1115" />
+  <title>Scribbler — Photo to Scribble Art</title>
+  <meta name="description" content="Upload a photo and watch it redraw itself in realtime as a continuous pen-scribble portrait. Installable, works offline." />
+
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/favicon.png" sizes="any" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Scribbler" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" width="22" height="22">
+        <path d="M3 17c4-7 6 4 9-3s4 6 9-2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        <path d="M3 12c4-6 7 3 10-3s4 5 8-1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity=".6"/>
+      </svg>
+      <span>Scribbler</span>
+    </div>
+    <button id="installBtn" class="ghost-btn" hidden>Install app</button>
+  </header>
+
+  <main class="layout">
+    <section class="stage" id="stage">
+      <div class="dropzone" id="dropzone">
+        <div class="dz-inner">
+          <div class="dz-icon">＋</div>
+          <p class="dz-title">Drop a photo here</p>
+          <p class="dz-sub">or <button class="link-btn" id="pickBtn">choose a file</button> · paste with Ctrl/⌘+V</p>
+          <p class="dz-hint">Portraits with a clear face work best. Everything runs on your device.</p>
+        </div>
+      </div>
+      <canvas id="canvas" hidden></canvas>
+      <div class="stage-status" id="status" hidden>
+        <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+        <span id="statusText">Sketching…</span>
+      </div>
+    </section>
+
+    <aside class="panel" id="panel">
+      <div class="panel-group">
+        <button class="primary-btn" id="redrawBtn" disabled>Re-sketch</button>
+        <div class="row two">
+          <button class="ghost-btn" id="pauseBtn" disabled>Pause</button>
+          <button class="ghost-btn" id="downloadBtn" disabled>Save PNG</button>
+        </div>
+      </div>
+
+      <div class="panel-group">
+        <label class="ctl">
+          <span class="ctl-label">Density <em id="densityVal">medium</em></span>
+          <input type="range" id="density" min="0.45" max="0.97" step="0.01" value="0.82" />
+        </label>
+
+        <label class="ctl">
+          <span class="ctl-label">Contrast <em id="contrastVal"></em></span>
+          <input type="range" id="contrast" min="0.6" max="2.6" step="0.05" value="1.45" />
+        </label>
+
+        <label class="ctl">
+          <span class="ctl-label">Stroke length <em id="lengthVal"></em></span>
+          <input type="range" id="length" min="6" max="60" step="1" value="26" />
+        </label>
+
+        <label class="ctl">
+          <span class="ctl-label">Flow <em id="flowVal">contours</em></span>
+          <input type="range" id="flow" min="0" max="1" step="0.02" value="0.78" />
+        </label>
+
+        <label class="ctl">
+          <span class="ctl-label">Line weight <em id="weightVal"></em></span>
+          <input type="range" id="weight" min="0.5" max="2.4" step="0.05" value="1.05" />
+        </label>
+
+        <label class="ctl">
+          <span class="ctl-label">Ink opacity <em id="opacityVal"></em></span>
+          <input type="range" id="opacity" min="0.05" max="0.6" step="0.01" value="0.22" />
+        </label>
+      </div>
+
+      <div class="panel-group swatches">
+        <div class="swatch-row">
+          <span class="ctl-label">Ink</span>
+          <input type="color" id="inkColor" value="#111418" />
+          <span class="ctl-label">Paper</span>
+          <input type="color" id="paperColor" value="#f6f4ee" />
+        </div>
+        <label class="check">
+          <input type="checkbox" id="animateChk" checked />
+          <span>Animate the drawing</span>
+        </label>
+      </div>
+
+      <p class="panel-foot">Tip: lower density + higher contrast = cleaner sketch; raise density for a dense ink-storm portrait.</p>
+    </aside>
+  </main>
+
+  <input type="file" id="fileInput" accept="image/*" hidden />
+  <script src="app.js"></script>
+</body>
+</html>
