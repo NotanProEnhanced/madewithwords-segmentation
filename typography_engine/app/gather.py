@@ -277,6 +277,14 @@ _rl_add: dict = {}     # per-IP word-add rate limit
 
 # --- routes: pages -----------------------------------------------------------
 
+@router.get("/api/gather/enabled")
+def enabled():
+    # This route only exists when the feature flag is on (the whole router is
+    # mounted conditionally), so the studio shows its "Make it the family's"
+    # entry point only where Gather actually works. Elsewhere this 404s -> hidden.
+    return {"enabled": True}
+
+
 @router.get("/g/{share}")
 def page_contribute(share: str):
     if not _gather_by("share_token", share):
@@ -302,6 +310,7 @@ async def create(
     ink: str = Form("photo"),
     ground: str = Form("paper"),
     min_font: float = Form(20.0),
+    crop: Optional[str] = Form(None),
     close_at: Optional[float] = Form(None),
 ):
     title = _clean_text(title) or "In their words"
@@ -310,6 +319,14 @@ async def create(
     raw = await image.read()
     if not raw:
         raise HTTPException(400, "no image")
+    # Apply the studio crop here (lazy import to avoid a circular import at startup)
+    # so the gather's framing matches what the creator saw in the studio.
+    if crop:
+        try:
+            from .main import _apply_crop
+            raw = _apply_crop(raw, crop)
+        except Exception:
+            pass
     with _conn() as c:
         cur = c.execute(
             "INSERT INTO gathers(share_token,admin_token,title,photo_path,style,ink,ground,min_font,created_at,close_at) "
