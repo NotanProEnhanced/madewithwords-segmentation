@@ -288,7 +288,13 @@
      screen matches the carded input steps (body.guided is the default flow for
      both brands; uses the same --card/--radius/--shadow as the step cards). */
   body.guided #result .result-card{background:var(--card);border-radius:var(--radius);
-    box-shadow:var(--shadow);padding:22px 24px;margin-top:26px}
+    box-shadow:var(--shadow);padding:22px 24px;margin-top:26px;
+    /* Contain the swatch carousel's horizontal overflow. Mosaic/Passage show more
+       swatches than Lifelike's grounds, so the strip overflows; without clipping it
+       here, the overflow inflates the mobile layout viewport and the whole page
+       renders at ~60% ("halved"). clip (not hidden) keeps the column non-scrolling
+       and doesn't force overflow-y:auto; the strip still scrolls internally. */
+    overflow-x:clip}
   body.guided #result .result-card-h{font-family:var(--serif);font-size:20px;font-weight:740;
     letter-spacing:-.02em;color:var(--navy);margin:0 0 2px}
   body.guided #result .result-card>#styleGallery{margin-top:14px!important}  /* no double top gap */
