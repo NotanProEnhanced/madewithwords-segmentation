@@ -21,8 +21,14 @@
      letter-spacing:-.02em;text-align:center;margin:0 0 6px}
   .sub{color:var(--muted);text-align:center;font-size:14.5px;margin:0 auto 20px;max-width:34ch}
   .portrait-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
-     padding:12px;margin-bottom:8px}
+     padding:12px;margin-bottom:8px;position:relative;overflow:hidden}
   .portrait-card img{display:block;width:100%;border-radius:10px;background:#f3efe8}
+  /* A contributor's word flies onto the portrait the instant they add it — instant
+     feedback while the real re-render catches up in the background. */
+  .flyer{position:absolute;pointer-events:none;white-space:nowrap;z-index:5;opacity:0;
+     font-family:var(--serif);font-weight:700;text-transform:uppercase;letter-spacing:.02em;
+     color:var(--rose);text-shadow:0 1px 3px rgba(255,255,255,.6),0 1px 2px rgba(0,0,0,.25);
+     transform:translate(-50%,-50%) scale(1.15)}
   .countline{text-align:center;color:var(--muted);font-size:13px;margin:10px 0 22px}
   .countline b{color:var(--navy)}
   .form{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px}
@@ -130,6 +136,7 @@ async function submit(){
     const r=await fetch(`/api/gather/${SHARE}/word`,{method:"POST",body:fd});
     const d=await r.json();
     if(!d.ok){ $("#err").textContent = d.error==="rate_limited" ? "Thanks — that's plenty for now." : d.error==="closed" ? "Gathering has closed." : "Couldn't add that — try a different word."; $("#submit").disabled=false; return; }
+    flyWord(text);            // instant: their word swoops onto the portrait
     // show thanks
     $("#form").style.display="none";
     const rc=$("#recent"); const chip=document.createElement("span"); chip.className="chip"; chip.textContent=text.toUpperCase(); rc.prepend(chip);
@@ -139,6 +146,25 @@ async function submit(){
     load();
   }catch(e){ $("#err").textContent="Network error — try again."; }
   $("#submit").disabled=false;
+}
+// Swoop the just-added word from the bottom of the portrait up onto the face,
+// let it settle, then dissolve in — as if it's becoming part of the artwork. The
+// real re-render (throttled) follows within a few seconds.
+function flyWord(text){
+  const card=document.querySelector(".portrait-card"); if(!card) return;
+  const w=card.clientWidth, h=card.clientHeight;
+  const f=document.createElement("div"); f.className="flyer"; f.textContent=text.toUpperCase();
+  f.style.fontSize="26px"; f.style.left=(w*0.5)+"px"; f.style.top=(h*0.93)+"px";
+  card.appendChild(f);
+  // target a spot over the face (central upper-mid), away from the edges
+  const tx=w*(0.30+Math.random()*0.40), ty=h*(0.28+Math.random()*0.34);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    f.style.transition="left 1s cubic-bezier(.18,.85,.2,1), top 1s cubic-bezier(.18,.85,.2,1), font-size 1s cubic-bezier(.18,.85,.2,1), transform 1s ease, opacity .35s ease";
+    f.style.opacity="1"; f.style.left=tx+"px"; f.style.top=ty+"px"; f.style.fontSize="15px";
+    f.style.transform="translate(-50%,-50%) scale(1)";
+  }));
+  setTimeout(()=>{ f.style.transition="opacity 1s ease, transform 1s ease"; f.style.opacity="0"; f.style.transform="translate(-50%,-50%) scale(.9)"; }, 1450);
+  setTimeout(()=>{ f.remove(); }, 2600);
 }
 $("#another").addEventListener("click", ()=>{ $("#thanks").style.display="none"; $("#form").style.display="block"; $("#word").focus(); });
 $("#getown").addEventListener("click", e=>{ e.preventDefault(); $("#getown").textContent="We'll let the family know it's ready. 🤍"; });
