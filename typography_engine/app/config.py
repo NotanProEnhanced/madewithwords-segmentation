@@ -144,6 +144,22 @@ PRINTFUL_CONFIRM = (os.environ.get("PRINTFUL_CONFIRM", "true").strip().lower()
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 ORDERS_DB = DATA_DIR / "orders.db"
+
+# --- Gather (crowd-sourced words) — ADDITIVE, FLAG-GATED, DEFAULT OFF ----------
+# A shareable link where a whole circle adds a word/memory and the portrait is
+# woven from everyone's words. Fully self-contained (its own DB + routes + pages);
+# the flag keeps every gather route inert in prod until deliberately enabled, so
+# merging this branch can never affect the existing studio/checkout paths.
+GATHER_ENABLED = (os.environ.get("TYPO_GATHER_ENABLED", "").strip().lower()
+                  in ("1", "true", "yes", "on"))
+GATHER_DIR = DATA_DIR / "gather"
+GATHER_DB = GATHER_DIR / "gather.db"
+# Throttle live re-renders so a busy gather can't hammer the single render slot:
+# re-render at most this often, OR once this many new words have landed.
+GATHER_RENDER_INTERVAL = env_int("TYPO_GATHER_RENDER_INTERVAL", 15)   # seconds
+GATHER_RENDER_EVERY = env_int("TYPO_GATHER_RENDER_EVERY", 4)          # new words
+GATHER_MAX_WORDS = env_int("TYPO_GATHER_MAX_WORDS", 64)               # distinct words carried
+GATHER_WORD_MAXLEN = env_int("TYPO_GATHER_WORD_MAXLEN", 40)           # per submission
 # The /admin/orders dashboard reuses the existing reel-admin auth
 # (TYPO_ADMIN_PASSWORD + TYPO_SECRET_KEY, see app/admin.py), so there is no
 # separate orders-admin password to configure.

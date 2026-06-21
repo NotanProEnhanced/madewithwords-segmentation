@@ -559,6 +559,37 @@
       </div>
     </div>
     </div><!-- /.result-card #makeYours -->
+
+    <!-- Gather (crowd-sourced words) entry point. Hidden by default; revealed only
+         when GET /api/gather/enabled returns ok (the feature flag is on for this
+         deployment). In prod with the flag off, that 404s and this stays hidden. -->
+    <div class="result-card" id="gatherCard" style="display:none">
+      <div class="result-card-h">Make it the whole family's</div>
+      <p class="t-sub" style="margin:2px 0 14px">Invite everyone who loved them to add a word — their portrait, woven from all of your words together.</p>
+      <button type="button" id="gatherStart" class="btn secondary" style="width:100%">Start a shared gather</button>
+    </div>
+    <div id="gatherModal" style="display:none;position:fixed;inset:0;z-index:60;background:rgba(20,18,14,.55);align-items:center;justify-content:center;padding:20px">
+      <div style="background:var(--paper,#faf8f3);border-radius:18px;max-width:420px;width:100%;padding:24px;box-shadow:0 24px 70px rgba(0,0,0,.4)">
+        <div id="gatherStep1">
+          <h3 style="font-family:var(--serif);font-weight:600;font-size:21px;margin:0 0 6px;color:var(--navy)">Make it the family's</h3>
+          <p style="color:var(--muted);font-size:14px;margin:0 0 16px">Share a link; everyone adds a word; the portrait grows. Reveal the finished piece whenever you're ready.</p>
+          <label style="font-weight:600;font-size:14px;display:block;margin:0 0 7px">Whose remembrance is this?</label>
+          <input id="gatherName" type="text" maxlength="40" placeholder="A first name — e.g. Grace" style="width:100%;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;margin:0 0 16px" />
+          <button type="button" id="gatherCreate" class="btn" style="width:100%">Create the shared gather</button>
+          <button type="button" id="gatherCancel" class="btn secondary" style="width:100%;margin-top:8px">Cancel</button>
+          <div id="gatherErr" style="color:#c85b57;font-size:13px;text-align:center;margin-top:10px;min-height:16px"></div>
+        </div>
+        <div id="gatherStep2" style="display:none">
+          <h3 style="font-family:var(--serif);font-weight:600;font-size:21px;margin:0 0 6px;color:var(--navy)">Your gather is ready 🤍</h3>
+          <p style="color:var(--muted);font-size:14px;margin:0 0 14px">Send this link to family — each person adds a word.</p>
+          <div style="display:flex;gap:8px;margin:0 0 14px"><input id="gatherShare" readonly style="flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;padding:11px;font-size:13px" /><button type="button" id="gatherCopy" class="btn" style="width:auto;padding:11px 14px">Copy</button></div>
+          <a id="gatherOpen" class="btn secondary" style="display:block;text-align:center;text-decoration:none;width:100%;margin-bottom:8px" target="_blank" rel="noopener">Open the family page</a>
+          <a id="gatherDash" class="btn secondary" style="display:block;text-align:center;text-decoration:none;width:100%" target="_blank" rel="noopener">Your private dashboard</a>
+          <p style="color:var(--muted);font-size:12px;text-align:center;margin:10px 0 0">Bookmark the dashboard — it's how you reveal and manage the gather.</p>
+          <button type="button" id="gatherDone" class="btn" style="width:100%;margin-top:12px">Done</button>
+        </div>
+      </div>
+    </div>
     <div class="actions"><button id="buy" class="btn">Download</button></div>
     <button id="shareBtn" class="btn secondary" type="button">Share</button>
     <div id="sharePanel" class="sharepanel">
@@ -2195,6 +2226,49 @@ function fetchWithTimeout(url, opts, ms){
 
     paint();
   }catch(e){ /* leave the flat flow intact on any failure */ }
+})();
+// --- Gather (crowd-sourced words) entry point ------------------------------
+// Self-contained + gated: the card only appears when GET /api/gather/enabled is
+// ok (feature flag on). On prod with the flag off that 404s -> nothing shows, so
+// the live studio is unchanged. Creating a gather posts the current portrait's
+// image + words + style to /api/gather/create and hands back the share/admin links.
+(function(){
+  const card=document.getElementById("gatherCard"), modal=document.getElementById("gatherModal");
+  if(!card||!modal) return;
+  const $g=id=>document.getElementById(id);
+  fetch("/api/gather/enabled").then(r=>{ if(r.ok) card.style.display="block"; }).catch(()=>{});
+  $g("gatherStart").addEventListener("click", ()=>{
+    $g("gatherStep1").style.display="block"; $g("gatherStep2").style.display="none";
+    $g("gatherErr").textContent="";
+    try{ $g("gatherName").value=(words.value.split(",")[0]||"").trim(); }catch(e){}
+    modal.style.display="flex";
+  });
+  $g("gatherCancel").addEventListener("click", ()=>{ modal.style.display="none"; });
+  $g("gatherDone").addEventListener("click", ()=>{ modal.style.display="none"; });
+  modal.addEventListener("click", e=>{ if(e.target===modal) modal.style.display="none"; });
+  $g("gatherCopy").addEventListener("click", ()=>{ const i=$g("gatherShare"); i.select(); try{document.execCommand("copy");}catch(e){} $g("gatherCopy").textContent="Copied!"; setTimeout(()=>$g("gatherCopy").textContent="Copy",1500); });
+  $g("gatherCreate").addEventListener("click", async ()=>{
+    const err=$g("gatherErr"); err.textContent="";
+    if(!state.file){ err.textContent="Create a portrait first."; return; }
+    const btn=$g("gatherCreate"), old=btn.textContent; btn.disabled=true; btn.textContent="Creating…";
+    try{
+      const vp=variantPost(state.ink);
+      const fd=new FormData();
+      fd.append("image", state.file);
+      if(state.crop) fd.append("crop", state.crop);
+      fd.append("title", $g("gatherName").value.trim()||"In their words");
+      fd.append("words", words.value.trim());
+      fd.append("style", vp.style); fd.append("ink", vp.ink); fd.append("ground", vp.ground);
+      fd.append("min_font", String(state.minFont||20));
+      const r=await fetch("/api/gather/create",{method:"POST",body:fd});
+      const d=await r.json();
+      if(!d.ok){ err.textContent="Couldn't start the gather — please try again."; btn.disabled=false; btn.textContent=old; return; }
+      $g("gatherShare").value=d.share_url; $g("gatherOpen").href=d.share_url; $g("gatherDash").href=d.admin_url;
+      $g("gatherStep1").style.display="none"; $g("gatherStep2").style.display="block";
+      try{ tp_track && tp_track("gather_create", {}); }catch(e){}
+    }catch(e){ err.textContent="Network error — please try again."; }
+    btn.disabled=false; btn.textContent=old;
+  });
 })();
 </script>
 </body>

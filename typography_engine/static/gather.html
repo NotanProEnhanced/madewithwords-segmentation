@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex" />
+<title>Add a word</title>
+<style>
+  :root{ --paper:#faf8f3; --card:#fff; --ink:#2d261f; --muted:#7c7468; --navy:#2f3b52;
+         --line:#ece7dd; --rose:#c85b57; --radius:18px; --shadow:0 18px 50px rgba(30,28,22,.10);
+         --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+         --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+       -webkit-font-smoothing:antialiased;line-height:1.5}
+  .wrap{max-width:520px;margin:0 auto;padding:30px 20px 60px;overflow-x:clip}
+  .brand{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:22px}
+  .brand svg{width:20px;height:20px}
+  .brand b{font-weight:800;color:var(--navy);letter-spacing:-.02em;font-size:16px}
+  h1{font-family:var(--serif);font-weight:600;font-size:clamp(24px,6vw,30px);
+     letter-spacing:-.02em;text-align:center;margin:0 0 6px}
+  .sub{color:var(--muted);text-align:center;font-size:14.5px;margin:0 auto 20px;max-width:34ch}
+  .portrait-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
+     padding:12px;margin-bottom:8px;position:relative;overflow:hidden}
+  .portrait-card img{display:block;width:100%;border-radius:10px;background:#f3efe8}
+  /* A contributor's word flies onto the portrait the instant they add it — instant
+     feedback while the real re-render catches up in the background. */
+  .flyer{position:absolute;pointer-events:none;white-space:nowrap;z-index:5;opacity:0;
+     font-family:var(--serif);font-weight:700;text-transform:uppercase;letter-spacing:.02em;
+     color:var(--rose);text-shadow:0 1px 3px rgba(255,255,255,.6),0 1px 2px rgba(0,0,0,.25);
+     transform:translate(-50%,-50%) scale(1.15)}
+  .countline{text-align:center;color:var(--muted);font-size:13px;margin:10px 0 22px}
+  .countline b{color:var(--navy)}
+  .form{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px}
+  label{display:block;font-weight:600;font-size:14px;margin:0 0 7px;color:var(--ink)}
+  input[type=text]{width:100%;border:1px solid var(--line);border-radius:12px;padding:13px 14px;
+     font-size:16px;font-family:inherit;background:#fcfbf8;color:var(--ink)}
+  input[type=text]:focus{outline:none;border-color:var(--navy)}
+  .hint{color:var(--muted);font-size:12.5px;margin:7px 0 16px}
+  .prompts{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 18px}
+  .prompts button{border:1px solid var(--line);background:#fff;border-radius:999px;
+     padding:7px 12px;font-size:12.5px;color:var(--muted);cursor:pointer;font-family:inherit}
+  .prompts button:hover{border-color:var(--navy);color:var(--navy)}
+  .btn{width:100%;border:none;border-radius:999px;background:var(--navy);color:#fff;
+     padding:14px;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer}
+  .btn:disabled{opacity:.5}
+  .thanks{text-align:center;padding:6px 0}
+  .thanks .big{font-family:var(--serif);font-size:22px;color:var(--navy);margin:0 0 4px}
+  .recent{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin:16px 0 0}
+  .chip{background:#f3efe8;border-radius:999px;padding:6px 12px;font-size:13px;color:var(--ink);
+     animation:pop .4s ease}
+  /* The plain-language proof that every word is in: a wall of everyone's words,
+     newest first, the just-added one highlighted. The portrait is the art; this
+     is where each contributor unmistakably sees their word. */
+  .wall-h{text-align:center;color:var(--muted);font-size:12.5px;letter-spacing:.04em;
+     text-transform:uppercase;margin:0 0 10px}
+  .wall{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin:0 0 24px;
+     max-height:142px;overflow:auto}
+  .wall .chip{animation:none}
+  .wall .chip.me{background:var(--navy);color:#fff;font-weight:600}
+  @keyframes pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
+  .cta{display:block;text-align:center;margin-top:18px;color:var(--navy);font-weight:700;
+     text-decoration:none;font-size:14.5px}
+  .err{color:var(--rose);font-size:13px;text-align:center;margin-top:10px;min-height:18px}
+  .foot{text-align:center;color:var(--muted);font-size:12px;margin-top:26px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <svg viewBox="0 0 64 64" fill="none"><path d="M32 54s-1.2-1-3.3-2.7C16.8 41.7 8 34 8 23.8 8 16.6 13.4 11 20.4 11c4.3 0 8.5 2.2 11.6 6.1C35.1 13.2 39.3 11 43.6 11 50.6 11 56 16.6 56 23.8 56 34 47.2 41.7 35.3 51.3 33.2 53 32 54 32 54z" stroke="#c85b57" stroke-width="3.3" stroke-linejoin="round"/></svg>
+    <b>Loved in Words</b>
+  </div>
+
+  <h1 id="h1">Add a word</h1>
+  <p class="sub" id="sub">Their portrait is being woven from the words the people who love them choose.</p>
+
+  <div class="portrait-card"><img id="portrait" alt="the portrait, in everyone's words" /></div>
+  <div class="countline" id="count"></div>
+
+  <div class="wall-h" id="wallH" style="display:none">Everyone's words</div>
+  <div class="wall" id="wall"></div>
+
+  <div class="form" id="form">
+    <label for="word" id="wlabel">Add a word for them</label>
+    <input id="word" type="text" autocomplete="off" placeholder="Kind, Faithful, Mom, Always…" maxlength="40" />
+    <div class="prompts" id="prompts">
+      <button data-q="What was a word that was just… them?">a word that was them</button>
+      <button data-q="What did they always say?">what they'd say</button>
+      <button data-q="A role they filled — Mom, Nana, Coach, Friend">a role</button>
+      <button data-q="A quality you loved">a quality</button>
+    </div>
+    <label for="name" style="font-weight:500;color:var(--muted);font-size:13px">Your name (optional)</label>
+    <input id="name" type="text" autocomplete="off" placeholder="So the family knows you were here" maxlength="24" style="margin-bottom:16px" />
+    <button class="btn" id="submit">Weave in my word</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="form thanks" id="thanks" style="display:none">
+    <p class="big">You're part of it. 🤍</p>
+    <p class="sub" style="margin:0 auto">Your word is woven into their portrait.</p>
+    <div class="recent" id="recent"></div>
+    <button class="btn" id="another" style="margin-top:18px;background:#fff;color:var(--navy);box-shadow:inset 0 0 0 1.5px var(--navy)">Add another</button>
+    <a class="cta" id="getown" href="#">Want your own print when it's finished? →</a>
+  </div>
+
+  <div class="foot">Gathered with care · No account needed</div>
+</div>
+
+<script>
+const SHARE = location.pathname.split("/").pop();
+const $ = s => document.querySelector(s);
+let lastWords = 0;
+const mine = new Set();   // words I added this session -> highlighted in the wall
+function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function load(){
+  try{
+    const r = await fetch(`/api/gather/${SHARE}/state`);
+    if(!r.ok) throw 0;
+    const s = await r.json();
+    render(s);
+  }catch(e){ /* keep last view */ }
+}
+function render(s){
+  $("#h1").textContent = s.status==="revealed" ? `${s.title}, in their words` : `Add a word for ${s.title}`;
+  if(s.has_portrait){ $("#portrait").src = s.portrait_url; }
+  const upd = s.pending ? ` · <span style="color:var(--rose)">composing…</span>` : "";
+  $("#count").innerHTML = s.count ? `Woven from <b>${s.count}</b> ${s.count===1?"word":"words"}${s.contributors?` · <b>${s.contributors}</b> ${s.contributors===1?"person":"people"}`:""}${upd}` : "Be the first to add a word.";
+  // The word wall — every contribution, newest first; the one you just added glows.
+  if(s.words && s.words.length){
+    $("#wallH").style.display="block";
+    $("#wall").innerHTML = s.words.map(w=>`<span class="chip${(mine.has((w.text||'').toLowerCase()))?' me':''}">${esc(w.text)}</span>`).join("");
+  }
+  if(s.status==="revealed"){
+    $("#form").style.display="none"; $("#thanks").style.display="none";
+    if(!$("#revealed")){
+      const d=document.createElement("div"); d.className="form thanks"; d.id="revealed";
+      d.innerHTML=`<p class="big">The portrait is finished.</p><p class="sub" style="margin:0 auto 16px">Made from everyone's words, including yours.</p><a class="btn" style="text-decoration:none;display:block" href="https://app.typortrait.com/?brand=lovedinwords">Create your own keepsake →</a>`;
+      $("#form").after(d);
+    }
+  }
+  lastWords = s.count;
+}
+$("#prompts").addEventListener("click", e=>{ const b=e.target.closest("button"); if(b){ $("#word").focus(); $("#word").placeholder=b.dataset.q; } });
+$("#submit").addEventListener("click", submit);
+$("#word").addEventListener("keydown", e=>{ if(e.key==="Enter") submit(); });
+async function submit(){
+  const text=$("#word").value.trim(); const name=$("#name").value.trim();
+  $("#err").textContent="";
+  if(text.length<2){ $("#err").textContent="Add a word first."; return; }
+  $("#submit").disabled=true;
+  try{
+    const fd=new FormData(); fd.append("text",text); fd.append("name",name);
+    const r=await fetch(`/api/gather/${SHARE}/word`,{method:"POST",body:fd});
+    const d=await r.json();
+    if(!d.ok){ $("#err").textContent = d.error==="rate_limited" ? "Thanks — that's plenty for now." : d.error==="closed" ? "Gathering has closed." : "Couldn't add that — try a different word."; $("#submit").disabled=false; return; }
+    mine.add(text.toLowerCase());   // highlight it in the wall
+    flyWord(text);            // instant: their word swoops onto the portrait
+    // show thanks
+    $("#form").style.display="none";
+    const rc=$("#recent"); const chip=document.createElement("span"); chip.className="chip"; chip.textContent=text.toUpperCase(); rc.prepend(chip);
+    while(rc.children.length>8) rc.lastChild.remove();
+    $("#thanks").style.display="block";
+    $("#word").value="";
+    load();
+  }catch(e){ $("#err").textContent="Network error — try again."; }
+  $("#submit").disabled=false;
+}
+// Swoop the just-added word from the bottom of the portrait up onto the face,
+// let it settle, then dissolve in — as if it's becoming part of the artwork. The
+// real re-render (throttled) follows within a few seconds.
+function flyWord(text){
+  const card=document.querySelector(".portrait-card"); if(!card) return;
+  const w=card.clientWidth, h=card.clientHeight;
+  const f=document.createElement("div"); f.className="flyer"; f.textContent=text.toUpperCase();
+  f.style.fontSize="26px"; f.style.left=(w*0.5)+"px"; f.style.top=(h*0.93)+"px";
+  card.appendChild(f);
+  // target a spot over the face (central upper-mid), away from the edges
+  const tx=w*(0.30+Math.random()*0.40), ty=h*(0.28+Math.random()*0.34);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    f.style.transition="left 1s cubic-bezier(.18,.85,.2,1), top 1s cubic-bezier(.18,.85,.2,1), font-size 1s cubic-bezier(.18,.85,.2,1), transform 1s ease, opacity .35s ease";
+    f.style.opacity="1"; f.style.left=tx+"px"; f.style.top=ty+"px"; f.style.fontSize="15px";
+    f.style.transform="translate(-50%,-50%) scale(1)";
+  }));
+  setTimeout(()=>{ f.style.transition="opacity 1s ease, transform 1s ease"; f.style.opacity="0"; f.style.transform="translate(-50%,-50%) scale(.9)"; }, 1450);
+  setTimeout(()=>{ f.remove(); }, 2600);
+}
+$("#another").addEventListener("click", ()=>{ $("#thanks").style.display="none"; $("#form").style.display="block"; $("#word").focus(); });
+$("#getown").addEventListener("click", e=>{ e.preventDefault(); $("#getown").textContent="We'll let the family know it's ready. 🤍"; });
+
+load();
+setInterval(load, 6000);   // gentle live refresh as words + portrait evolve
+</script>
+</body>
+</html>
