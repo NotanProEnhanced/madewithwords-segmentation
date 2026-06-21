@@ -58,6 +58,9 @@ services:
       - TYPO_GEO_COUNTRY_HEADER=${TYPO_GEO_COUNTRY_HEADER:-X-Geo-Country}
       - TYPO_GEO_REGION_HEADER=${TYPO_GEO_REGION_HEADER:-X-Geo-Region}
       - TYPO_BIO_CONSENT_VERSION=${TYPO_BIO_CONSENT_VERSION:-bio-v1-2026-06}
+      # Gather (crowd-sourced words). Default OFF; set TYPO_GATHER_ENABLED=1 in
+      # this tree's .env to turn the feature + its routes on (staging only).
+      - TYPO_GATHER_ENABLED=${TYPO_GATHER_ENABLED:-}
       - TYPO_RETENTION_DAYS=${TYPO_RETENTION_DAYS:-30}
       - TYPO_CONSENT_RETENTION_DAYS=${TYPO_CONSENT_RETENTION_DAYS:-}
       - TYPO_ENABLE_DEBUG=${TYPO_ENABLE_DEBUG:-}
