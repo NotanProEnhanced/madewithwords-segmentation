@@ -135,7 +135,8 @@ def _do_render(gid: int) -> None:
     """Render the current word set onto the stored photo and save portrait.png.
     Runs in a worker thread; respects the single-render lock."""
     if not _render_lock.acquire(blocking=False):
-        return                         # slot busy -> drop; next poll retries
+        _inflight.discard(gid)         # slot busy -> free it so the NEXT poll retries
+        return                         # (else the gather stays stuck in _inflight forever)
     try:
         g = _gather_by("id", str(gid))
         if not g:
