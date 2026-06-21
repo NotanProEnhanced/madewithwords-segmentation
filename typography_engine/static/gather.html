@@ -105,7 +105,8 @@ async function load(){
 function render(s){
   $("#h1").textContent = s.status==="revealed" ? `${s.title}, in their words` : `Add a word for ${s.title}`;
   if(s.has_portrait){ $("#portrait").src = s.portrait_url; }
-  $("#count").innerHTML = s.count ? `Woven from <b>${s.count}</b> ${s.count===1?"word":"words"}${s.contributors?` · <b>${s.contributors}</b> ${s.contributors===1?"person":"people"}`:""}` : "Be the first to add a word.";
+  const upd = s.pending ? ` · <span style="color:var(--rose)">composing…</span>` : "";
+  $("#count").innerHTML = s.count ? `Woven from <b>${s.count}</b> ${s.count===1?"word":"words"}${s.contributors?` · <b>${s.contributors}</b> ${s.contributors===1?"person":"people"}`:""}${upd}` : "Be the first to add a word.";
   if(s.status==="revealed"){
     $("#form").style.display="none"; $("#thanks").style.display="none";
     if(!$("#revealed")){

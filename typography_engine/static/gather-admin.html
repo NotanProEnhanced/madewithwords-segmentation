@@ -87,7 +87,7 @@ async function load(){
   $("#cPeople").textContent = s.contributors;
   $("#cStatus").textContent = s.status;
   $("#shareUrl").value = s.share_url;
-  $("#wcount").textContent = `(${s.words.length})`;
+  $("#wcount").innerHTML = `(${s.words.length})` + (s.pending ? ` &middot; <span style="color:var(--rose)">composing…</span>` : "");
   if(s.status==="revealed"){ $("#reveal").textContent="Revealed ✓"; $("#reveal").disabled=true; }
   const box=$("#words"); box.innerHTML="";
   s.words.forEach(w=>{

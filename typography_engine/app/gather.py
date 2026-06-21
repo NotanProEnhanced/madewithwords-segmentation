@@ -244,6 +244,7 @@ def _public_state(g: sqlite3.Row, include_hidden: bool = False) -> dict:
     ]
     visible = sum(1 for r in rows if not r["hidden"])
     contributors = len({(r["name"] or "").strip().lower() for r in rows if not r["hidden"] and (r["name"] or "").strip()})
+    war = g["words_at_render"] if g["words_at_render"] is not None else -1
     return {
         "title": g["title"],
         "status": g["status"],
@@ -251,6 +252,9 @@ def _public_state(g: sqlite3.Row, include_hidden: bool = False) -> dict:
         "contributors": contributors,
         "close_at": g["close_at"],
         "has_portrait": bool(g["has_portrait"]),
+        # True when words have arrived that the current portrait doesn't yet show
+        # (a throttled re-render is pending) -> the pages show a quiet "updating…".
+        "pending": visible != war,
         "portrait_url": f"/api/gather/{g['share_token']}/portrait.png?v={int(g['last_render_at'] or 0)}",
         "words": words,
     }
@@ -395,6 +399,8 @@ def admin_state(admin: str):
     g = _gather_by("admin_token", admin)
     if not g:
         raise HTTPException(404, "not found")
+    if g["status"] == "open":
+        _maybe_render(g)               # dashboard polling also keeps the portrait fresh
     s = _public_state(g, include_hidden=True)
     s["share_url"] = f"{PUBLIC_BASE_URL}/g/{g['share_token']}"
     return s

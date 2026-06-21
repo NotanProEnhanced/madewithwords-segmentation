@@ -156,7 +156,7 @@ GATHER_DIR = DATA_DIR / "gather"
 GATHER_DB = GATHER_DIR / "gather.db"
 # Throttle live re-renders so a busy gather can't hammer the single render slot:
 # re-render at most this often, OR once this many new words have landed.
-GATHER_RENDER_INTERVAL = env_int("TYPO_GATHER_RENDER_INTERVAL", 45)   # seconds
+GATHER_RENDER_INTERVAL = env_int("TYPO_GATHER_RENDER_INTERVAL", 15)   # seconds
 GATHER_RENDER_EVERY = env_int("TYPO_GATHER_RENDER_EVERY", 4)          # new words
 GATHER_MAX_WORDS = env_int("TYPO_GATHER_MAX_WORDS", 64)               # distinct words carried
 GATHER_WORD_MAXLEN = env_int("TYPO_GATHER_WORD_MAXLEN", 40)           # per submission
