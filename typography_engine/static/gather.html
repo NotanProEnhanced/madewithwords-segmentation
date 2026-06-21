@@ -49,6 +49,15 @@
   .recent{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin:16px 0 0}
   .chip{background:#f3efe8;border-radius:999px;padding:6px 12px;font-size:13px;color:var(--ink);
      animation:pop .4s ease}
+  /* The plain-language proof that every word is in: a wall of everyone's words,
+     newest first, the just-added one highlighted. The portrait is the art; this
+     is where each contributor unmistakably sees their word. */
+  .wall-h{text-align:center;color:var(--muted);font-size:12.5px;letter-spacing:.04em;
+     text-transform:uppercase;margin:0 0 10px}
+  .wall{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin:0 0 24px;
+     max-height:142px;overflow:auto}
+  .wall .chip{animation:none}
+  .wall .chip.me{background:var(--navy);color:#fff;font-weight:600}
   @keyframes pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
   .cta{display:block;text-align:center;margin-top:18px;color:var(--navy);font-weight:700;
      text-decoration:none;font-size:14.5px}
@@ -68,6 +77,9 @@
 
   <div class="portrait-card"><img id="portrait" alt="the portrait, in everyone's words" /></div>
   <div class="countline" id="count"></div>
+
+  <div class="wall-h" id="wallH" style="display:none">Everyone's words</div>
+  <div class="wall" id="wall"></div>
 
   <div class="form" id="form">
     <label for="word" id="wlabel">Add a word for them</label>
@@ -99,6 +111,8 @@
 const SHARE = location.pathname.split("/").pop();
 const $ = s => document.querySelector(s);
 let lastWords = 0;
+const mine = new Set();   // words I added this session -> highlighted in the wall
+function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
 async function load(){
   try{
@@ -113,6 +127,11 @@ function render(s){
   if(s.has_portrait){ $("#portrait").src = s.portrait_url; }
   const upd = s.pending ? ` · <span style="color:var(--rose)">composing…</span>` : "";
   $("#count").innerHTML = s.count ? `Woven from <b>${s.count}</b> ${s.count===1?"word":"words"}${s.contributors?` · <b>${s.contributors}</b> ${s.contributors===1?"person":"people"}`:""}${upd}` : "Be the first to add a word.";
+  // The word wall — every contribution, newest first; the one you just added glows.
+  if(s.words && s.words.length){
+    $("#wallH").style.display="block";
+    $("#wall").innerHTML = s.words.map(w=>`<span class="chip${(mine.has((w.text||'').toLowerCase()))?' me':''}">${esc(w.text)}</span>`).join("");
+  }
   if(s.status==="revealed"){
     $("#form").style.display="none"; $("#thanks").style.display="none";
     if(!$("#revealed")){
@@ -136,6 +155,7 @@ async function submit(){
     const r=await fetch(`/api/gather/${SHARE}/word`,{method:"POST",body:fd});
     const d=await r.json();
     if(!d.ok){ $("#err").textContent = d.error==="rate_limited" ? "Thanks — that's plenty for now." : d.error==="closed" ? "Gathering has closed." : "Couldn't add that — try a different word."; $("#submit").disabled=false; return; }
+    mine.add(text.toLowerCase());   // highlight it in the wall
     flyWord(text);            // instant: their word swoops onto the portrait
     // show thanks
     $("#form").style.display="none";
