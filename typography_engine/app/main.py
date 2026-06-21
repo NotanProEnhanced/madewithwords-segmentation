@@ -101,6 +101,19 @@ app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# Gather (crowd-sourced words) — ADDITIVE + FLAG-GATED. Mounted only when
+# TYPO_GATHER_ENABLED is on, so it is entirely inert in production by default and
+# cannot affect the studio/checkout paths. See app/gather.py + the spec.
+try:
+    from .config import GATHER_ENABLED
+    if GATHER_ENABLED:
+        from . import gather as _gather
+        _gather.init_db()
+        app.include_router(_gather.router)
+except Exception as _e:  # never let an optional feature break app startup
+    import logging as _logging
+    _logging.getLogger("typortrait").warning("gather feature not mounted: %s", _e)
+
 # Phase C: admin review dashboard + email notifications for consented reels.
 app.include_router(admin_mod.router)
 
