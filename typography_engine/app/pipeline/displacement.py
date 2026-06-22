@@ -53,6 +53,12 @@ _PAPER_IRIS_SAT = 1.36
 # "living eyes" treatment fabricates open eyes on a closed-eye photo. Open eyes
 # run ~0.25-0.35; a relaxed/closed eye ~<0.12. 0.15 leaves headroom for squints.
 _EYE_OPEN_EAR = 0.15
+# Appearance backstop for what geometry/blendshapes MISS (e.g. closed eyes behind a
+# reflective lens, where MediaPipe still reports "open"). A real open eye is a DARK
+# iris/pupil in a brighter sclera; ratio = iris-centre luminance / eye-region bright
+# pixels. Real eyes measured 0.08-0.30; a closed/glare eye (no dark pupil) ~0.45+.
+# Above this there's no real eye to model -> suppress instead of fabricating one.
+_EYE_OPEN_IRIS_MAX = 0.40
 
 # Sculpted ink colours: the WORD colour (BGR) draped on the dark ground. These are
 # light/bright tints (mirroring the studio's ink swatches) so they read on navy.
@@ -191,6 +197,25 @@ def render_displacement_portrait(
         ear_l = _ear(362, 385, 387, 263, 373, 380)    # subject's left eye
         if min(ear_r, ear_l) < _EYE_OPEN_EAR:
             irises = []                                # closed -> no fabricated eyes
+    # Appearance backstop: a real open eye is a DARK iris/pupil in a brighter sclera.
+    # If the iris-centre isn't clearly darker than the eye's bright pixels -- because
+    # it's eyelid skin (closed) or a glasses GLARE filling the lens -- there's no eye
+    # to model, so suppress rather than fabricate one. Catches the cases MediaPipe's
+    # geometry/blendshapes get wrong (closed eyes it still reports as open).
+    if irises:
+        ratios = []
+        for icx, icy, ir in irises:
+            y0, y1 = max(0, int(icy - ir * 2.4)), int(icy + ir * 2.4)
+            x0, x1 = max(0, int(icx - ir * 2.4)), int(icx + ir * 2.4)
+            reg = gray[y0:y1, x0:x1]
+            if reg.size < 16:
+                continue
+            inner = np.zeros((H, W), np.uint8)
+            cv2.circle(inner, (int(round(icx)), int(round(icy))), max(1, int(ir * 0.5)), 1, -1)
+            sclera = max(float(np.percentile(reg, 90)), 1.0)
+            ratios.append(float(gray[inner > 0].mean()) / sclera)
+        if len(ratios) >= 2 and min(ratios) > _EYE_OPEN_IRIS_MAX:
+            irises = []                                # no dark iris -> not a real eye
 
     def rows(fs: float) -> np.ndarray:
         f = _font(fs)
