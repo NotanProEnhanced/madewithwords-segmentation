@@ -226,6 +226,16 @@
   #suggestWords{margin-top:12px}
   #suggestWords[disabled]{opacity:.55;cursor:default}
   .story-msg{font-size:13px;color:var(--muted);margin-top:10px;min-height:0}
+  /* Optional "Add a few more details" expandable inside the story step. */
+  .story-more{margin-top:14px;border-top:1px solid var(--line);padding-top:4px}
+  .story-more>summary{cursor:pointer;list-style:none;font-size:13.5px;font-weight:600;color:var(--navy);padding:9px 0;display:flex;align-items:center;gap:9px}
+  .story-more>summary::-webkit-details-marker{display:none}
+  .story-more>summary::before{content:"+";font-size:15px;font-weight:700;width:19px;height:19px;border-radius:50%;background:#fff;border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;line-height:1}
+  .story-more[open]>summary::before{content:"\2212"}
+  .story-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0 4px}
+  .story-grid label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:var(--muted)}
+  .story-grid input{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px;font-family:var(--sans);color:var(--ink);font-weight:400}
+  @media(max-width:520px){.story-grid{grid-template-columns:1fr}}
   .chips{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
   .chip{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);
     border-radius:999px;padding:7px 11px;font-size:13px;letter-spacing:.4px;color:var(--ink)}
@@ -466,12 +476,20 @@
          Shown only for the lovedinwords brand (see brand-apply JS). Convenience
          layer over the words field below; fails soft to manual entry. -->
     <div id="storyStep" class="story-step" style="display:none">
-      <div class="story-h">Share their story</div>
-      <div class="story-p">Paste an obituary, a tribute, or just a few memories. We&rsquo;ll suggest meaningful words &mdash; you can edit anything before you preview.</div>
-      <textarea id="storyText" rows="5" placeholder="Tell us about your loved one &mdash; who they were, what they meant to you&hellip;"></textarea>
-      <button type="button" id="suggestWords" class="btn secondary">Suggest words</button>
+      <div class="story-h">Tell us about them</div>
+      <div class="story-p">Write or paste anything &mdash; an obituary, a memorial page, a tribute, a few memories, or just words that describe them. We&rsquo;ll turn it into the words for their portrait, and you can edit everything.</div>
+      <textarea id="storyText" rows="6" placeholder="Paste an obituary or tribute, share a memory, or list a few words&hellip;"></textarea>
+      <details class="story-more" id="storyMore">
+        <summary>Add a few more details</summary>
+        <div class="story-grid">
+          <label>Nickname<input id="dtNickname" type="text" autocomplete="off" placeholder="Poppy, Nana&hellip;" maxlength="40" /></label>
+          <label>Favourite saying<input id="dtSaying" type="text" autocomplete="off" placeholder="&ldquo;Always look up.&rdquo;" maxlength="80" /></label>
+          <label>Three words<input id="dtThree" type="text" autocomplete="off" placeholder="kind, funny, strong" maxlength="60" /></label>
+          <label>Hobby or passion<input id="dtHobby" type="text" autocomplete="off" placeholder="gardening, fishing&hellip;" maxlength="40" /></label>
+        </div>
+      </details>
+      <button type="button" id="suggestWords" class="btn secondary">Generate the words</button>
       <div id="storyMsg" class="story-msg" aria-live="polite"></div>
-      <div id="storyChips" class="chips" style="display:none" aria-label="Suggested words"></div>
     </div>
     <label class="field">
       <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
@@ -807,26 +825,40 @@ consent.addEventListener("change", refreshCreate);
   const btn=document.getElementById("suggestWords"), msg=document.getElementById("storyMsg");
   if(!btn) return;
   function say(m){ if(msg) msg.textContent=m; }
+  function val(id){ const e=document.getElementById(id); return e ? (e.value||"").trim() : ""; }
   btn.addEventListener("click", async ()=>{
-    const text=(words.value||"").trim();
-    if(!text){ say("Type a few words, or paste their story here first."); words.focus(); return; }
-    btn.disabled=true; const label=btn.textContent; btn.textContent="Finding words…"; say("");
+    // RICH (memorial): a dedicated story box (+ optional details) feeds the words
+    // field below. SINGLE-BOX (generic): the words field IS the input, distilled in
+    // place. Resolve at click time -- the guided flow may have removed #storyText.
+    const story=document.getElementById("storyText");
+    const rich=!!(story && document.body.contains(story));
+    const text=(rich ? story.value : words.value || "").trim();
+    const details=rich ? {nickname:val("dtNickname"), sayings:val("dtSaying"),
+                          three_words:val("dtThree"), hobby:val("dtHobby")} : {};
+    const hasDetail=Object.values(details).some(Boolean);
+    if(!text && !hasDetail){ say(rich ? "Write or paste something about them, or add a detail or two." : "Type a few words, or paste their story here first."); (rich?story:words).focus(); return; }
+    btn.disabled=true; const label=btn.textContent; btn.textContent="Finding the words…"; say("");
     try{
-      const fd=new FormData(); fd.append("story", text);
+      const fd=new FormData();
+      fd.append("story", text);
+      fd.append("nickname", details.nickname||""); fd.append("sayings", details.sayings||"");
+      fd.append("three_words", details.three_words||""); fd.append("hobby", details.hobby||"");
       const r=await fetch("/suggest-words",{method:"POST",body:fd});
       const j=await r.json();
       const ws=(j&&j.words)||[];
       if(ws.length){
         words.value = ws.join(", "); refreshCreate();
-        say("We pulled these words from what you wrote — edit any that don’t fit.");
+        say("Here are the words we found — edit any that don’t fit, then preview.");
         tp_track("story_suggest_ok",{n:ws.length});
         document.dispatchEvent(new CustomEvent("lw:words-suggested"));
+      }else if(j && j.available===false){
+        say("Word suggestions aren’t available right now — please add the words by hand.");
       }else{
-        say("We couldn’t find words in that — please edit them by hand.");
+        say("We couldn’t pull words from that — please add them by hand.");
         tp_track("story_suggest_empty");
       }
     }catch(e){
-      say("Couldn’t reach the suggestion service — please edit the words by hand.");
+      say("Couldn’t reach the suggestion service — please add the words by hand.");
     }finally{
       btn.disabled=false; btn.textContent=label;
     }
@@ -2207,14 +2239,23 @@ function fetchWithTimeout(url, opts, ms){
     // label/hint are hidden (the step header titles it) and a helper explains both
     // uses. The old separate story textarea is dropped entirely.
     const _wl=g("wordsLbl"), _wh=g("wordsHint");
-    if(_wl) _wl.style.display="none";
-    if(_wh) _wh.style.display="none";
-    const _help=document.createElement("div"); _help.className="story-p";
-    _help.textContent = MEM
-      ? "A few words, separated by commas — their name, who they were, the qualities you loved. Not sure where to start? Paste an obituary or a tribute and tap Suggest words to pull them out."
-      : "A few words, separated by commas — their name, traits, a date, an inside joke. Not sure where to start? Paste a few sentences about them and tap Suggest words to pull them out.";
-    S[2].b.append.apply(S[2].b, [_help, elWords, elSuggest, elStoryMsg, elToggle, elSize].filter(Boolean));
-    if(elStory && elStory.parentNode) elStory.parentNode.removeChild(elStory);   // drop the now-unused story-box container
+    if(MEM){
+      // Memorial: the rich "Tell us about them" block (free text + optional details +
+      // AI "Generate the words") stays, feeding the editable words field beneath it.
+      if(elStory){ elStory.style.display="block"; }
+      if(_wl){ _wl.textContent="The words for their portrait"; _wl.style.display=""; }
+      if(_wh){ _wh.textContent="Generated from what you shared — edit, add or remove any. Separate with commas."; _wh.style.display=""; }
+      S[2].b.append.apply(S[2].b, [elStory, elWords, elToggle, elSize].filter(Boolean));
+    }else{
+      // Generic: ONE box -- type words, or paste a few sentences and tap Suggest words
+      // to distill them in place. The separate story textarea is dropped.
+      if(_wl) _wl.style.display="none";
+      if(_wh) _wh.style.display="none";
+      const _help=document.createElement("div"); _help.className="story-p";
+      _help.textContent = "A few words, separated by commas — their name, traits, a date, an inside joke. Not sure where to start? Paste a few sentences about them and tap Suggest words to pull them out.";
+      S[2].b.append.apply(S[2].b, [_help, elWords, elSuggest, elStoryMsg, elToggle, elSize].filter(Boolean));
+      if(elStory && elStory.parentNode) elStory.parentNode.removeChild(elStory);
+    }
     S[3].b.append(elConsent, elCreate, elFree);
     if(elCreate) elCreate.textContent="Create their portrait";   // warmer than the generic "Create portrait"; guided brand only
 

@@ -625,18 +625,32 @@ async def measure(request: Request, image: UploadFile = File(...), crop: Optiona
 
 
 @app.post("/suggest-words")
-async def suggest_words_endpoint(request: Request, story: str = Form("")) -> JSONResponse:
-    """Memorial 'Share their story' step: take a pasted tribute/obituary and
-    return suggested portrait words. Convenience only -- fails soft to an empty
-    list (no key / API error / empty input), so the studio falls back to manual
-    entry and the flow never blocks on it. Only the words are returned, never the
-    story. See suggest.py for the (billed) OpenAI call and caching."""
+async def suggest_words_endpoint(
+    request: Request,
+    story: str = Form(""),
+    nickname: str = Form(""),
+    sayings: str = Form(""),
+    three_words: str = Form(""),
+    hobby: str = Form(""),
+) -> JSONResponse:
+    """Memorial 'Share their story' step: take a pasted tribute/obituary and/or the
+    optional structured details (nickname, sayings, three words, hobby) and return
+    suggested portrait words. Convenience only -- fails soft to an empty list (no key
+    / API error / empty input), so the studio falls back to manual entry and the flow
+    never blocks on it. Only the words are returned, never the story or details. See
+    suggest.py for the (billed) OpenAI call and caching."""
     text = (story or "").strip()
-    if not text:
+    details = {
+        "nickname": (nickname or "").strip(),
+        "sayings": (sayings or "").strip(),
+        "three_words": (three_words or "").strip(),
+        "hobby": (hobby or "").strip(),
+    }
+    if not text and not any(details.values()):
         return JSONResponse({"ok": True, "words": []})
     if not suggest.enabled():
         return JSONResponse({"ok": True, "words": [], "available": False})
-    words = await asyncio.to_thread(suggest.suggest_words, text)
+    words = await asyncio.to_thread(suggest.suggest_words, text, details)
     return JSONResponse({"ok": True, "words": words, "available": True})
 
 

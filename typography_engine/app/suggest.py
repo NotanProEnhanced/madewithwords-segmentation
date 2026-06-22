@@ -34,16 +34,44 @@ _MAX_WORDS = 12
 _WORD_MAX_LEN = 22
 _cache: Dict[str, tuple] = {}   # sha256(story) -> (expires_ts, words)
 
+_DETAIL_MAX = 200            # cap each structured detail field
 _SYSTEM = (
     "You help build a memorial word-portrait: an image of a person made entirely "
-    "of words that describe them. From the tribute the user pastes, extract the "
-    "most meaningful words to picture them by: their first name, their roles "
-    "(MOTHER, GRANDFATHER, TEACHER, VETERAN), and their qualities (KIND, FAITHFUL, "
-    "FUNNY, GENEROUS). Prefer single words; two-word phrases only when essential. "
+    "of words that describe them. From what the family shares -- a tribute, an "
+    "obituary, memories, or a few details -- extract the most meaningful words to "
+    "picture them by: their first name or nickname, their roles (MOTHER, "
+    "GRANDFATHER, TEACHER, VETERAN), and their qualities (KIND, FAITHFUL, FUNNY, "
+    "GENEROUS). Turn a hobby or passion into a word (gardening -> GARDENER, fishing "
+    "-> FISHERMAN, music -> MUSIC). If they give a nickname or three chosen words, be "
+    "sure to include them. Prefer single words; two-word phrases only when essential. "
     "Return ONLY a JSON array of 6 to 12 UPPERCASE strings, most important first. "
     "No commentary, no markdown, no punctuation inside the words. "
-    'Example: ["GRACE","MOTHER","GRANDMOTHER","KIND","FAITHFUL","FAMILY"]'
+    'Example: ["GRACE","MOTHER","GRANDMOTHER","KIND","FAITHFUL","GARDENER"]'
 )
+
+# Structured detail fields the studio may add alongside the free-text story.
+_DETAIL_LABELS = (
+    ("nickname", "Nickname"),
+    ("sayings", "Favourite saying"),
+    ("three_words", "Three words that describe them"),
+    ("hobby", "Hobby or passion"),
+)
+
+
+def _compose(story: str, details: dict) -> str:
+    """Merge the free-text story with any structured details into one prompt body."""
+    parts: List[str] = []
+    story = (story or "").strip()[:_STORY_MAX_CHARS]
+    if story:
+        parts.append(story)
+    hints: List[str] = []
+    for key, label in _DETAIL_LABELS:
+        v = str((details or {}).get(key, "") or "").strip()[:_DETAIL_MAX]
+        if v:
+            hints.append(f"{label}: {v}")
+    if hints:
+        parts.append("Details the family added:\n" + "\n".join(hints))
+    return "\n\n".join(parts).strip()
 
 
 def enabled() -> bool:
@@ -88,15 +116,15 @@ def _parse_words(content: str) -> List[str]:
     return out
 
 
-def suggest_words(story: str) -> List[str]:
-    """Return a list of suggested UPPERCASE words from a pasted tribute. Returns
-    [] on no key / error / empty input -- caller falls back to manual entry."""
-    story = (story or "").strip()
-    if not story or not OPENAI_API_KEY:
+def suggest_words(story: str, details: dict | None = None) -> List[str]:
+    """Return a list of suggested UPPERCASE words from a pasted tribute and/or the
+    optional structured details. Returns [] on no key / error / empty input -- the
+    caller falls back to manual entry."""
+    combined = _compose(story, details or {})
+    if not combined or not OPENAI_API_KEY:
         return []
-    story = story[:_STORY_MAX_CHARS]
 
-    h = hashlib.sha256(story.encode("utf-8")).hexdigest()
+    h = hashlib.sha256(combined.encode("utf-8")).hexdigest()
     now = time.time()
     hit = _cache.get(h)
     if hit and hit[0] > now:
@@ -111,7 +139,7 @@ def suggest_words(story: str) -> List[str]:
                 "model": SUGGEST_MODEL,
                 "messages": [
                     {"role": "system", "content": _SYSTEM},
-                    {"role": "user", "content": story},
+                    {"role": "user", "content": combined},
                 ],
                 "temperature": 0.3,
                 "max_tokens": 160,
