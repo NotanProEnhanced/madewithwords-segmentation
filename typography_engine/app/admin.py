@@ -747,7 +747,7 @@ a{{color:#0d1b3a}}
 
 
 def _admin_nav(current: str = "all", stats_active: bool = False,
-               orders_active: bool = False) -> str:
+               orders_active: bool = False, dr_active: bool = False) -> str:
     items = [
         ("all", "All", "/admin/reels"),
         ("queued", "Queued", "/admin/reels?filter=queued"),
@@ -756,7 +756,7 @@ def _admin_nav(current: str = "all", stats_active: bool = False,
         ("rejected", "Rejected", "/admin/reels?filter=rejected"),
         ("revoked", "Revoked", "/admin/reels?filter=revoked"),
     ]
-    active_elsewhere = stats_active or orders_active
+    active_elsewhere = stats_active or orders_active or dr_active
     bits = []
     for key, label, url in items:
         cls = ' class="cur"' if key == current and not active_elsewhere else ""
@@ -765,6 +765,8 @@ def _admin_nav(current: str = "all", stats_active: bool = False,
     bits.append(f'<a href="/admin/stats"{stats_cls}>Stats</a>')
     orders_cls = ' class="cur"' if orders_active else ""
     bits.append(f'<a href="/admin/orders"{orders_cls}>Orders</a>')
+    dr_cls = ' class="cur"' if dr_active else ""
+    bits.append(f'<a href="/admin/data-requests"{dr_cls}>Data requests</a>')
     bits.append('<span class="gap"></span>')
     bits.append('<form method="post" action="/admin/logout"><button class="btn ghost" type="submit">Log out</button></form>')
     return f'<nav>{"".join(bits)}</nav>'
@@ -895,6 +897,95 @@ def admin_orders(admin_session: Optional[str] = Cookie(None)):
              '<th>Email</th><th>Printful</th><th>Track</th><th>Error</th></tr>'
              + "".join(trs) + '</table>')
     return HTMLResponse(_admin_chrome("Orders", body))
+
+
+_DR_TYPE_STYLE = {
+    "delete":       "background:#fee2e2;color:#991b1b",
+    "access":       "background:#dbeafe;color:#1e40af",
+    "correct":      "background:#fef3c7;color:#92400e",
+    "object":       "background:#f3e8ff;color:#6b21a8",
+    "takedown":     "background:#fee2e2;color:#991b1b",
+    "report_abuse": "background:#fee2e2;color:#991b1b",
+}
+
+
+@router.get("/data-requests", response_class=HTMLResponse)
+def admin_data_requests(admin_session: Optional[str] = Cookie(None)):
+    """GDPR/CCPA data requests submitted via /data-request, newest first. Read-only
+    audit view over data/data_requests.log. A delete WITH a job ID was already purged
+    at submit time; everything else is a to-do to action within the statutory window
+    (GDPR ~30 days, CCPA ~45) -- and verify the requester's identity before disclosing
+    or changing anything. No mutation here on purpose: deletions stay a deliberate,
+    manual step (see COMPLIANCE.md)."""
+    guard = _require_admin(admin_session)
+    if guard is not None:
+        return guard
+    body = '<h1>Data requests</h1>'
+    body += _admin_nav(dr_active=True)
+
+    recs = []
+    try:
+        with (DATA_DIR / "data_requests.log").open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    recs.append(json.loads(line))
+                except (ValueError, TypeError):
+                    continue
+    except OSError:
+        pass
+    recs.reverse()   # newest first
+
+    if not recs:
+        body += ('<div class="card"><p class="muted">No data requests yet. Submissions to the '
+                 '<a href="/data-request">data request page</a> appear here (and email '
+                 '<code>TYPO_ADMIN_EMAIL</code>). A delete with a job ID is purged automatically; '
+                 'everything else is a to-do — verify identity, action within ~30 days, and reply.'
+                 '</p></div>')
+        return HTMLResponse(_admin_chrome("Data requests", body))
+
+    now = int(time.time())
+    def _auto_done(r):
+        return r.get("type") == "delete" and bool(r.get("job_id"))
+    todo = sum(1 for r in recs if not _auto_done(r))
+    body += (f'<p class="muted">{len(recs)} total · {todo} need action · respond within '
+             '~30 days (GDPR) / ~45 days (CCPA). <b>Verify the requester&rsquo;s identity</b> '
+             'before disclosing or changing anything. Read-only — purge a job from the shell '
+             '(see COMPLIANCE.md).</p>')
+
+    trs = []
+    for r in recs:
+        ts = int(r.get("ts") or 0)
+        when = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(ts)) if ts else "—"
+        age = (now - ts) / 86400.0 if ts else 0.0
+        rtype = str(r.get("type") or "—")
+        pill = (f'<span class="state" style="{_DR_TYPE_STYLE.get(rtype, "background:#eee;color:#333")}">'
+                f'{html.escape(rtype)}</span>')
+        email = html.escape(str(r.get("email") or "—"))
+        jid = str(r.get("job_id") or "").strip()
+        deleted = int(r.get("deleted_files") or 0)
+        job_html = (f'<code>{html.escape(jid)}</code> · {deleted} purged'
+                    if jid else '<span class="muted">—</span>')
+        region = html.escape(str(r.get("region") or "—"))
+        details = html.escape(str(r.get("details") or ""))
+        if _auto_done(r):
+            status = '<span class="state s-posted">auto-purged</span>'
+        elif age > 30:
+            status = '<span class="state s-rejected">overdue</span>'
+        elif age > 23:
+            status = '<span class="state s-queued">due soon</span>'
+        else:
+            status = '<span class="state s-approved">to do</span>'
+        trs.append(
+            f'<tr><td class="muted">{when}</td><td>{pill}</td><td>{email}</td>'
+            f'<td>{job_html}</td><td>{region}</td><td>{status}</td>'
+            f'<td class="muted">{details}</td></tr>')
+    body += ('<table><tr><th>When</th><th>Type</th><th>Email</th><th>Job&nbsp;ID</th>'
+             '<th>Region</th><th>Status</th><th>Details</th></tr>'
+             + "".join(trs) + '</table>')
+    return HTMLResponse(_admin_chrome("Data requests", body))
 
 
 @router.get("/reels", response_class=HTMLResponse)
