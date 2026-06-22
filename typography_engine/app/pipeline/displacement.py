@@ -85,6 +85,43 @@ _GROUPS = {
 }
 
 
+def _sclera_value(gray, pts, scl, floor=0.60):
+    """Per-eye contrast-stretched sclera shading. Real sclera is not a flat disc:
+    the upper lid shadows its top, it falls off toward the inner/outer corners, and
+    it curves away at the edges. Stretching each eye's OWN luminance restores that
+    natural gradient, while normalising PER EYE keeps even a shaded eye bright (so
+    the dark-merge fix holds without the artificial, uniform-value look)."""
+    H, W = gray.shape
+    val = np.full((H, W), floor, np.float32)
+    gb = cv2.GaussianBlur(gray, (0, 0), sigmaX=1.0)
+    yy = np.arange(H, dtype=np.float32)[:, None]
+    for k in ("Leye", "Reye"):
+        p = np.array([pts[i] for i in _GROUPS[k] if i < len(pts)], np.int32)
+        if len(p) < 3:
+            continue
+        em = np.zeros((H, W), np.uint8)
+        cv2.fillConvexPoly(em, cv2.convexHull(p), 1)
+        m = (em > 0) & (scl > 0.05)
+        if int(m.sum()) < 12:
+            continue
+        # 1) Per-eye luminance stretch -> the photo's own sclera gradient, bright.
+        gp = gb[m]
+        lo, hi = np.percentile(gp, [12, 94])
+        if hi - lo < 6.0:
+            hi = lo + 6.0
+        v = np.clip((gb - lo) / (hi - lo), 0.0, 1.0)
+        base = floor + (1.0 - floor) * v
+        # 2) Upper-lid shadow: the dominant natural cue -- the top of the sclera (just
+        # under the lid/lashes) is markedly darker, easing to full toward the exposed
+        # lower sclera. Synthesised from the eye's own vertical extent so it's reliable
+        # even when the photo's tiny sclera is too flat to carry it.
+        y0, y1 = float(p[:, 1].min()), float(p[:, 1].max())
+        vy = np.clip((yy - y0) / max(8.0, (y1 - y0)), 0.0, 1.0)        # 0 top -> 1 bottom
+        lid = 0.52 + 0.48 * np.clip((vy - 0.08) / 0.55, 0.0, 1.0)      # darker top, full lower
+        val[m] = np.clip(base * np.broadcast_to(lid, (H, W)), 0.0, 1.0)[m]
+    return val
+
+
 @lru_cache(maxsize=1)
 def _font_path() -> Optional[str]:
     pats = [
@@ -524,14 +561,14 @@ def render_displacement_portrait(
         s_col = (236, 238, 240) if paper_feat else (198, 200, 202)
         t_col = (238, 240, 242) if paper_feat else (200, 202, 204)
         if irises:
-            # Floor the sclera shade: drive the fill MOSTLY off a constant so the eye
-            # on the SHADED side of the face still reads as a distinct (if dimmer)
-            # white. Keying it purely off source luminance let a shadowed sclera
-            # collapse to the dark ground -- erasing the sclera/iris boundary that's
-            # clearly there in the photo. A residual gshade term keeps the lit eye
-            # brighter so the pair still carries the real light direction.
-            scl_shade = np.clip(0.80 + 0.20 * gshade, 0.0, 1.0)
-            sw = (scl * scl_shade * s_str)[..., None]
+            # Natural sclera shading from each eye's OWN luminance, stretched PER EYE:
+            # the real upper-lid shadow and corner falloff come through as a GRADIENT
+            # instead of a flat grey disc, while per-eye normalisation keeps even a
+            # shaded eye bright (preserving the dark-merge fix without the uniform,
+            # artificial look). A faint warm-neutral tint reads more like sclera than
+            # a cool grey.
+            scl_val = _sclera_value(gray, pts, scl, floor=(0.70 if paper_feat else 0.58))
+            sw = (scl * scl_val * s_str)[..., None]
             out = out * (1.0 - sw) + np.array(s_col, np.float32) * sw
         if teeth is not None:
             tw = (teeth * gshade * t_str)[..., None]
