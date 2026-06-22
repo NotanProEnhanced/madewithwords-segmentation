@@ -164,6 +164,61 @@ footer .by{display:block; margin-top:8px; font-size:12px; color:var(--muted); op
     <p style="text-align:center;margin:26px 0 0"><a href="gallery.html" style="font-weight:600">See the full gallery &rarr;</a></p>
   </section>
 
+  <section id="testimonials">
+<style>
+  #testimonials .tstx-grid{display:flex;gap:44px;flex-wrap:wrap;justify-content:center;margin-top:34px}
+  #testimonials .tstx-card{flex:1 1 320px;max-width:400px;display:flex;flex-direction:column;align-items:center;text-align:center}
+  #testimonials .tba{position:relative;width:100%;max-width:330px;aspect-ratio:4/5;border-radius:14px;overflow:hidden;box-shadow:0 14px 34px rgba(40,32,24,.22)}
+  #testimonials .tba img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;-webkit-user-drag:none;user-select:none}
+  #testimonials .tba-before{position:absolute;inset:0;clip-path:inset(0 calc(100% - var(--p,55%)) 0 0)}
+  #testimonials .tba-line{position:absolute;top:0;bottom:0;left:var(--p,55%);width:2px;background:#fff;transform:translateX(-1px);pointer-events:none;box-shadow:0 0 6px rgba(0,0,0,.35)}
+  #testimonials .tba-grip{position:absolute;top:50%;left:var(--p,55%);width:38px;height:38px;border-radius:50%;background:#fff;color:#444;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;font-size:16px;pointer-events:none;box-shadow:0 2px 10px rgba(0,0,0,.32)}
+  #testimonials .tba-tag{position:absolute;bottom:11px;font:600 10.5px/1 system-ui,sans-serif;letter-spacing:.05em;text-transform:uppercase;padding:5px 10px;border-radius:20px;background:rgba(15,15,20,.55);color:#fff}
+  #testimonials .tba-tag.l{left:11px} #testimonials .tba-tag.r{right:11px}
+  #testimonials .tba-range{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;opacity:0;cursor:ew-resize}
+  #testimonials .tstx-stars{margin-top:18px;color:#c79a3f;font-size:16px;letter-spacing:3px}
+  #testimonials .tstx-quote{margin:12px 0 0;font-size:17px;line-height:1.6;font-style:italic;color:#3a3530;max-width:360px}
+  #testimonials .tstx-cite{margin-top:14px;font-weight:700;font-size:14px;color:#8a7f72;letter-spacing:.02em}
+</style>
+    <h2>From families like yours</h2>
+    <p class="lede">A real photograph, and the words that became their face &mdash; drag to see the change.</p>
+    <div class="tstx-grid">
+      <figure class="tstx-card">
+        <div class="tba" style="--p:55%">
+          <img class="tba-after" src="tst-grandma-after.jpg" width="880" height="1100" loading="lazy" alt="A remembrance word-portrait of a grandmother, made from the words that describe her" />
+          <div class="tba-before"><img src="tst-grandma-before.jpg" width="880" height="1100" loading="lazy" alt="The original photograph of a grandmother" /></div>
+          <span class="tba-tag l">their photo</span><span class="tba-tag r">in their words</span>
+          <div class="tba-line"></div><div class="tba-grip">&#8596;</div>
+          <input class="tba-range" type="range" min="0" max="100" value="55" aria-label="Drag to reveal the portrait" />
+        </div>
+        <div class="tstx-stars" aria-hidden="true">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+        <blockquote class="tstx-quote">&ldquo;My grandmother&rsquo;s laugh is the first thing I see now &mdash; her whole face, made from the words we&rsquo;d use for her. My mom keeps it by her chair and tears up every time. You gave her back to us.&rdquo;</blockquote>
+        <figcaption class="tstx-cite">Holly M.</figcaption>
+      </figure>
+      <figure class="tstx-card">
+        <div class="tba" style="--p:55%">
+          <img class="tba-after" src="tst-poppy-after.jpg" width="880" height="1100" loading="lazy" alt="A remembrance word-portrait of a grandfather, made from the words that describe him" />
+          <div class="tba-before"><img src="tst-poppy-before.jpg" width="880" height="1100" loading="lazy" alt="The original photograph of a grandfather" /></div>
+          <span class="tba-tag l">their photo</span><span class="tba-tag r">in their words</span>
+          <div class="tba-line"></div><div class="tba-grip">&#8596;</div>
+          <input class="tba-range" type="range" min="0" max="100" value="55" aria-label="Drag to reveal the portrait" />
+        </div>
+        <div class="tstx-stars" aria-hidden="true">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+        <blockquote class="tstx-quote">&ldquo;I ordered one of my dad after he passed. Watching the words that made him &mdash; funny, strong, gentle &mdash; become his face undid me in the best way. It&rsquo;s the most meaningful thing in our home.&rdquo;</blockquote>
+        <figcaption class="tstx-cite">Laurie T.</figcaption>
+      </figure>
+    </div>
+<script>
+  (function(){
+    document.querySelectorAll('#testimonials .tba').forEach(function(ba){
+      var r=ba.querySelector('.tba-range'); if(!r) return;
+      function up(){ ba.style.setProperty('--p', r.value+'%'); }
+      r.addEventListener('input', up); up();
+    });
+  })();
+</script>
+  </section>
+
   <section>
     <h2>How it comes together</h2>
     <p class="lede">Three quiet steps. No design skills, no rush.</p>
