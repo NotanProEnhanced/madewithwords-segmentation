@@ -2245,7 +2245,11 @@ function fetchWithTimeout(url, opts, ms){
       if(elStory){ elStory.style.display="block"; }
       if(_wl){ _wl.textContent="The words for their portrait"; _wl.style.display=""; }
       if(_wh){ _wh.textContent="Generated from what you shared — edit, add or remove any. Separate with commas."; _wh.style.display=""; }
-      S[2].b.append.apply(S[2].b, [elStory, elWords, elToggle, elSize].filter(Boolean));
+      S[2].b.append.apply(S[2].b, [elStory, elWords, elSize].filter(Boolean));
+      // Memorial: drop the "Writing a letter or a message instead?" link -- redundant
+      // here, since the story box above already takes a letter/tribute/prose. (Message
+      // style stays reachable from the result-screen style gallery.)
+      if(elToggle && elToggle.parentNode) elToggle.parentNode.removeChild(elToggle);
     }else{
       // Generic: ONE box -- type words, or paste a few sentences and tap Suggest words
       // to distill them in place. The separate story textarea is dropped.
