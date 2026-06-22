@@ -1072,12 +1072,14 @@ def checkout(
     if not PRINTFUL_API_TOKEN:
         return JSONResponse({"ok": False, "error": "fulfillment_unconfigured"}, status_code=503)
     variant_id = products.resolve_variant_id(product, size)
-    if variant_id is None:
+    if variant_id is None and not product.bundle_items:
         return JSONResponse(
             {"ok": False, "error": "missing_or_invalid_size",
              "sizes": list(product.size_variants.keys()) if product.size_variants else []},
             status_code=400,
         )
+    if product.bundle_items:
+        variant_id = product.bundle_items[0][0]   # representative variant: keeps the order row + paid-gate happy (fulfilment expands the full bundle)
     order_id = uuid.uuid4().hex[:16]
     ext = "svg" if fmt == "svg" else "png"
     label_size = f" — {size}" if size else ""
@@ -1346,15 +1348,13 @@ def _fulfill_with_printful(order_id: str, recipient: dict) -> None:
         threading.Thread(target=lambda: _ensure_clean_png(job_id, aspect), daemon=True).start()
         signed = printful.signed_print_url(job_id, aspect=aspect)
         placement = "front" if str(o["sku"]).startswith("tshirt") else "default"
-        res = printful.create_order(
-            recipient=recipient,
-            variant_id=o["variant_id"],
-            print_file_url=signed,
-            external_id=order_id,
-            retail_price_cents=o["price_cents"],
-            confirm=PRINTFUL_CONFIRM,
-            placement=placement,
-        )
+        common = dict(recipient=recipient, print_file_url=signed, external_id=order_id,
+                      retail_price_cents=o["price_cents"], confirm=PRINTFUL_CONFIRM,
+                      placement=placement)
+        if prod and prod.bundle_items:
+            res = printful.create_order(bundle=prod.bundle_items, **common)   # multi-item order
+        else:
+            res = printful.create_order(variant_id=o["variant_id"], **common)
         pf_id = res.get("id") if isinstance(res, dict) else None
         orders_db.mark_fulfilling(order_id=order_id, printful_order_id=int(pf_id or 0), raw=res)
     except Exception as e:  # noqa: BLE001

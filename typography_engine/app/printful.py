@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
@@ -106,9 +106,10 @@ def verify_signed_url(job: str, exp: int, sig: str) -> bool:
 def create_order(
     *,
     recipient: Dict[str, Any],
-    variant_id: int,
     print_file_url: str,
+    variant_id: Optional[int] = None,
     quantity: int = 1,
+    bundle: Optional[List[Tuple[int, int]]] = None,
     external_id: Optional[str] = None,
     retail_price_cents: Optional[int] = None,
     confirm: bool = True,
@@ -119,17 +120,28 @@ def create_order(
     `recipient` follows Printful's address schema: name, address1, city,
     state_code, country_code, zip, email, phone (optional).
     `placement` is "default" for posters/canvas/framed, "front" for apparel.
+    Pass `bundle` ([(variant_id, qty), ...]) for a multi-item order (the same
+    print file on every item -- bundles are single-aspect); otherwise a single
+    `variant_id`. retail_price is set on single items only (a bundle's price is the
+    set, not per item; Printful falls back to its own value for the packing slip).
     """
-    item: Dict[str, Any] = {
-        "variant_id": variant_id,
-        "quantity": quantity,
-        "files": [{"url": print_file_url, "type": placement}],
-    }
-    if retail_price_cents is not None:
-        item["retail_price"] = f"{retail_price_cents / 100:.2f}"
+    files = [{"url": print_file_url, "type": placement}]
+    if bundle:
+        items: List[Dict[str, Any]] = [
+            {"variant_id": vid, "quantity": qty, "files": files} for vid, qty in bundle
+        ]
+    else:
+        item: Dict[str, Any] = {
+            "variant_id": variant_id,
+            "quantity": quantity,
+            "files": files,
+        }
+        if retail_price_cents is not None:
+            item["retail_price"] = f"{retail_price_cents / 100:.2f}"
+        items = [item]
     payload: Dict[str, Any] = {
         "recipient": recipient,
-        "items": [item],
+        "items": items,
     }
     if external_id:
         payload["external_id"] = external_id

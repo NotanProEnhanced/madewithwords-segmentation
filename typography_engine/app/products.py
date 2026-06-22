@@ -11,7 +11,7 @@ The `printful_variant_id` values are stable IDs from Printful's catalog API
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,12 @@ class Product:
     size_variants: Optional[Dict[str, int]] = None
     # Tag shown on the product card. Optional.
     tag: Optional[str] = None
+    # Bundle: several Printful line items in ONE order, as (variant_id, qty). When
+    # set, printful_variant_id is None and fulfilment expands these. All items must
+    # share one print aspect, so a single render fulfils the whole order.
+    bundle_items: Optional[List[Tuple[int, int]]] = None
+    # Show only on the memorial (lovedinwords) brand -- e.g. grief-framed bundles.
+    memorial_only: bool = False
 
 
 # Printful variant IDs for the t-shirt (Bella+Canvas 3001, unisex, BLACK).
@@ -116,6 +122,32 @@ CATALOG: List[Product] = [
         print_aspect=0.714,         # 5/7 ≈ 0.714 -- render the print file to match
         printful_variant_id=16364,  # Enhanced Matte Paper Poster (in) 5×7 (product 1) — base $5.39
     ),
+    # --- Bundles (memorial brand only). Single-aspect, so one render fulfils every
+    # item; variant IDs are the same verified Printful catalog IDs used above.
+    Product(
+        sku="bundle_family",
+        name="“Keep them close” — family set",
+        blurb="One framed portrait for the home, and four prints for those who loved them.",
+        price_cents=11900,
+        shipping_cents=1500,
+        physical=True,
+        printful_variant_id=None,
+        bundle_items=[(4399, 1), (4463, 4)],   # 16×20 framed + 4× 8×10 poster (all 4:5)
+        memorial_only=True,
+        tag="Most loved",
+    ),
+    Product(
+        sku="bundle_share6",
+        name="“A copy for everyone” — six 5×7 prints",
+        blurb="Six small keepsakes to give to the family and friends who loved them.",
+        price_cents=5900,
+        shipping_cents=800,
+        physical=True,
+        print_aspect=0.714,
+        printful_variant_id=None,
+        bundle_items=[(16364, 6)],             # 6× 5×7 (all 0.714)
+        memorial_only=True,
+    ),
     Product(
         sku="tshirt_unisex",
         name="Unisex t-shirt",
@@ -165,5 +197,6 @@ def public_catalog() -> List[dict]:
             "physical": p.physical,
             "sizes": list(p.size_variants.keys()) if p.size_variants else [],
             "tag": p.tag,
+            "memorial_only": p.memorial_only,
         })
     return out

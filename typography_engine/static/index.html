@@ -1525,6 +1525,7 @@ function renderProducts(data){
   const isLoved = (typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords");
   let items = CATALOG.slice();
   if(isLoved) items = items.filter(p=>!String(p.sku).startsWith("tshirt"));
+  else items = items.filter(p=>!p.memorial_only);   // grief-framed bundles: memorial brand only
   const order = items.sort((a,b)=>{
     const av=a.physical?0:1, bv=b.physical?0:1;
     return isLoved ? (av-bv) : (bv-av);
