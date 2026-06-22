@@ -1534,7 +1534,11 @@ createBtn.addEventListener("click", ()=>{
   invalidate(); render(state.ink,{animate:true}); });
 $("#restart").addEventListener("click", ()=>{ resultView.style.display="none"; inputView.style.display="block";
   document.body.classList.remove("result-active");
-  invalidate(); portrait.src=""; portrait.className=""; stopAssembly(); });
+  invalidate(); portrait.src=""; portrait.className=""; stopAssembly();
+  // Land on the "A favorite photo" step, open and ready to change the photo.
+  if(window.guidedOpenStep) window.guidedOpenStep(1);
+  requestAnimationFrame(()=>{ const ps=document.querySelector('.gstep[data-step="1"]'); if(ps) ps.scrollIntoView({behavior:"smooth",block:"start"}); else window.scrollTo({top:0,behavior:"smooth"}); });
+});
 // Brand opening look: e.g. Loved in Words opens on Sculpt + Photo (the most
 // lifelike for a remembrance portrait). Run LAST -- after every const + listener
 // is defined -- because setStyle() reaches size-strip state; calling it during
