@@ -247,6 +247,11 @@
   body.guided .gstep.open .gstep-num{background:var(--navy);color:#fff}
   body.guided .gstep.done .gstep-num{background:var(--navy);color:#fff;font-size:0}
   body.guided .gstep.done .gstep-num::after{content:"\2713";font-size:14px}
+  /* Distinct, calm colour for each guided step badge (1 / 2 / 3) -- in every state
+     (placed after the open/done rules so it wins). Locked steps dim via opacity. */
+  body.guided .gstep[data-step="1"] .gstep-num{background:#c85b57;color:#fff}
+  body.guided .gstep[data-step="2"] .gstep-num{background:#d0982f;color:#fff}
+  body.guided .gstep[data-step="3"] .gstep-num{background:#4f7d8c;color:#fff}
   body.guided .gstep-tt{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
   body.guided .gstep-title{font-size:18px;font-weight:650;letter-spacing:-.02em;color:var(--ink)}
   body.guided .gstep-sub{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
