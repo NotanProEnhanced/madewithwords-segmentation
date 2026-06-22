@@ -76,6 +76,46 @@ CATALOG: List[Product] = [
         print_aspect=0.75,          # 18/24 = 3:4, not 4:5 -- render the print file to match
         printful_variant_id=1,      # Enhanced Matte Paper Poster (in) 18×24 (product 1) — verified 2026-06-02
     ),
+    # --- Smaller, affordable sizes: a print everyone who loved them can keep.
+    # Variant IDs + base costs verified 2026-06-22 via the Printful catalog API.
+    Product(
+        sku="framed_8x10",
+        name="8×10 framed keepsake",
+        blurb="A smaller framed portrait — for a desk, a shelf, or to give.",
+        price_cents=3900,
+        shipping_cents=900,
+        physical=True,
+        printful_variant_id=4651,   # Enhanced Matte Framed Poster 8×10, Black (product 2) — base $20.35
+        tag="For the family",
+    ),
+    Product(
+        sku="canvas_8x10",
+        name="8×10 gallery canvas",
+        blurb="A small gallery-wrapped canvas — ready to stand or hang.",
+        price_cents=3400,
+        shipping_cents=900,
+        physical=True,
+        printful_variant_id=19293,  # Canvas (in) 8×10 (product 3) — base $15.81
+    ),
+    Product(
+        sku="poster_8x10",
+        name="8×10 archival print",
+        blurb="Heavy matte paper, desk-sized. Frame separately.",
+        price_cents=1900,
+        shipping_cents=600,
+        physical=True,
+        printful_variant_id=4463,   # Enhanced Matte Paper Poster (in) 8×10 (product 1) — base $6.89
+    ),
+    Product(
+        sku="print_5x7",
+        name="5×7 keepsake print",
+        blurb="A small print — for a nightstand, a desk, or to share.",
+        price_cents=1500,
+        shipping_cents=500,
+        physical=True,
+        print_aspect=0.714,         # 5/7 ≈ 0.714 -- render the print file to match
+        printful_variant_id=16364,  # Enhanced Matte Paper Poster (in) 5×7 (product 1) — base $5.39
+    ),
     Product(
         sku="tshirt_unisex",
         name="Unisex t-shirt",
