@@ -330,7 +330,15 @@ def render_displacement_portrait(
     # instead of snapping at a hard feature boundary.
     feat_union = mask_of(_GROUPS.keys(), int(fw * 0.04), fw * 0.24)
     feat_norm = np.clip(feat_union / (feat_union.max() + 1e-6), 0, 1)
-    df = np.clip(0.45 * face_norm + 0.70 * feat_norm, 0, 1)
+    df = np.clip(0.52 * face_norm + 0.70 * feat_norm, 0, 1)
+    # #1 Forehead is a big smooth plane that large letters dominate -> push the type
+    # finer above the brow line so it stops shouting.
+    brows = [pts[i] for grp in ("Lbrow", "Rbrow") for i in _GROUPS[grp] if i < len(pts)]
+    if brows:
+        brow_y = float(np.mean([b[1] for b in brows]))
+        _yy = np.arange(H, dtype=np.float32)[:, None]
+        fh = ((fmh > 0) & (_yy < brow_y)).astype(np.float32)
+        df = np.clip(df + 0.26 * cv2.GaussianBlur(fh, (0, 0), sigmaX=max(2.0, fw * 0.05)), 0, 1)
     df = cv2.GaussianBlur(df, (0, 0), sigmaX=max(2.0, fw * 0.06))   # ease the size steps further
 
     # Clean vertical drape, dampened in the feature band (keeps features crisp).
@@ -376,6 +384,19 @@ def render_displacement_portrait(
     hp /= (np.std(hp[mask01 > 0]) + 1e-6)
     sign = 1.0 if g["tone"] == "light" else -1.0
     ink_field = np.clip(ink_field + 0.40 * sign * np.clip(hp, -2, 2) * face_w, 0, 1)
+    # #2/#3 Finer-scale contrast AT the features so the nose (bridge/tip/sides), the
+    # smile lines and cheek transitions MODEL instead of reading flat.
+    hp2 = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.022))
+    hp2 /= (np.std(hp2[mask01 > 0]) + 1e-6)
+    ink_field = np.clip(ink_field + 0.32 * sign * np.clip(hp2, -2.0, 2.0) * feat_norm, 0, 1)
+    # #4 Quiet the clothing: below the chin, compress contrast toward the local mean
+    # so patterned clothes stop competing with the face (hair untouched).
+    chin_y = float(pts[:, 1].max())
+    cloth = ((mask01 > 0) & (yy > chin_y)).astype(np.float32)
+    cloth = cv2.GaussianBlur(cloth, (0, 0), sigmaX=max(2.0, fw * 0.05))
+    cm = ink_field[cloth > 0.5]
+    if cm.size > 50:
+        ink_field = ink_field * (1.0 - 0.55 * cloth) + float(cm.mean()) * (0.55 * cloth)
 
     # Progressive density: thicken text where ink is strongest.
     b1 = cv2.dilate(warped, np.ones((2, 2), np.uint8), 1)
