@@ -520,11 +520,18 @@ def render_displacement_portrait(
         # and stronger than on a dark ground, or they read as dirty greige instead
         # of white -- this is what makes the eyes/smile come alive on paper.
         paper_feat = ground == "paper"
-        s_str, t_str = (0.90, 0.92) if paper_feat else (0.60, 0.66)
+        s_str, t_str = (0.90, 0.92) if paper_feat else (0.70, 0.66)
         s_col = (236, 238, 240) if paper_feat else (198, 200, 202)
         t_col = (238, 240, 242) if paper_feat else (200, 202, 204)
         if irises:
-            sw = (scl * gshade * s_str)[..., None]
+            # Floor the sclera shade: drive the fill MOSTLY off a constant so the eye
+            # on the SHADED side of the face still reads as a distinct (if dimmer)
+            # white. Keying it purely off source luminance let a shadowed sclera
+            # collapse to the dark ground -- erasing the sclera/iris boundary that's
+            # clearly there in the photo. A residual gshade term keeps the lit eye
+            # brighter so the pair still carries the real light direction.
+            scl_shade = np.clip(0.80 + 0.20 * gshade, 0.0, 1.0)
+            sw = (scl * scl_shade * s_str)[..., None]
             out = out * (1.0 - sw) + np.array(s_col, np.float32) * sw
         if teeth is not None:
             tw = (teeth * gshade * t_str)[..., None]
