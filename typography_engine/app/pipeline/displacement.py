@@ -179,6 +179,7 @@ def render_displacement_portrait(
                 irises.append((icx, icy, ir))
     if len(irises) < 2:
         irises = []
+    eye_centers = list(irises)   # remember detected eyes; reused for glare clean-up if gated off
     # Eye-OPENNESS gate. MediaPipe places an iris even on a CLOSED eye (glasses make
     # it worse), so the living-eye treatment would paint synthetic OPEN eyes onto a
     # peaceful, closed-eye photo -- unacceptable, especially for a memorial. Only
@@ -216,6 +217,24 @@ def render_displacement_portrait(
             ratios.append(float(gray[inner > 0].mean()) / sclera)
         if len(ratios) >= 2 and min(ratios) > _EYE_OPEN_IRIS_MAX:
             irises = []                                # no dark iris -> not a real eye
+
+    # Glare clean-up: when the eyes are SUPPRESSED (closed / glare) AND the photo has a
+    # blown-out specular reflection over the eye (e.g. glasses glare), tone it down
+    # toward the surrounding skin so it doesn't render as a bright, eye-like blob. Only
+    # runs when there is no real eye to model, so real open eyes are never touched.
+    _eye_deglare = None
+    if not irises and eye_centers:
+        emask = np.zeros((H, W), np.uint8)
+        for icx, icy, ir in eye_centers:
+            cv2.circle(emask, (int(round(icx)), int(round(icy))), int(ir * 4.0), 1, -1)
+        bright = ((gray > 195.0) & (emask > 0)).astype(np.uint8)
+        if int(bright.sum()) > 0:
+            bright = cv2.morphologyEx(bright, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+            skin_px = gray[(emask > 0) & (bright == 0)]
+            skin = float(np.median(skin_px)) * 0.9 if skin_px.size else 120.0
+            gm = cv2.GaussianBlur(bright.astype(np.float32), (0, 0), max(2.0, _ssn * 4.0))
+            gray = gray * (1.0 - gm) + skin * gm        # density/displacement sees no glare
+            _eye_deglare = (gm, float(skin))            # reused on the colour source below
 
     def rows(fs: float) -> np.ndarray:
         f = _font(fs)
@@ -419,6 +438,9 @@ def render_displacement_portrait(
     if ink == "photo":
         # Words take the photo's OWN colours, draped over the form, on the ground.
         bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+        if _eye_deglare is not None:        # tone the suppressed-eye glare out of the colour too
+            gm, skin = _eye_deglare
+            bgr_full = bgr_full * (1.0 - gm[..., None]) + np.float32(skin) * gm[..., None]
         hsv = cv2.cvtColor(np.clip(bgr_full, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
         if ground == "paper":
             # Ink-drawing with COLOURED glyphs: the words keep the photo's hue at high
