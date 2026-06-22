@@ -227,12 +227,18 @@ def render_displacement_portrait(
         emask = np.zeros((H, W), np.uint8)
         for icx, icy, ir in eye_centers:
             cv2.circle(emask, (int(round(icx)), int(round(icy))), int(ir * 4.0), 1, -1)
-        bright = ((gray > 195.0) & (emask > 0)).astype(np.uint8)
-        if int(bright.sum()) > 0:
-            bright = cv2.morphologyEx(bright, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
-            skin_px = gray[(emask > 0) & (bright == 0)]
+        # The reflection is bright AND/OR strongly COLOURED (a blue lens glare spans a
+        # wide luminance, so brightness alone misses most of it). Catch both, then tone
+        # toward neutral skin so the lens reads as a muted area, not a coloured,
+        # eye-like blob. Only runs when eyes are suppressed -> real eyes untouched.
+        _sat = cv2.cvtColor(cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA),
+                            cv2.COLOR_BGR2HSV)[..., 1].astype(np.float32)
+        spec = (((gray > 175.0) | (_sat > 55.0)) & (emask > 0)).astype(np.uint8)
+        if int(spec.sum()) > 0:
+            spec = cv2.morphologyEx(spec, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+            skin_px = gray[(emask > 0) & (spec == 0)]
             skin = float(np.median(skin_px)) * 0.9 if skin_px.size else 120.0
-            gm = cv2.GaussianBlur(bright.astype(np.float32), (0, 0), max(2.0, _ssn * 4.0))
+            gm = cv2.GaussianBlur(spec.astype(np.float32), (0, 0), max(2.0, _ssn * 4.0))
             gray = gray * (1.0 - gm) + skin * gm        # density/displacement sees no glare
             _eye_deglare = (gm, float(skin))            # reused on the colour source below
 
@@ -419,6 +425,17 @@ def render_displacement_portrait(
     # mouth yields no mask and is left untouched.
     from .tonal import _teeth_mask
     teeth = _teeth_mask(pts, H, W)
+    if teeth is not None:
+        # Appearance gate (parallels the eyes): the mesh mis-reads a resting/closed
+        # mouth on a tilted or lying-down photo as "open". A REAL open mouth has a
+        # dark cavity OR bright teeth; a falsely-detected one is uniform lip tone.
+        # Keep teeth only with a dark cavity (p10 low) or genuinely bright teeth.
+        tpx = gray[teeth > 0.5]
+        if tpx.size > 10:
+            p10 = float(np.percentile(tpx, 10))
+            p90 = float(np.percentile(tpx, 90))
+            if p10 > 60.0 and p90 < 205.0:
+                teeth = None                           # no cavity, no teeth -> closed mouth
     if teeth is not None:
         a = a * (1.0 - 0.92 * teeth)
     if ground == "paper":
