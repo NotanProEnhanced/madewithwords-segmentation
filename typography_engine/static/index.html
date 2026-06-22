@@ -347,6 +347,11 @@
   .err-msg{flex:1;line-height:1.42}
   .err-act{margin:12px 0 0 30px;background:#c0392b;color:#fff;border:none;border-radius:9px;padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--sans)}
   .err-act:hover{background:#a93226}
+  /* Mark the exact field an error points at: a brief attention pulse, then a
+     steady red ring that stays until the field is fixed -- so the eye lands on
+     the control to change, not just the message. */
+  .field-err{border-radius:10px!important;box-shadow:0 0 0 2px #c0392b,0 0 0 5px rgba(192,57,43,.14)!important;animation:fieldPulse .9s ease-out 2}
+  @keyframes fieldPulse{0%{box-shadow:0 0 0 2px #c0392b,0 0 0 0 rgba(192,57,43,.5)}100%{box-shadow:0 0 0 2px #c0392b,0 0 0 14px rgba(192,57,43,0)}}
   .consent{display:flex;gap:10px;align-items:flex-start;margin-top:16px;font-size:13px;color:var(--muted);line-height:1.45;cursor:pointer}
   .consent input{margin-top:2px;width:18px;height:18px;flex:0 0 auto;accent-color:var(--navy)}
   .consent a{color:var(--navy);font-weight:600}
@@ -1997,6 +2002,25 @@ function _errAnchor(target){
   return null;
 }
 function pickPhoto(){ const f=document.getElementById("file"); if(f) f.click(); }
+// Ring the field an error points at, focus it, and clear the ring the moment the
+// user acts on it (types words, picks a photo, ticks consent). Makes the broken
+// control unmistakable instead of leaving the user to hunt for it.
+let _markedField=null;
+function _clearFieldMark(){ if(_markedField){ _markedField.classList.remove("field-err"); _markedField=null; } }
+function _markField(target){
+  _clearFieldMark();
+  const anchor=_errAnchor(target); if(!anchor) return;
+  anchor.classList.add("field-err"); _markedField=anchor;
+  if(target==="words"){
+    anchor.addEventListener("input", _clearFieldMark, {once:true});
+    setTimeout(function(){ try{ anchor.focus({preventScroll:true}); }catch(_){ try{anchor.focus();}catch(e){} } }, 500);
+  } else if(target==="consent"){
+    const cb=document.getElementById("consent");
+    if(cb){ cb.addEventListener("change", _clearFieldMark, {once:true}); setTimeout(function(){ try{ cb.focus({preventScroll:true}); }catch(_){} }, 500); }
+  } else if(target==="photo"){
+    const f=document.getElementById("file"); if(f) f.addEventListener("change", _clearFieldMark, {once:true});
+  }
+}
 function showInputError(msg, target, action){
   resultView.style.display="none"; inputView.style.display="block"; document.body.classList.remove("result-active");
   const e=document.getElementById("errInput"); if(!e) return;
@@ -2016,6 +2040,7 @@ function showInputError(msg, target, action){
   } else if(input){
     input.insertBefore(e, input.firstChild);                              // generic: top of the form
   }
+  _markField(target);                                                     // ring + focus the broken field
   setTimeout(function(){ try{ e.scrollIntoView({behavior:"smooth", block:"center"}); }catch(_){ } }, 60);
 }
 // Map a server error code -> contextual target + a recovery action.
