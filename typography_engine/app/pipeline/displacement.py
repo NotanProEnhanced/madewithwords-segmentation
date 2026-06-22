@@ -182,6 +182,23 @@ def render_displacement_portrait(
     g = GROUNDS.get(ground, GROUNDS["navy"])
     rng = random.Random(seed)
     vocab = _normalize_words(words, uppercase)
+    # Importance-weighted frequency: words arrive most-important-first (the AI returns
+    # them that way; people type the name first), so repeat the leading words more --
+    # the portrait is built mostly OF them. Each word's copies are spread evenly across
+    # the stream so none clump, and the skew is gentle (top ~3x the tail) to avoid a
+    # monotonous look. Tiny lists (<3 words) stay flat.
+    if len(vocab) < 3:
+        _vocab_stream = list(vocab)
+    else:
+        _n = len(vocab)
+        _top = 3.0
+        _wts = [max(1, int(round(1.0 + (_top - 1.0) * (1.0 - i / (_n - 1)) ** 1.3))) for i in range(_n)]
+        _items = []
+        for _i, _w in enumerate(vocab):
+            for _c in range(_wts[_i]):
+                _items.append(((_c + 0.5) / _wts[_i], _i, _w))   # spread each word's copies evenly
+        _items.sort(key=lambda t: (t[0], t[1]))
+        _vocab_stream = [t[2] for t in _items]
 
     g0 = an.img.gray.astype(np.float32)
     m0 = (an.silhouette.mask > 127).astype(np.float32)
@@ -287,7 +304,7 @@ def render_displacement_portrait(
         while y < H + fs:
             # Keep the words in the order they were entered (a sentence stays a
             # sentence); only the row's horizontal start is jittered for variety.
-            line = (" ".join(vocab) + " ") * (W // max(1, int(fs * 3)) + 18)
+            line = (" ".join(_vocab_stream) + " ") * (W // max(1, int(fs * 3)) + 18)
             d.text((-rng.randint(0, int(fs * 6)), y), line, font=f, fill=0)
             y += max(6, int(fs))
         return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
