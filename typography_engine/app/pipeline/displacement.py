@@ -48,6 +48,12 @@ _PAPER_EDGE_GAIN = 0.85     # extra ink along contours (this is what draws light
 _PAPER_INK_FLOOR = 0.30     # minimum ink on the subject so the face stays densely typographic
 _PAPER_IRIS_SAT = 1.36
 
+# Eye-aspect-ratio (lid aperture / eye width) below which an eye is treated as
+# CLOSED. MediaPipe still places an iris on a shut eye, so without this gate the
+# "living eyes" treatment fabricates open eyes on a closed-eye photo. Open eyes
+# run ~0.25-0.35; a relaxed/closed eye ~<0.12. 0.15 leaves headroom for squints.
+_EYE_OPEN_EAR = 0.15
+
 # Sculpted ink colours: the WORD colour (BGR) draped on the dark ground. These are
 # light/bright tints (mirroring the studio's ink swatches) so they read on navy.
 # "photo" is handled separately (per-pixel from the source). Keeps Sculpted's
@@ -167,6 +173,24 @@ def render_displacement_portrait(
                 irises.append((icx, icy, ir))
     if len(irises) < 2:
         irises = []
+    # Eye-OPENNESS gate. MediaPipe places an iris even on a CLOSED eye (glasses make
+    # it worse), so the living-eye treatment would paint synthetic OPEN eyes onto a
+    # peaceful, closed-eye photo -- unacceptable, especially for a memorial. Only
+    # keep the synthetic eyes when BOTH eyes read as open via the eye-aspect-ratio
+    # (lid aperture / eye width) from the eyelid landmarks; otherwise the eye region
+    # renders as plain words (a naturally closed eye).
+    if irises and len(pts) >= 478:
+        def _ear(p1, p2, p3, p4, p5, p6):
+            horiz = float(np.hypot(pts[p1][0] - pts[p4][0], pts[p1][1] - pts[p4][1]))
+            if horiz < 1e-3:
+                return 0.0
+            v = (float(np.hypot(pts[p2][0] - pts[p6][0], pts[p2][1] - pts[p6][1]))
+                 + float(np.hypot(pts[p3][0] - pts[p5][0], pts[p3][1] - pts[p5][1])))
+            return v / (2.0 * horiz)
+        ear_r = _ear(33, 160, 158, 133, 153, 144)     # subject's right eye
+        ear_l = _ear(362, 385, 387, 263, 373, 380)    # subject's left eye
+        if min(ear_r, ear_l) < _EYE_OPEN_EAR:
+            irises = []                                # closed -> no fabricated eyes
 
     def rows(fs: float) -> np.ndarray:
         f = _font(fs)
