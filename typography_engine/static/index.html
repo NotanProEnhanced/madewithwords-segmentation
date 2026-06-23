@@ -1547,7 +1547,7 @@ function renderProducts(data){
   $("#productPicker").style.display="block";
   selectProduct(state.sku);
 }
-fetch("/products").then(r=>r.json()).then(renderProducts).catch(()=>{});
+fetch("/products?brand="+encodeURIComponent(typeof BRAND_ID!=="undefined"?(BRAND_ID||""):"")).then(r=>r.json()).then(renderProducts).catch(()=>{});
 // Region gate (BIPA): disable upload up front for blocked locations. The server
 // still enforces this on /measure and /render regardless of the client.
 fetch("/compliance/region").then(r=>r.json()).then(g=>{

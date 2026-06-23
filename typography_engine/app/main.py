@@ -989,15 +989,15 @@ def pricing() -> JSONResponse:
 
 
 @app.get("/products")
-def list_products() -> JSONResponse:
+def list_products(brand: str = "") -> JSONResponse:
     """Storefront catalog (prices, shipping, sizes) — single source of truth so
-    the UI never hardcodes prices. `fulfillment_configured` tells the front-end
-    whether physical print-on-demand is live (a Printful token is present) or
-    only the digital download should be offered."""
+    the UI never hardcodes prices. `brand` selects channel pricing (the memorial/
+    EverLoved brand carries commission-adjusted prices). `fulfillment_configured`
+    tells the front-end whether physical print-on-demand is live."""
     return JSONResponse({
         "ok": True,
         "currency": CURRENCY,
-        "products": products.public_catalog(),
+        "products": products.public_catalog(memorial=products.is_memorial_channel(brand)),
         "fulfillment_configured": bool(PRINTFUL_API_TOKEN),
     })
 
@@ -1046,6 +1046,7 @@ def checkout(
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
     brand = _checkout_brand(ref)   # per-brand statement descriptor + line-item name
+    eff_price, eff_ship = products.price_for(product, products.is_memorial_channel(ref))   # memorial/EverLoved channel = commission-adjusted price
 
     # --- Digital download: unchanged from the live synchronous-verify flow ----
     if not product.physical:
@@ -1087,16 +1088,16 @@ def checkout(
         "quantity": 1,
         "price_data": {
             "currency": CURRENCY,
-            "unit_amount": product.price_cents,
+            "unit_amount": eff_price,
             "product_data": {"name": f"{brand['name']} — {product.name}{label_size}"},
         },
     }]
-    if product.shipping_cents > 0:
+    if eff_ship > 0:
         line_items.append({
             "quantity": 1,
             "price_data": {
                 "currency": CURRENCY,
-                "unit_amount": product.shipping_cents,
+                "unit_amount": eff_ship,
                 "product_data": {"name": "Shipping (USA)"},
             },
         })
@@ -1120,8 +1121,8 @@ def checkout(
             sku=sku,
             size=size,
             variant_id=variant_id,
-            price_cents=product.price_cents,
-            shipping_cents=product.shipping_cents,
+            price_cents=eff_price,
+            shipping_cents=eff_ship,
             currency=CURRENCY,
             ref=ref,
         )

@@ -128,8 +128,8 @@ CATALOG: List[Product] = [
         sku="bundle_family",
         name="“Keep them close” — family set",
         blurb="One framed portrait for the home, and four prints for those who loved them.",
-        price_cents=11900,
-        shipping_cents=1500,
+        price_cents=14900,
+        shipping_cents=1600,
         physical=True,
         printful_variant_id=None,
         bundle_items=[(4399, 1), (4463, 4)],   # 16×20 framed + 4× 8×10 poster (all 4:5)
@@ -140,8 +140,8 @@ CATALOG: List[Product] = [
         sku="bundle_share6",
         name="“A copy for everyone” — six 5×7 prints",
         blurb="Six small keepsakes to give to the family and friends who loved them.",
-        price_cents=5900,
-        shipping_cents=800,
+        price_cents=6700,
+        shipping_cents=1400,
         physical=True,
         print_aspect=0.714,
         printful_variant_id=None,
@@ -184,16 +184,45 @@ def resolve_variant_id(product: Product, size: Optional[str]) -> Optional[int]:
     return product.printful_variant_id
 
 
-def public_catalog() -> List[dict]:
-    """JSON-safe catalog payload for the storefront UI."""
+# Memorial (EverLoved) channel price overrides (cents). Higher than the standard
+# price to absorb the 20-30% partner commission; SHIPPING is unchanged. SKUs not
+# listed keep their standard price. Bundles are memorial-only -> priced on the Product.
+_MEMORIAL_PRICE: Dict[str, int] = {
+    "framed_16x20": 8900,
+    "canvas_16x20": 6400,
+    "poster_18x24": 3400,
+    "framed_8x10":  4900,
+    "canvas_8x10":  3900,
+    "poster_8x10":  2300,
+    "print_5x7":    1600,
+}
+_MEMORIAL_REFS = {"lovedinwords", "everloved"}
+
+
+def is_memorial_channel(ref: Optional[str]) -> bool:
+    """True for the EverLoved/memorial brand, where the commission-adjusted prices apply."""
+    return (ref or "").strip().lower() in _MEMORIAL_REFS
+
+
+def price_for(p: Product, memorial: bool) -> Tuple[int, int]:
+    """(price_cents, shipping_cents) for the channel. Memorial uses the higher override
+    where one exists; shipping is identical on every channel."""
+    if memorial and p.sku in _MEMORIAL_PRICE:
+        return _MEMORIAL_PRICE[p.sku], p.shipping_cents
+    return p.price_cents, p.shipping_cents
+
+
+def public_catalog(memorial: bool = False) -> List[dict]:
+    """JSON-safe catalog payload for the storefront UI (brand-priced when memorial)."""
     out = []
     for p in CATALOG:
+        price, ship = price_for(p, memorial)
         out.append({
             "sku": p.sku,
             "name": p.name,
             "blurb": p.blurb,
-            "price_cents": p.price_cents,
-            "shipping_cents": p.shipping_cents,
+            "price_cents": price,
+            "shipping_cents": ship,
             "physical": p.physical,
             "sizes": list(p.size_variants.keys()) if p.size_variants else [],
             "tag": p.tag,
