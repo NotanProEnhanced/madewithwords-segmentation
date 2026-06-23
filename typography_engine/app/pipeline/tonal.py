@@ -1530,7 +1530,7 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         bgr = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
         rgb = bgr[..., ::-1]
         g = rgb.mean(axis=2, keepdims=True)
-        tip = np.clip(g + (rgb - g) * 1.5, 0.0, 255.0)      # +50% saturation
+        tip = np.clip(g + (rgb - g) * 1.12, 0.0, 255.0)     # keep close to the photo's own saturation (natural skin, not cartoonish)
         if ink == "photo_paper":
             tip = tip * 0.60        # darken the hue so it reads as ink on white paper
     else:
@@ -1871,9 +1871,9 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     if boost and boost > 0.0:        # lift dark Message renders (shadows/midtones)
         f = (out.astype(np.float32) / 255.0) ** (1.0 / (1.0 + float(boost)))
         out = (f * 255.0).clip(0, 255).astype(np.uint8)
-    if not light:                    # vibrance gives life to the dark/photo composite
+    if not light:                    # gentle life (clarity); restrained so colour stays natural, not cartoonish
         from .preprocess import apply_vibrance
-        out = apply_vibrance(out, bgr=False)
+        out = apply_vibrance(out, strength=0.34, bgr=False)
     img = Image.fromarray(out)
     if ss > 1:                       # supersampled -> Lanczos down to final size
         img = _lanczos_down(img, out_width)
