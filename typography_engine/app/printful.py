@@ -146,7 +146,10 @@ def create_order(
     if external_id:
         payload["external_id"] = external_id
     qs = "?confirm=true" if confirm else ""
-    return _request("POST", f"/orders{qs}", json=payload)
+    # Order creation can be slow (Printful fetches/validates the print file and prices
+    # shipping); a multi-item bundle is slower still. Give it more headroom than the
+    # 30s default so a busy create doesn't read-timeout.
+    return _request("POST", f"/orders{qs}", json=payload, timeout=90.0)
 
 
 def get_order(order_id: int) -> Dict[str, Any]:

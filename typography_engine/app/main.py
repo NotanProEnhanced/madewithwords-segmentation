@@ -1340,13 +1340,13 @@ def _fulfill_with_printful(order_id: str, recipient: dict) -> None:
     try:
         prod = products.get(str(o["sku"]))
         aspect = prod.print_aspect if prod else _PRINT_ASPECT
-        # Warm the print file in the background so Printful's fetch is served from
-        # cache: the high-res compose takes ~30-45s and we don't want it to land on
-        # Printful's fetch timeout. Idempotent -- the signed URL still composes
-        # lazily as a fallback if the warm hasn't finished by the time they fetch.
-        import threading
+        # Compose the high-res print file FIRST so Printful's fetch hits a READY file.
+        # (Was a background warm that RACED the order POST: Printful fetches the file
+        # during order creation, and for a multi-item bundle the still-composing file
+        # pushed the POST past its read timeout. Fulfilment runs off the webhook now,
+        # so blocking ~30-45s here is fine.)
         job_id = o["job_id"]
-        threading.Thread(target=lambda: _ensure_clean_png(job_id, aspect), daemon=True).start()
+        _ensure_clean_png(job_id, aspect)
         signed = printful.signed_print_url(job_id, aspect=aspect)
         placement = "front" if str(o["sku"]).startswith("tshirt") else "default"
         common = dict(recipient=recipient, print_file_url=signed, external_id=order_id,
@@ -1573,7 +1573,11 @@ async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Hea
         recipient=recipient,
     )
     if transitioned and recipient and transitioned.get("variant_id"):
-        _fulfill_with_printful(transitioned["id"], recipient)
+        import threading
+        # Off the webhook: fulfilment composes a high-res file (~30-45s) which would
+        # blow Stripe's ~10s webhook timeout. The webhook returns immediately.
+        threading.Thread(target=_fulfill_with_printful,
+                         args=(transitioned["id"], recipient), daemon=True).start()
 
     # Reliable, ad-blocker-proof conversion event to Umami. Deduped against the
     # synchronous /order and /success paths so the sale is counted exactly once.
@@ -1712,7 +1716,9 @@ def order_status(order_id: str, session_id: Optional[str] = None):
                     recipient=recipient,
                 )
                 if transitioned and recipient and transitioned.get("variant_id"):
-                    _fulfill_with_printful(transitioned["id"], recipient)
+                    import threading
+                    threading.Thread(target=_fulfill_with_printful,
+                                     args=(transitioned["id"], recipient), daemon=True).start()
                 # Conversion event: this synchronous path is what completes most
                 # physical sales when the webhook isn't delivered. Deduped so a
                 # later webhook can't double-count.
