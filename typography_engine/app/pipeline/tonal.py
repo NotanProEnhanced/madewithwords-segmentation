@@ -472,6 +472,61 @@ def _catchlight_points(an) -> List[Tuple[float, float, float]]:
     return [(cx + side * 0.24 * r, cy - 0.24 * r, 0.13 * r) for cx, cy, r in circles]
 
 
+def _photo_eye_overlay(bgr_hw, pts, eye_groups, H: int, W: int):
+    """REAL-eye overlay -- the single biggest realism lever. Returns
+    (eye_bgr (H,W,3) float32, alpha (H,W) float32): the photo's OWN eye openings,
+    per-eye tone-normalised so they read on any ground while KEEPING every bit of the
+    real modelling -- the spherical-curvature falloff, the upper-lid cast shadow, the
+    lashes, the iris colour + texture, the true catchlight. A flat synthetic sclera
+    disc (one uniform grey, no gradient) was the failure this replaces.
+
+    Per eye: stretch L within the eye, lift the shadows to a floor (so a deep-set or
+    dark eye never crushes to the ground) under a gentle gamma that preserves the
+    gradient, then a local-contrast pass to bring the iris/sclera detail forward.
+    Colour (a,b) is untouched -- the iris keeps its real hue. `pts` are in (H,W)
+    coords; `eye_groups` are the two eye-contour index lists."""
+    eye_bgr = bgr_hw.astype(np.float32).copy()
+    alpha = np.zeros((H, W), np.float32)
+    try:
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    except Exception:  # noqa: BLE001
+        clahe = None
+    for grp in eye_groups:
+        p = np.array([pts[i] for i in grp if i < len(pts)], np.int32)
+        if len(p) < 4:
+            continue
+        hull = cv2.convexHull(p)
+        em = np.zeros((H, W), np.uint8)
+        cv2.fillConvexPoly(em, hull, 1)
+        rad = np.sqrt(max(1.0, float(cv2.contourArea(hull))))
+        kk = max(1, int(round(rad * 0.16)))                  # reach the lash line + lid edge
+        em = cv2.dilate(em, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * kk + 1, 2 * kk + 1)))
+        m = em > 0
+        if int(m.sum()) < 24:
+            continue
+        lab = cv2.cvtColor(np.clip(eye_bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2LAB)
+        L = lab[..., 0].astype(np.float32)
+        lo, hi = np.percentile(L[m], [3, 97])
+        if hi - lo < 8.0:
+            hi = lo + 8.0
+        Ln = np.clip((L - lo) / (hi - lo), 0.0, 1.0)
+        Lt = 44.0 + 198.0 * np.power(Ln, 0.82)               # floor 44, lifted, gradient kept
+        L2 = np.clip(Lt, 0, 255).astype(np.uint8)
+        if clahe is not None:
+            L2 = clahe.apply(L2)
+        lab[..., 0] = L2
+        toned = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR).astype(np.float32)
+        # The eye opening is a small region scaled up to render res, so it reads soft.
+        # Unsharp-mask it so the iris rim, pupil and lashes stay crisp (defined eye,
+        # not a blurry pale disc) -- the same trick the teeth fill uses.
+        soft = cv2.GaussianBlur(toned, (0, 0), sigmaX=max(1.0, rad * 0.06))
+        toned = np.clip(toned * 1.6 - soft * 0.6, 0, 255)
+        eye_bgr[m] = toned[m]
+        emf = cv2.GaussianBlur(em.astype(np.float32), (0, 0), sigmaX=max(1.0, kk * 0.7))
+        alpha = np.maximum(alpha, emf)
+    return eye_bgr, np.clip(alpha, 0.0, 1.0)
+
+
 def _sclera_shade(gray, an, scale: float, sm, floor: float = 0.58):
     """Per-eye floored luminance stretch + synthesised upper-lid shadow, returning a
     0..1 value map over the sclera mask `sm`. Mirrors the Sculpt engine's
@@ -1781,6 +1836,14 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
                 sig = max(1.0, float(np.mean([g[2] for g in glints])) * fsc * 0.55)
                 gm = np.clip(cv2.GaussianBlur(gm, (0, 0), sigmaX=sig), 0, 1)[..., None]
                 out = (out.astype(np.float32) * (1.0 - gm) + 250.0 * gm).clip(0, 255).astype(np.uint8)
+        # Realistic eyes: composite the photo's OWN eye openings over the synthetic
+        # fill above -- the real curvature/lid/lash/iris shading, not a flat grey disc.
+        if eyes_e:
+            bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
+            ep = _faces_of(an)[0].points * fsc0
+            eye_bgr, eye_a = _photo_eye_overlay(bgr_eye, ep, (_EYE_L, _EYE_R), H, W)
+            a3 = (eye_a * 0.94)[..., None]
+            out = (out.astype(np.float32) * (1.0 - a3) + eye_bgr * a3).clip(0, 255).astype(np.uint8)
     # (photo_paper paints NO compose-level eye/teeth patch -- that read as a sticker
     # glued on the typography. Its eyes + smile are formed by the WORDS themselves,
     # deepened in the tonal field in _tint_photo so the features emerge from type.)
