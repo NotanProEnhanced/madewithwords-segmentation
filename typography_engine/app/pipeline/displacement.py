@@ -542,8 +542,8 @@ def render_displacement_portrait(
             hsv[..., 1] = np.clip(hsv[..., 1] * _PAPER_INK_SAT, 0, 255)
             hsv[..., 2] = np.minimum(hsv[..., 2], np.float32(_PAPER_INK_VALUE))
         else:
-            hsv[..., 1] = np.clip(hsv[..., 1] * 1.25, 0, 255)          # lift saturation
-            hsv[..., 2] = np.clip(hsv[..., 2] * 1.18 + 18, 0, 255)      # lift value vs dark ground
+            hsv[..., 1] = np.clip(hsv[..., 1] * 1.02, 0, 255)          # keep the photo's own saturation (natural skin, not cartoonish)
+            hsv[..., 2] = np.clip(hsv[..., 2] * 1.14 + 14, 0, 255)      # lift value vs dark ground
         ink_col = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
         out = np.array(g["bg"], np.float32) * (1 - al) + ink_col * al
     elif ink in _SCULPT_INK:
@@ -634,7 +634,7 @@ def render_displacement_portrait(
     from .tonal import _fit_print_canvas
     out = _fit_print_canvas(out, g["bg"], print_aspect)
     from .preprocess import apply_vibrance
-    out = apply_vibrance(out, bgr=True)       # give the render life (clarity/glow/saturation)
+    out = apply_vibrance(out, strength=0.34, bgr=True)   # gentle life (clarity); restrained so colour stays natural and the sclera isn't glow-brightened
     ok, buf = cv2.imencode(".png", np.clip(out, 0, 255).astype(np.uint8))
     if not ok:
         raise ValueError("encode_failed")

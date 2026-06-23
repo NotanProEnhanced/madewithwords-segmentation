@@ -485,67 +485,62 @@ def _photo_eye_overlay(bgr_hw, pts, eye_groups, H: int, W: int):
     upscaled; large ones stay native), so the tone + sharpen are stable regardless of
     canvas size and the on-screen PREVIEW eye is as crisp as the paid file. An
     edge-preserving (bilateral) clean removes low-res blockiness while keeping the
-    iris rim, lid and lash edges; then stretch L within the eye, lift the shadows to a
-    floor (so a deep-set/dark eye never crushes to the ground) under a gentle gamma,
-    local-contrast, and an unsharp pass. Colour (a,b) is untouched -- the iris keeps
-    its real hue. `pts` are in (H,W) coords; `eye_groups` are the two eye-contour
-    index lists. Memorial families upload what they have, so this must hold up on a
-    low-resolution source, not just a studio photo."""
+    iris rim, lid and lash edges; the tone is FAITHFUL -- the photo's own brightness
+    and colour are kept, only the deepest socket shadows are gently lifted, so the
+    sclera is never brighter than the source and the lids/lashes keep their real
+    shading. The composited region is the whole ORBITAL area (lids + lashes + socket),
+    feathered into the surrounding words, so the eye has a natural transition rather
+    than a bare eyeball in a dark hole. `pts` are in (H,W) coords; `eye_groups` are the
+    two eye-contour index lists. Memorial families upload what they have, so this must
+    hold up on a low-resolution source, not just a studio photo."""
     eye_bgr = bgr_hw.astype(np.float32).copy()
     alpha = np.zeros((H, W), np.float32)
-    try:
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    except Exception:  # noqa: BLE001
-        clahe = None
-    TARGET = 280                                              # internal working size (px) per eye
     for grp in eye_groups:
         p = np.array([pts[i] for i in grp if i < len(pts)], np.int32)
         if len(p) < 4:
             continue
         hull = cv2.convexHull(p)
         bx, by, bw, bh = cv2.boundingRect(hull)
-        pad = int(round(max(bw, bh) * 0.5))                  # context: lid + lash line
-        X0, Y0 = max(0, bx - pad), max(0, by - pad)
-        X1, Y1 = min(W, bx + bw + pad), min(H, by + bh + pad)
+        cx, cy = bx + bw / 2.0, by + bh / 2.0
+        # ORBITAL region, not just the eye opening: cover the eyeball AND the lids,
+        # lashes and socket so the eye has a real lid + lash + transition into the
+        # skin, instead of a bare eyeball in a dark hole. Eyes are wider than tall, so
+        # size the vertical half-axis off the width too, and bias the centre up toward
+        # the upper lid.
+        rx = max(bw * 0.62, 4.0)
+        ry = max(bh * 1.45, bw * 0.50, 4.0)
+        ecy = cy - 0.12 * ry
+        pad = int(round(max(rx, ry) * 1.7))
+        X0, Y0 = max(0, int(cx - pad)), max(0, int(ecy - pad))
+        X1, Y1 = min(W, int(cx + pad)), min(H, int(ecy + pad))
         sw, sh = X1 - X0, Y1 - Y0
         if sw < 6 or sh < 6:
             continue
         sub = eye_bgr[Y0:Y1, X0:X1]
-        sc = max(1.0, TARGET / float(max(sw, sh)))           # upscale small eyes; large stay native
+        sc = max(1.0, 280.0 / float(max(sw, sh)))            # upscale small/low-res eyes; large stay native
         bw2, bh2 = int(round(sw * sc)), int(round(sh * sc))
         big = cv2.resize(sub, (bw2, bh2), interpolation=cv2.INTER_CUBIC)
         # Edge-preserving clean: low-res sources are blocky after the upscale; bilateral
-        # smooths the blocks while keeping the iris/lid/lash edges intact.
-        big = cv2.bilateralFilter(np.clip(big, 0, 255).astype(np.uint8), 7, 35, 7).astype(np.float32)
-        # Tone within the eye OPENING (hull), shifted into the sub-box and scaled.
-        hm = np.zeros((sh, sw), np.uint8)
-        cv2.fillConvexPoly(hm, hull - np.array([X0, Y0]), 1)
-        hm = cv2.resize(hm, (bw2, bh2), interpolation=cv2.INTER_NEAREST)
+        # smooths the blocks while keeping the iris/lid/lash edges.
+        big = cv2.bilateralFilter(np.clip(big, 0, 255).astype(np.uint8), 7, 30, 7).astype(np.float32)
+        # FAITHFUL tone: keep the photo's OWN brightness + colour. Lift ONLY the deep
+        # shadows (a recessed socket) so it isn't pure black; the sclera and midtones
+        # are left exactly as shot -> the eye-white is never brighter than the source,
+        # and the lids/lashes keep their natural shading.
         lab = cv2.cvtColor(np.clip(big, 0, 255).astype(np.uint8), cv2.COLOR_BGR2LAB)
-        L = lab[..., 0].astype(np.float32)
-        Lm = L[hm > 0]
-        if Lm.size < 12:
-            Lm = L.reshape(-1)
-        lo, hi = np.percentile(Lm, [3, 97])
-        if hi - lo < 8.0:
-            hi = lo + 8.0
-        Ln = np.clip((L - lo) / (hi - lo), 0.0, 1.0)
-        L2 = np.clip(44.0 + 198.0 * np.power(Ln, 0.82), 0, 255).astype(np.uint8)   # floor 44, lifted
-        if clahe is not None:
-            L2 = clahe.apply(L2)
-        lab[..., 0] = L2
+        n = lab[..., 0].astype(np.float32) / 255.0
+        bump = 0.10 * np.clip((0.30 - n) / 0.30, 0.0, 1.0)   # only n<0.30 lifted; highlights untouched
+        lab[..., 0] = np.clip((n + bump) * 255.0, 0, 255).astype(np.uint8)
         toned = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR).astype(np.float32)
-        sft = cv2.GaussianBlur(toned, (0, 0), sigmaX=max(1.0, bw2 * 0.012))
-        toned = np.clip(toned * 1.5 - sft * 0.5, 0, 255)
+        sft = cv2.GaussianBlur(toned, (0, 0), sigmaX=max(1.0, bw2 * 0.010))
+        toned = np.clip(toned * 1.28 - sft * 0.28, 0, 255)   # mild definition only, no harsh contrast
         eye_bgr[Y0:Y1, X0:X1] = cv2.resize(toned, (sw, sh), interpolation=cv2.INTER_AREA)
-        # Feathered alpha over the dilated hull (lash line included).
-        am = np.zeros((H, W), np.uint8)
-        cv2.fillConvexPoly(am, hull, 1)
-        rad = np.sqrt(max(1.0, float(cv2.contourArea(hull))))
-        kk = max(1, int(round(rad * 0.16)))
-        am = cv2.dilate(am, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * kk + 1, 2 * kk + 1)))
-        amf = cv2.GaussianBlur(am.astype(np.float32), (0, 0), sigmaX=max(1.0, kk * 0.7))
-        alpha = np.maximum(alpha, amf)
+        # Soft elliptical alpha over the orbital area, feathered into the surrounding
+        # words so the lid/skin transition is gradual, never a pasted patch.
+        am = np.zeros((H, W), np.float32)
+        cv2.ellipse(am, (int(round(cx)), int(round(ecy))), (int(round(rx)), int(round(ry))), 0, 0, 360, 1.0, -1)
+        am = cv2.GaussianBlur(am, (0, 0), sigmaX=max(2.0, ry * 0.45))
+        alpha = np.maximum(alpha, np.clip(am, 0.0, 1.0))
     return eye_bgr, np.clip(alpha, 0.0, 1.0)
 
 
