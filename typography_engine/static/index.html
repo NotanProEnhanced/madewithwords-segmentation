@@ -725,10 +725,22 @@ const _qp=new URLSearchParams(location.search);
 // colour theme (CSS-var overrides), and an opening default look. `style`/`ink`
 // set the first render; `pinStyle` keeps that style (the recommender still hints
 // the best fit as a badge, but doesn't auto-switch away from the brand's look).
+// `memorial:true` switches on the whole grief-keepsake experience for a brand:
+// the "Tell us about them" story/AI step, the calm curated palette, the framed
+// keepsake lineup (apparel hidden, family-set bundles shown), the gentler copy,
+// and the commission-adjusted memorial pricing (server-side, via the matching
+// ref in products._MEMORIAL_REFS). A new memorial partner is just one entry here.
 const BRANDS={
   lovedinwords:{ name:"Loved in Words", tag:"A portrait of a life, in the words that describe them.", title:"Loved in Words — a remembrance portrait made from words", host:"lovedinwords.com",
-    style:"displacement", ink:"photo", pinStyle:true,
-    theme:{ "--navy":"#42525f", "--ink":"#2f3742", "--paper":"#f4efe8", "--card":"#fffdf9", "--line":"#e7e0d5", "--muted":"#776f64" } }
+    style:"displacement", ink:"photo", pinStyle:true, memorial:true,
+    theme:{ "--navy":"#42525f", "--ink":"#2f3742", "--paper":"#f4efe8", "--card":"#fffdf9", "--line":"#e7e0d5", "--muted":"#776f64" } },
+  // Keeper Memorials (mykeeper.com) — co-brand demo for the partnership pitch.
+  // Colours are a tasteful placeholder (a cooler stone/slate than LiW's warm
+  // ivory, so it reads as its own brand); swap to Keeper's real palette once
+  // confirmed. ?brand=keeper drives memorial pricing via the "keeper" ref.
+  keeper:{ name:"Keeper", tag:"A keepsake portrait, in the words that remember them.", title:"Keeper — a remembrance portrait made from words", host:"mykeeper.com",
+    style:"displacement", ink:"photo", pinStyle:true, memorial:true,
+    theme:{ "--navy":"#3b4a57", "--ink":"#2b333b", "--paper":"#f1f0ec", "--card":"#fbfaf7", "--line":"#e3e1da", "--muted":"#71776f" } }
 };
 function _brandFromReferrer(){
   try{
@@ -747,14 +759,16 @@ const BRAND_ID=((_qp.get("brand")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40)
 const REF=(_qp.get("ref")||BRAND_ID||localStorage.getItem("typo_ref")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
 if(REF){ try{ localStorage.setItem("typo_ref", REF); }catch(e){} }
 const BRAND=BRANDS[BRAND_ID]||null;
+// Any brand flagged memorial gets the full grief-keepsake experience (see BRANDS).
+const _isMemorialBrand=!!(BRAND && BRAND.memorial);
 if(BRAND){
   try{
     document.title=BRAND.title||BRAND.name;
     const _bn=document.querySelector("header .brand-name"); if(_bn) _bn.textContent=BRAND.name;
     const _tg=document.querySelector("header .tag"); if(_tg) _tg.textContent=BRAND.tag;
-    if(BRAND_ID==="lovedinwords"){
-      const _h=document.querySelector(".brand-heart"); if(_h) _h.style.display="inline-flex";   // heart lockup = memorial brand only
-      const _ss=document.getElementById("storyStep"); if(_ss) _ss.style.display="block";          // "Share their story" suggest step = memorial only
+    if(_isMemorialBrand){
+      const _h=document.querySelector(".brand-heart"); if(_h) _h.style.display="inline-flex";   // heart lockup = memorial brands
+      const _ss=document.getElementById("storyStep"); if(_ss) _ss.style.display="block";          // "Share their story" suggest step = memorial
     }
     if(BRAND.theme){ const rs=document.documentElement.style; for(const k in BRAND.theme) rs.setProperty(k, BRAND.theme[k]); }
   }catch(e){}
@@ -783,8 +797,7 @@ const MEMORIAL_INKS=MEMORIAL_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boo
 // loud gradients, was more than needed now that Custom covers any colour.
 const GENERIC_INK_IDS=["photo","photo_paper","mono","sepia","navy"];
 const GENERIC_INKS=GENERIC_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
-const _isLovedBrand=(typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords");
-function currentSwatches(){ return _isLovedBrand ? MEMORIAL_INKS : GENERIC_INKS; }   // + Custom chip (buildSwatches)
+function currentSwatches(){ return _isMemorialBrand ? MEMORIAL_INKS : GENERIC_INKS; }   // + Custom chip (buildSwatches)
 function variantPost(id){
   // "Paper" = the photographic Sculpt-on-white look: the displacement renderer on
   // a paper ground, photo colour -- regardless of the style segment. The flat Words
@@ -1522,7 +1535,7 @@ function renderProducts(data){
   //    download BENEATH them (the print is the hero; digital is the alternative).
   // Every other brand shows the full catalog with the digital download first (the
   // entry product). Sort key is physical-first (0) vs digital (1), flipped per brand.
-  const isLoved = (typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords");
+  const isLoved = _isMemorialBrand;
   let items = CATALOG.slice();
   if(isLoved) items = items.filter(p=>!String(p.sku).startsWith("tshirt"));
   else items = items.filter(p=>!p.memorial_only);   // grief-framed bundles: memorial brand only
@@ -1832,7 +1845,7 @@ function showBusy(animate){
   // its own ~30s expectation; Loved in Words stays gentle (no clinical countdown
   // in a grief context).
   var _slow=false; try{ _slow = variantPost(state.ink).style==="displacement"; }catch(e){}
-  $(".msg").textContent = (typeof BRAND_ID!=="undefined" && BRAND_ID==="lovedinwords")
+  $(".msg").textContent = _isMemorialBrand
     ? (_slow ? "Composing their portrait — this takes a moment…" : "Composing their portrait, in your words…")
     : (_slow ? "Sculpting your portrait — this takes about 30 seconds…" : "Composing your portrait, woven from your words…");
   busy.classList.remove("hide");
@@ -1855,7 +1868,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     // A 74px chip needs only the colour and rough likeness; a small canvas
     // renders fast even on a slow single core.
     fd.append("png_width","380"); fd.append("render_w","760");
-  } else if(_isLovedBrand){
+  } else if(_isMemorialBrand){
     // Memorial: a LIGHT preview (smaller + less dense) renders in a few seconds
     // instead of ~16s; the paid download recomposes at full render_w server-side,
     // so the file you buy stays full-detail.
@@ -1885,7 +1898,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     // single render slot that burst serializes into 20-30s of grinding after the
     // preview. For the memorial brand we skip the eager work -- the preview shows
     // fast, and swatches/sizes render on demand when tapped (selectInk/size click).
-    if(!_isLovedBrand){
+    if(!_isMemorialBrand){
       prewarm();               // fill the other swatch thumbnails in the background
       refreshSizeStrip();      // reflect this preview in the selected size chip
       prewarmSizes();          // fill the other size chips for this ink in the background
@@ -2197,7 +2210,7 @@ function fetchWithTimeout(url, opts, ms){
 (function initGuided(){
   try{
     if(typeof BRAND_ID==="undefined") return;
-    const MEM=(BRAND_ID==="lovedinwords");
+    const MEM=_isMemorialBrand;
     // The guided step flow is the DEFAULT everywhere now. Memorial is always
     // guided; the generic studio is guided too, but keeps a ?flow=classic escape
     // hatch (instant fallback to the old single-page form -- no redeploy).
