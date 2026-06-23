@@ -489,7 +489,7 @@ def render_displacement_portrait(
         a = a * (1.0 - 0.92 * scl)
         if g["tone"] == "light":                  # light ink on a dark ground
             a = a * (1.0 - 0.88 * pup)            # pupil: round, dark (ground shows)
-            a = np.clip(a + 0.85 * glint, 0, 1)   # catchlight: bright glint
+            a = np.clip(a + 0.55 * glint, 0, 1)   # catchlight: a tight glint, not a bloom
         else:                                     # dark ink on light paper
             a = np.clip(a + 0.80 * pup, 0, 1)     # pupil: round dark ink
             a = a * (1.0 - 0.85 * glint)          # catchlight: paper shows
@@ -615,7 +615,7 @@ def render_displacement_portrait(
     # face), never ink- or iris-coloured -- painted over the colour composite.
     if irises and (g["tone"] == "light" or ground == "paper"):
         gl3 = glint[..., None]
-        out = out * (1.0 - gl3) + np.float32(250.0) * gl3
+        out = out * (1.0 - gl3) + np.float32(238.0) * gl3   # bright glint, below blow-out so vibrance doesn't bloom it
     oh = max(1, int(out_width * h0 / w0))
     out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
     # Standard print canvas (4:5 = 16x20), padded with the ground BEFORE vibrance

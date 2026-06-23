@@ -469,7 +469,45 @@ def _catchlight_points(an) -> List[Tuple[float, float, float]]:
                 side = -1.0 if float(g[:, :half].mean()) >= float(g[:, half:].mean()) else 1.0
     except Exception:  # noqa: BLE001
         pass
-    return [(cx + side * 0.24 * r, cy - 0.24 * r, 0.17 * r) for cx, cy, r in circles]
+    return [(cx + side * 0.24 * r, cy - 0.24 * r, 0.13 * r) for cx, cy, r in circles]
+
+
+def _sclera_shade(gray, an, scale: float, sm, floor: float = 0.58):
+    """Per-eye floored luminance stretch + synthesised upper-lid shadow, returning a
+    0..1 value map over the sclera mask `sm`. Mirrors the Sculpt engine's
+    `_sclera_value`: the sclera must NOT be painted from the photo's own eye pixels
+    (on a deep-set/shadowed eye those are near-black, so the white collapses to the
+    dark ground -- the eye reads as a black socket with only a glint). Stretching
+    each eye's OWN luminance restores the natural gradient; normalising PER EYE with
+    a floor keeps even a shaded eye bright. `scale` maps analysis coords -> (H,W)."""
+    H, W = gray.shape
+    val = np.full((H, W), floor, np.float32)
+    faces = _faces_of(an)
+    if not faces:
+        return val
+    gb = cv2.GaussianBlur(gray, (0, 0), sigmaX=1.0)
+    yy = np.arange(H, dtype=np.float32)[:, None]
+    pts = faces[0].points * scale
+    for grp in (_EYE_L, _EYE_R):
+        p = np.array([pts[i] for i in grp if i < len(pts)], np.int32)
+        if len(p) < 3:
+            continue
+        em = np.zeros((H, W), np.uint8)
+        cv2.fillConvexPoly(em, cv2.convexHull(p), 1)
+        m = (em > 0) & (sm > 0.05)
+        if int(m.sum()) < 12:
+            continue
+        gp = gb[m]
+        lo, hi = np.percentile(gp, [12, 94])
+        if hi - lo < 6.0:
+            hi = lo + 6.0
+        v = np.clip((gb - lo) / (hi - lo), 0.0, 1.0)
+        base = floor + (1.0 - floor) * v
+        y0, y1 = float(p[:, 1].min()), float(p[:, 1].max())
+        vy = np.clip((yy - y0) / max(8.0, (y1 - y0)), 0.0, 1.0)         # 0 top -> 1 bottom
+        lid = 0.52 + 0.48 * np.clip((vy - 0.08) / 0.55, 0.0, 1.0)       # darker top, full lower
+        val[m] = np.clip(base * np.broadcast_to(lid, (H, W)), 0.0, 1.0)[m]
+    return val
 
 
 def _iris_tint(an):
@@ -1709,8 +1747,16 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             for icx, icy, irr in iris_c:
                 cv2.circle(sm, (int(round(icx)), int(round(icy))), int(round(irr)), 0.0, -1, cv2.LINE_AA)
             sm = cv2.GaussianBlur(sm, (0, 0), sigmaX=max(1.0, float(np.mean([e[2] for e in eyes_e])) * 0.10))
-            wash = (sm * 0.88)[..., None]
-            out = (out.astype(np.float32) * (1.0 - wash) + eye_fill * wash).clip(0, 255).astype(np.uint8)
+            # Paint a NEUTRAL warm-white sclera, floored + per-eye luminance-stretched
+            # (the Sculpt engine's treatment) -- never the photo's own eye pixels, which
+            # are near-black on a deep-set/shadowed eye and would collapse the white into
+            # the dark ground (a black socket with only a glint). The floor keeps a shaded
+            # eye bright; the stretch + upper-lid shadow keep a natural gradient.
+            gray_hw = cv2.resize(an.img.gray, (W, H), interpolation=cv2.INTER_LINEAR)
+            sval = _sclera_shade(gray_hw, an, fsc0, sm, floor=0.58)
+            wash = (sm * sval * 0.74)[..., None]
+            out = (out.astype(np.float32) * (1.0 - wash)
+                   + np.float32((198, 200, 202)) * wash).clip(0, 255).astype(np.uint8)
         # Teeth carry NO typography. Where the mouth is open, clear the glyphs from
         # the inner mouth and let the photo's OWN pixels show through -- the same
         # tinted source the rest of the portrait is built from, so the teeth keep
