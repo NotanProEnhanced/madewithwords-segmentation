@@ -507,10 +507,13 @@ def _photo_eye_overlay(bgr_hw, pts, eye_groups, H: int, W: int):
         # skin, instead of a bare eyeball in a dark hole. Eyes are wider than tall, so
         # size the vertical half-axis off the width too, and bias the centre up toward
         # the upper lid.
-        rx = max(bw * 0.62, 4.0)
-        ry = max(bh * 1.45, bw * 0.50, 4.0)
-        ecy = cy - 0.12 * ry
-        pad = int(round(max(rx, ry) * 1.7))
+        # Halo geometry: covers the eyeball + lids + a soft socket transition. Kept
+        # modest, and the radial alpha below only PARTIALLY composites the orbital, so
+        # the photo's socket shadow never paints a dark "raccoon" ring on a bright face.
+        sx = max(bw * 0.70, 4.0)
+        sy = max(bh * 0.95, bw * 0.34, 4.0)
+        ecy = cy - 0.10 * sy
+        pad = int(round(max(sx, sy) * 2.2))
         X0, Y0 = max(0, int(cx - pad)), max(0, int(ecy - pad))
         X1, Y1 = min(W, int(cx + pad)), min(H, int(ecy + pad))
         sw, sh = X1 - X0, Y1 - Y0
@@ -535,12 +538,18 @@ def _photo_eye_overlay(bgr_hw, pts, eye_groups, H: int, W: int):
         sft = cv2.GaussianBlur(toned, (0, 0), sigmaX=max(1.0, bw2 * 0.010))
         toned = np.clip(toned * 1.28 - sft * 0.28, 0, 255)   # mild definition only, no harsh contrast
         eye_bgr[Y0:Y1, X0:X1] = cv2.resize(toned, (sw, sh), interpolation=cv2.INTER_AREA)
-        # Soft elliptical alpha over the orbital area, feathered into the surrounding
-        # words so the lid/skin transition is gradual, never a pasted patch.
-        am = np.zeros((H, W), np.float32)
-        cv2.ellipse(am, (int(round(cx)), int(round(ecy))), (int(round(rx)), int(round(ry))), 0, 0, 360, 1.0, -1)
-        am = cv2.GaussianBlur(am, (0, 0), sigmaX=max(2.0, ry * 0.45))
-        alpha = np.maximum(alpha, np.clip(am, 0.0, 1.0))
+        # Alpha = a FAITHFUL core over the eye opening (so the eyeball reads true) PLUS
+        # a gentle radial halo over the orbital that only partially composites -- the
+        # lid/socket BLENDS with the surrounding face. On a bright face the socket
+        # shadow no longer paints a dark ring; on a dark face the lid still picks up the
+        # photo's structure. The halo peak is well below 1 so it can never dominate.
+        core = np.zeros((H, W), np.float32)
+        cv2.fillConvexPoly(core, hull, 1.0)
+        core = cv2.GaussianBlur(core, (0, 0), sigmaX=max(1.5, bh * 0.22))
+        yy = np.arange(H, dtype=np.float32)[:, None]
+        xx = np.arange(W, dtype=np.float32)[None, :]
+        halo = 0.45 * np.exp(-0.5 * (((xx - cx) / sx) ** 2 + ((yy - ecy) / sy) ** 2)).astype(np.float32)
+        alpha = np.maximum(alpha, np.clip(np.maximum(core, halo), 0.0, 1.0))
     return eye_bgr, np.clip(alpha, 0.0, 1.0)
 
 
