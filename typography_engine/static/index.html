@@ -772,7 +772,13 @@ const BRANDS={
   // confirmed. ?brand=keeper drives memorial pricing via the "keeper" ref.
   keeper:{ name:"Keeper", tag:"A keepsake portrait, in the words that remember them.", title:"Keeper — a remembrance portrait made from words", host:"mykeeper.com",
     style:"displacement", ink:"photo", pinStyle:true, memorial:true,
-    theme:{ "--navy":"#3b4a57", "--ink":"#2b333b", "--paper":"#f1f0ec", "--card":"#fbfaf7", "--line":"#e3e1da", "--muted":"#71776f" } }
+    theme:{ "--navy":"#3b4a57", "--ink":"#2b333b", "--paper":"#f1f0ec", "--card":"#fbfaf7", "--line":"#e3e1da", "--muted":"#71776f" } },
+  // EverLoved (everloved.com) — co-brand demo for the partnership pitch. A soft sage
+  // palette (placeholder; swap to EverLoved's real brand once confirmed).
+  // ?brand=everloved drives memorial pricing via the "everloved" ref (already set).
+  everloved:{ name:"EverLoved", tag:"A keepsake portrait, in the words that loved them.", title:"EverLoved — a remembrance portrait made from words", host:"everloved.com",
+    style:"displacement", ink:"photo", pinStyle:true, memorial:true,
+    theme:{ "--navy":"#46594e", "--ink":"#2c352e", "--paper":"#f2f1ea", "--card":"#fbfaf6", "--line":"#e2e1d6", "--muted":"#6f756c" } }
 };
 function _brandFromReferrer(){
   try{
