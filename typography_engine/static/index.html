@@ -2410,6 +2410,39 @@ function fetchWithTimeout(url, opts, ms){
     paint();
   }catch(e){ /* leave the flat flow intact on any failure */ }
 })();
+// --- "See a sample" (memorial brands) --------------------------------------
+// One click loads an example photo + a (fictional) obituary into the form, so the
+// obituary -> AI words -> lifelike portrait flow can be shown without uploading or
+// typing -- built for the partner demo / pitch call. Gated to memorial brands; never
+// the default (real users still start fresh). The obituary is fictional by design.
+(function(){
+  if(typeof _isMemorialBrand==="undefined" || !_isMemorialBrand) return;
+  var SAMPLE_OBIT = "Robert “Bob” Hartwell, 78, of Fairhaven, passed away peacefully on March 3rd, surrounded by his family. A devoted husband to Margaret for 52 years, a father of three and grandfather of seven, Bob was the steady heart of every room he entered. He spent 35 years as a high‑school history teacher and never stopped teaching — patient, funny, and endlessly curious. Weekends were for the garden, the workshop, and a fishing line in the water with his grandchildren. He loved a good story, a strong cup of coffee, and his Sunday crossword. Kind to a fault and quietly generous, Bob measured his life in the people he helped. He will be remembered for his warmth, his wisdom, and his belief that there is good in everyone.";
+  function setv(id,v){ var e=document.getElementById(id); if(e) e.value=v; }
+  async function loadSample(){
+    var sb=document.getElementById("trySample"); if(sb){ sb.disabled=true; sb.textContent="Loading the example…"; }
+    try{
+      var bc=document.getElementById("bioConsent"); if(bc && !bc.checked){ bc.checked=true; bc.dispatchEvent(new Event("change",{bubbles:true})); }
+      var resp=await fetch("sample-keeper.jpg"); var blob=await resp.blob();
+      var file=new File([blob],"sample-keeper.jpg",{type:blob.type||"image/jpeg"});
+      if(typeof useCroppedFile==="function") useCroppedFile(file); else if(typeof setFile==="function") setFile(file);
+      setv("storyText", SAMPLE_OBIT);
+      setv("dtNickname","Bob"); setv("dtSaying","There’s good in everyone."); setv("dtThree","kind, wise, patient"); setv("dtHobby","fishing");
+      var sm=document.getElementById("storyMore"); if(sm) sm.open=true;
+      if(window.guidedOpenStep) setTimeout(function(){ try{ guidedOpenStep(2); }catch(e){} },60);
+      var msg=document.getElementById("storyMsg"); if(msg) msg.textContent="Example loaded — tap “Generate the words,” then “Create their portrait.”";
+    }catch(e){ var m=document.getElementById("storyMsg"); if(m) m.textContent="Couldn’t load the example — please try again."; }
+    if(sb){ sb.disabled=false; sb.textContent="✨ See a sample"; }
+  }
+  function inject(){
+    var input=document.getElementById("input"); if(!input || document.getElementById("trySample")) return;
+    var b=document.createElement("button"); b.type="button"; b.id="trySample"; b.className="btn secondary";
+    b.style.cssText="width:100%;margin:0 0 16px;font-size:14.5px"; b.textContent="✨ See a sample";
+    input.insertBefore(b, input.firstChild);
+    b.addEventListener("click", loadSample);
+  }
+  setTimeout(inject, 0);   // after the guided flow has restructured #input
+})();
 // --- Gather (crowd-sourced words) entry point ------------------------------
 // Self-contained + gated: the card only appears when GET /api/gather/enabled is
 // ok (feature flag on). On prod with the flag off that 404s -> nothing shows, so
