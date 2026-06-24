@@ -1824,31 +1824,12 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
                 lm = cv2.GaussianBlur(lm, (0, 0), sigmaX=max(1.0, ir_mean * 0.05))[..., None]
                 out = (out.astype(np.float32) * (1.0 - 0.60 * lm)
                        + ground * (0.60 * lm)).clip(0, 255).astype(np.uint8)
-            # Sclera (eye ellipse minus iris): no typography on the whites. Let the
-            # photo's OWN eye-white show through -- its real brightness and gradient,
-            # calibrated to this face -- never an invented tone that flattens into a
-            # glowing disc. (The catchlight below is the one true specular white.)
-            sm = np.zeros((H, W), np.float32)
-            for ex, ey, rx, ry in eyes_e:
-                cv2.ellipse(sm, (int(round(ex)), int(round(ey))),
-                            (int(round(rx)), int(round(ry))), 0, 0, 360, 1.0, -1)
-            for icx, icy, irr in iris_c:
-                cv2.circle(sm, (int(round(icx)), int(round(icy))), int(round(irr)), 0.0, -1, cv2.LINE_AA)
-            sm = cv2.GaussianBlur(sm, (0, 0), sigmaX=max(1.0, float(np.mean([e[2] for e in eyes_e])) * 0.10))
-            # Paint a NEUTRAL warm-white sclera, floored + per-eye luminance-stretched
-            # (the Sculpt engine's treatment) -- never the photo's own eye pixels, which
-            # are near-black on a deep-set/shadowed eye and would collapse the white into
-            # the dark ground (a black socket with only a glint). The floor keeps a shaded
-            # eye bright; the stretch + upper-lid shadow keep a natural gradient.
-            gray_hw = cv2.resize(an.img.gray, (W, H), interpolation=cv2.INTER_LINEAR)
-            sval = _sclera_shade(gray_hw, an, fsc0, sm, floor=0.58)
-            wash = (sm * sval * 0.74)[..., None]
-            out = (out.astype(np.float32) * (1.0 - wash)
-                   + np.float32((198, 200, 202)) * wash).clip(0, 255).astype(np.uint8)
-            # NOTE: the bright sclera + catchlight painted here/below are the GLOW source
-            # for any non-photo eye. They are now overridden by the real-eye overlay
-            # (below) for EVERY ink -- the photo's own eye never glows -- so the tinted
-            # inks get a realistic eye too, just desaturated into the ink's palette.
+            # NO synthetic sclera is painted. A bright floored white disc (~200) drawn
+            # from _eye_ellipses geometry pokes out BEYOND the hull-based real-eye overlay
+            # below, and that exposed rim BLOOMS under the vibrance pass -- it is the
+            # "glow" on Mosaic/Passage. (Displacement doesn't glow because it uses the
+            # same geometry for both.) The real-eye overlay supplies the sclera; any
+            # uncovered eye-corner pixels stay as the word-tone, which never glows.
         # Teeth carry NO typography. Where the mouth is open, clear the glyphs from
         # the inner mouth and let the photo's OWN pixels show through -- the same
         # tinted source the rest of the portrait is built from, so the teeth keep
@@ -1862,17 +1843,8 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             ph_sharp = cv2.addWeighted(eye_fill, 1.7, cv2.GaussianBlur(eye_fill, (0, 0), 1.4), -0.7, 0.0)
             tw = (tm * 0.92)[..., None]
             out = (out.astype(np.float32) * (1.0 - tw) + ph_sharp * tw).clip(0, 255).astype(np.uint8)
-        glints = _catchlight_points(an)                   # working coords
-        if glints:
-            fsc = W / float(an.img.gray.shape[1])
-            gm = np.zeros((H, W), np.float32)
-            for gx, gy, gr in glints:
-                cv2.circle(gm, (int(round(gx * fsc)), int(round(gy * fsc))),
-                           max(2, int(round(gr * fsc))), 1.0, -1, cv2.LINE_AA)
-            if gm.any():
-                sig = max(1.0, float(np.mean([g[2] for g in glints])) * fsc * 0.55)
-                gm = np.clip(cv2.GaussianBlur(gm, (0, 0), sigmaX=sig), 0, 1)[..., None]
-                out = (out.astype(np.float32) * (1.0 - gm) + 250.0 * gm).clip(0, 255).astype(np.uint8)
+        # NO synthetic catchlight either -- a 250-white glint outside the overlay blooms
+        # under vibrance. The real-eye overlay below carries the photo's own catchlight.
         # Real-eye overlay for EVERY ink -- the photo's own eye, which never glows (it
         # overrides the bright synthetic sclera/catchlight above). For the Photo ink it
         # stays full colour; for the tinted inks (Noir/Sepia/Navy/Sage) it is then
