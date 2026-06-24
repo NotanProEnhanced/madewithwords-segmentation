@@ -4,6 +4,13 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Typortrait — someone you love, made from your words</title>
+<!-- Typographic-heart favicon. Default is the generic T; the brand script below
+     swaps these to the brand's heart (L/K/E) when ?brand= is set. -->
+<link rel="icon" type="image/svg+xml" href="/static/favicons/typortrait/favicon.svg" />
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/typortrait/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="/static/favicons/typortrait/favicon-16.png" />
+<link rel="apple-touch-icon" href="/static/favicons/typortrait/apple-touch-icon.png" />
+<link rel="icon" href="/static/favicons/typortrait/favicon.ico" sizes="any" />
 <!-- Umami analytics (cookieless, no consent banner needed). Replace the
      data-website-id with your Umami Cloud website ID. Until then it 404s
      harmlessly and the tp_track() calls below silently no-op. -->
@@ -816,6 +823,10 @@ if(BRAND){
       const _ss=document.getElementById("storyStep"); if(_ss) _ss.style.display="block";          // "Share their story" suggest step = memorial
     }
     if(BRAND.theme){ const rs=document.documentElement.style; for(const k in BRAND.theme) rs.setProperty(k, BRAND.theme[k]); }
+    // Swap the favicon to this brand's typographic heart (default is the generic T).
+    const _FAV={lovedinwords:1,keeper:1,everloved:1};
+    if(_FAV[BRAND_ID]) document.querySelectorAll('link[rel*="icon"]').forEach(function(l){
+      const h=l.getAttribute("href"); if(h) l.setAttribute("href", h.replace("/favicons/typortrait/","/favicons/"+BRAND_ID+"/")); });
   }catch(e){}
 }
 // Every render is presented as a framed keepsake in a room: a portrait shot
