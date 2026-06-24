@@ -277,14 +277,12 @@ _LIPS = (61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 
 _NOSE = (1, 2, 98, 327, 97, 326, 5, 4, 275, 440, 220, 45)
 _FEATURE_GROUPS = (_EYE_L, _EYE_R, _BROW_L, _BROW_R, _LIPS, _NOSE)
 
-# Eye treatment for the tonal styles (Mosaic / Passage). The stylized TYPOGRAPHIC
-# eye (True) was tried -- iris colour-hint over the word-tone -- on the theory that a
-# photographed eye clashes with the word-art. In practice it read as bluish glowing
-# blobs, not eyes, while the photographic overlay (False) gives the SAME exceptional,
-# natural, lifelike eye as Lifelike. Realism wins: keep False so all three styles
-# share the one photographic eye. (Flag retained so the typographic path can be
-# revisited, but it is OFF.)
-_TONAL_TYPO_EYE = False
+# Eye treatment is chosen by INK, not by style: the realistic photographic eye only
+# matches a full-colour face (the Photo / "Original" ink), so it is used there; the
+# tinted/monochrome inks (Noir/Sepia/Navy/Sage) render the stylized TYPOGRAPHIC eye
+# instead, in the ink's palette, so a full-colour eye never clashes with a tinted
+# face. (A brief detour rendered a typographic eye for ALL Mosaic/Passage inks; the
+# user rejected it for the Photo ink -- realism wins there -- so the split is by ink.)
 
 
 def _sharpen(gray: np.ndarray) -> np.ndarray:
@@ -1847,12 +1845,12 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             wash = (sm * sval * 0.74)[..., None]
             out = (out.astype(np.float32) * (1.0 - wash)
                    + np.float32((198, 200, 202)) * wash).clip(0, 255).astype(np.uint8)
-            # Typographic iris (stylized, not a photo): tint the iris body with the
-            # photo's OWN iris colour over the word-tone, with a dark pupil -- a
-            # coloured iris made of type, alive yet coherent with the word-art. The
-            # limbal rim (above) and catchlight (below) finish it. Lifelike keeps the
-            # full photographic eye; this is for the typographic styles only.
-            if _TONAL_TYPO_EYE and iris_c:
+            # Typographic iris for the TINTED inks (Noir/Sepia/Navy/Sage): a dark pupil
+            # over the iris, with a HINT of the photo's iris colour, the limbal rim
+            # (above) and catchlight (below) -- a stylized eye that stays in the ink's
+            # world, never a full-colour photographic patch. The Photo ink uses the real
+            # photographic eye instead (below).
+            if ink != "photo" and iris_c:
                 tint = _iris_tint(an)
                 if tint is not None:
                     tip = np.array(tint[1][::-1], np.float32)            # lifted RGB -> BGR
@@ -1891,10 +1889,10 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
                 sig = max(1.0, float(np.mean([g[2] for g in glints])) * fsc * 0.55)
                 gm = np.clip(cv2.GaussianBlur(gm, (0, 0), sigmaX=sig), 0, 1)[..., None]
                 out = (out.astype(np.float32) * (1.0 - gm) + 250.0 * gm).clip(0, 255).astype(np.uint8)
-        # Photographic eye overlay -- ONLY when not using the typographic eye (i.e.
-        # this path is now off for Mosaic/Passage; the displacement/Lifelike engine
-        # keeps its own overlay). Composites the photo's real eye openings.
-        if eyes_e and not _TONAL_TYPO_EYE:
+        # Photographic eye overlay -- ONLY for the full-colour Photo ink, where a
+        # realistic colour eye matches the full-colour face. Tinted inks use the
+        # typographic eye above. Composites the photo's real eye openings.
+        if eyes_e and ink == "photo":
             bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
             ep = _faces_of(an)[0].points * fsc0
             eye_bgr, eye_a = _photo_eye_overlay(bgr_eye, ep, (_EYE_L, _EYE_R), H, W)

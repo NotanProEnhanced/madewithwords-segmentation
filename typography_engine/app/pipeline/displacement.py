@@ -618,10 +618,12 @@ def render_displacement_portrait(
         out = out * (1.0 - gl3) + np.float32(238.0) * gl3   # bright glint, below blow-out so vibrance doesn't bloom it
     # Realistic eyes: composite the photo's OWN eye openings, tone-normalised, OVER the
     # synthetic fill -- real curvature/lid/lash/iris shading instead of a flat grey disc.
-    # Gated by the same openness/appearance check (irises) so a closed-eye memorial
-    # photo is never given fabricated open eyes; dark grounds only (paper keeps its
-    # delicate words-form-the-eye treatment, never a pasted photo patch).
-    if irises and g["tone"] == "light":
+    # ONLY for the full-colour Photo ink: a realistic colour eye matches a full-colour
+    # face, but in a tinted/monochrome ink (Noir/Sepia/Navy/Sage) it clashes, so those
+    # keep the stylized synthetic eye (sclera + limbal + pupil + catchlight) above, in
+    # the ink's palette. Gated by the openness check (closed eyes skipped); dark grounds
+    # only (paper keeps its words-form-the-eye treatment).
+    if irises and g["tone"] == "light" and ink == "photo":
         from .tonal import _photo_eye_overlay
         bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
         eye_bgr, eye_a = _photo_eye_overlay(bgr_eye, pts, (_GROUPS["Leye"], _GROUPS["Reye"]), H, W)
