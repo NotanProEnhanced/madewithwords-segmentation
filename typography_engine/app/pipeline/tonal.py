@@ -277,13 +277,14 @@ _LIPS = (61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 
 _NOSE = (1, 2, 98, 327, 97, 326, 5, 4, 275, 440, 220, 45)
 _FEATURE_GROUPS = (_EYE_L, _EYE_R, _BROW_L, _BROW_R, _LIPS, _NOSE)
 
-# The tonal engine (Mosaic / Passage) is a TYPOGRAPHIC style, not a photographic
-# one -- so a real photographed eye composited in reads as a pasted sticker and
-# breaks the "made entirely of words" conceit. With this True it instead renders a
-# stylized TYPOGRAPHIC eye (the photo's iris COLOUR over the word-tone + a dark
-# pupil + limbal rim + catchlight) so the eye stays coherent with the word-art.
-# The photographic overlay stays on the Lifelike (displacement) engine only.
-_TONAL_TYPO_EYE = True
+# Eye treatment for the tonal styles (Mosaic / Passage). The stylized TYPOGRAPHIC
+# eye (True) was tried -- iris colour-hint over the word-tone -- on the theory that a
+# photographed eye clashes with the word-art. In practice it read as bluish glowing
+# blobs, not eyes, while the photographic overlay (False) gives the SAME exceptional,
+# natural, lifelike eye as Lifelike. Realism wins: keep False so all three styles
+# share the one photographic eye. (Flag retained so the typographic path can be
+# revisited, but it is OFF.)
+_TONAL_TYPO_EYE = False
 
 
 def _sharpen(gray: np.ndarray) -> np.ndarray:
