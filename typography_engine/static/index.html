@@ -142,6 +142,13 @@
   .busy.anim{background:transparent}
   .busy.anim .spin{display:none}
   .busy.anim .msg{display:none}   /* status text moves out of the canvas -> .compose-status below the frame */
+  /* Live phased progress (replaces the static spinner+line during a render): hide the
+     spinner, the .msg cycles the render phases, and a thin bar fills step by step. */
+  .busy.phased .spin{display:none}
+  .busy-prog{width:180px;max-width:62%;height:3px;border-radius:999px;background:rgba(0,0,0,.10);overflow:hidden;margin-top:2px}
+  .busy-prog i{display:block;height:100%;width:0;border-radius:999px;background:var(--navy);transition:width .55s ease}
+  #result.kp-desk .busy-prog{background:rgba(255,255,255,.18)}
+  #result.kp-desk .busy-prog i{background:#fff}
   .compose-status{display:none;flex-direction:column;align-items:center;margin-top:16px}
   .compose-status.on{display:flex}
   .compose-status .cs-line{display:flex;align-items:center;gap:10px;font-family:var(--serif);color:var(--navy);font-size:16px}
@@ -1913,12 +1920,28 @@ function startAssembly(){
 }
 function stopAssembly(){ if(animRAF){ cancelAnimationFrame(animRAF); animRAF=0; } canvas.style.display="none"; busy.classList.remove("anim"); stopComposeStatus(); }
 let msgTimer=0;
-// The animated multi-step compose narration is superseded by the framed-desk
-// keepsake: KEEPSAKE=true forces animate=false in render(), so this path no longer
-// runs. The live progress text is the single style-aware line set in showBusy().
-// Kept as an inert no-op so the (dead) animate branch + cleanup calls stay valid.
-function startComposeStatus(){ /* inert: keepsake presentation replaced the narration */ }
-function stopComposeStatus(){ clearInterval(msgTimer); msgTimer=0; const cs=document.getElementById("composeStatus"); if(cs) cs.classList.remove("on"); }
+// Live phased progress shown during EVERY render. The framed keepsake forces
+// animate=false, so the old canvas narration never runs -- this replaces the static
+// spinner+line with a stepped sense of the work: detect -> map -> place -> refine ->
+// finalize. The server returns one response (not a stream), so the steps are
+// time-paced and the last one holds until the render actually lands.
+var COMPOSE_PHASES = ["Detecting face","Mapping shadows","Placing words","Refining eyes","Finalizing portrait"];
+function startComposeStatus(){
+  clearInterval(msgTimer); msgTimer=0;
+  busy.classList.add("phased");
+  var bar=busy.querySelector(".busy-prog");
+  if(!bar){ bar=document.createElement("div"); bar.className="busy-prog"; bar.setAttribute("aria-hidden","true"); bar.innerHTML="<i></i>"; busy.appendChild(bar); }
+  var fill=bar.querySelector("i"), msg=$(".msg"), n=COMPOSE_PHASES.length, i=0;
+  function show(){ msg.textContent=COMPOSE_PHASES[i]+"…"; if(fill) fill.style.width=((i<n-1)?Math.round((i+1)/n*100):92)+"%"; }
+  show();
+  msgTimer=setInterval(function(){ if(i<n-1){ i++; show(); } else { clearInterval(msgTimer); msgTimer=0; } }, 1300);
+}
+function stopComposeStatus(){
+  clearInterval(msgTimer); msgTimer=0;
+  busy.classList.remove("phased");
+  var cs=document.getElementById("composeStatus"); if(cs) cs.classList.remove("on");
+  var f=busy.querySelector(".busy-prog i"); if(f) f.style.width="0";
+}
 // Surface input-quality warnings (stage:"input") from the render response as a
 // gentle note on the result -- e.g. a low-resolution photo whose eyes will render
 // soft. Technical warnings (rasterizer, enhancement) are filtered out.
@@ -1944,9 +1967,10 @@ function showBusy(animate){
     ? (_slow ? "Composing their portrait — this takes a moment…" : "Composing their portrait, in your words…")
     : (_slow ? "Sculpting your portrait — this takes about 30 seconds…" : "Composing your portrait, woven from your words…");
   busy.classList.remove("hide");
+  startComposeStatus();   // live phased progress, every render (keepsake forces animate=false)
   // Show the word-assembly for the first Create — meaningful progress feedback,
   // played for everyone (it's brief and on-brand, not gratuitous motion).
-  if(animate){ busy.classList.add("anim"); compareEl.classList.add("hide-cmp"); startComposeStatus(); startAssembly(); }
+  if(animate){ busy.classList.add("anim"); compareEl.classList.add("hide-cmp"); startAssembly(); }
   else { stopAssembly(); if(KEEPSAKE) compareEl.classList.add("hide-cmp"); }   // no stray slider handle over the placeholder
 }
 async function render(ink,{animate=false,background=false,thumb=false}={}){
