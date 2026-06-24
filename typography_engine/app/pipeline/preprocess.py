@@ -27,6 +27,12 @@ class LoadedImage:
     orig_w: int
     orig_h: int
     scale: float             # working_dim / original_dim (uniform)
+    # TRUE source dimensions, captured BEFORE enhance_source upscales a small photo.
+    # orig_w/orig_h are post-enhance and would mask a low-res upload; src_w/src_h are
+    # the honest file size used by the quality gate to judge real detail. Default 0
+    # (falls back to working size) for any LoadedImage built without them.
+    src_w: int = 0
+    src_h: int = 0
 
     @property
     def h(self) -> int:
@@ -116,6 +122,7 @@ def apply_vibrance(img: np.ndarray, strength: float = _VIBRANCE, bgr: bool = Fal
 
 def load_and_normalize(img_bytes: bytes, max_dim: int, warns: WarningCollector) -> LoadedImage:
     bgr_full = decode_image(img_bytes, warns)
+    src_h, src_w = bgr_full.shape[:2]          # TRUE file size, before any upscaling
     # Faithful in-house enhancement (upscale small / denoise grainy) before any
     # downsizing, so imperfect source photos still give a clean tonal map. Never
     # alters identity; clean, well-sized photos pass through untouched.
@@ -145,4 +152,5 @@ def load_and_normalize(img_bytes: bytes, max_dim: int, warns: WarningCollector) 
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
 
-    return LoadedImage(bgr=bgr, gray=gray, orig_w=ow, orig_h=oh, scale=scale)
+    return LoadedImage(bgr=bgr, gray=gray, orig_w=ow, orig_h=oh, scale=scale,
+                       src_w=src_w, src_h=src_h)

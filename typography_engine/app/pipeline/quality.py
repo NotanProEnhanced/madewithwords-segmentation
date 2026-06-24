@@ -70,4 +70,22 @@ def assess_portrait_input(an: Analysis) -> List[Issue]:
             "may be imprecise. A plain, contrasting background works best.",
         ))
 
+    # Resolution of the FACE, in TRUE source pixels. A small photo (or a close-up
+    # screenshot) can have the face fill the frame -- passing the coverage check --
+    # yet carry too few real pixels for the features, so the eyes render soft no
+    # matter the engine. enhance_source upscales such a photo, which inflates the
+    # working size, so judge from the pre-enhance file size (img.src_w). Calibrated
+    # on the test set: a 490px screenshot -> ~165px face (soft); every clean portrait
+    # is >= ~320px. Warn (never block) -- a grieving family may have only this photo.
+    src_w = getattr(an.img, "src_w", 0) or an.img.w
+    if an.face_bbox and an.img.w:
+        face_w_src = an.face_bbox[2] * (float(src_w) / float(an.img.w))
+        if face_w_src < 250.0:
+            issues.append(Issue(
+                "warn", "low_resolution",
+                "This photo is low-resolution, so the portrait — especially the "
+                "eyes — may look soft. If you have a larger or sharper close-up of "
+                "them, it will render with more detail.",
+            ))
+
     return issues

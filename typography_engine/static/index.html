@@ -372,6 +372,12 @@
   .sizerow{margin-top:10px;display:flex;align-items:center;gap:10px}
   .sizerow select{flex:0 0 auto;border:1px solid var(--line);border-radius:10px;padding:8px 12px;
     font-family:var(--sans);font-size:14px;background:#fff;color:var(--ink)}
+  /* Gentle input-quality note (e.g. low-resolution photo). Soft and warm, not an
+     alarm -- it informs, it does not block, and the tone suits a grieving family. */
+  .rnote{background:#fbf6ec;border:1px solid #ecdfc4;border-radius:12px;padding:12px 15px;
+    margin:14px 0 0;color:#6b5d3e;font-size:13.5px;line-height:1.5}
+  .rnote .rn-ic{font-weight:700;margin-right:6px;color:#b08a3e}
+  .rnote>div+div{margin-top:7px}
   .err{display:none;background:#fff;border:1px solid #f0d9d9;border-left:4px solid #c0392b;border-radius:12px;padding:14px 16px;margin-top:18px;color:#7a2e2e;font-size:15px}
   .err-row{display:flex;gap:10px;align-items:flex-start}
   .err-ic{flex:none;width:20px;height:20px;border-radius:50%;background:#c0392b;color:#fff;font-weight:800;font-size:13px;line-height:20px;text-align:center}
@@ -560,6 +566,10 @@
     </div>
     <button type="button" id="zoomBtn" class="zoomlink">&#128269; View up close</button>
     <button type="button" id="bgTouchup" class="touchup-link" style="display:none">Edges not perfect? Touch up the background</button>
+    <!-- Gentle, non-blocking notice for input-quality issues (e.g. a low-resolution
+         photo whose eyes will render soft). Surfaced on the free preview so the
+         family knows before they order. -->
+    <div id="renderNote" class="rnote" style="display:none"></div>
     <div class="result-card" id="makeYours">
     <div class="result-card-h">Make it yours</div>
     <div class="ctl" id="styleGallery" style="margin-top:6px">
@@ -1903,8 +1913,19 @@ let msgTimer=0;
 // Kept as an inert no-op so the (dead) animate branch + cleanup calls stay valid.
 function startComposeStatus(){ /* inert: keepsake presentation replaced the narration */ }
 function stopComposeStatus(){ clearInterval(msgTimer); msgTimer=0; const cs=document.getElementById("composeStatus"); if(cs) cs.classList.remove("on"); }
+// Surface input-quality warnings (stage:"input") from the render response as a
+// gentle note on the result -- e.g. a low-resolution photo whose eyes will render
+// soft. Technical warnings (rasterizer, enhancement) are filtered out.
+function showRenderNote(warnings){
+  const el=document.getElementById("renderNote"); if(!el) return;
+  const ws=(warnings||[]).filter(w=>w && w.severity==="warn" && w.stage==="input");
+  if(!ws.length){ el.style.display="none"; el.innerHTML=""; return; }
+  el.innerHTML=ws.map(w=>`<div><span class="rn-ic" aria-hidden="true">&#9432;</span>${w.message}</div>`).join("");
+  el.style.display="block";
+}
 function showBusy(animate){
   errResult.style.display="none";
+  var _rn=document.getElementById("renderNote"); if(_rn) _rn.style.display="none";   // clear for the new render
   // In the framed presentation the empty mat shows a calm line about what's
   // taking shape on the desk; the classic frame keeps the shorter status. The
   // memorial brand stays especially gentle and unhurried (no exclamation/upsell).
@@ -1959,6 +1980,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     if(data.source){ sourcePreview=data.source; if(beforeImg) beforeImg.src=sourcePreview; }   // cropped "before"
     if(background || ink!==state.ink) return;
     showImage(cache[ink]);   // watermarked preview (clean art is unlocked via Stripe)
+    showRenderNote(data.warnings);   // gentle input-quality note (e.g. low-resolution photo)
     if(typeof data.likeness==="number") styleScores[state.style]=data.likeness;
     if(!window._tpPreviewTracked){ window._tpPreviewTracked=true; tp_track("preview_ready", {style: state.style}); }
     // The result screen normally renders a BURST in the background: a thumbnail
