@@ -277,6 +277,14 @@ _LIPS = (61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 
 _NOSE = (1, 2, 98, 327, 97, 326, 5, 4, 275, 440, 220, 45)
 _FEATURE_GROUPS = (_EYE_L, _EYE_R, _BROW_L, _BROW_R, _LIPS, _NOSE)
 
+# The tonal engine (Mosaic / Passage) is a TYPOGRAPHIC style, not a photographic
+# one -- so a real photographed eye composited in reads as a pasted sticker and
+# breaks the "made entirely of words" conceit. With this True it instead renders a
+# stylized TYPOGRAPHIC eye (the photo's iris COLOUR over the word-tone + a dark
+# pupil + limbal rim + catchlight) so the eye stays coherent with the word-art.
+# The photographic overlay stays on the Lifelike (displacement) engine only.
+_TONAL_TYPO_EYE = True
+
 
 def _sharpen(gray: np.ndarray) -> np.ndarray:
     """Local-contrast (CLAHE) + unsharp mask so features keep their edges.
@@ -1838,6 +1846,26 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             wash = (sm * sval * 0.74)[..., None]
             out = (out.astype(np.float32) * (1.0 - wash)
                    + np.float32((198, 200, 202)) * wash).clip(0, 255).astype(np.uint8)
+            # Typographic iris (stylized, not a photo): tint the iris body with the
+            # photo's OWN iris colour over the word-tone, with a dark pupil -- a
+            # coloured iris made of type, alive yet coherent with the word-art. The
+            # limbal rim (above) and catchlight (below) finish it. Lifelike keeps the
+            # full photographic eye; this is for the typographic styles only.
+            if _TONAL_TYPO_EYE and iris_c:
+                tint = _iris_tint(an)
+                if tint is not None:
+                    tip = np.array(tint[1][::-1], np.float32)            # lifted RGB -> BGR
+                    im = np.zeros((H, W), np.float32)
+                    for icx, icy, irr in iris_c:
+                        cv2.circle(im, (int(round(icx)), int(round(icy))), int(round(irr * 0.80)), 1.0, -1, cv2.LINE_AA)
+                    im = cv2.GaussianBlur(im, (0, 0), sigmaX=max(1.0, ir_mean * 0.14))
+                    im3 = (im * 0.36)[..., None]   # colour as a HINT over the word-tone, not a solid fill
+                    out = (out.astype(np.float32) * (1.0 - im3) + tip * im3).clip(0, 255).astype(np.uint8)
+                pm = np.zeros((H, W), np.float32)
+                for icx, icy, irr in iris_c:
+                    cv2.circle(pm, (int(round(icx)), int(round(icy))), max(2, int(round(irr * 0.40))), 1.0, -1, cv2.LINE_AA)
+                pm = cv2.GaussianBlur(pm, (0, 0), sigmaX=max(1.0, ir_mean * 0.10))[..., None]
+                out = (out.astype(np.float32) * (1.0 - 0.72 * pm) + ground * (0.72 * pm)).clip(0, 255).astype(np.uint8)
         # Teeth carry NO typography. Where the mouth is open, clear the glyphs from
         # the inner mouth and let the photo's OWN pixels show through -- the same
         # tinted source the rest of the portrait is built from, so the teeth keep
@@ -1862,9 +1890,10 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
                 sig = max(1.0, float(np.mean([g[2] for g in glints])) * fsc * 0.55)
                 gm = np.clip(cv2.GaussianBlur(gm, (0, 0), sigmaX=sig), 0, 1)[..., None]
                 out = (out.astype(np.float32) * (1.0 - gm) + 250.0 * gm).clip(0, 255).astype(np.uint8)
-        # Realistic eyes: composite the photo's OWN eye openings over the synthetic
-        # fill above -- the real curvature/lid/lash/iris shading, not a flat grey disc.
-        if eyes_e:
+        # Photographic eye overlay -- ONLY when not using the typographic eye (i.e.
+        # this path is now off for Mosaic/Passage; the displacement/Lifelike engine
+        # keeps its own overlay). Composites the photo's real eye openings.
+        if eyes_e and not _TONAL_TYPO_EYE:
             bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
             ep = _faces_of(an)[0].points * fsc0
             eye_bgr, eye_a = _photo_eye_overlay(bgr_eye, ep, (_EYE_L, _EYE_R), H, W)
