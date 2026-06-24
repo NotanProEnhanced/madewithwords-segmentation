@@ -1845,26 +1845,10 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             wash = (sm * sval * 0.74)[..., None]
             out = (out.astype(np.float32) * (1.0 - wash)
                    + np.float32((198, 200, 202)) * wash).clip(0, 255).astype(np.uint8)
-            # Typographic iris for the TINTED inks (Noir/Sepia/Navy/Sage): a dark pupil
-            # over the iris, with a HINT of the photo's iris colour, the limbal rim
-            # (above) and catchlight (below) -- a stylized eye that stays in the ink's
-            # world, never a full-colour photographic patch. The Photo ink uses the real
-            # photographic eye instead (below).
-            if ink != "photo" and iris_c:
-                tint = _iris_tint(an)
-                if tint is not None:
-                    tip = np.array(tint[1][::-1], np.float32)            # lifted RGB -> BGR
-                    im = np.zeros((H, W), np.float32)
-                    for icx, icy, irr in iris_c:
-                        cv2.circle(im, (int(round(icx)), int(round(icy))), int(round(irr * 0.80)), 1.0, -1, cv2.LINE_AA)
-                    im = cv2.GaussianBlur(im, (0, 0), sigmaX=max(1.0, ir_mean * 0.14))
-                    im3 = (im * 0.36)[..., None]   # colour as a HINT over the word-tone, not a solid fill
-                    out = (out.astype(np.float32) * (1.0 - im3) + tip * im3).clip(0, 255).astype(np.uint8)
-                pm = np.zeros((H, W), np.float32)
-                for icx, icy, irr in iris_c:
-                    cv2.circle(pm, (int(round(icx)), int(round(icy))), max(2, int(round(irr * 0.40))), 1.0, -1, cv2.LINE_AA)
-                pm = cv2.GaussianBlur(pm, (0, 0), sigmaX=max(1.0, ir_mean * 0.10))[..., None]
-                out = (out.astype(np.float32) * (1.0 - 0.72 * pm) + ground * (0.72 * pm)).clip(0, 255).astype(np.uint8)
+            # NOTE: the bright sclera + catchlight painted here/below are the GLOW source
+            # for any non-photo eye. They are now overridden by the real-eye overlay
+            # (below) for EVERY ink -- the photo's own eye never glows -- so the tinted
+            # inks get a realistic eye too, just desaturated into the ink's palette.
         # Teeth carry NO typography. Where the mouth is open, clear the glyphs from
         # the inner mouth and let the photo's OWN pixels show through -- the same
         # tinted source the rest of the portrait is built from, so the teeth keep
@@ -1889,15 +1873,23 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
                 sig = max(1.0, float(np.mean([g[2] for g in glints])) * fsc * 0.55)
                 gm = np.clip(cv2.GaussianBlur(gm, (0, 0), sigmaX=sig), 0, 1)[..., None]
                 out = (out.astype(np.float32) * (1.0 - gm) + 250.0 * gm).clip(0, 255).astype(np.uint8)
-        # Photographic eye overlay -- ONLY for the full-colour Photo ink, where a
-        # realistic colour eye matches the full-colour face. Tinted inks use the
-        # typographic eye above. Composites the photo's real eye openings.
-        if eyes_e and ink == "photo":
+        # Real-eye overlay for EVERY ink -- the photo's own eye, which never glows (it
+        # overrides the bright synthetic sclera/catchlight above). For the Photo ink it
+        # stays full colour; for the tinted inks (Noir/Sepia/Navy/Sage) it is then
+        # DESATURATED into the ink's palette so a full-colour eye doesn't clash with the
+        # tinted face -- realistic structure, no glow, no colour clash.
+        if eyes_e:
             bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
             ep = _faces_of(an)[0].points * fsc0
             eye_bgr, eye_a = _photo_eye_overlay(bgr_eye, ep, (_EYE_L, _EYE_R), H, W)
             a3 = (eye_a * 0.94)[..., None]
             out = (out.astype(np.float32) * (1.0 - a3) + eye_bgr * a3).clip(0, 255).astype(np.uint8)
+            if ink != "photo":
+                of = out.astype(np.float32)
+                lum = (of[..., 0] * 0.114 + of[..., 1] * 0.587 + of[..., 2] * 0.299)[..., None]
+                grayed = of * 0.22 + lum * 0.78          # pull the eye toward the ink's monochrome
+                em3 = eye_a[..., None]
+                out = (of * (1.0 - em3) + grayed * em3).clip(0, 255).astype(np.uint8)
     # (photo_paper paints NO compose-level eye/teeth patch -- that read as a sticker
     # glued on the typography. Its eyes + smile are formed by the WORDS themselves,
     # deepened in the tonal field in _tint_photo so the features emerge from type.)

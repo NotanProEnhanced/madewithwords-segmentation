@@ -617,18 +617,22 @@ def render_displacement_portrait(
         gl3 = glint[..., None]
         out = out * (1.0 - gl3) + np.float32(238.0) * gl3   # bright glint, below blow-out so vibrance doesn't bloom it
     # Realistic eyes: composite the photo's OWN eye openings, tone-normalised, OVER the
-    # synthetic fill -- real curvature/lid/lash/iris shading instead of a flat grey disc.
-    # ONLY for the full-colour Photo ink: a realistic colour eye matches a full-colour
-    # face, but in a tinted/monochrome ink (Noir/Sepia/Navy/Sage) it clashes, so those
-    # keep the stylized synthetic eye (sclera + limbal + pupil + catchlight) above, in
-    # the ink's palette. Gated by the openness check (closed eyes skipped); dark grounds
-    # only (paper keeps its words-form-the-eye treatment).
-    if irises and g["tone"] == "light" and ink == "photo":
+    # synthetic fill -- the real eye never glows (the synthetic bright sclera/catchlight
+    # does). Applied for EVERY ink on a dark ground; the Photo ink keeps it full colour,
+    # the tinted/monochrome inks (Noir/Sepia/Navy/Sage) then DESATURATE it into the ink's
+    # palette so a full-colour eye doesn't clash with the tinted face. Gated by the
+    # openness check (closed eyes skipped); paper keeps its words-form-the-eye treatment.
+    if irises and g["tone"] == "light":
         from .tonal import _photo_eye_overlay
         bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
         eye_bgr, eye_a = _photo_eye_overlay(bgr_eye, pts, (_GROUPS["Leye"], _GROUPS["Reye"]), H, W)
         a3 = (eye_a * 0.94)[..., None]
         out = out * (1.0 - a3) + eye_bgr * a3
+        if ink != "photo":
+            lum = (out[..., 0] * 0.114 + out[..., 1] * 0.587 + out[..., 2] * 0.299)[..., None]
+            grayed = out * 0.22 + lum * 0.78         # pull the eye toward the ink's monochrome
+            em3 = eye_a[..., None]
+            out = out * (1.0 - em3) + grayed * em3
     oh = max(1, int(out_width * h0 / w0))
     out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
     # Standard print canvas (4:5 = 16x20), padded with the ground BEFORE vibrance
