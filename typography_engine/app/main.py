@@ -23,6 +23,7 @@ from . import orders as orders_db
 from . import moderation
 from . import suggest
 from . import printful, products
+from . import gallery_catalog
 from .config import (
     BIOMETRIC_CONSENT_VERSION,
     BLOCKED_REGIONS,
@@ -986,6 +987,78 @@ def pricing() -> JSONResponse:
         "currency": CURRENCY,
         "configured": bool(STRIPE_SECRET_KEY),
     })
+
+
+@app.get("/gallery", response_class=HTMLResponse)
+def gallery_page() -> HTMLResponse:
+    """The storefront gallery of pre-made typortraits (Bible Collection, Holidays,
+    etc.). Static page; the catalog + art live under /static/gallery/."""
+    page = STATIC_DIR / "gallery.html"
+    if not page.exists():
+        raise HTTPException(status_code=404, detail="gallery not found")
+    return HTMLResponse(page.read_text(encoding="utf-8"))
+
+
+@app.post("/gallery/checkout")
+def gallery_checkout(item: str = Form(...), sku: str = Form("digital")) -> JSONResponse:
+    """Create a Stripe Checkout session for a fixed gallery item. Decoupled from
+    the personalized /checkout: a gallery item is pre-rendered art, validated
+    against the catalog, with a master PNG on disk. Phase 1 = digital download."""
+    if not STRIPE_SECRET_KEY:
+        return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
+    it = gallery_catalog.get(item)
+    if not it:
+        return JSONResponse({"ok": False, "error": "unknown_item"}, status_code=404)
+    if gallery_catalog.art_path(item) is None:
+        # Item is in the catalog but its final artwork isn't in place yet.
+        return JSONResponse({"ok": False, "error": "art_missing"}, status_code=409)
+    if sku != "digital":
+        # Prints reuse the same masters via Printful (Phase 2 webhook branch).
+        return JSONResponse({"ok": False, "error": "prints_not_live"}, status_code=409)
+    import stripe
+    stripe.api_key = STRIPE_SECRET_KEY
+    title = str(it.get("title") or "Typortrait")[:120]
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[{
+                "quantity": 1,
+                "price_data": {
+                    "currency": CURRENCY,
+                    "unit_amount": DOWNLOAD_PRICE_CENTS,
+                    "product_data": {"name": f"Typortrait — {title} (digital download)"},
+                },
+            }],
+            metadata={"gallery_item": item},
+            success_url=f"{PUBLIC_BASE_URL}/gallery/download?item={item}&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{PUBLIC_BASE_URL}/gallery?canceled=1",
+        )
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
+    return JSONResponse({"ok": True, "url": session.url})
+
+
+@app.get("/gallery/download")
+def gallery_download(item: str, session_id: str):
+    """Serve a gallery item's master PNG only after verifying its paid Stripe
+    session. Mirrors /download but reads the fixed master (no compose step)."""
+    if not STRIPE_SECRET_KEY:
+        return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
+    import stripe
+    stripe.api_key = STRIPE_SECRET_KEY
+    try:
+        sess = stripe.checkout.Session.retrieve(session_id)
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "bad_session"}, status_code=400)
+    paid = getattr(sess, "payment_status", None) == "paid"
+    meta = getattr(sess, "metadata", None)
+    meta_item = getattr(meta, "gallery_item", None) if meta is not None else None
+    if not paid or meta_item != item:
+        return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
+    path = gallery_catalog.art_path(item)
+    if path is None:
+        return JSONResponse({"ok": False, "error": "art_missing"}, status_code=404)
+    return FileResponse(str(path), media_type="image/png", filename=f"typortrait-{item}.png")
 
 
 @app.get("/products")
