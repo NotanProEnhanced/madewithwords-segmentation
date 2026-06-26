@@ -1868,13 +1868,33 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     # Standard print canvas (4:5 = 16x20): pad with the ground BEFORE the boost
     # and vibrance passes so the band is processed identically to the interior
     # ground (no visible seam).
+    # Shield the photographic eye from the vibrance pass below. Pad the eye-overlay
+    # alpha onto the print canvas with the SAME call as `out`, so the mask stays
+    # pixel-aligned through any centre/downscale/pad.
+    _eye_guard = None
+    if eyes_e:
+        _gm = _fit_print_canvas(np.repeat((eye_a[..., None] * 255.0).clip(0, 255).astype(np.uint8), 3, axis=2),
+                                (0, 0, 0), print_aspect)
+        _eye_guard = _gm[..., 0].astype(np.float32) / 255.0
     out = _fit_print_canvas(out, ground, print_aspect)
     if boost and boost > 0.0:        # lift dark Message renders (shadows/midtones)
         f = (out.astype(np.float32) / 255.0) ** (1.0 / (1.0 + float(boost)))
         out = (f * 255.0).clip(0, 255).astype(np.uint8)
     if not light:                    # gentle life (clarity); restrained so colour stays natural, not cartoonish
         from .preprocess import apply_vibrance
+        _pre = out
         out = apply_vibrance(out, strength=0.34, bgr=False)
+        if _eye_guard is not None:
+            # Keep the eye's PRE-vibrance values. Vibrance's clarity term amplifies the
+            # bright sclera/catchlight against the dark word-face, and its saturation lift
+            # over-vivifies the iris -- together that is the Mosaic/Passage eye "glow" that
+            # only shows on the full-fidelity (cairosvg) render. The real-eye overlay is
+            # already faithful and sharp; excluding it from vibrance gives Lifelike clarity
+            # with no glow. (Displacement avoids it instead by keeping the eye below blow-out.)
+            # Boost the mask so the eyeball CORE (bright sclera/catchlight = the glow)
+            # is fully shielded, leaving only the orbital rim feathered into the face.
+            _m = np.clip(_eye_guard * 1.35, 0.0, 1.0)[..., None]
+            out = (out.astype(np.float32) * (1.0 - _m) + _pre.astype(np.float32) * _m).clip(0, 255).astype(np.uint8)
     img = Image.fromarray(out)
     if ss > 1:                       # supersampled -> Lanczos down to final size
         img = _lanczos_down(img, out_width)
