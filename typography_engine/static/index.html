@@ -1443,7 +1443,7 @@ async function prewarmSizes(){
    the studio adopts it with a gentle crossfade -- never a spinner over the
    portrait they're already looking at. */
 let styleScores={}, recoStarted=false, recoDone=false, userTouched=false;
-const STYLE_NAMES={words:"Words",message:"Message",displacement:"Sculpted Style"};
+const STYLE_NAMES={words:"Mosaic",message:"Passage",displacement:"Lifelike"};
 function resetReco(){
   styleScores={}; recoStarted=false; recoDone=false; userTouched=false;
   document.querySelectorAll('#styleSegResult button').forEach(b=>b.classList.remove("best"));
@@ -1481,17 +1481,17 @@ async function recommendStyle(){
   tp_track("style_reco",{best:best,current:state.style});
   const note=$("#bestNote");
   if(best===state.style){
-    if(note){ note.textContent="✦ "+STYLE_NAMES[best]+" suits this photo best."; note.style.display=""; }
+    if(note){ note.textContent="✦ The "+STYLE_NAMES[best]+" style suits this photo best."; note.style.display=""; }
     return;
   }
   if(userTouched){
-    if(note){ note.textContent="✦ "+STYLE_NAMES[best]+" suits this photo best — tap to see."; note.style.display=""; }
+    if(note){ note.textContent="✦ The "+STYLE_NAMES[best]+" style suits this photo best — tap to see."; note.style.display=""; }
     return;
   }
   if(BRAND && BRAND.pinStyle){
-    // Brand pins its opening look (e.g. Loved in Words -> Sculpt): hint the best
+    // Brand pins its opening look (e.g. Loved in Words -> Lifelike): hint the best
     // fit as a tappable badge, but never auto-switch away from the brand's style.
-    if(note){ note.textContent="✦ "+STYLE_NAMES[best]+" suits this photo best — tap to see."; note.style.display=""; }
+    if(note){ note.textContent="✦ The "+STYLE_NAMES[best]+" style suits this photo best — tap to see."; note.style.display=""; }
     return;
   }
   // Adopt quietly: render the winner at full size in the background, then a
@@ -1505,7 +1505,7 @@ async function recommendStyle(){
     cache[state.ink]={preview:d.preview, job:d.job, price:d.price_cents, currency:d.currency};
     showImage(cache[state.ink], true);               // crossfade swap
     document.querySelectorAll('#styleSegResult button').forEach(b=>b.classList.toggle("best", b.dataset.style===best));
-    if(note){ note.textContent="✦ Showing "+STYLE_NAMES[best]+" — it suits this photo best."; note.style.display=""; }
+    if(note){ note.textContent="✦ Showing the "+STYLE_NAMES[best]+" style — it suits this photo best."; note.style.display=""; }
     tp_track("style_reco_adopted",{best:best});
     prewarm(); refreshSizeStrip(); prewarmSizes();
   }catch(e){}
