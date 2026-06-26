@@ -1315,6 +1315,46 @@ def download_card(job: str, session_id: str, name: str = "", dates: str = "",
                         filename=f"memorial-card-{job}.pdf")
 
 
+@app.get("/download/card-preview")
+def card_preview(job: str, session_id: str, layout: str = "classic"):
+    """Tiny live preview of the card FRONT in `layout`, built from the buyer's own
+    portrait -- the layout-picker thumbnails on /success. Cached on disk; the page
+    falls back to a stock thumbnail client-side if this can't be built."""
+    layout = layout if layout in ("classic", "bleed", "elegant") else "classic"
+    cache = OUTPUTS_DIR / f"{job}_cardprev_{layout}.png"
+    if cache.exists():
+        return FileResponse(str(cache), media_type="image/png")
+    if not STRIPE_SECRET_KEY or not _session_paid(session_id, job):
+        return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
+    if not (PRIVATE_DIR / f"{job}.json").exists():
+        return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    clean = _ensure_clean_png(job)
+    if clean is None:
+        return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
+    try:
+        import memorial_card as mc
+        import fitz
+        from PIL import Image as _Img
+        tmp = OUTPUTS_DIR / f"{job}_cardprev_{layout}.pdf"
+        mc.make_card(str(clean), "", "", "Beloved", verse="none", layout=layout, out_pdf=str(tmp))
+        doc = fitz.open(str(tmp))
+        s = 150 / 72.0
+        pm = doc[0].get_pixmap(dpi=150)
+        im = _Img.frombytes("RGB", (pm.width, pm.height), pm.samples).crop(
+            (int(mc.TX0 * s), int((mc.PAGE_H - mc.TY1) * s),
+             int(mc.TX1 * s), int((mc.PAGE_H - mc.TY0) * s)))
+        im.thumbnail((300, 300))
+        im.save(str(cache))
+        doc.close()
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "preview_failed"}, status_code=500)
+    return FileResponse(str(cache), media_type="image/png")
+
+
 @app.api_route("/printful-fetch/{job}", methods=["GET", "HEAD"])
 def printful_fetch(job: str, exp: int, sig: str, a: float = _PRINT_ASPECT):
     """One-time signed URL Printful fetches the clean PNG from.
@@ -2103,9 +2143,9 @@ def success(job: str, session_id: str):
                 '</div>'
                 '<div class="cdlab">Choose a layout</div>'
                 '<div class="cdthumbs" id="cdThumbs">'
-                '<button type="button" class="cdthumb sel" data-lay="classic"><img src="/static/card-previews/classic.png" alt="Classic layout"><span>Classic</span></button>'
-                '<button type="button" class="cdthumb" data-lay="bleed"><img src="/static/card-previews/bleed.png" alt="Full-portrait layout"><span>Full portrait</span></button>'
-                '<button type="button" class="cdthumb" data-lay="elegant"><img src="/static/card-previews/elegant.png" alt="Elegant layout"><span>Elegant</span></button>'
+                '<button type="button" class="cdthumb sel" data-lay="classic"><img src="/download/card-preview?job=' + jq + '&amp;session_id=' + sq + '&amp;layout=classic" onerror="this.onerror=null;this.src=\'/static/card-previews/classic.png\'" alt="Classic layout"><span>Classic</span></button>'
+                '<button type="button" class="cdthumb" data-lay="bleed"><img src="/download/card-preview?job=' + jq + '&amp;session_id=' + sq + '&amp;layout=bleed" onerror="this.onerror=null;this.src=\'/static/card-previews/bleed.png\'" alt="Full-portrait layout"><span>Full portrait</span></button>'
+                '<button type="button" class="cdthumb" data-lay="elegant"><img src="/download/card-preview?job=' + jq + '&amp;session_id=' + sq + '&amp;layout=elegant" onerror="this.onerror=null;this.src=\'/static/card-previews/elegant.png\'" alt="Elegant layout"><span>Elegant</span></button>'
                 '</div>'
                 '<div class="cdlab">Verse (on the back)</div>'
                 '<select id="cdVerse" class="cdsel">'
