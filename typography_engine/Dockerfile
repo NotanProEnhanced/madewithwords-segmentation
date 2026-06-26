@@ -29,6 +29,9 @@ RUN mkdir -p models \
 
 COPY app ./app
 COPY static ./static
+# memorial_card.py is imported by app.main /download/card to build the print-ready
+# prayer-card PDF (reportlab). Top-level module, so it must be copied explicitly.
+COPY memorial_card.py ./memorial_card.py
 # tools/reel_template.py is imported by app.main /reel endpoint to build the
 # shareable 9:16 reel from a paid job.
 COPY tools ./tools

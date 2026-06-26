@@ -1268,7 +1268,7 @@ def download(job: str, session_id: str, fmt: str = "png"):
 
 @app.get("/download/card")
 def download_card(job: str, session_id: str, name: str = "", dates: str = "",
-                  verse: str = "words", layout: str = "classic"):
+                  verse: str = "words", layout: str = "classic", custom_verse: str = ""):
     """Bonus print-ready memorial-card PDF (front/back), free with the digital
     download. Gated by the same Stripe verification as /download; the portrait's
     own words (from the recipe) fill the card back."""
@@ -1298,11 +1298,16 @@ def download_card(job: str, session_id: str, name: str = "", dates: str = "",
     name = (name or "").strip()[:60] or "Beloved"
     dates = (dates or "").strip()[:40]
     layout = layout if layout in ("classic", "bleed", "elegant") else "classic"
-    verse = verse if verse in ("words", "psalm23", "light", "none") else "words"
+    if verse == "custom":
+        verse_arg = (custom_verse or "").strip()[:240]          # their own words (literal)
+    elif verse in ("words", "psalm23", "light", "none"):
+        verse_arg = verse                                       # a preset key
+    else:
+        verse_arg = "words"
     out_pdf = OUTPUTS_DIR / f"{job}_card.pdf"
     try:
         import memorial_card
-        memorial_card.make_card(str(clean), name, dates, words, verse=verse,
+        memorial_card.make_card(str(clean), name, dates, words, verse=verse_arg,
                                 layout=layout, out_pdf=str(out_pdf))
     except Exception:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "card_failed"}, status_code=500)
@@ -2091,26 +2096,53 @@ def success(job: str, session_id: str):
             card_html = (
                 '<div class="divider"></div>'
                 '<h2 class="reel-h">Make a memorial card</h2>'
-                '<p class="sub reel-sub">A print-ready prayer card from their portrait \\u2014 front &amp; back. Free with your download.</p>'
+                '<p class="sub reel-sub">A print-ready prayer card from their portrait &mdash; front &amp; back. Free with your download.</p>'
                 '<div class="cdf">'
                 '<input id="cdName" maxlength="60" placeholder="Full name" autocomplete="off" />'
-                '<input id="cdDates" maxlength="40" placeholder="Dates (e.g. 1942 \\u2013 2026)" autocomplete="off" />'
-                '<select id="cdLayout"><option value="classic">Classic layout</option><option value="bleed">Full-portrait layout</option><option value="elegant">Elegant layout</option></select>'
-                '<select id="cdVerse"><option value="words">Tribute verse</option><option value="psalm23">Psalm 23</option><option value="light">Helen Keller</option><option value="none">No verse</option></select>'
+                '<input id="cdDates" maxlength="40" placeholder="Dates (e.g. 1942 &ndash; 2026)" autocomplete="off" />'
                 '</div>'
+                '<div class="cdlab">Choose a layout</div>'
+                '<div class="cdthumbs" id="cdThumbs">'
+                '<button type="button" class="cdthumb sel" data-lay="classic"><img src="/static/card-previews/classic.png" alt="Classic layout"><span>Classic</span></button>'
+                '<button type="button" class="cdthumb" data-lay="bleed"><img src="/static/card-previews/bleed.png" alt="Full-portrait layout"><span>Full portrait</span></button>'
+                '<button type="button" class="cdthumb" data-lay="elegant"><img src="/static/card-previews/elegant.png" alt="Elegant layout"><span>Elegant</span></button>'
+                '</div>'
+                '<div class="cdlab">Verse (on the back)</div>'
+                '<select id="cdVerse" class="cdsel">'
+                '<option value="words">Tribute &mdash; made from their words</option>'
+                '<option value="psalm23">Psalm 23</option>'
+                '<option value="light">Helen Keller</option>'
+                '<option value="custom">Write your own&hellip;</option>'
+                '<option value="none">No verse</option>'
+                '</select>'
+                '<p class="cdvtext" id="cdVtext"></p>'
+                '<textarea id="cdCustom" class="cdta" maxlength="240" rows="3" placeholder="Write a short verse or memory&hellip;" style="display:none"></textarea>'
                 '<button class="btn" id="cdDl">Download memorial card (PDF)</button>'
                 '<p class="note" id="cdNote" style="display:none;color:#c0392b"></p>'
             )
             card_js = (
+                'var cdLay="classic";'
+                'var VT={words:"Their portrait was made from the words of everyone who loved them \\u2014 so their story stays close, always.",'
+                'psalm23:"The Lord is my shepherd; I shall not want. He maketh me to lie down in green pastures.",'
+                'light:"What we have once enjoyed we can never lose; all that we love deeply becomes a part of us.",custom:"",none:""};'
+                'var thumbs=document.getElementById("cdThumbs");'
+                'if(thumbs){thumbs.querySelectorAll(".cdthumb").forEach(function(b){b.onclick=function(){'
+                'thumbs.querySelectorAll(".cdthumb").forEach(function(x){x.classList.remove("sel");});'
+                'b.classList.add("sel");cdLay=b.getAttribute("data-lay");};});}'
+                'var vsel=document.getElementById("cdVerse"),vtxt=document.getElementById("cdVtext"),cta=document.getElementById("cdCustom");'
+                'function vupd(){var v=vsel.value;if(v==="custom"){cta.style.display="block";vtxt.style.display="none";}'
+                'else{cta.style.display="none";vtxt.textContent=VT[v]||"";vtxt.style.display=VT[v]?"block":"none";}}'
+                'if(vsel){vsel.onchange=vupd;vupd();}'
                 'var cdDl=document.getElementById("cdDl");'
                 'if(cdDl){cdDl.onclick=function(){'
                 'var nm=(document.getElementById("cdName").value||"").trim();'
                 'var dt=(document.getElementById("cdDates").value||"").trim();'
-                'var lay=document.getElementById("cdLayout").value,vs=document.getElementById("cdVerse").value;'
+                'var vs=vsel.value,cv=(cta.value||"").trim();'
                 'var note=document.getElementById("cdNote");note.style.display="none";'
                 'var ot=cdDl.innerHTML;cdDl.disabled=true;cdDl.innerHTML=\'<span class="spin"></span>Making the card\\u2026\';'
                 'var q="/download/card?job="+encodeURIComponent(job)+"&session_id="+encodeURIComponent(sid)'
-                '+"&name="+encodeURIComponent(nm)+"&dates="+encodeURIComponent(dt)+"&layout="+lay+"&verse="+vs;'
+                '+"&name="+encodeURIComponent(nm)+"&dates="+encodeURIComponent(dt)+"&layout="+cdLay+"&verse="+vs'
+                '+"&custom_verse="+encodeURIComponent(cv);'
                 'fetch(q).then(function(r){if(!r.ok)throw 0;return r.blob();}).then(function(b){'
                 'var a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="memorial-card.pdf";'
                 'document.body.appendChild(a);a.click();a.remove();cdDl.disabled=false;cdDl.innerHTML=ot;'
@@ -2217,6 +2249,15 @@ def success(job: str, session_id: str):
         ".note{color:var(--muted);font-size:13px;line-height:1.55;margin:18px 2px 0;text-align:left}"
         ".cdf{display:flex;flex-direction:column;gap:9px;margin:4px 0 2px;text-align:left}"
         ".cdf input,.cdf select{width:100%;border:1px solid var(--line);border-radius:11px;padding:11px 12px;font-size:15px;font-family:inherit;background:#fcfbf9;color:#16203a}"
+        ".cdlab{font-size:13px;font-weight:600;color:var(--navy);text-align:left;margin:14px 2px 7px}"
+        ".cdthumbs{display:flex;gap:8px}"
+        ".cdthumb{flex:1;border:2px solid var(--line);border-radius:12px;background:#fff;padding:6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px}"
+        ".cdthumb img{width:100%;border-radius:6px;display:block}"
+        ".cdthumb span{font-size:11px;color:var(--muted)}"
+        ".cdthumb.sel{border-color:var(--navy)}.cdthumb.sel span{color:var(--navy);font-weight:600}"
+        ".cdsel{width:100%;border:1px solid var(--line);border-radius:11px;padding:11px 12px;font-size:15px;font-family:inherit;background:#fcfbf9;color:#16203a}"
+        ".cdvtext{font-size:13px;line-height:1.5;color:var(--muted);font-style:italic;text-align:left;margin:8px 2px 2px}"
+        ".cdta{width:100%;border:1px solid var(--line);border-radius:11px;padding:11px 12px;font-size:15px;font-family:inherit;background:#fcfbf9;color:#16203a;margin-top:8px;resize:vertical}"
         ".link{display:inline-block;margin-top:18px;color:var(--muted);font-size:14px;text-decoration:none}"
         ".btn:disabled{opacity:.75}"
         ".spin{display:inline-block;width:14px;height:14px;margin-right:8px;border-radius:50%;"
