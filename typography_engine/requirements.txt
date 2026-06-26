@@ -14,3 +14,4 @@ httpx==0.27.2
 # Unpinned so pip resolves a build compatible with the pinned Pillow; the
 # import in app/pipeline/preprocess.py is guarded, so absence is non-fatal.
 pillow-heif
+reportlab>=4.0
