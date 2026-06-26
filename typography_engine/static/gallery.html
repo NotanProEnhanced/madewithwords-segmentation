@@ -60,8 +60,12 @@
   .buy:disabled{opacity:.55;cursor:default}
   .prints{margin-top:16px;border-top:1px solid var(--line);padding-top:14px}
   .prints h3{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:0 0 8px}
-  .prow{display:flex;justify-content:space-between;font-size:13.5px;padding:4px 0;color:var(--ink)}
-  .prow span:last-child{color:var(--navy);font-weight:700}
+  .prow{display:flex;justify-content:space-between;align-items:center;width:100%;font-size:13.5px;
+        padding:9px 11px;margin:5px 0;color:var(--ink);background:#faf8f3;border:1px solid var(--line);
+        border-radius:10px;cursor:pointer;font-family:inherit;text-align:left;transition:.12s}
+  .prow:hover{border-color:var(--navy);background:#fff}
+  .prow:disabled{opacity:.55;cursor:default}
+  .prow b{color:var(--navy);font-weight:700}
   .soon{font-size:12px;color:var(--muted);font-style:italic;margin-top:8px}
   .close{position:absolute;top:18px;right:22px;background:#fff;border:1px solid var(--line);border-radius:999px;
          width:36px;height:36px;font-size:18px;cursor:pointer;color:var(--navy);z-index:2}
@@ -161,13 +165,19 @@ function openItem(it){
   $("#mprice").textContent=money(DIGITAL_CENTS);
   $("#err").textContent="";
   const buy=$("#buy"); buy.disabled=false; buy.textContent="Buy the digital download";
-  // prints (advertised — Phase 2)
+  // prints — buyable when fulfillment is configured
   const pr=$("#prints");
   if(PRODUCTS && PRODUCTS.products){
     const prints=PRODUCTS.products.filter(x=>x.physical && !x.memorial_only && !x.sizes.length);
-    pr.innerHTML=`<h3>Also available as prints</h3>`+
-      prints.map(x=>`<div class="prow"><span>${x.name}</span><span>${money(x.price_cents)}</span></div>`).join("")+
-      `<p class="soon">Prints arrive soon — the digital download is ready now.</p>`;
+    const live = PRODUCTS.fulfillment_configured;
+    pr.innerHTML=`<h3>Order it as a print</h3>`+
+      prints.map(x=>`<button class="prow" data-sku="${x.sku}" ${live?"":"disabled"}>
+        <span>${x.name}<br><span style="color:var(--muted);font-size:11.5px">+ ${money(x.shipping_cents)} shipping</span></span>
+        <b>${money(x.price_cents)}</b></button>`).join("")+
+      (live?"":`<p class="soon">Prints arrive soon — the digital download is ready now.</p>`);
+    pr.querySelectorAll(".prow").forEach(b=>{
+      b.onclick=()=>startCheckout(curItem.id, b.dataset.sku, b);
+    });
   } else { pr.innerHTML=""; }
   $("#scrim").classList.add("on");
 }
@@ -176,22 +186,28 @@ $("#close").onclick=closeModal;
 $("#scrim").onclick=e=>{ if(e.target===$("#scrim")) closeModal(); };
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeModal(); });
 
-$("#buy").onclick=async()=>{
-  if(!curItem) return;
-  const buy=$("#buy"); buy.disabled=true; buy.textContent="Opening secure checkout…"; $("#err").textContent="";
+async function startCheckout(itemId, sku, btn){
+  const label = btn ? btn.innerHTML : "";
+  if(btn){ btn.disabled=true; }
+  const buy=$("#buy"); if(btn!==buy) buy.disabled=true;
+  $("#err").textContent="";
   try{
-    const fd=new FormData(); fd.append("item",curItem.id); fd.append("sku","digital");
+    const fd=new FormData(); fd.append("item",itemId); fd.append("sku",sku);
     const r=await fetch("/gallery/checkout",{method:"POST",body:fd});
     const d=await r.json();
     if(d.ok && d.url){ window.location.href=d.url; return; }
     $("#err").textContent = ({
       payments_unconfigured:"Checkout isn’t set up in this environment yet.",
+      fulfillment_unconfigured:"Prints aren’t available right now — try the digital download.",
+      unsupported_product:"That print option isn’t available for this piece.",
       unknown_item:"This piece isn’t available right now.",
       art_missing:"This piece is coming soon — the artwork is still being finished."
     })[d.error] || "Couldn’t start checkout — please try again.";
   }catch(e){ $("#err").textContent="Couldn’t reach checkout — please try again."; }
+  if(btn){ btn.disabled=false; if(label) btn.innerHTML=label; }
   buy.disabled=false; buy.textContent="Buy the digital download";
-};
+}
+$("#buy").onclick=()=>{ if(curItem){ $("#buy").textContent="Opening secure checkout…"; startCheckout(curItem.id,"digital",$("#buy")); } };
 
 init();
 </script>

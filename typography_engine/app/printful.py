@@ -71,7 +71,8 @@ def _request(method: str, path: str, *, json: Any = None, timeout: float = 30.0)
 # ---------- signed print URLs ------------------------------------------------
 
 def signed_print_url(job: str, ttl_seconds: int = 86_400,
-                     aspect: Optional[float] = None) -> str:
+                     aspect: Optional[float] = None,
+                     path: str = "/printful-fetch") -> str:
     """Return a public URL Printful can fetch the clean PNG from.
 
     The URL embeds an HMAC signature + expiry. Without the secret an attacker
@@ -87,7 +88,7 @@ def signed_print_url(job: str, ttl_seconds: int = 86_400,
     payload = f"{job}:{expires}".encode()
     sig = hmac.new(PRINT_URL_SECRET.encode(), payload, hashlib.sha256).hexdigest()
     base = PUBLIC_BASE_URL.rstrip("/")
-    url = f"{base}/printful-fetch/{job}?exp={expires}&sig={sig}"
+    url = f"{base}/{path.strip('/')}/{job}?exp={expires}&sig={sig}"
     if aspect is not None:
         url += f"&a={aspect:.4f}"
     return url

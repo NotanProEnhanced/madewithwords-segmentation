@@ -1003,39 +1003,132 @@ def gallery_page() -> HTMLResponse:
 def gallery_checkout(item: str = Form(...), sku: str = Form("digital")) -> JSONResponse:
     """Create a Stripe Checkout session for a fixed gallery item. Decoupled from
     the personalized /checkout: a gallery item is pre-rendered art, validated
-    against the catalog, with a master PNG on disk. Phase 1 = digital download."""
+    against the catalog, with a master PNG on disk. Handles the digital download
+    and single-variant prints (posters/canvas/framed); prints are fulfilled by
+    Printful in the webhook via the item's master (no compose step)."""
     if not STRIPE_SECRET_KEY:
         return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
     it = gallery_catalog.get(item)
     if not it:
         return JSONResponse({"ok": False, "error": "unknown_item"}, status_code=404)
-    if gallery_catalog.art_path(item) is None:
-        # Item is in the catalog but its final artwork isn't in place yet.
+    if gallery_catalog.master_path(item) is None:
+        # Item is in the catalog but its artwork isn't in place yet.
         return JSONResponse({"ok": False, "error": "art_missing"}, status_code=409)
-    if sku != "digital":
-        # Prints reuse the same masters via Printful (Phase 2 webhook branch).
-        return JSONResponse({"ok": False, "error": "prints_not_live"}, status_code=409)
+    product = products.get(sku)
+    if not product:
+        return JSONResponse({"ok": False, "error": "unknown_product"}, status_code=400)
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
     title = str(it.get("title") or "Typortrait")[:120]
+
+    # --- Digital download ----------------------------------------------------
+    if not product.physical:
+        try:
+            session = stripe.checkout.Session.create(
+                mode="payment",
+                line_items=[{
+                    "quantity": 1,
+                    "price_data": {
+                        "currency": CURRENCY,
+                        "unit_amount": DOWNLOAD_PRICE_CENTS,
+                        "product_data": {"name": f"Typortrait — {title} (digital download)"},
+                    },
+                }],
+                metadata={"gallery_item": item},
+                success_url=f"{PUBLIC_BASE_URL}/gallery/download?item={item}&session_id={{CHECKOUT_SESSION_ID}}",
+                cancel_url=f"{PUBLIC_BASE_URL}/gallery?canceled=1",
+            )
+        except Exception as e:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
+        return JSONResponse({"ok": True, "url": session.url})
+
+    # --- Physical print ------------------------------------------------------
+    if not PRINTFUL_API_TOKEN:
+        return JSONResponse({"ok": False, "error": "fulfillment_unconfigured"}, status_code=503)
+    # The gallery sells single-variant prints only (posters/canvas/framed). Sized
+    # apparel, memorial-only bundles, etc. are out of scope for the storefront.
+    if product.memorial_only or product.size_variants or product.bundle_items or not product.printful_variant_id:
+        return JSONResponse({"ok": False, "error": "unsupported_product"}, status_code=409)
+    variant_id = product.printful_variant_id
+    eff_price, eff_ship = products.price_for(product, memorial=False)
+    order_id = uuid.uuid4().hex[:16]
+    line_items: List[dict] = [{
+        "quantity": 1,
+        "price_data": {
+            "currency": CURRENCY,
+            "unit_amount": eff_price,
+            "product_data": {"name": f"Typortrait — {title} — {product.name}"},
+        },
+    }]
+    if eff_ship > 0:
+        line_items.append({
+            "quantity": 1,
+            "price_data": {"currency": CURRENCY, "unit_amount": eff_ship,
+                           "product_data": {"name": "Shipping (USA)"}},
+        })
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
-            line_items=[{
-                "quantity": 1,
-                "price_data": {
-                    "currency": CURRENCY,
-                    "unit_amount": DOWNLOAD_PRICE_CENTS,
-                    "product_data": {"name": f"Typortrait — {title} (digital download)"},
-                },
-            }],
-            metadata={"gallery_item": item},
-            success_url=f"{PUBLIC_BASE_URL}/gallery/download?item={item}&session_id={{CHECKOUT_SESSION_ID}}",
+            line_items=line_items,
+            metadata={"gallery_item": item, "sku": sku, "order_id": order_id, "ref": "gallery"},
+            shipping_address_collection={"allowed_countries": ["US"]},
+            phone_number_collection={"enabled": True},
+            success_url=f"{PUBLIC_BASE_URL}/order/{order_id}?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{PUBLIC_BASE_URL}/gallery?canceled=1",
         )
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
-    return JSONResponse({"ok": True, "url": session.url})
+    try:
+        # job_id carries the gallery item with a sentinel prefix so the shared
+        # fulfilment/order machinery can tell gallery orders from personalized ones.
+        orders_db.create_pending(
+            order_id=order_id, stripe_session_id=session.id, job_id=f"gallery:{item}",
+            sku=sku, size=None, variant_id=variant_id, price_cents=eff_price,
+            shipping_cents=eff_ship, currency=CURRENCY, ref="gallery",
+        )
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "order_persist_failed", "detail": str(e)}, status_code=500)
+    return JSONResponse({"ok": True, "url": session.url, "order_id": order_id})
+
+
+def _gallery_print_file(item: str, aspect: float = _PRINT_ASPECT) -> Optional[Path]:
+    """Return a print-ready master for a gallery item, padded to `aspect` (the
+    product's true width/height) with the art's own background so it's never
+    cropped or stretched. Cached per (item, aspect). Mirrors what _ensure_clean_png
+    does for personalized jobs, but the gallery master is fixed art (no compose)."""
+    src = gallery_catalog.master_path(item)
+    if src is None:
+        return None
+    cache_dir = PRIVATE_DIR / "gallery" / "_print"
+    out = cache_dir / f"{item}_{aspect:.4f}.png"
+    if out.exists():
+        return out
+    try:
+        import cv2
+        from .pipeline.tonal import _fit_print_canvas
+        img = cv2.imread(str(src), cv2.IMREAD_COLOR)   # BGR
+        if img is None:
+            return src
+        ground = [int(c) for c in img[0, 0].tolist()]   # corner pixel = the art's ground (BGR)
+        fitted = _fit_print_canvas(img, ground, aspect)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(out), fitted)
+        return out
+    except Exception:  # noqa: BLE001 -- fall back to the unpadded master
+        return src
+
+
+@app.api_route("/gallery/printful-fetch/{item}", methods=["GET", "HEAD"])
+def gallery_printful_fetch(item: str, exp: int, sig: str, a: float = _PRINT_ASPECT):
+    """Signed, time-limited URL Printful fetches a gallery item's print master
+    from. Same HMAC scheme as /printful-fetch; `a` selects the product aspect."""
+    if not printful.verify_signed_url(item, exp, sig):
+        raise HTTPException(status_code=403, detail="invalid_or_expired_signature")
+    aspect = min(2.0, max(0.4, float(a)))
+    path = _gallery_print_file(item, aspect)
+    if path is None:
+        raise HTTPException(status_code=404, detail="unknown_item")
+    return FileResponse(str(path), media_type="image/png")
 
 
 @app.get("/gallery/download")
@@ -1055,7 +1148,7 @@ def gallery_download(item: str, session_id: str):
     meta_item = getattr(meta, "gallery_item", None) if meta is not None else None
     if not paid or meta_item != item:
         return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
-    path = gallery_catalog.art_path(item)
+    path = gallery_catalog.master_path(item)
     if path is None:
         return JSONResponse({"ok": False, "error": "art_missing"}, status_code=404)
     return FileResponse(str(path), media_type="image/png", filename=f"typortrait-{item}.png")
@@ -1508,8 +1601,15 @@ def _fulfill_with_printful(order_id: str, recipient: dict) -> None:
         # pushed the POST past its read timeout. Fulfilment runs off the webhook now,
         # so blocking ~30-45s here is fine.)
         job_id = o["job_id"]
-        _ensure_clean_png(job_id, aspect)
-        signed = printful.signed_print_url(job_id, aspect=aspect)
+        if str(job_id).startswith("gallery:"):
+            # Gallery order: fixed art, no compose. Warm the aspect-padded master and
+            # sign a URL to the gallery fetch route instead of the personalized one.
+            item = str(job_id).split(":", 1)[1]
+            _gallery_print_file(item, aspect)
+            signed = printful.signed_print_url(item, aspect=aspect, path="/gallery/printful-fetch")
+        else:
+            _ensure_clean_png(job_id, aspect)
+            signed = printful.signed_print_url(job_id, aspect=aspect)
         placement = "front" if str(o["sku"]).startswith("tshirt") else "default"
         common = dict(recipient=recipient, print_file_url=signed, external_id=order_id,
                       retail_price_cents=o["price_cents"], confirm=PRINTFUL_CONFIRM,
@@ -1909,7 +2009,14 @@ def order_status(order_id: str, session_id: Optional[str] = None):
 
     product = products.get(o["sku"])
     name = product.name if product else o["sku"]
-    studio_href, studio_label = _make_another(o["job_id"])   # 'make another' keeps the buyer's brand + name
+    # Gallery orders carry a "gallery:<item>" sentinel job_id (fixed art, no recipe),
+    # so the personalized download/reel/'make another' don't apply — swap them out.
+    is_gallery = str(o["job_id"]).startswith("gallery:")
+    gallery_item = str(o["job_id"]).split(":", 1)[1] if is_gallery else ""
+    if is_gallery:
+        studio_href, studio_label = ("/gallery", "Browse the gallery")
+    else:
+        studio_href, studio_label = _make_another(o["job_id"])   # 'make another' keeps the buyer's brand + name
     status_msg = {
         "pending_payment": "Waiting for payment confirmation…",
         "paid": "Payment received. Preparing your order for fulfillment…",
@@ -1928,7 +2035,8 @@ def order_status(order_id: str, session_id: Optional[str] = None):
 
     download_html = ""
     if o["status"] in ("paid", "fulfilling", "shipped", "delivered") and session_id:
-        dl = f'/download?job={o["job_id"]}&fmt=png&session_id={session_id}'
+        dl = (f'/gallery/download?item={gallery_item}&session_id={session_id}' if is_gallery
+              else f'/download?job={o["job_id"]}&fmt=png&session_id={session_id}')
         if o["sku"] == "digital":
             download_html = f'<p><a class="btn" href="{dl}">Download your PNG</a></p>'
         else:
@@ -1947,8 +2055,9 @@ def order_status(order_id: str, session_id: Optional[str] = None):
 
     # Print buyers get the same reel ability + authorizations as digital buyers.
     # /reel verifies this order's paid Stripe session, so the flow is identical.
+    # (Gallery orders are fixed art with no source recipe -> no reel.)
     reel_html = ""
-    if o["status"] in ("paid", "fulfilling", "shipped", "delivered") and session_id:
+    if not is_gallery and o["status"] in ("paid", "fulfilling", "shipped", "delivered") and session_id:
         reel_html = _reel_maker_block(o["job_id"], session_id)
 
     body = f"""<!doctype html>

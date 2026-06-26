@@ -15,10 +15,14 @@ import json
 from pathlib import Path
 from typing import Dict, Optional
 
-from .config import STATIC_DIR
+from .config import PRIVATE_DIR, STATIC_DIR
 
 _CATALOG_PATH = STATIC_DIR / "gallery" / "catalog.json"
 _ART_DIR = STATIC_DIR / "gallery" / "art"
+# Print-resolution masters live OUTSIDE the public /static mount so the high-res,
+# sellable file isn't downloadable for free. Drop <id>.png here to go live; until
+# then master_path() falls back to the public preview (fine for placeholder art).
+_MASTER_DIR = PRIVATE_DIR / "gallery"
 
 
 def _load_items() -> Dict[str, dict]:
@@ -51,3 +55,16 @@ def art_path(item_id: str) -> Optional[Path]:
         return None
     p = _ART_DIR / f"{iid}.png"
     return p if p.exists() else None
+
+
+def master_path(item_id: str) -> Optional[Path]:
+    """Path to an item's PRINT-resolution master PNG (private). Falls back to the
+    public preview when no private master is present yet, so the flow works with
+    placeholder art and upgrades automatically when a real master is dropped in."""
+    iid = (item_id or "").strip()
+    if not iid:
+        return None
+    m = _MASTER_DIR / f"{iid}.png"
+    if m.exists():
+        return m
+    return art_path(iid)
