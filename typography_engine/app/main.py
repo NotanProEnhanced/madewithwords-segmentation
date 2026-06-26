@@ -1266,6 +1266,50 @@ def download(job: str, session_id: str, fmt: str = "png"):
     return FileResponse(str(path), media_type="image/png", filename=f"typortrait-{job}.png")
 
 
+@app.get("/download/card")
+def download_card(job: str, session_id: str, name: str = "", dates: str = "",
+                  verse: str = "words", layout: str = "classic"):
+    """Bonus print-ready memorial-card PDF (front/back), free with the digital
+    download. Gated by the same Stripe verification as /download; the portrait's
+    own words (from the recipe) fill the card back."""
+    if not STRIPE_SECRET_KEY:
+        return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
+    if not _session_paid(session_id, job):
+        return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
+    recipe_path = PRIVATE_DIR / f"{job}.json"
+    if not recipe_path.exists():
+        return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    clean = _ensure_clean_png(job)
+    if clean is None:
+        return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
+    try:
+        words_raw = str(json.loads(recipe_path.read_text(encoding="utf-8")).get("text") or "")
+    except Exception:  # noqa: BLE001
+        words_raw = ""
+    seen, words_list = set(), []
+    for w in re.split(r"[\s,]+", words_raw):
+        w = w.strip()
+        if not w or w.lower() in seen:
+            continue
+        seen.add(w.lower()); words_list.append(w.title())
+        if len(words_list) >= 6:
+            break
+    words = "  -  ".join(words_list) if words_list else "Beloved  -  Always"
+    name = (name or "").strip()[:60] or "Beloved"
+    dates = (dates or "").strip()[:40]
+    layout = layout if layout in ("classic", "bleed", "elegant") else "classic"
+    verse = verse if verse in ("words", "psalm23", "light", "none") else "words"
+    out_pdf = OUTPUTS_DIR / f"{job}_card.pdf"
+    try:
+        import memorial_card
+        memorial_card.make_card(str(clean), name, dates, words, verse=verse,
+                                layout=layout, out_pdf=str(out_pdf))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "card_failed"}, status_code=500)
+    return FileResponse(str(out_pdf), media_type="application/pdf",
+                        filename=f"memorial-card-{job}.pdf")
+
+
 @app.api_route("/printful-fetch/{job}", methods=["GET", "HEAD"])
 def printful_fetch(job: str, exp: int, sig: str, a: float = _PRINT_ASPECT):
     """One-time signed URL Printful fetches the clean PNG from.
@@ -2038,6 +2082,41 @@ def success(job: str, session_id: str):
             ct_html = ('<label class="chk"><input type="checkbox" id="ct"> '
                        '<span>Optional: Allow Typortrait to feature this reel on our own social channels '
                        '(<a href="/terms" target="_blank" rel="noopener">terms</a>). You can revoke any time by emailing us.</span></label>')
+        # Memorial card (brand-aware): a free print-ready prayer-card PDF for the
+        # memorial skins, generated from the portrait's own words (recipe `text`).
+        show_card = _ref in ("lovedinwords", "keeper", "everloved")
+        card_html = ""
+        card_js = ""
+        if show_card:
+            card_html = (
+                '<div class="divider"></div>'
+                '<h2 class="reel-h">Make a memorial card</h2>'
+                '<p class="sub reel-sub">A print-ready prayer card from their portrait \\u2014 front &amp; back. Free with your download.</p>'
+                '<div class="cdf">'
+                '<input id="cdName" maxlength="60" placeholder="Full name" autocomplete="off" />'
+                '<input id="cdDates" maxlength="40" placeholder="Dates (e.g. 1942 \\u2013 2026)" autocomplete="off" />'
+                '<select id="cdLayout"><option value="classic">Classic layout</option><option value="bleed">Full-portrait layout</option><option value="elegant">Elegant layout</option></select>'
+                '<select id="cdVerse"><option value="words">Tribute verse</option><option value="psalm23">Psalm 23</option><option value="light">Helen Keller</option><option value="none">No verse</option></select>'
+                '</div>'
+                '<button class="btn" id="cdDl">Download memorial card (PDF)</button>'
+                '<p class="note" id="cdNote" style="display:none;color:#c0392b"></p>'
+            )
+            card_js = (
+                'var cdDl=document.getElementById("cdDl");'
+                'if(cdDl){cdDl.onclick=function(){'
+                'var nm=(document.getElementById("cdName").value||"").trim();'
+                'var dt=(document.getElementById("cdDates").value||"").trim();'
+                'var lay=document.getElementById("cdLayout").value,vs=document.getElementById("cdVerse").value;'
+                'var note=document.getElementById("cdNote");note.style.display="none";'
+                'var ot=cdDl.innerHTML;cdDl.disabled=true;cdDl.innerHTML=\'<span class="spin"></span>Making the card\\u2026\';'
+                'var q="/download/card?job="+encodeURIComponent(job)+"&session_id="+encodeURIComponent(sid)'
+                '+"&name="+encodeURIComponent(nm)+"&dates="+encodeURIComponent(dt)+"&layout="+lay+"&verse="+vs;'
+                'fetch(q).then(function(r){if(!r.ok)throw 0;return r.blob();}).then(function(b){'
+                'var a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="memorial-card.pdf";'
+                'document.body.appendChild(a);a.click();a.remove();cdDl.disabled=false;cdDl.innerHTML=ot;'
+                '}).catch(function(){cdDl.disabled=false;cdDl.innerHTML=ot;'
+                'note.style.display="block";note.textContent="Couldn\\u2019t make the card \\u2014 please try again.";});};}'
+            )
         # Fetch the high-res file in the background (it's composed on first
         # request and can take a few seconds), showing a spinner, then hand the
         # user a ready, instant download instead of a hung button.
@@ -2062,7 +2141,7 @@ def success(job: str, session_id: str):
             '<a class="btn" id="rlMp4" download="typortrait-reel.mp4" style="display:none">Download MP4</a>'
             '<a class="btn ghost" id="rlGif" download="typortrait-reel.gif">Download GIF</a>'
             '<button class="btn ghost" id="rlSh" style="display:none">' + share_label + '</button>'
-            '</div>'
+            '</div>' + card_html +
             '<script>(function(){var url=' + _json.dumps(png_url) + ';'
             'var job=' + _json.dumps(job) + ',sid=' + _json.dumps(session_id) + ',o=location.origin;'
             'var shareUrl=o+"/p/"+job,prevUrl=o+"/outputs/"+job+"_preview.png";'
@@ -2109,6 +2188,7 @@ def success(job: str, session_id: str):
             'throw 0;}).catch(function(){if(navigator.clipboard){navigator.clipboard.writeText(shareUrl);rlSh.textContent="Link copied";}});};}'
             '}).catch(function(){mk.disabled=false;mk.innerHTML="Make my reel";'
             'rlSub.textContent="Network error \\u2014 please try again.";rlOut.style.display="block";});};'
+            + card_js +
             '})();</script>'
         )
     else:
@@ -2135,6 +2215,8 @@ def success(job: str, session_id: str):
         "padding:14px 28px;margin:10px auto;text-decoration:none;border:none;cursor:pointer}"
         ".btn.ghost{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}"
         ".note{color:var(--muted);font-size:13px;line-height:1.55;margin:18px 2px 0;text-align:left}"
+        ".cdf{display:flex;flex-direction:column;gap:9px;margin:4px 0 2px;text-align:left}"
+        ".cdf input,.cdf select{width:100%;border:1px solid var(--line);border-radius:11px;padding:11px 12px;font-size:15px;font-family:inherit;background:#fcfbf9;color:#16203a}"
         ".link{display:inline-block;margin-top:18px;color:var(--muted);font-size:14px;text-decoration:none}"
         ".btn:disabled{opacity:.75}"
         ".spin{display:inline-block;width:14px;height:14px;margin-right:8px;border-radius:50%;"
