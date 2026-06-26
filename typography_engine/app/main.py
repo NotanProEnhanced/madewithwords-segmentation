@@ -2157,7 +2157,9 @@ def success(job: str, session_id: str):
                 '</select>'
                 '<p class="cdvtext" id="cdVtext"></p>'
                 '<textarea id="cdCustom" class="cdta" maxlength="240" rows="3" placeholder="Write a short verse or memory&hellip;" style="display:none"></textarea>'
+                '<div class="cdhint" id="cdHint" style="display:none">Keep it short &mdash; a line or two reads best (up to 240 characters).</div>'
                 '<button class="btn" id="cdDl">Download memorial card (PDF)</button>'
+                '<a class="cdlink" href="/static/how-to-print.pdf" target="_blank" rel="noopener">How to print your card &mdash; a quick guide (PDF)</a>'
                 '<p class="note" id="cdNote" style="display:none;color:#c0392b"></p>'
             )
             card_js = (
@@ -2170,8 +2172,9 @@ def success(job: str, session_id: str):
                 'thumbs.querySelectorAll(".cdthumb").forEach(function(x){x.classList.remove("sel");});'
                 'b.classList.add("sel");cdLay=b.getAttribute("data-lay");};});}'
                 'var vsel=document.getElementById("cdVerse"),vtxt=document.getElementById("cdVtext"),cta=document.getElementById("cdCustom");'
-                'function vupd(){var v=vsel.value;if(v==="custom"){cta.style.display="block";vtxt.style.display="none";}'
-                'else{cta.style.display="none";vtxt.textContent=VT[v]||"";vtxt.style.display=VT[v]?"block":"none";}}'
+                'var hint=document.getElementById("cdHint");'
+                'function vupd(){var v=vsel.value;if(v==="custom"){cta.style.display="block";if(hint)hint.style.display="block";vtxt.style.display="none";}'
+                'else{cta.style.display="none";if(hint)hint.style.display="none";vtxt.textContent=VT[v]||"";vtxt.style.display=VT[v]?"block":"none";}}'
                 'if(vsel){vsel.onchange=vupd;vupd();}'
                 'var cdDl=document.getElementById("cdDl");'
                 'if(cdDl){cdDl.onclick=function(){'
@@ -2298,6 +2301,8 @@ def success(job: str, session_id: str):
         ".cdsel{width:100%;border:1px solid var(--line);border-radius:11px;padding:11px 12px;font-size:15px;font-family:inherit;background:#fcfbf9;color:#16203a}"
         ".cdvtext{font-size:13px;line-height:1.5;color:var(--muted);font-style:italic;text-align:left;margin:8px 2px 2px}"
         ".cdta{width:100%;border:1px solid var(--line);border-radius:11px;padding:11px 12px;font-size:15px;font-family:inherit;background:#fcfbf9;color:#16203a;margin-top:8px;resize:vertical}"
+        ".cdhint{font-size:12px;color:var(--muted);text-align:left;margin:7px 2px 0}"
+        ".cdlink{display:inline-block;margin-top:11px;color:var(--navy);font-size:13px;text-decoration:underline}"
         ".link{display:inline-block;margin-top:18px;color:var(--muted);font-size:14px;text-decoration:none}"
         ".btn:disabled{opacity:.75}"
         ".spin{display:inline-block;width:14px;height:14px;margin-right:8px;border-radius:50%;"
