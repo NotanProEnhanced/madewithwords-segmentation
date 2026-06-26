@@ -1285,7 +1285,10 @@ function buildSwatches(){
   });
   // "Custom colour" chip (curated swatches stay; this is additive). The layered
   // Words/Message renderer honours a picked colour; Sculpt doesn't, so hide it there.
-  if(state.style!=="displacement"){
+  // Also hidden on the memorial skins: a free colour picker invites a clashing/
+  // illegible result and adds decision burden for grieving families -- the curated
+  // palette is the tasteful, finite set. (Stays on the generic gift brand.)
+  if(state.style!=="displacement" && !_isMemorialBrand){
     const cel=document.createElement("button"); cel.type="button";
     cel.className="thumb"+(state.ink==="custom"?" sel":""); cel.dataset.ink="custom";
     const cpic=document.createElement("div"); cpic.className="pic"; cpic.dataset.ink="custom";
