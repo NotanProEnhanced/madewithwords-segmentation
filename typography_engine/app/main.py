@@ -1539,6 +1539,17 @@ def _notify_sale(sess: dict, order: Optional[dict]) -> None:
     threading.Thread(target=_bg, daemon=True).start()
 
 
+def _fav_links(brand: str = "typortrait") -> str:
+    """Favicon <link> tags for a server-rendered page. `brand` maps to the studio
+    favicon set at /static/favicons/{brand}/; an unknown brand -> generic typortrait."""
+    b = brand if brand in ("typortrait", "lovedinwords", "keeper", "everloved") else "typortrait"
+    p = f"/static/favicons/{b}"
+    return (f"<link rel='icon' type='image/svg+xml' href='{p}/favicon.svg'>"
+            f"<link rel='icon' type='image/png' sizes='32x32' href='{p}/favicon-32.png'>"
+            f"<link rel='apple-touch-icon' href='{p}/apple-touch-icon.png'>"
+            f"<link rel='icon' href='{p}/favicon.ico' sizes='any'>")
+
+
 def _make_another(job: str) -> tuple:
     """(href, label) for the post-purchase 'make another' link, preserving the
     buyer's brand: Loved in Words -> branded studio + 'Make another Tribute
@@ -1870,6 +1881,10 @@ def order_status(order_id: str, session_id: Optional[str] = None):
     body = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/static/favicons/typortrait/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/typortrait/favicon-32.png">
+<link rel="apple-touch-icon" href="/static/favicons/typortrait/apple-touch-icon.png">
+<link rel="icon" href="/static/favicons/typortrait/favicon.ico" sizes="any">
 <title>Typortrait — Order {order_id}</title>
 <link rel="stylesheet" href="/static/inter.css">
 <style>
@@ -2087,6 +2102,7 @@ def success(job: str, session_id: str):
     import html, json as _json
     from urllib.parse import quote
     paid = _session_paid(session_id, job) and (PRIVATE_DIR / f"{job}.json").exists()
+    fav_brand = "typortrait"   # favicon brand; set to the job's brand below (memorial skins)
     jq, sq = quote(job, safe=""), quote(session_id, safe="")
     png_url = f"/download?job={jq}&fmt=png&session_id={sq}"
     studio_href, studio_label = _make_another(job)   # 'make another' keeps the buyer's brand + name
@@ -2105,6 +2121,7 @@ def success(job: str, session_id: str):
         except Exception:  # noqa: BLE001
             _ref = ""
         is_memorial = _ref == "lovedinwords"
+        fav_brand = _ref or "typortrait"
         if is_memorial:
             reel_noun = "tribute video"
             reel_title = "Create a tribute video"
@@ -2276,7 +2293,7 @@ def success(job: str, session_id: str):
         )
     page = (
         "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
-        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>" + _fav_links(fav_brand) +
         "<title>Typortrait — your download</title><link rel='stylesheet' href='/static/inter.css'><style>"
         ":root{--navy:#0d1b3a;--muted:#6b7280;--line:#ece9e3}"
         "*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;"
@@ -2333,7 +2350,7 @@ def share_page(job: str):
     desc = "A portrait made entirely of words. Create your own at Typortrait.com."
     page = (
         "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
-        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>" + _fav_links() +
         f"<title>{html.escape(title)}</title>"
         f"<meta property='og:type' content='website'>"
         f"<meta property='og:title' content=\"{html.escape(title)}\">"
@@ -2386,7 +2403,7 @@ def _resume_expired_page() -> str:
     by the retention sweep (~RETENTION_DAYS) or the job never existed."""
     return (
         "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
-        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>" + _fav_links() +
         "<title>Portrait expired — Typortrait</title><link rel='stylesheet' href='/static/inter.css'><style>"
         "*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;"
         "justify-content:center;background:#faf9f7;color:#16203a;font-family:Inter,-apple-system,BlinkMacSystemFont,"
@@ -2408,6 +2425,10 @@ def _resume_expired_page() -> str:
 
 _RESUME_TPL = """<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
+<link rel='icon' type='image/svg+xml' href='/static/favicons/typortrait/favicon.svg'>
+<link rel='icon' type='image/png' sizes='32x32' href='/static/favicons/typortrait/favicon-32.png'>
+<link rel='apple-touch-icon' href='/static/favicons/typortrait/apple-touch-icon.png'>
+<link rel='icon' href='/static/favicons/typortrait/favicon.ico' sizes='any'>
 <title>Your saved portrait — Typortrait</title>
 <meta name='robots' content='noindex'>
 <link rel="stylesheet" href="/static/inter.css">
@@ -2544,7 +2565,7 @@ def _policy_page(title: str, blocks) -> HTMLResponse:
     body = "".join((f"<h2>{h}</h2>{p}" if h else p) for h, p in blocks)
     page = (
         "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
-        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>" + _fav_links() +
         f"<title>{title} — Typortrait</title><link rel='stylesheet' href='/static/inter.css'><style>"
         "body{margin:0;background:#faf9f7;color:#16203a;font-family:Inter,-apple-system,BlinkMacSystemFont,"
         "'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.6}"
