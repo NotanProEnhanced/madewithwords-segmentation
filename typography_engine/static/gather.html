@@ -22,7 +22,18 @@
   .sub{color:var(--muted);text-align:center;font-size:14.5px;margin:0 auto 20px;max-width:34ch}
   .portrait-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
      padding:12px;margin-bottom:8px;position:relative;overflow:hidden}
-  .portrait-card img{display:block;width:100%;border-radius:10px;background:#f3efe8}
+  .portrait-card img{display:block;width:100%;border-radius:10px;background:#f3efe8;opacity:0;transition:opacity .6s ease}
+  .portrait-card img.shown{opacity:1}
+  /* Calm loading placeholder while the portrait composes/loads (the render can take a
+     few seconds) -- a soft shimmer + pulsing heart, never a broken-image icon. */
+  .ph{aspect-ratio:4/5;width:100%;border-radius:10px;display:flex;flex-direction:column;
+     align-items:center;justify-content:center;gap:12px;text-align:center;padding:16px;
+     background:linear-gradient(110deg,#f1ece3 25%,#f8f4ed 50%,#f1ece3 75%);
+     background-size:220% 100%;animation:shimmer 1.9s ease-in-out infinite}
+  .ph-heart{font-size:30px;line-height:1;animation:pulse 1.7s ease-in-out infinite}
+  .ph-txt{color:var(--muted);font-size:13.5px;max-width:26ch}
+  @keyframes shimmer{from{background-position:220% 0}to{background-position:-220% 0}}
+  @keyframes pulse{0%,100%{transform:scale(1);opacity:.75}50%{transform:scale(1.12);opacity:1}}
   /* A contributor's word flies onto the portrait the instant they add it — instant
      feedback while the real re-render catches up in the background. */
   .flyer{position:absolute;pointer-events:none;white-space:nowrap;z-index:5;opacity:0;
@@ -75,7 +86,10 @@
   <h1 id="h1">Add a word</h1>
   <p class="sub" id="sub">Their portrait is being woven from the words the people who love them choose.</p>
 
-  <div class="portrait-card"><img id="portrait" alt="the portrait, in everyone's words" /></div>
+  <div class="portrait-card">
+    <div class="ph" id="ph"><div class="ph-heart">🤍</div><div class="ph-txt">Composing the portrait…</div></div>
+    <img id="portrait" alt="the portrait, in everyone's words" />
+  </div>
   <div class="countline" id="count"></div>
 
   <div class="wall-h" id="wallH" style="display:none">Everyone's words</div>
@@ -124,7 +138,18 @@ async function load(){
 }
 function render(s){
   $("#h1").textContent = s.status==="revealed" ? `${s.title}, in their words` : `Add a word for ${s.title}`;
-  if(s.has_portrait){ $("#portrait").src = s.portrait_url; }
+  const _img=$("#portrait"), _ph=$("#ph");
+  if(s.has_portrait && s.portrait_url){
+    if(_img._url !== s.portrait_url){            // preload, then swap in -> never a broken/empty img
+      _img._url = s.portrait_url;
+      const probe = new Image();
+      probe.onload = ()=>{ _img.src = s.portrait_url; _img.classList.add("shown"); if(_ph) _ph.style.display="none"; };
+      probe.onerror = ()=>{ _img._url = null; };  // not ready yet -> keep placeholder, retry next poll
+      probe.src = s.portrait_url;
+    }
+  } else if(_ph && !_img.classList.contains("shown")){
+    _ph.style.display="";                          // still composing -> keep the calm placeholder
+  }
   const upd = s.pending ? ` · <span style="color:var(--rose)">composing…</span>` : "";
   $("#count").innerHTML = s.count ? `Woven from <b>${s.count}</b> ${s.count===1?"word":"words"}${s.contributors?` · <b>${s.contributors}</b> ${s.contributors===1?"person":"people"}`:""}${upd}` : "Be the first to add a word.";
   // The word wall — every contribution, newest first; the one you just added glows.
