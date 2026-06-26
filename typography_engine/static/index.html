@@ -1163,7 +1163,7 @@ function syncBioLock(){
   if(window.__regionBlocked) return;            // region block owns the drop zone
   var ok=bioOK();
   if(drop) drop.classList.toggle("locked", !ok);
-  if(_dropSmall) _dropSmall.textContent = ok ? _dropSmallDefault : "First, tick the consent box below — then add your photo.";
+  if(_dropSmall) _dropSmall.textContent = ok ? _dropSmallDefault : "First, tick the consent box above — then add your photo.";
 }
 (function(){ var b=document.getElementById("bioConsent"); if(b) b.addEventListener("change", syncBioLock); syncBioLock(); })();
 // Toggle the collapsible full biometric notice (the summary + checkbox stay visible).
