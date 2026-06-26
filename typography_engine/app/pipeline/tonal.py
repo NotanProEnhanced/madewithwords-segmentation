@@ -1854,7 +1854,19 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
             ep = _faces_of(an)[0].points * fsc0
             eye_bgr, eye_a = _photo_eye_overlay(bgr_eye, ep, (_EYE_L, _EYE_R), H, W)
-            a3 = (eye_a * 0.94)[..., None]
+            # THE Mosaic/Passage glow: the eye region of `photo` is brightened (sclera pop),
+            # so the WORDS there are bright. The word mask renders fuller on cairosvg than on
+            # the local resvg fallback, so on prod those bright eye-words bleed through the
+            # overlay (alpha 0.94 + feathered rim) and bloom -- invisible locally. Fix: darken
+            # the eye-region base toward the ground under a dilated eye mask, THEN lay the real
+            # eye at FULL alpha. The eye now reads only from the photographic overlay on a dark
+            # socket -- Lifelike-clean and rasterizer-independent.
+            _ir = float(np.mean([r for _, _, r in iris_c])) if iris_c else max(2.0, eyes_e[0][2] * 0.5)
+            _kr = max(1, int(round(_ir * 0.55)))
+            _base = cv2.dilate(eye_a, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (_kr * 2 + 1, _kr * 2 + 1)))
+            _base = cv2.GaussianBlur(_base, (0, 0), sigmaX=max(1.0, _ir * 0.30))[..., None]
+            out = (out.astype(np.float32) * (1.0 - 0.90 * _base) + ground * (0.90 * _base)).clip(0, 255).astype(np.uint8)
+            a3 = eye_a[..., None]   # FULL alpha -- no bright-word bleed through the eyeball
             out = (out.astype(np.float32) * (1.0 - a3) + eye_bgr * a3).clip(0, 255).astype(np.uint8)
             if ink != "photo":
                 of = out.astype(np.float32)
