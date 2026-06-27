@@ -29,8 +29,13 @@ Everything runs on the device — the photo is never uploaded anywhere.
   gets light scribbles and the face reads fuller.
 - **Remove background (subject only)** — on‑device subject segmentation isolates
   the person so ink stays on them and the background drops to clean paper. Uses
-  a u2net‑class model that runs in‑browser (WebAssembly) and caches itself after
-  first load; if it can't load, a lightweight border flood‑fill takes over.
+  **MediaPipe Selfie Segmentation** (runs in‑browser via WebAssembly, loaded
+  from CDN and cached after first use); if it can't load, a colour‑keyed border
+  flood‑fill takes over.
+- **Trace facial features (likeness)** — **MediaPipe Face Landmarker** detects
+  the eyes, brows, nose, lips, and jawline and draws them as guaranteed lines so
+  the portrait actually resembles the subject (especially in single‑line mode).
+  Skips gracefully when no face is detected.
 - **Live controls**: density, contrast, scribble size, flow (chaotic ↔ contour),
   line weight, ink opacity, plus ink/paper colours.
 - **Save PNG** of the finished artwork (high‑res).
@@ -52,15 +57,17 @@ Everything runs on the device — the photo is never uploaded anywhere.
 Strokes are drawn in batches via `requestAnimationFrame`, which is what makes the
 drawing animate smoothly in realtime.
 
-When **Remove background** is on, a u2net‑class segmentation model produces a
+When **Remove background** is on, MediaPipe Selfie Segmentation produces a
 subject matte first; the residual ink field is zeroed outside the subject so no
-strokes land on the background.
+strokes land on the background. When **Trace facial features** is on, MediaPipe
+Face Landmarker contributes feature lines that are drawn last (scribble mode) or
+woven into the path (single‑line mode).
 
 All logic lives in [`app.js`](app.js); no build step. The only external
-dependency is the optional background‑removal model, loaded lazily from a CDN on
-first use and cached by the browser thereafter — so the very first background
-removal needs a network connection, but everything else (and all later runs)
-works offline.
+dependencies are the optional MediaPipe models, loaded lazily from a CDN on
+first use and cached by the browser thereafter — so the first analysis needs a
+network connection, but the rest of the app (and later runs) works offline, and
+if the models can't load the app falls back to flood‑fill with no face traces.
 
 `_render_photo.py` is a dev‑only harness that mirrors the engine for eyeballing
 output without a browser; it is not part of the shipped app.

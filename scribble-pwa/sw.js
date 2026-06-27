@@ -1,7 +1,7 @@
 /* Scribbler service worker — offline app shell.
  * Cache-first for the (tiny, static) shell so the app launches with no network.
  */
-const CACHE = 'scribbler-v1';
+const CACHE = 'scribbler-v2';
 const SHELL = [
   '.',
   'index.html',
