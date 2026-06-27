@@ -152,6 +152,12 @@ ORDERS_DB = DATA_DIR / "orders.db"
 # merging this branch can never affect the existing studio/checkout paths.
 GATHER_ENABLED = (os.environ.get("TYPO_GATHER_ENABLED", "").strip().lower()
                   in ("1", "true", "yes", "on"))
+# Gallery storefront (pre-made typortraits: Bible Collection, Holidays). Default OFF
+# so the /gallery routes + the studio "Browse the Gallery" link stay inert in prod
+# until the collection has real artwork. Set TYPO_GALLERY_ENABLED=1 (e.g. on staging)
+# to expose it. The studio link reveal probes /gallery, so it tracks this flag.
+GALLERY_ENABLED = (os.environ.get("TYPO_GALLERY_ENABLED", "").strip().lower()
+                   in ("1", "true", "yes", "on"))
 GATHER_DIR = DATA_DIR / "gather"
 GATHER_DB = GATHER_DIR / "gather.db"
 # Throttle live re-renders so a busy gather can't hammer the single render slot:

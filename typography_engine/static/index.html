@@ -815,8 +815,12 @@ const BRAND=BRANDS[BRAND_ID]||null;
 // Any brand flagged memorial gets the full grief-keepsake experience (see BRANDS).
 const _isMemorialBrand=!!(BRAND && BRAND.memorial);
 // The gallery (Bible Collection, Holidays) is the generic Typortrait storefront —
-// not the memorial skins. Reveal the header link only on the unbranded studio.
-if(!_isMemorialBrand){ const _gl=document.getElementById("galleryLink"); if(_gl) _gl.style.display="inline-block"; }
+// not the memorial skins. Reveal the header link only on the unbranded studio AND
+// only when the gallery is actually live (probe /gallery; it 404s when the
+// TYPO_GALLERY_ENABLED flag is off, so the link tracks the flag automatically).
+if(!_isMemorialBrand){
+  fetch("/gallery",{method:"HEAD"}).then(r=>{ if(r.ok){ const _gl=document.getElementById("galleryLink"); if(_gl) _gl.style.display="inline-block"; } }).catch(()=>{});
+}
 if(BRAND){
   try{
     document.title=BRAND.title||BRAND.name;

@@ -30,6 +30,7 @@ from .config import (
     CONSENT_RETENTION_DAYS,
     CURRENCY,
     ENABLE_DEBUG_ENDPOINTS,
+    GALLERY_ENABLED,
     RENDER_CONCURRENCY,
     DATA_DIR,
     DOWNLOAD_PNG_WIDTH,
@@ -989,10 +990,12 @@ def pricing() -> JSONResponse:
     })
 
 
-@app.get("/gallery", response_class=HTMLResponse)
+@app.api_route("/gallery", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def gallery_page() -> HTMLResponse:
     """The storefront gallery of pre-made typortraits (Bible Collection, Holidays,
     etc.). Static page; the catalog + art live under /static/gallery/."""
+    if not GALLERY_ENABLED:
+        raise HTTPException(status_code=404, detail="not found")
     page = STATIC_DIR / "gallery.html"
     if not page.exists():
         raise HTTPException(status_code=404, detail="gallery not found")
@@ -1006,6 +1009,8 @@ def gallery_checkout(item: str = Form(...), sku: str = Form("digital")) -> JSONR
     against the catalog, with a master PNG on disk. Handles the digital download
     and single-variant prints (posters/canvas/framed); prints are fulfilled by
     Printful in the webhook via the item's master (no compose step)."""
+    if not GALLERY_ENABLED:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
     if not STRIPE_SECRET_KEY:
         return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
     it = gallery_catalog.get(item)
@@ -1122,6 +1127,8 @@ def _gallery_print_file(item: str, aspect: float = _PRINT_ASPECT) -> Optional[Pa
 def gallery_printful_fetch(item: str, exp: int, sig: str, a: float = _PRINT_ASPECT):
     """Signed, time-limited URL Printful fetches a gallery item's print master
     from. Same HMAC scheme as /printful-fetch; `a` selects the product aspect."""
+    if not GALLERY_ENABLED:
+        raise HTTPException(status_code=404, detail="not found")
     if not printful.verify_signed_url(item, exp, sig):
         raise HTTPException(status_code=403, detail="invalid_or_expired_signature")
     aspect = min(2.0, max(0.4, float(a)))
@@ -1135,6 +1142,8 @@ def gallery_printful_fetch(item: str, exp: int, sig: str, a: float = _PRINT_ASPE
 def gallery_download(item: str, session_id: str):
     """Serve a gallery item's master PNG only after verifying its paid Stripe
     session. Mirrors /download but reads the fixed master (no compose step)."""
+    if not GALLERY_ENABLED:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
     if not STRIPE_SECRET_KEY:
         return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
     import stripe
