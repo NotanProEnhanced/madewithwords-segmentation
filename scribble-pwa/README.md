@@ -9,7 +9,10 @@ Everything runs on the device — the photo is never uploaded anywhere.
 ## Features
 
 - **Upload by drag‑and‑drop, file picker, or paste** (Ctrl/⌘+V).
-- **Realtime animated sketching** — watch the strokes accumulate frame by frame.
+- **Live pen drawing** — watch it draw as if by hand: each stroke is revealed
+  progressively with a moving pen‑tip cursor, with a **Drawing speed** control
+  and a **Show the pen** toggle. (Turn off *Animate the drawing* to render
+  instantly.)
 - **Hand‑scribbled strokes** — long, sweeping curves flow along the photo's
   tonal contours (hair, jawline, cheekbones) with a persistent "curl", a light
   second pen‑retrace over darks, and occasional stray overshoot lines, so the

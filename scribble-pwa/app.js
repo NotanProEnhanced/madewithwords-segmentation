@@ -14,8 +14,11 @@
   // ---- DOM ----
   const $ = (id) => document.getElementById(id);
   const stage = $('stage');
+  const canvasWrap = $('canvasWrap');
   const canvas = $('canvas');
   const ctx = canvas.getContext('2d');
+  const penCanvas = $('pen');
+  const penCtx = penCanvas.getContext('2d');
   const dropzone = $('dropzone');
   const fileInput = $('fileInput');
   const statusEl = $('status');
@@ -30,10 +33,12 @@
     weight: $('weight'),
     opacity: $('opacity'),
     fill: $('fill'),
+    speed: $('speed'),
     ink: $('inkColor'),
     paper: $('paperColor'),
     removeBg: $('removeBg'),
     animate: $('animateChk'),
+    showPen: $('showPen'),
   };
   const labels = {
     density: $('densityVal'),
@@ -43,6 +48,7 @@
     weight: $('weightVal'),
     opacity: $('opacityVal'),
     fill: $('fillVal'),
+    speed: $('speedVal'),
   };
   const buttons = {
     pick: $('pickBtn'),
@@ -65,6 +71,10 @@
   let rafId = 0;
   let paused = false;
   let running = false;
+  let penStroke = null;        // stroke currently being revealed by the pen
+  let head = { x: 0, y: 0 };   // pen-tip position in tone-map coords
+  const MAX_STROKES = 75000;
+  const params = {};           // engine settings captured at sketch start
   let lastFile = null;         // most recent upload, for re-matting on toggle
   let matteImg = null;         // ML subject cutout (transparent bg), or null
   let activePreset = null;     // currently selected style preset, if any
@@ -102,7 +112,7 @@
     }
     URL.revokeObjectURL(url);
 
-    canvas.hidden = false;
+    canvasWrap.hidden = false;
     dropzone.style.display = 'none';
     await prepareMatte();        // compute the ML cutout if "Remove background" is on
     buildToneMap();
@@ -186,6 +196,8 @@
     renderScale = clamp(outMax / Math.max(mapW, mapH), 1.4, 3);
     canvas.width = Math.round(mapW * renderScale);
     canvas.height = Math.round(mapH * renderScale);
+    penCanvas.width = canvas.width;
+    penCanvas.height = canvas.height;
 
     function t(x, y) {
       x = x < 0 ? 0 : x >= mapW ? mapW - 1 : x;
@@ -278,9 +290,17 @@
     seed(0x9e3779b9);                    // fixed seed -> reproducible sketch
     buildResidual();
     strokeCount = 0;
+    penStroke = null;
     paused = false;
     running = true;
     buttons.pause.textContent = 'Pause';
+
+    // Capture engine settings for this sketch.
+    params.opacity = parseFloat(controls.opacity.value);
+    params.weight = parseFloat(controls.weight.value);
+    params.flow = parseFloat(controls.flow.value);
+    params.baseLen = parseInt(controls.length.value, 10);
+    params.target = parseFloat(controls.density.value);
 
     // Paper.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -289,67 +309,103 @@
     ctx.scale(renderScale, renderScale);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    ctx.lineWidth = params.weight;
     ctx.strokeStyle = controls.ink.value;
+    clearPen();
 
-    canvas.hidden = false;
+    canvasWrap.hidden = false;
     dropzone.style.display = 'none';
     showStatus(true);
 
     if (controls.animate.checked) {
-      rafId = requestAnimationFrame(tick);
+      rafId = requestAnimationFrame(tick);   // progressive pen reveal
     } else {
-      // Draw it all in one shot.
-      while (running && !stepBatch(4000)) { /* spin */ }
-      finishSketch();
+      drawInstant();                          // all at once
     }
   }
 
+  // Slider 1..10 -> tone-map points drawn per animation frame.
+  function penSpeed() {
+    const v = parseInt(controls.speed.value, 10);
+    return Math.max(2, Math.round(v * v * 4));
+  }
+
+  function coverage() {
+    return 1 - sumResidual() / Math.max(1e-6, initialInk);
+  }
+
+  // Animated frame: reveal the current stroke point-by-point with the pen tip,
+  // pulling the next stroke when one finishes — so it looks hand-drawn.
   function tick() {
     if (paused) return;
-    const done = stepBatch(550);         // strokes per frame
-    const coverage = 1 - sumResidual() / Math.max(1e-6, initialInk);
-    setProgress(coverage / coverageTarget());
-    if (done) { finishSketch(); return; }
+    let budget = penSpeed();
+
+    while (budget > 0) {
+      if (!penStroke) {
+        if (coverage() >= params.target) { finishSketch(); return; }
+        penStroke = nextStroke();
+        if (!penStroke) { finishSketch(); return; }
+        penStroke.i = 0;
+      }
+      const s = penStroke;
+      ctx.globalAlpha = s.alpha;
+      // Draw revealed segments as a flowing curve up to the new head.
+      while (s.i < s.pts.length - 1 && budget > 0) {
+        const a = s.pts[s.i], b = s.pts[s.i + 1];
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        head.x = b.x; head.y = b.y;
+        s.i++; budget--;
+      }
+      if (s.i >= s.pts.length - 1) {
+        // Finalize: hand-redraw pass thickens darks like a real pen.
+        if (s.redrawPts) { ctx.globalAlpha = s.alpha * 0.8; strokePath(s.redrawPts); }
+        penStroke = null;
+      }
+    }
+
+    drawPen();
+    setProgress(coverage() / params.target);
     rafId = requestAnimationFrame(tick);
   }
 
-  function coverageTarget() {
-    // Density slider -> how much of the ink demand we satisfy before stopping.
-    return parseFloat(controls.density.value);
-  }
-
-  // Draw a batch of strokes. Returns true when the sketch is complete.
-  function stepBatch(budget) {
-    const target = coverageTarget();
-    const maxStrokes = 75000;
-    const opacity = parseFloat(controls.opacity.value);
-    const weight = parseFloat(controls.weight.value);
-    const flow = parseFloat(controls.flow.value);
-    const baseLen = parseInt(controls.length.value, 10);
-
-    ctx.lineWidth = weight;
-
-    for (let n = 0; n < budget; n++) {
-      if (strokeCount >= maxStrokes) return true;
-
-      // Periodic stop check (cheap-ish; sampled to avoid summing every stroke).
-      if ((strokeCount & 1023) === 0) {
-        const cov = 1 - sumResidual() / Math.max(1e-6, initialInk);
-        if (cov >= target) return true;
-      }
-
-      if (!drawStroke(opacity, flow, baseLen)) {
-        // Couldn't find a worthy dark spot; sketch is effectively done.
-        const cov = 1 - sumResidual() / Math.max(1e-6, initialInk);
-        if (cov >= target * 0.96) return true;
-      }
-      strokeCount++;
+  // Non-animated: paint everything synchronously.
+  function drawInstant() {
+    while (strokeCount < MAX_STROKES) {
+      if ((strokeCount & 1023) === 0 && coverage() >= params.target) break;
+      const s = nextStroke();
+      if (!s) break;
+      paintStroke(s);
     }
-    return false;
+    finishSketch();
   }
 
-  // Lay a single scribble stroke. Returns false if no dark region was found.
-  function drawStroke(opacity, flow, baseLen) {
+  // Pull the next drawable stroke (skips empty attempts). Null when done.
+  function nextStroke() {
+    for (let a = 0; a < 120; a++) {
+      if (strokeCount >= MAX_STROKES) return null;
+      const s = buildStroke();
+      strokeCount++;
+      if (s) return s;
+      // A run of misses means the dark regions are spent.
+      if (a > 40 && coverage() >= params.target * 0.96) return null;
+    }
+    return null;
+  }
+
+  // Paint a fully-built stroke at once (instant mode / preset preview).
+  function paintStroke(s) {
+    ctx.globalAlpha = s.alpha;
+    strokePath(s.pts);
+    if (s.redrawPts) { ctx.globalAlpha = s.alpha * 0.8; strokePath(s.redrawPts); }
+  }
+
+  // Build one scribble stroke (pick a dark start, walk a curling path along the
+  // contours, deposit ink). Returns {pts, alpha, redrawPts} or null.
+  function buildStroke() {
+    const { opacity, flow, baseLen } = params;
     // 1) Pick a starting cell, biased toward remaining darkness (rejection).
     let sx = -1, sy = -1, best = 0;
     for (let a = 0; a < 22; a++) {
@@ -359,11 +415,9 @@
       if (r > best) { best = r; sx = cx; sy = cy; }
       if (r > 0.55 && rnd() < 0.6) break; // good enough, stop early
     }
-    if (sx < 0 || best < 0.03) return false;
+    if (sx < 0 || best < 0.03) return null;
 
     // 2) Stroke geometry. Strength scales with how dark the start is.
-    // "baseLen" (Scribble size) drives both the reach per segment and the
-    // count, so bigger values give long, sweeping strokes like a real pen.
     const matte = controls.removeBg.checked && fgMask;
     const strength = clamp(best, 0, 1);
     const lenScale = baseLen / 26;                 // ~1 at the old default
@@ -383,7 +437,6 @@
     let ang = sampleAngle(x, y) + (rnd() - 0.5) * (1 - flow) * Math.PI * 1.5;
     let turn = (rnd() - 0.5) * 0.15;               // persistent turn rate (curl)
 
-    // Walk a path of points, then draw it as one flowing curve.
     const pts = [{ x, y }];
     for (let i = 0; i < segs; i++) {
       const flowAng = sampleAngle(x, y);
@@ -404,15 +457,50 @@
       pts.push({ x, y });
     }
 
-    if (pts.length < 2) return false;
-    ctx.globalAlpha = alpha;
-    strokePath(pts);                               // smooth, hand-drawn curve
-    // Hand redraw: a second slightly-offset pass thickens darks like a real pen.
+    if (pts.length < 2) return null;
+    // Decide the hand-redraw pass now (keeps RNG stream stable across modes).
+    let redrawPts = null;
     if (!stray && strength > 0.35 && rnd() < 0.3) {
-      ctx.globalAlpha = alpha * 0.8;
-      strokePath(pts.map((p) => ({ x: p.x + (rnd() - 0.5) * 0.8, y: p.y + (rnd() - 0.5) * 0.8 })));
+      redrawPts = pts.map((p) => ({ x: p.x + (rnd() - 0.5) * 0.8, y: p.y + (rnd() - 0.5) * 0.8 }));
     }
-    return true;
+    return { pts, alpha, redrawPts };
+  }
+
+  // Draw the pen/nib at the current head position on the overlay canvas.
+  function clearPen() {
+    penCtx.setTransform(1, 0, 0, 1, 0, 0);
+    penCtx.clearRect(0, 0, penCanvas.width, penCanvas.height);
+  }
+  function drawPen() {
+    clearPen();
+    if (!controls.showPen.checked || !running) return;
+    const px = head.x * renderScale, py = head.y * renderScale;
+    const L = Math.max(26, canvas.width * 0.05);   // barrel length
+    const ang = -Math.PI * 0.72;                    // held up and to the right
+    const cx = Math.cos(ang), cy = Math.sin(ang);
+    const ex = px + cx * L, ey = py + cy * L;
+    const ox = -cy, oy = cx;                        // perpendicular
+    const w = Math.max(3, L * 0.18);
+
+    // barrel
+    penCtx.lineCap = 'round';
+    penCtx.strokeStyle = '#11151c';
+    penCtx.lineWidth = w;
+    penCtx.beginPath(); penCtx.moveTo(px + cx * L * 0.28, py + cy * L * 0.28); penCtx.lineTo(ex, ey); penCtx.stroke();
+    // accent grip
+    penCtx.strokeStyle = '#6ea8fe';
+    penCtx.lineWidth = w * 0.7;
+    penCtx.beginPath();
+    penCtx.moveTo(px + cx * L * 0.30, py + cy * L * 0.30);
+    penCtx.lineTo(px + cx * L * 0.55, py + cy * L * 0.55);
+    penCtx.stroke();
+    // nib triangle at the tip
+    penCtx.fillStyle = '#11151c';
+    penCtx.beginPath();
+    penCtx.moveTo(px, py);
+    penCtx.lineTo(px + cx * L * 0.30 + ox * w * 0.6, py + cy * L * 0.30 + oy * w * 0.6);
+    penCtx.lineTo(px + cx * L * 0.30 - ox * w * 0.6, py + cy * L * 0.30 - oy * w * 0.6);
+    penCtx.closePath(); penCtx.fill();
   }
 
   // Draw a point list as a smooth curve (quadratic through segment midpoints).
@@ -479,6 +567,8 @@
   function finishSketch() {
     running = false;
     cancelAnimationFrame(rafId);
+    penStroke = null;
+    clearPen();                  // lift the pen off the finished drawing
     setProgress(1);
     showStatus(false);
     buttons.pause.disabled = true;
@@ -558,11 +648,16 @@
     labels.opacity.textContent = parseFloat(controls.opacity.value).toFixed(2);
     const fv = parseFloat(controls.fill.value);
     labels.fill.textContent = fv === 0 ? 'off' : fv.toFixed(2);
+    const sp = parseInt(controls.speed.value, 10);
+    labels.speed.textContent = sp <= 3 ? 'slow' : sp <= 7 ? 'medium' : 'fast';
   }
+
+  // Controls handled live (no re-sketch): they tune the in-progress drawing.
+  const LIVE = new Set([controls.speed, controls.showPen]);
 
   // Sliders: update labels live, re-sketch shortly after the user settles.
   Object.entries(controls).forEach(([key, el]) => {
-    if (!el || el === controls.removeBg) return;   // removeBg handled below
+    if (!el || el === controls.removeBg || LIVE.has(el)) return;  // handled separately
     const ev = el.type === 'checkbox' || el.type === 'color' ? 'change' : 'input';
     el.addEventListener(ev, () => {
       if (PRESET_KEYS.includes(key)) { activePreset = null; highlightPreset(); }
@@ -570,6 +665,13 @@
       saveSettings();
       scheduleRedraw();
     });
+  });
+
+  // Drawing speed + pen visibility apply to the live animation without restarting.
+  controls.speed.addEventListener('input', () => { refreshLabels(); saveSettings(); });
+  controls.showPen.addEventListener('change', () => {
+    saveSettings();
+    if (!controls.showPen.checked) clearPen();
   });
 
   // Background toggle: turning it on may need a (one-time) matte computation.
