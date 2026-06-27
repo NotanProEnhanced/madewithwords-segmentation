@@ -1,7 +1,7 @@
 /* Scribbler service worker — offline app shell.
  * Cache-first for the (tiny, static) shell so the app launches with no network.
  */
-const CACHE = 'scribbler-v2';
+const CACHE = 'scribbler-v3';
 const SHELL = [
   '.',
   'index.html',
@@ -12,7 +12,13 @@ const SHELL = [
   'icons/icon-512.png',
   'icons/maskable-512.png',
   'icons/apple-touch-icon.png',
-  'icons/favicon.png'
+  'icons/favicon.png',
+  // Self-hosted MediaPipe (true offline): JS + WASM + models
+  'vendor/mediapipe/vision_bundle.mjs',
+  'vendor/mediapipe/wasm/vision_wasm_internal.js',
+  'vendor/mediapipe/wasm/vision_wasm_internal.wasm',
+  'vendor/mediapipe/models/selfie_segmenter.tflite',
+  'vendor/mediapipe/models/face_landmarker.task'
 ];
 
 self.addEventListener('install', (event) => {

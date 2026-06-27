@@ -86,12 +86,13 @@
   const PRESET_KEYS = ['density', 'contrast', 'length', 'flow', 'weight', 'opacity', 'fill'];
 
   // On-device vision (MediaPipe Tasks). Selfie Segmentation gives the subject
-  // matte; Face Landmarker gives feature lines for likeness. Loaded lazily from
-  // CDN and cached after first use; everything degrades gracefully on failure.
-  const MP_VISION_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.20';
-  const MP_WASM = MP_VISION_CDN + '/wasm';
-  const MP_SELFIE_MODEL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite';
-  const MP_FACE_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task';
+  // matte; Face Landmarker gives feature lines for likeness. Self-hosted under
+  // vendor/ so they work fully offline; everything degrades gracefully if the
+  // assets fail to load.
+  const MP_VISION_MODULE = './vendor/mediapipe/vision_bundle.mjs';
+  const MP_WASM = 'vendor/mediapipe/wasm';
+  const MP_SELFIE_MODEL = 'vendor/mediapipe/models/selfie_segmenter.tflite';
+  const MP_FACE_MODEL = 'vendor/mediapipe/models/face_landmarker.task';
   let mpVision = null, mpSegmenter = null, mpLandmarker = null;
   const RAND_STATE = { s: 0x2545f491 };
 
@@ -132,7 +133,7 @@
   // Lazily load MediaPipe Tasks Vision (shared fileset for both models).
   async function getVision() {
     if (mpVision) return mpVision;
-    const mod = await import(MP_VISION_CDN);
+    const mod = await import(MP_VISION_MODULE);
     const fileset = await mod.FilesetResolver.forVisionTasks(MP_WASM);
     mpVision = { mod, fileset };
     return mpVision;
@@ -200,8 +201,7 @@
   // Index pairs for the feature lines we want the pen to trace.
   function featureConnections(FL) {
     const sets = ['FACE_LANDMARKS_LIPS', 'FACE_LANDMARKS_LEFT_EYE', 'FACE_LANDMARKS_RIGHT_EYE',
-      'FACE_LANDMARKS_LEFT_EYEBROW', 'FACE_LANDMARKS_RIGHT_EYEBROW', 'FACE_LANDMARKS_FACE_OVAL',
-      'FACE_LANDMARKS_LEFT_IRIS', 'FACE_LANDMARKS_RIGHT_IRIS'];
+      'FACE_LANDMARKS_LEFT_EYEBROW', 'FACE_LANDMARKS_RIGHT_EYEBROW', 'FACE_LANDMARKS_FACE_OVAL'];
     const out = [];
     for (const s of sets) {
       const arr = FL && FL[s];

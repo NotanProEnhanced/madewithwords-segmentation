@@ -29,8 +29,8 @@ Everything runs on the device — the photo is never uploaded anywhere.
   gets light scribbles and the face reads fuller.
 - **Remove background (subject only)** — on‑device subject segmentation isolates
   the person so ink stays on them and the background drops to clean paper. Uses
-  **MediaPipe Selfie Segmentation** (runs in‑browser via WebAssembly, loaded
-  from CDN and cached after first use); if it can't load, a colour‑keyed border
+  **MediaPipe Selfie Segmentation** (runs in‑browser via WebAssembly,
+  self‑hosted for full offline use); if it can't load, a colour‑keyed border
   flood‑fill takes over.
 - **Trace facial features (likeness)** — **MediaPipe Face Landmarker** detects
   the eyes, brows, nose, lips, and jawline and draws them as guaranteed lines so
@@ -63,11 +63,27 @@ strokes land on the background. When **Trace facial features** is on, MediaPipe
 Face Landmarker contributes feature lines that are drawn last (scribble mode) or
 woven into the path (single‑line mode).
 
-All logic lives in [`app.js`](app.js); no build step. The only external
-dependencies are the optional MediaPipe models, loaded lazily from a CDN on
-first use and cached by the browser thereafter — so the first analysis needs a
-network connection, but the rest of the app (and later runs) works offline, and
-if the models can't load the app falls back to flood‑fill with no face traces.
+All logic lives in [`app.js`](app.js); no build step. The MediaPipe runtime
+(JS + WASM) and both models are **self‑hosted** under
+[`vendor/mediapipe/`](vendor/mediapipe) and precached by the service worker, so
+the entire app — including segmentation and face tracing — works **fully
+offline** with no first‑run network call. If those assets somehow fail to load,
+it falls back to flood‑fill with no face traces.
+
+### Updating the MediaPipe assets
+```bash
+# JS + WASM (SIMD build) from npm:
+npm pack @mediapipe/tasks-vision@0.10.20
+#   -> copy package/vision_bundle.mjs and package/wasm/vision_wasm_internal.{js,wasm}
+#      into vendor/mediapipe/ and vendor/mediapipe/wasm/
+# Models:
+curl -o vendor/mediapipe/models/selfie_segmenter.tflite \
+  https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite
+curl -o vendor/mediapipe/models/face_landmarker.task \
+  https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
+```
+Only the SIMD WASM build is bundled (supported by all current browsers); add the
+`nosimd` variant if you must support very old browsers offline.
 
 `_render_photo.py` is a dev‑only harness that mirrors the engine for eyeballing
 output without a browser; it is not part of the shipped app.
