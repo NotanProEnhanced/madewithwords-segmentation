@@ -280,7 +280,7 @@ _FEATURE_GROUPS = (_EYE_L, _EYE_R, _BROW_L, _BROW_R, _LIPS, _NOSE)
 # own eye can be blown out (255 catchlight, ~250 sclera); on the dark word-face that
 # reads as a glowing orb. Matching the Lifelike path (catchlight 238 / sclera ~200),
 # we soft-pull the eye below blow-out so it stays faithful but cannot bloom.
-_EYE_LUMA_CAP = 236.0
+_EYE_LUMA_CAP = 198.0
 
 # Eye treatment is chosen by INK, not by style: the realistic photographic eye only
 # matches a full-colour face (the Photo / "Original" ink), so it is used there; the
@@ -1879,12 +1879,16 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             out = (out.astype(np.float32) * (1.0 - 0.70 * _base) + photo.astype(np.float32) * (0.70 * _base)).clip(0, 255).astype(np.uint8)
             a3 = eye_a[..., None]   # FULL alpha -- no bright-word bleed through the eyeball
             out = (out.astype(np.float32) * (1.0 - a3) + eye_bgr * a3).clip(0, 255).astype(np.uint8)
-            if ink != "photo":
-                of = out.astype(np.float32)
-                lum = (of[..., 0] * 0.114 + of[..., 1] * 0.587 + of[..., 2] * 0.299)[..., None]
-                grayed = of * 0.22 + lum * 0.78          # pull the eye toward the ink's monochrome
-                em3 = eye_a[..., None]
-                out = (of * (1.0 - em3) + grayed * em3).clip(0, 255).astype(np.uint8)
+            # Desaturate the eye so a smooth, saturated photographic iris doesn't read as a
+            # "glowing blob" in the crisp word-field (the Mosaic/Passage complaint). Tinted
+            # inks pull almost fully to mono; even Photo ink pulls partway, so the iris keeps
+            # life but stops being a vivid blue blob against the words.
+            _desat = 0.34 if ink == "photo" else 0.80
+            of = out.astype(np.float32)
+            lum = (of[..., 0] * 0.114 + of[..., 1] * 0.587 + of[..., 2] * 0.299)[..., None]
+            grayed = of * (1.0 - _desat) + lum * _desat
+            em3 = eye_a[..., None]
+            out = (of * (1.0 - em3) + grayed * em3).clip(0, 255).astype(np.uint8)
     # (photo_paper paints NO compose-level eye/teeth patch -- that read as a sticker
     # glued on the typography. Its eyes + smile are formed by the WORDS themselves,
     # deepened in the tonal field in _tint_photo so the features emerge from type.)
