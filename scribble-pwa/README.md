@@ -17,6 +17,10 @@ Everything runs on the device — the photo is never uploaded anywhere.
   tonal contours (hair, jawline, cheekbones) with a persistent "curl", a light
   second pen‑retrace over darks, and occasional stray overshoot lines, so the
   result reads like a real hand‑drawn scribble portrait rather than machine fuzz.
+- **Single continuous line** — an optional mode that renders the whole portrait
+  as one unbroken stroke (the pen never lifts): dots are scattered with density
+  following the image's darkness, then connected into a near‑optimal tour
+  (nearest‑neighbour + 2‑opt + long‑edge repair) and drawn as one path.
 - **One‑tap style presets** — *Sketch* (clean line‑art), *Bold* (heavier,
   dramatic strokes), and *Ink‑storm* (dense) set every slider at once. Your
   choice (and any manual tweaks) is **remembered** between visits and
