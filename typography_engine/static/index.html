@@ -1478,10 +1478,17 @@ async function prewarmSizes(){
    portrait they're already looking at. */
 let styleScores={}, recoStarted=false, recoDone=false, userTouched=false;
 const STYLE_NAMES={words:"Mosaic",message:"Passage",displacement:"Lifelike"};
+// Style-picker thumbnails: start as stock samples (instant), then swap to a
+// thumbnail of the BUYER'S OWN photo as the reco's coarse per-style renders land
+// (no extra renders -- the reco already probes each style; we just keep its preview).
+const STYLE_THUMB_STOCK={displacement:"/static/style-thumbs/lifelike.png",words:"/static/style-thumbs/mosaic.png",message:"/static/style-thumbs/passage.png"};
+function setStyleThumb(style,url){ if(!url) return; const im=document.querySelector('#styleSegResult button[data-style="'+style+'"] img.styleth'); if(im && im.getAttribute("src")!==url) im.src=url; }
+function resetStyleThumbs(){ for(const s in STYLE_THUMB_STOCK) setStyleThumb(s, STYLE_THUMB_STOCK[s]); }
 function resetReco(){
   styleScores={}; recoStarted=false; recoDone=false; userTouched=false;
   document.querySelectorAll('#styleSegResult button').forEach(b=>b.classList.remove("best"));
   const n=$("#bestNote"); if(n){ n.style.display="none"; n.textContent=""; }
+  resetStyleThumbs();   // new photo/words -> back to stock samples until re-probed
 }
 function recoFd(style, coarse){
   const fd=new FormData();
@@ -1504,6 +1511,7 @@ async function recommendStyle(){
       const d=await r.json();
       if(myGen!==gen) return;                       // photo/words changed -> abandon
       if(r.ok && d.ok && typeof d.likeness==="number") styleScores[st]=d.likeness;
+      if(r.ok && d.ok && d.preview) setStyleThumb(st, d.preview);   // thumbnail of THEIR photo in this style
     }catch(e){}
   }
   const ranked=Object.keys(styleScores).filter(s=>typeof styleScores[s]==="number")
@@ -1855,6 +1863,7 @@ function showImage(entry, crossfade){
 }
 function revealPlain(entry, crossfade){
   setBuy(entry);
+  if(entry && entry.preview) setStyleThumb(state.style, entry.preview);   // active style thumb = the user's own render
   applyFrame(state.ink);
   stopAssembly();
   // Before/after reveal: show the uploaded photo under the slider.
