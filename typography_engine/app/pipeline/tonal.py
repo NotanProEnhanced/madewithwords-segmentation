@@ -1859,15 +1859,16 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
             ep = _faces_of(an)[0].points * fsc0
             eye_bgr, eye_a = _photo_eye_overlay(bgr_eye, ep, (_EYE_L, _EYE_R), H, W)
-            # THE Mosaic/Passage glow -- the real cause (measured): the glow is NOT absolute
-            # brightness (the Lifelike eye is actually BRIGHTER and never glows). It is LOCAL
-            # CONTRAST -- a bright eye on a near-black word-field reads as a glowing orb, while
-            # Lifelike's eye sits on a mid-toned SKIN socket and reads as a real eye. The old
-            # code made it worse by darkening the socket toward the ground (a black hole).
-            # Fix: (1) sit the eye on the photo's OWN orbital skin (a face-toned socket that
-            # fades into the words), and (2) trim only true blow-out, so the eye stays faithful
-            # and bright like Lifelike but no longer pops out of the dark.
-            _elum = (eye_bgr[..., 0] * 0.114 + eye_bgr[..., 1] * 0.587 + eye_bgr[..., 2] * 0.299)
+            # THE Mosaic/Passage "blue glowing eyes" -- the actual root cause (reproduced &
+            # measured on the user's photo): a CHANNEL SWAP. `_photo_eye_overlay` returns the
+            # eye in its input order (BGR, from an.img.bgr), but in this compose path `out`/
+            # `photo`/`ground` are RGB (ground = _hex_to_rgb; final Image.fromarray = RGB).
+            # Compositing the BGR eye into the RGB canvas flips R<->B, so a BROWN iris
+            # (R71/B37) rendered BLUE (R38/B50). Displacement never showed it because it works
+            # in BGR throughout. Fix = convert the overlay to RGB before any of it touches
+            # `out`. (Verified: Jesus iris R38/B50 -> R49/B38; hero-before unchanged.)
+            eye_bgr = eye_bgr[..., ::-1].copy()              # BGR -> RGB to match `out`
+            _elum = (eye_bgr[..., 0] * 0.299 + eye_bgr[..., 1] * 0.587 + eye_bgr[..., 2] * 0.114)
             _esc = np.minimum(1.0, _EYE_LUMA_CAP / np.maximum(_elum, 1e-3))[..., None]
             eye_bgr = eye_bgr * _esc                          # trim only blow-out (cap matches Lifelike's ~238)
             _ir = float(np.mean([r for _, _, r in iris_c])) if iris_c else max(2.0, eyes_e[0][2] * 0.5)
@@ -1879,13 +1880,14 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             out = (out.astype(np.float32) * (1.0 - 0.70 * _base) + photo.astype(np.float32) * (0.70 * _base)).clip(0, 255).astype(np.uint8)
             a3 = eye_a[..., None]   # FULL alpha -- no bright-word bleed through the eyeball
             out = (out.astype(np.float32) * (1.0 - a3) + eye_bgr * a3).clip(0, 255).astype(np.uint8)
-            # Desaturate the eye so a smooth, saturated photographic iris doesn't read as a
-            # "glowing blob" in the crisp word-field (the Mosaic/Passage complaint). Tinted
-            # inks pull almost fully to mono; even Photo ink pulls partway, so the iris keeps
-            # life but stops being a vivid blue blob against the words.
-            _desat = 0.34 if ink == "photo" else 0.80
+            # Light desaturation so the eye sits in the ink's palette: tinted inks pull most
+            # of the way to mono (a full-colour eye would clash with the tinted face), while
+            # Photo/Original keeps the iris its true (now correctly-coloured) hue with only a
+            # whisper of taming. (The old heavy pull was masking the BGR/RGB swap above; with
+            # the swap fixed the eye is the right colour, so it no longer needs hiding.)
+            _desat = 0.12 if ink == "photo" else 0.78
             of = out.astype(np.float32)
-            lum = (of[..., 0] * 0.114 + of[..., 1] * 0.587 + of[..., 2] * 0.299)[..., None]
+            lum = (of[..., 0] * 0.299 + of[..., 1] * 0.587 + of[..., 2] * 0.114)[..., None]   # RGB luma
             grayed = of * (1.0 - _desat) + lum * _desat
             em3 = eye_a[..., None]
             out = (of * (1.0 - em3) + grayed * em3).clip(0, 255).astype(np.uint8)
