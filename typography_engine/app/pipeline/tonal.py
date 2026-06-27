@@ -276,6 +276,11 @@ _BROW_R = (336, 296, 334, 293, 300, 276, 283, 282, 295, 285)
 _LIPS = (61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185)
 _NOSE = (1, 2, 98, 327, 97, 326, 5, 4, 275, 440, 220, 45)
 _FEATURE_GROUPS = (_EYE_L, _EYE_R, _BROW_L, _BROW_R, _LIPS, _NOSE)
+# Luminance ceiling for the composited real-eye overlay on dark grounds. The photo's
+# own eye can be blown out (255 catchlight, ~250 sclera); on the dark word-face that
+# reads as a glowing orb. Matching the Lifelike path (catchlight 238 / sclera ~200),
+# we soft-pull the eye below blow-out so it stays faithful but cannot bloom.
+_EYE_LUMA_CAP = 236.0
 
 # Eye treatment is chosen by INK, not by style: the realistic photographic eye only
 # matches a full-colour face (the Photo / "Original" ink), so it is used there; the
@@ -1854,18 +1859,24 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
             ep = _faces_of(an)[0].points * fsc0
             eye_bgr, eye_a = _photo_eye_overlay(bgr_eye, ep, (_EYE_L, _EYE_R), H, W)
-            # THE Mosaic/Passage glow: the eye region of `photo` is brightened (sclera pop),
-            # so the WORDS there are bright. The word mask renders fuller on cairosvg than on
-            # the local resvg fallback, so on prod those bright eye-words bleed through the
-            # overlay (alpha 0.94 + feathered rim) and bloom -- invisible locally. Fix: darken
-            # the eye-region base toward the ground under a dilated eye mask, THEN lay the real
-            # eye at FULL alpha. The eye now reads only from the photographic overlay on a dark
-            # socket -- Lifelike-clean and rasterizer-independent.
+            # THE Mosaic/Passage glow -- the real cause (measured): the glow is NOT absolute
+            # brightness (the Lifelike eye is actually BRIGHTER and never glows). It is LOCAL
+            # CONTRAST -- a bright eye on a near-black word-field reads as a glowing orb, while
+            # Lifelike's eye sits on a mid-toned SKIN socket and reads as a real eye. The old
+            # code made it worse by darkening the socket toward the ground (a black hole).
+            # Fix: (1) sit the eye on the photo's OWN orbital skin (a face-toned socket that
+            # fades into the words), and (2) trim only true blow-out, so the eye stays faithful
+            # and bright like Lifelike but no longer pops out of the dark.
+            _elum = (eye_bgr[..., 0] * 0.114 + eye_bgr[..., 1] * 0.587 + eye_bgr[..., 2] * 0.299)
+            _esc = np.minimum(1.0, _EYE_LUMA_CAP / np.maximum(_elum, 1e-3))[..., None]
+            eye_bgr = eye_bgr * _esc                          # trim only blow-out (cap matches Lifelike's ~238)
             _ir = float(np.mean([r for _, _, r in iris_c])) if iris_c else max(2.0, eyes_e[0][2] * 0.5)
-            _kr = max(1, int(round(_ir * 0.55)))
+            _kr = max(1, int(round(_ir * 0.85)))
             _base = cv2.dilate(eye_a, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (_kr * 2 + 1, _kr * 2 + 1)))
-            _base = cv2.GaussianBlur(_base, (0, 0), sigmaX=max(1.0, _ir * 0.30))[..., None]
-            out = (out.astype(np.float32) * (1.0 - 0.90 * _base) + ground * (0.90 * _base)).clip(0, 255).astype(np.uint8)
+            _base = cv2.GaussianBlur(_base, (0, 0), sigmaX=max(1.0, _ir * 0.55))[..., None]
+            # Socket = the photo's own orbital skin (mid-toned), not the dark ground, so the
+            # bright eye transitions into a face -> no high-contrast halo.
+            out = (out.astype(np.float32) * (1.0 - 0.70 * _base) + photo.astype(np.float32) * (0.70 * _base)).clip(0, 255).astype(np.uint8)
             a3 = eye_a[..., None]   # FULL alpha -- no bright-word bleed through the eyeball
             out = (out.astype(np.float32) * (1.0 - a3) + eye_bgr * a3).clip(0, 255).astype(np.uint8)
             if ink != "photo":
@@ -1885,7 +1896,16 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     # pixel-aligned through any centre/downscale/pad.
     _eye_guard = None
     if eyes_e:
-        _gm = _fit_print_canvas(np.repeat((eye_a[..., None] * 255.0).clip(0, 255).astype(np.uint8), 3, axis=2),
+        # DILATE the eye alpha before using it as the vibrance guard. Vibrance's clarity
+        # term paints a bright HALO just OUTSIDE the bright eye (along the eye<->word edge);
+        # the bare overlay alpha feathers to 0 exactly there, so the halo leaked through and
+        # WAS the residual bloom. A solid guard ring over the eye edge stops clarity from
+        # forming a halo at all.
+        _gr = int(round(max(2.0, (np.mean([r for _, _, r in iris_c]) if iris_c else eyes_e[0][2]) * 0.9)))
+        _eg = cv2.dilate((eye_a > 0.05).astype(np.float32),
+                         cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (_gr * 2 + 1, _gr * 2 + 1)))
+        _eg = np.maximum(eye_a, cv2.GaussianBlur(_eg, (0, 0), sigmaX=max(1.0, _gr * 0.5)))
+        _gm = _fit_print_canvas(np.repeat((_eg[..., None] * 255.0).clip(0, 255).astype(np.uint8), 3, axis=2),
                                 (0, 0, 0), print_aspect)
         _eye_guard = _gm[..., 0].astype(np.float32) / 255.0
     out = _fit_print_canvas(out, ground, print_aspect)
@@ -1903,9 +1923,9 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             # only shows on the full-fidelity (cairosvg) render. The real-eye overlay is
             # already faithful and sharp; excluding it from vibrance gives Lifelike clarity
             # with no glow. (Displacement avoids it instead by keeping the eye below blow-out.)
-            # Boost the mask so the eyeball CORE (bright sclera/catchlight = the glow)
-            # is fully shielded, leaving only the orbital rim feathered into the face.
-            _m = np.clip(_eye_guard * 1.35, 0.0, 1.0)[..., None]
+            # The guard is already dilated to cover the eye edge + halo zone, so it needs
+            # no extra boost (that would over-exclude the face from the clarity pass).
+            _m = np.clip(_eye_guard, 0.0, 1.0)[..., None]
             out = (out.astype(np.float32) * (1.0 - _m) + _pre.astype(np.float32) * _m).clip(0, 255).astype(np.uint8)
     img = Image.fromarray(out)
     if ss > 1:                       # supersampled -> Lanczos down to final size
