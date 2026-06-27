@@ -1499,19 +1499,20 @@ def card_preview(job: str, session_id: str, layout: str = "classic"):
         return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
     try:
         import memorial_card as mc
-        import fitz
-        from PIL import Image as _Img
+        import pypdfium2 as pdfium
         tmp = OUTPUTS_DIR / f"{job}_cardprev_{layout}.pdf"
         mc.make_card(str(clean), "", "", "Beloved", verse="none", layout=layout, out_pdf=str(tmp))
-        doc = fitz.open(str(tmp))
+        # Rasterize the card front with PDFium (pypdfium2 -- permissive BSD-3-Clause/
+        # Apache, self-contained wheel), replacing PyMuPDF/AGPL. PDF y is bottom-up, so
+        # the trim-box crop flips through PAGE_H; then thumbnail for the layout picker.
+        pdf = pdfium.PdfDocument(str(tmp))
         s = 150 / 72.0
-        pm = doc[0].get_pixmap(dpi=150)
-        im = _Img.frombytes("RGB", (pm.width, pm.height), pm.samples).crop(
+        im = pdf[0].render(scale=s).to_pil().convert("RGB").crop(
             (int(mc.TX0 * s), int((mc.PAGE_H - mc.TY1) * s),
              int(mc.TX1 * s), int((mc.PAGE_H - mc.TY0) * s)))
         im.thumbnail((300, 300))
         im.save(str(cache))
-        doc.close()
+        pdf.close()
         try:
             tmp.unlink()
         except OSError:
