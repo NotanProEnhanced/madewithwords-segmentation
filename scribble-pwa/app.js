@@ -208,8 +208,11 @@
   }
 
   // Build the foreground mask. Prefer the ML cutout's alpha channel; otherwise
-  // fall back to flood-fill background detection from the image border (region
-  // growing on colour smoothness — good on plain/graduated studio backdrops).
+  // fall back to flood-fill: background = the region connected to the border
+  // whose colour matches the estimated backdrop colour. Keying on backdrop
+  // colour (not just local smoothness) stops the fill from leaking through a
+  // soft edge into the subject, and keeps differently-coloured clothing/hair
+  // that touches the frame.
   function buildForegroundMask(data) {
     const N = mapW * mapH;
 
@@ -224,11 +227,21 @@
       return;
     }
 
+    // Estimate backdrop colour from the four corners (median per channel).
+    const corners = [[0, 0], [mapW - 1, 0], [0, mapH - 1], [mapW - 1, mapH - 1]]
+      .map(([x, y]) => { const p = (y * mapW + x) * 4; return [data[p], data[p + 1], data[p + 2]]; });
+    const med = (k) => { const v = corners.map((c) => c[k]).sort((a, b) => a - b); return (v[1] + v[2]) / 2; };
+    const bgR = med(0), bgG = med(1), bgB = med(2);
+    const GTOL = 150;                  // max channel-sum distance from backdrop
+    const isBg = (i) => {
+      const p = i * 4;
+      return Math.abs(data[p] - bgR) + Math.abs(data[p + 1] - bgG) + Math.abs(data[p + 2] - bgB) < GTOL;
+    };
+
     const bg = new Uint8Array(N);     // 1 = background
     const stack = new Int32Array(N);
     let sp = 0;
-    const tol = 0.085;                // per-channel-sum smoothness threshold
-    const push = (i) => { if (!bg[i]) { bg[i] = 1; stack[sp++] = i; } };
+    const push = (i) => { if (!bg[i] && isBg(i)) { bg[i] = 1; stack[sp++] = i; } };
 
     for (let x = 0; x < mapW; x++) { push(x); push((mapH - 1) * mapW + x); }
     for (let y = 0; y < mapH; y++) { push(y * mapW); push(y * mapW + mapW - 1); }
@@ -236,33 +249,14 @@
     while (sp > 0) {
       const i = stack[--sp];
       const x = i % mapW, y = (i / mapW) | 0;
-      const p = i * 4;
-      const cr = data[p], cg = data[p + 1], cb = data[p + 2];
-      // 4-neighbours
-      const ns = [i - 1, i + 1, i - mapW, i + mapW];
-      const ok = [x > 0, x < mapW - 1, y > 0, y < mapH - 1];
-      for (let k = 0; k < 4; k++) {
-        if (!ok[k]) continue;
-        const j = ns[k];
-        if (bg[j]) continue;
-        const q = j * 4;
-        const diff = (Math.abs(cr - data[q]) + Math.abs(cg - data[q + 1]) + Math.abs(cb - data[q + 2])) / 255;
-        if (diff < tol * 3) push(j);
-      }
+      if (x > 0) push(i - 1);
+      if (x < mapW - 1) push(i + 1);
+      if (y > 0) push(i - mapW);
+      if (y < mapH - 1) push(i + mapW);
     }
 
-    // Erode the background by one cell so strokes don't halo the silhouette.
     fgMask = new Uint8Array(N);
-    for (let y = 0; y < mapH; y++) {
-      for (let x = 0; x < mapW; x++) {
-        const i = y * mapW + x;
-        let fg = bg[i] ? 0 : 1;
-        if (!fg) {
-          // a background cell touching foreground stays background (no grow)
-        }
-        fgMask[i] = fg;
-      }
-    }
+    for (let i = 0; i < N; i++) fgMask[i] = bg[i] ? 0 : 1;
   }
 
   function buildResidual() {
@@ -559,251 +553,61 @@
     ctx.stroke();
   }
 
-  // ---- Single continuous line (TSP-style one-stroke portrait) ----
-  // Place dots whose density tracks image darkness, then connect them into one
-  // near-optimal tour and return the ordered points as a single path.
+  // ---- Single continuous line (one unbroken stroke) ----
+  // The scribble engine already yields a detailed, contour-following portrait.
+  // For single-line we generate those strokes, then chain them end-to-end by
+  // nearest endpoint so the pen never lifts — keeping the facial detail while
+  // producing one continuous line. (TSP stipple gave only a flat silhouette.)
   function buildSingleLinePath() {
-    const gamma = parseFloat(controls.contrast.value);
-    const fill = parseFloat(controls.fill.value);
-    const removeBg = controls.removeBg.checked && fgMask;
-    const dens = parseFloat(controls.density.value);
-
-    // Static darkness field (not depleted).
-    const D = new Float32Array(mapW * mapH);
-    for (let i = 0; i < D.length; i++) {
-      if (removeBg && !fgMask[i]) { D[i] = 0; continue; }
-      let d = Math.pow(1 - tone[i], gamma);
-      if (d < 0.02) d = 0;
-      if (fill > 0 && fgMask && fgMask[i]) d = Math.max(d, fill * 0.9);
-      D[i] = d;
+    // Single-line needs dense coverage so the face resolves into detail (it
+    // also keeps the connector hops between strokes short). Density nudges it.
+    const dn = clamp((parseFloat(controls.density.value) - 0.45) / 0.52, 0, 1);
+    const target = 0.82 + 0.15 * dn;
+    const CAP = 3500;                       // keep chaining O(n^2) responsive
+    const strokes = [];
+    let guard = 0;
+    while (strokes.length < CAP && guard < CAP * 14) {
+      guard++;
+      if ((guard & 255) === 0 && coverage() >= target) break;
+      const s = buildStroke();
+      if (s && s.pts.length >= 2) strokes.push(s.pts);
+      else if ((guard & 63) === 0 && coverage() >= target * 0.96) break;
     }
-
-    // Weighted blue-noise sampling: tighter spacing (more dots) where darker.
-    const dn = clamp((dens - 0.45) / 0.52, 0, 1);
-    const minS = 3.0 - 1.2 * dn;
-    const maxS = 9.0 - 3.3 * dn;
-    const MAXN = 4000;
-    const cell = minS;
-    const gw = Math.ceil(mapW / cell), gh = Math.ceil(mapH / cell);
-    const ringR = Math.ceil(maxS / cell) + 1;
-    const buckets = new Array(gw * gh);
-    const px = [], py = [];
-    let attempts = MAXN * 40;
-    while (px.length < MAXN && attempts-- > 0) {
-      const x = rnd() * mapW, y = rnd() * mapH;
-      const d = D[(y | 0) * mapW + (x | 0)];
-      if (d <= 0) continue;
-      if (rnd() > Math.min(1, d * 1.25)) continue;          // bias toward dark
-      const s = maxS - (maxS - minS) * Math.sqrt(Math.min(1, d));
-      const s2 = s * s;
-      const gx = (x / cell) | 0, gy = (y / cell) | 0;
-      let ok = true;
-      for (let yy = Math.max(0, gy - ringR); yy <= Math.min(gh - 1, gy + ringR) && ok; yy++) {
-        for (let xx = Math.max(0, gx - ringR); xx <= Math.min(gw - 1, gx + ringR); xx++) {
-          const arr = buckets[yy * gw + xx];
-          if (!arr) continue;
-          for (let m = 0; m < arr.length; m++) {
-            const q = arr[m];
-            const ddx = px[q] - x, ddy = py[q] - y;
-            if (ddx * ddx + ddy * ddy < s2) { ok = false; break; }
-          }
-          if (!ok) break;
-        }
-      }
-      if (!ok) continue;
-      const c = gy * gw + gx;
-      (buckets[c] || (buckets[c] = [])).push(px.length);
-      px.push(x); py.push(y);
-    }
-    const n = px.length;
-    if (n < 2) return [];
-
-    const order = nnTour(px, py, cell, gw, gh);
-    twoOpt(px, py, order, cell, gw, gh);
-    repairLongEdges(px, py, order);
-    return order.map((idx) => ({ x: px[idx], y: py[idx] }));
+    if (!strokes.length) return [];
+    return connectStrokes(strokes);
   }
 
-  // Knock out the long "jump" lines. Each pass examines the W longest edges,
-  // for each tries an Or-opt (relocate a node to its best gap) and a global
-  // 2-opt, then applies the single best improving move. Keeps going as long as
-  // *some* long edge improves — one stubborn edge no longer stalls the rest.
-  function repairLongEdges(px, py, order) {
-    const n = order.length;
-    if (n < 6) return;
-    const dist = (a, b) => Math.hypot(px[a] - px[b], py[a] - py[b]);
-    const deadline = performance.now() + 500;
-    const W = 20;
+  // Greedy nearest-endpoint chaining: repeatedly take the unused stroke whose
+  // nearer end is closest to the pen, flipping it to draw toward its far end.
+  // The short connector segments between strokes read as continuous scribbling.
+  function connectStrokes(strokes) {
+    const n = strokes.length;
+    const used = new Uint8Array(n);
+    const path = [];
+    let cur = 0;
+    for (let i = 1; i < n; i++) if (strokes[i][0].y < strokes[cur][0].y) cur = i; // start up top
+    used[cur] = 1;
+    for (const p of strokes[cur]) path.push(p);
+    let ex = path[path.length - 1].x, ey = path[path.length - 1].y;
 
-    for (let iter = 0; iter < 200 && performance.now() < deadline; iter++) {
-      // Indices of the W longest edges.
-      const lens = [];
-      for (let i = 0; i < n - 1; i++) lens.push(i);
-      lens.sort((p, q) => dist(order[q], order[q + 1]) - dist(order[p], order[p + 1]));
-      const top = lens.slice(0, W);
-
-      let best = null;  // { gain, kind, ... }
-      for (let w = 0; w < top.length; w++) {
-        const li = top[w];
-        // Or-opt on either endpoint of this edge.
-        for (const m of [li, li + 1]) {
-          if (m <= 0 || m >= n - 1) continue;
-          const c = order[m], prev = order[m - 1], next = order[m + 1];
-          const removeGain = dist(prev, c) + dist(c, next) - dist(prev, next);
-          for (let k = 0; k < n - 1; k++) {
-            if (k === m - 1 || k === m) continue;
-            const gain = removeGain - (dist(order[k], c) + dist(c, order[k + 1]) - dist(order[k], order[k + 1]));
-            if (gain > 1e-6 && (!best || gain > best.gain)) best = { gain, kind: 'or', m, k };
-          }
-        }
-        // 2-opt pairing this edge with any other.
-        for (let j = 0; j < n - 1; j++) {
-          if (j === li) continue;
-          const lo = li < j ? li : j, hi = li < j ? j : li;
-          const A = order[lo], A2 = order[lo + 1], B = order[hi], B2 = order[hi + 1];
-          const gain = (dist(A, A2) + dist(B, B2)) - (dist(A, B) + dist(A2, B2));
-          if (gain > 1e-6 && (!best || gain > best.gain)) best = { gain, kind: '2opt', lo, hi };
-        }
-      }
-
-      if (!best) break;                       // no long edge can be improved
-      if (best.kind === 'or') {
-        const c = order[best.m];
-        order.splice(best.m, 1);
-        order.splice(best.k < best.m ? best.k + 1 : best.k, 0, c);
-      } else {
-        let lo = best.lo + 1, hi = best.hi;
-        while (lo < hi) { const t = order[lo]; order[lo] = order[hi]; order[hi] = t; lo++; hi--; }
-      }
-    }
-  }
-
-  // Greedy nearest-neighbour tour with an expanding-ring grid search.
-  function nnTour(px, py, cell, gw, gh) {
-    const n = px.length;
-    const buckets = gridBuckets(px, py, cell, gw);
-    // Start at the topmost point so the line begins up high.
-    let start = 0;
-    for (let i = 1; i < n; i++) if (py[i] < py[start]) start = i;
-    const order = new Int32Array(n);
-    order[0] = start;
-    removeFromBucket(buckets, px, py, cell, gw, start);
-    let cur = start;
-    const maxR = Math.max(gw, gh);
     for (let k = 1; k < n; k++) {
-      const cx = px[cur], cy = py[cur];
-      const gx = (cx / cell) | 0, gy = (cy / cell) | 0;
-      let best = -1, bestD = Infinity;
-      for (let r = 0; r <= maxR; r++) {
-        const x0 = Math.max(0, gx - r), x1 = Math.min(gw - 1, gx + r);
-        const y0 = Math.max(0, gy - r), y1 = Math.min(gh - 1, gy + r);
-        for (let yy = y0; yy <= y1; yy++) {
-          const edgeY = (yy === gy - r || yy === gy + r);
-          for (let xx = x0; xx <= x1; xx++) {
-            if (r > 0 && !edgeY && xx !== gx - r && xx !== gx + r) continue; // ring border only
-            const arr = buckets[yy * gw + xx];
-            if (!arr) continue;
-            for (let m = 0; m < arr.length; m++) {
-              const idx = arr[m];
-              const dx = px[idx] - cx, dy = py[idx] - cy, d = dx * dx + dy * dy;
-              if (d < bestD) { bestD = d; best = idx; }
-            }
-          }
-        }
-        if (best >= 0) { const rd = r * cell; if (bestD <= rd * rd) break; }
+      let best = -1, bestD = Infinity, flip = false;
+      for (let i = 0; i < n; i++) {
+        if (used[i]) continue;
+        const p = strokes[i], a = p[0], b = p[p.length - 1];
+        const da = (a.x - ex) * (a.x - ex) + (a.y - ey) * (a.y - ey);
+        if (da < bestD) { bestD = da; best = i; flip = false; }
+        const db = (b.x - ex) * (b.x - ex) + (b.y - ey) * (b.y - ey);
+        if (db < bestD) { bestD = db; best = i; flip = true; }
       }
       if (best < 0) break;
-      order[k] = best;
-      removeFromBucket(buckets, px, py, cell, gw, best);
-      cur = best;
+      used[best] = 1;
+      let p = strokes[best];
+      if (flip) p = p.slice().reverse();
+      for (const q of p) path.push(q);        // connector to p[0], then the stroke
+      ex = p[p.length - 1].x; ey = p[p.length - 1].y;
     }
-    return Array.from(order);
-  }
-
-  // 2-opt refinement over k-nearest candidates, strictly time-bounded.
-  function twoOpt(px, py, order, cell, gw, gh) {
-    const n = order.length;
-    if (n < 5) return;
-    const pos = new Int32Array(n);
-    for (let i = 0; i < n; i++) pos[order[i]] = i;
-    const knn = computeKNN(px, py, cell, gw, gh, 6);
-    const dist = (a, b) => { const dx = px[a] - px[b], dy = py[a] - py[b]; return Math.sqrt(dx * dx + dy * dy); };
-    const deadline = performance.now() + 550;
-    let improved = true, guard = 0;
-    while (improved && guard++ < 40 && performance.now() < deadline) {
-      improved = false;
-      for (let i = 0; i < n - 1; i++) {
-        const a = order[i], a2 = order[i + 1];
-        const dA = dist(a, a2);
-        const cand = knn[a];
-        for (let t = 0; t < cand.length; t++) {
-          const b = cand[t];
-          const j = pos[b];
-          if (j <= i || j >= n - 1) continue;
-          const b2 = order[j + 1];
-          if (dist(a, b) + dist(a2, b2) + 1e-6 < dA + dist(b, b2)) {
-            let lo = i + 1, hi = j;            // reverse the segment between
-            while (lo < hi) {
-              const tmp = order[lo]; order[lo] = order[hi]; order[hi] = tmp;
-              pos[order[lo]] = lo; pos[order[hi]] = hi;
-              lo++; hi--;
-            }
-            improved = true;
-            break;                              // a's successor changed; move on
-          }
-        }
-        if ((i & 511) === 0 && performance.now() >= deadline) break;
-      }
-    }
-  }
-
-  // Approximate k-nearest neighbours per point via the grid.
-  function computeKNN(px, py, cell, gw, gh, K) {
-    const n = px.length;
-    const buckets = gridBuckets(px, py, cell, gw);
-    const out = new Array(n);
-    const maxR = Math.max(gw, gh);
-    for (let i = 0; i < n; i++) {
-      const cx = px[i], cy = py[i];
-      const gx = (cx / cell) | 0, gy = (cy / cell) | 0;
-      const cand = [];
-      for (let r = 0; r <= maxR && cand.length < K * 4; r++) {
-        const x0 = Math.max(0, gx - r), x1 = Math.min(gw - 1, gx + r);
-        const y0 = Math.max(0, gy - r), y1 = Math.min(gh - 1, gy + r);
-        for (let yy = y0; yy <= y1; yy++) {
-          const edgeY = (yy === gy - r || yy === gy + r);
-          for (let xx = x0; xx <= x1; xx++) {
-            if (r > 0 && !edgeY && xx !== gx - r && xx !== gx + r) continue;
-            const arr = buckets[yy * gw + xx];
-            if (!arr) continue;
-            for (let m = 0; m < arr.length; m++) if (arr[m] !== i) cand.push(arr[m]);
-          }
-        }
-      }
-      cand.sort((p, q) => {
-        const dp = (px[p] - cx) ** 2 + (py[p] - cy) ** 2;
-        const dq = (px[q] - cx) ** 2 + (py[q] - cy) ** 2;
-        return dp - dq;
-      });
-      out[i] = cand.slice(0, K);
-    }
-    return out;
-  }
-
-  function gridBuckets(px, py, cell, gw) {
-    const b = [];
-    for (let i = 0; i < px.length; i++) {
-      const c = ((py[i] / cell) | 0) * gw + ((px[i] / cell) | 0);
-      (b[c] || (b[c] = [])).push(i);
-    }
-    return b;
-  }
-  function removeFromBucket(buckets, px, py, cell, gw, idx) {
-    const c = ((py[idx] / cell) | 0) * gw + ((px[idx] / cell) | 0);
-    const arr = buckets[c];
-    if (!arr) return;
-    const at = arr.indexOf(idx);
-    if (at >= 0) { arr[at] = arr[arr.length - 1]; arr.pop(); }
+    return path;
   }
 
   // Bilinear-ish contour angle lookup.
