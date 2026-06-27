@@ -225,6 +225,19 @@
   .seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(0,0,0,.08)}
   /* "Best for this photo" recommendation badge (set by the likeness scorer). */
   .seg button.best::after{content:"\2726";margin-left:5px;color:#c9a227;font-size:11px;vertical-align:1px}
+  /* Visual style picker: each choice is a sample thumbnail + label, so the user
+     SEES the look instead of reading a name. Scoped to #styleSegResult so other
+     segmented controls keep the plain pill style. */
+  .seg.stylecards{background:none;gap:8px;padding:0;border-radius:0}
+  .seg.stylecards button{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:6px;
+     background:#f4f1eb;border-radius:14px;padding:6px 6px 8px;box-shadow:none}
+  .seg.stylecards button .styleth{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:10px;
+     display:block;background:#e7e3da;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  .seg.stylecards button span{font-size:13px;font-weight:600;color:var(--muted);letter-spacing:-.01em}
+  .seg.stylecards button.on{background:#fff;box-shadow:0 0 0 2px var(--navy)}
+  .seg.stylecards button.on span{color:var(--navy)}
+  .seg.stylecards button.best span::after{content:"\2726";margin-left:5px;color:#c9a227;font-size:11px;vertical-align:1px}
+  .seg.stylecards button.best::after{content:none}
   #bestNote{color:#8a6d1f}
   /* Center the style caption + recommendation note under the style picker. */
   #styleCaption,#bestNote{text-align:center}
@@ -589,10 +602,10 @@
     <div class="result-card-h">Make it yours</div>
     <div class="ctl" id="styleGallery" style="margin-top:6px">
       <div class="ctl-lbl">Choose your style</div>
-      <div class="seg" id="styleSegResult" aria-label="Choose your style">
-        <button type="button" data-style="displacement" class="on">Lifelike</button>
-        <button type="button" data-style="words">Mosaic</button>
-        <button type="button" data-style="message">Passage</button>
+      <div class="seg stylecards" id="styleSegResult" aria-label="Choose your style">
+        <button type="button" data-style="displacement" class="on"><img class="styleth" src="/static/style-thumbs/lifelike.png" alt="" loading="lazy"><span>Lifelike</span></button>
+        <button type="button" data-style="words"><img class="styleth" src="/static/style-thumbs/mosaic.png" alt="" loading="lazy"><span>Mosaic</span></button>
+        <button type="button" data-style="message"><img class="styleth" src="/static/style-thumbs/passage.png" alt="" loading="lazy"><span>Passage</span></button>
       </div>
       <div class="ctl-hint" id="styleCaption">A lifelike portrait — the words follow their face.</div>
       <div class="ctl-hint" id="bestNote" style="display:none"></div>
@@ -821,6 +834,14 @@ const _isMemorialBrand=!!(BRAND && BRAND.memorial);
 if(!_isMemorialBrand){
   fetch("/gallery",{method:"HEAD"}).then(r=>{ if(r.ok){ const _gl=document.getElementById("galleryLink"); if(_gl) _gl.style.display="inline-block"; } }).catch(()=>{});
 }
+// Memorial skins keep a calmer two-style flow: Lifelike (default) + Passage (a
+// readable tribute forming the face). Mosaic (the scattered word-cloud) is hidden
+// here -- in grief, fewer choices and "words you can read" land better. Generic
+// Typortrait keeps all three (creative product = choice is a feature).
+if(_isMemorialBrand){
+  const _mb=document.querySelector('#styleSegResult button[data-style="words"]');
+  if(_mb) _mb.style.display="none";
+}
 if(BRAND){
   try{
     document.title=BRAND.title||BRAND.name;
@@ -982,7 +1003,9 @@ function setStyle(newStyle, rerender){
 // No context-free style toggle here — style exploration happens on the result gallery.
 const contentToggle=$("#contentToggle");
 if(contentToggle){ contentToggle.addEventListener("click", ()=>{
-  setStyle(state.style==="message" ? "words" : "message", false);
+  // On memorial skins Mosaic ("words") is hidden, so toggle Passage<->Lifelike there
+  // instead of routing to the hidden style.
+  setStyle(state.style==="message" ? (_isMemorialBrand ? "displacement" : "words") : "message", false);
 }); }
 $("#styleSegResult").addEventListener("click", e=>{ const b=e.target.closest("button"); if(b){ userTouched=true; setStyle(b.dataset.style, true); } });
 // Word-size scale: sets the floor font size; the body/mid/face/eye tiers all
