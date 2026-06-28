@@ -263,13 +263,10 @@
   /* Quiet text link (e.g. switch to writing a message) — not a loud button. */
   .linklike{display:inline-block;background:none;border:none;color:var(--navy);font-family:var(--sans);font-size:13.5px;font-weight:600;padding:10px 2px 2px;margin:0;cursor:pointer;letter-spacing:-.01em}
   .linklike:hover{opacity:.75}
-  /* Memorial "Share their story" step (lovedinwords only). A gentle paste-a-tribute
-     box that suggests words, shown above the words field. */
-  .story-step{margin:4px 0 20px;padding:20px;background:var(--soft);border-radius:22px}
-  .story-h{font-size:18px;font-weight:650;letter-spacing:-.02em;color:var(--ink)}
-  .story-p{color:var(--muted);font-size:13.5px;line-height:1.5;margin:6px 0 14px;max-width:46ch}
-  .story-step textarea{background:#fff;min-height:120px}
-  #suggestWords{margin-top:12px}
+  /* Memorial generate helper (memorial skins). Sits UNDER the one words box and
+     distills it into words in place -- a light helper strip, not a second panel. */
+  .story-step{margin:8px 0 18px}
+  .story-actions{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
   #suggestWords[disabled]{opacity:.55;cursor:default}
   .story-msg{font-size:13px;color:var(--muted);margin-top:10px;min-height:0}
   /* Optional "Add a few more details" expandable inside the story step. */
@@ -546,13 +543,22 @@
         </div>
       </div>
     </div>
-    <!-- Memorial "Share their story" step: paste a tribute, get suggested words.
-         Shown only for the lovedinwords brand (see brand-apply JS). Convenience
-         layer over the words field below; fails soft to manual entry. -->
+    <!-- THE ONE BOX: list words, or write/paste a tribute and distill it in place.
+         On memorial skins the label becomes "Tell us about them" and the helper
+         below turns the box into a write -> review flow on a single field (no
+         second box). Generic skins just type words here. -->
+    <label class="field">
+      <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
+      <span class="hint" id="wordsHint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
+      <textarea id="words" rows="3" placeholder="GRACE, KIND, BRILLIANT, MOM, ALWAYS"></textarea>
+    </label>
+    <!-- Memorial generate helper: distills the box ABOVE into words, in place.
+         Shown only on memorial skins (see brand-apply JS); fails soft to typing. -->
     <div id="storyStep" class="story-step" style="display:none">
-      <div class="story-h">Tell us about them</div>
-      <div class="story-p">Write or paste anything &mdash; an obituary, a memorial page, a tribute, a few memories, or just words that describe them. We&rsquo;ll turn it into the words for their portrait, and you can edit everything.</div>
-      <textarea id="storyText" rows="6" placeholder="Paste an obituary or tribute, share a memory, or list a few words&hellip;"></textarea>
+      <div class="story-actions">
+        <button type="button" id="suggestWords" class="btn secondary">Turn this into their words</button>
+        <button type="button" id="undoSuggest" class="linklike" style="display:none">&#8617; Back to what I wrote</button>
+      </div>
       <details class="story-more" id="storyMore">
         <summary>Add a few more details</summary>
         <div class="story-grid">
@@ -562,14 +568,8 @@
           <label>Hobby or passion<input id="dtHobby" type="text" autocomplete="off" placeholder="gardening, fishing&hellip;" maxlength="40" /></label>
         </div>
       </details>
-      <button type="button" id="suggestWords" class="btn secondary">Generate the words</button>
       <div id="storyMsg" class="story-msg" aria-live="polite"></div>
     </div>
-    <label class="field">
-      <span class="lbl" id="wordsLbl">The words that make them <em>them</em></span>
-      <span class="hint" id="wordsHint">Their name, what you love, a date, an inside joke. Separate with commas.</span>
-      <textarea id="words" rows="3" placeholder="GRACE, KIND, BRILLIANT, MOM, ALWAYS"></textarea>
-    </label>
     <button type="button" id="contentToggle" class="linklike">Writing a letter or a message instead? &rarr;</button>
     <div class="ctl" id="inputSizeCtl" style="display:none">
       <div class="ctl-lbl">Word size</div>
@@ -868,7 +868,11 @@ if(BRAND){
     const _tg=document.querySelector("header .tag"); if(_tg) _tg.textContent=BRAND.tag;
     if(_isMemorialBrand){
       const _h=document.querySelector(".brand-heart"); if(_h) _h.style.display="inline-flex";   // heart lockup = memorial brands
-      const _ss=document.getElementById("storyStep"); if(_ss) _ss.style.display="block";          // "Share their story" suggest step = memorial
+      const _ss=document.getElementById("storyStep"); if(_ss) _ss.style.display="block";          // generate helper under the one box = memorial
+      // The one box becomes "tell us about them": paste a tribute OR list words.
+      const _wl=document.getElementById("wordsLbl"); if(_wl) _wl.textContent="Tell us about them";
+      const _wh=document.getElementById("wordsHint"); if(_wh) _wh.textContent="Paste an obituary or tribute, share a memory, or just list a few words — then “Turn this into their words.” You can edit everything.";
+      const _wt=document.getElementById("words"); if(_wt){ _wt.setAttribute("placeholder","Paste a tribute, share a memory, or list a few words…"); _wt.rows=5; }
     }
     if(BRAND.theme){ const rs=document.documentElement.style; for(const k in BRAND.theme) rs.setProperty(k, BRAND.theme[k]); }
     // Swap the favicon to this brand's typographic heart (default is the generic T).
@@ -939,21 +943,23 @@ consent.addEventListener("change", refreshCreate);
    second box, no chips. Fails soft: on no suggestion / error / no key, we leave
    their text untouched and nudge them to edit by hand. */
 (function(){
-  const btn=document.getElementById("suggestWords"), msg=document.getElementById("storyMsg");
+  const btn=document.getElementById("suggestWords"), msg=document.getElementById("storyMsg"),
+        undoBtn=document.getElementById("undoSuggest");
   if(!btn) return;
+  const lblEl=document.getElementById("wordsLbl"), hintEl=document.getElementById("wordsHint");
+  const REVIEW_LBL="Their words", REVIEW_HINT="Edit any that don’t fit, add your own, then preview.";
+  let prevText=null, prevLbl=null, prevHint=null;   // captured for "Back to what I wrote"
   function say(m){ if(msg) msg.textContent=m; }
   function val(id){ const e=document.getElementById(id); return e ? (e.value||"").trim() : ""; }
+  function setLabels(lbl,hint){ if(lblEl) lblEl.textContent=lbl; if(hintEl) hintEl.textContent=hint; }
   btn.addEventListener("click", async ()=>{
-    // RICH (memorial): a dedicated story box (+ optional details) feeds the words
-    // field below. SINGLE-BOX (generic): the words field IS the input, distilled in
-    // place. Resolve at click time -- the guided flow may have removed #storyText.
-    const story=document.getElementById("storyText");
-    const rich=!!(story && document.body.contains(story));
-    const text=(rich ? story.value : words.value || "").trim();
-    const details=rich ? {nickname:val("dtNickname"), sayings:val("dtSaying"),
-                          three_words:val("dtThree"), hobby:val("dtHobby")} : {};
+    // One box: the #words field IS the input. Write/paste a tribute (or list a few
+    // words), and this distills it into the word list IN PLACE -- no second box.
+    // "Back to what I wrote" restores the original. Fails soft to manual entry.
+    const text=(words.value||"").trim();
+    const details={nickname:val("dtNickname"), sayings:val("dtSaying"), three_words:val("dtThree"), hobby:val("dtHobby")};
     const hasDetail=Object.values(details).some(Boolean);
-    if(!text && !hasDetail){ say(rich ? "Write or paste something about them, or add a detail or two." : "Type a few words, or paste their story here first."); (rich?story:words).focus(); return; }
+    if(!text && !hasDetail){ say("Write or paste something about them, or add a detail or two."); words.focus(); return; }
     btn.disabled=true; const label=btn.textContent; btn.textContent="Finding the words…"; say("");
     try{
       const fd=new FormData();
@@ -964,8 +970,12 @@ consent.addEventListener("change", refreshCreate);
       const j=await r.json();
       const ws=(j&&j.words)||[];
       if(ws.length){
-        words.value = ws.join(", "); refreshCreate();
-        say("Here are the words we found — edit any that don’t fit, then preview.");
+        prevText=words.value;                                       // remember what they wrote
+        prevLbl=lblEl?lblEl.textContent:null; prevHint=hintEl?hintEl.textContent:null;
+        words.value=ws.join(", "); refreshCreate();
+        setLabels(REVIEW_LBL, REVIEW_HINT);                         // write -> review, SAME box
+        if(undoBtn) undoBtn.style.display="";
+        say("Here are their words — edit any that don’t fit.");
         tp_track("story_suggest_ok",{n:ws.length});
         document.dispatchEvent(new CustomEvent("lw:words-suggested"));
       }else if(j && j.available===false){
@@ -979,6 +989,11 @@ consent.addEventListener("change", refreshCreate);
     }finally{
       btn.disabled=false; btn.textContent=label;
     }
+  });
+  if(undoBtn) undoBtn.addEventListener("click", ()=>{
+    if(prevText!=null){ words.value=prevText; refreshCreate(); }
+    if(prevLbl!=null) setLabels(prevLbl, prevHint);
+    if(undoBtn) undoBtn.style.display="none"; say(""); words.focus();
   });
 })();
 // Style toggle: word mosaic vs continuous-prose story.
@@ -2453,15 +2468,16 @@ function fetchWithTimeout(url, opts, ms){
     // uses. The old separate story textarea is dropped entirely.
     const _wl=g("wordsLbl"), _wh=g("wordsHint");
     if(MEM){
-      // Memorial: the rich "Tell us about them" block (free text + optional details +
-      // AI "Generate the words") stays, feeding the editable words field beneath it.
+      // Memorial ONE BOX: the words field IS the input -- write/paste a tribute (or
+      // list a few words), then the helper directly below ("Turn this into their
+      // words") distills it IN PLACE. Box first, helper beneath it; the step header
+      // titles the field, so its own label is hidden to avoid a redundant heading.
       if(elStory){ elStory.style.display="block"; }
-      if(_wl){ _wl.textContent="The words for their portrait"; _wl.style.display=""; }
-      if(_wh){ _wh.textContent="Generated from what you shared — edit, add or remove any. Separate with commas."; _wh.style.display=""; }
-      S[2].b.append.apply(S[2].b, [elStory, elWords, elSize].filter(Boolean));
-      // Memorial: drop the "Writing a letter or a message instead?" link -- redundant
-      // here, since the story box above already takes a letter/tribute/prose. (Message
-      // style stays reachable from the result-screen style gallery.)
+      if(_wl) _wl.style.display="none";
+      if(_wh){ _wh.textContent="Paste a tribute or share a memory — or just list a few words. Then “Turn this into their words,” and edit anything."; _wh.style.display=""; }
+      S[2].b.append.apply(S[2].b, [elWords, elStory, elSize].filter(Boolean));
+      // Drop the "Writing a letter or a message instead?" link -- the one box already
+      // takes a letter/tribute/prose. (Message style stays reachable from the result.)
       if(elToggle && elToggle.parentNode) elToggle.parentNode.removeChild(elToggle);
     }else{
       // Generic: ONE box -- type words, or paste a few sentences and tap Suggest words
@@ -2535,11 +2551,11 @@ function fetchWithTimeout(url, opts, ms){
       var resp=await fetch("sample-keeper.jpg"); var blob=await resp.blob();
       var file=new File([blob],"sample-keeper.jpg",{type:blob.type||"image/jpeg"});
       if(typeof useCroppedFile==="function") useCroppedFile(file); else if(typeof setFile==="function") setFile(file);
-      setv("storyText", SAMPLE_OBIT);
+      setv("words", SAMPLE_OBIT);   // the one box now holds the story; "Turn this into their words" distills it in place
       setv("dtNickname","Bob"); setv("dtSaying","There’s good in everyone."); setv("dtThree","kind, wise, patient"); setv("dtHobby","fishing");
       var sm=document.getElementById("storyMore"); if(sm) sm.open=true;
       if(window.guidedOpenStep) setTimeout(function(){ try{ guidedOpenStep(2); }catch(e){} },60);
-      var msg=document.getElementById("storyMsg"); if(msg) msg.textContent="Example loaded — tap “Generate the words,” then “Create their portrait.”";
+      var msg=document.getElementById("storyMsg"); if(msg) msg.textContent="Example loaded — tap “Turn this into their words,” then “Create their portrait.”";
     }catch(e){ var m=document.getElementById("storyMsg"); if(m) m.textContent="Couldn’t load the example — please try again."; }
     if(sb){ sb.disabled=false; sb.textContent="✨ See a sample"; }
   }
