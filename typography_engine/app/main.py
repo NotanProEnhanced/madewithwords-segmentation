@@ -1004,7 +1004,7 @@ def gallery_page() -> HTMLResponse:
 
 
 @app.post("/gallery/checkout")
-def gallery_checkout(item: str = Form(...), sku: str = Form("digital")) -> JSONResponse:
+def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("digital")) -> JSONResponse:
     """Create a Stripe Checkout session for a fixed gallery item. Decoupled from
     the personalized /checkout: a gallery item is pre-rendered art, validated
     against the catalog, with a master PNG on disk. Handles the digital download
@@ -1041,8 +1041,8 @@ def gallery_checkout(item: str = Form(...), sku: str = Form("digital")) -> JSONR
                     },
                 }],
                 metadata={"gallery_item": item},
-                success_url=f"{PUBLIC_BASE_URL}/gallery/download?item={item}&session_id={{CHECKOUT_SESSION_ID}}",
-                cancel_url=f"{PUBLIC_BASE_URL}/gallery?canceled=1",
+                success_url=f"{_req_base(request)}/gallery/download?item={item}&session_id={{CHECKOUT_SESSION_ID}}",
+                cancel_url=f"{_req_base(request)}/gallery?canceled=1",
             )
         except Exception as e:  # noqa: BLE001
             return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
@@ -1079,8 +1079,8 @@ def gallery_checkout(item: str = Form(...), sku: str = Form("digital")) -> JSONR
             metadata={"gallery_item": item, "sku": sku, "order_id": order_id, "ref": "gallery"},
             shipping_address_collection={"allowed_countries": ["US"]},
             phone_number_collection={"enabled": True},
-            success_url=f"{PUBLIC_BASE_URL}/order/{order_id}?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{PUBLIC_BASE_URL}/gallery?canceled=1",
+            success_url=f"{_req_base(request)}/order/{order_id}?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{_req_base(request)}/gallery?canceled=1",
         )
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
@@ -1194,8 +1194,21 @@ def _checkout_brand(ref: str) -> dict:
     return _CHECKOUT_BRANDS.get((ref or "").strip().lower(), {"name": "Typortrait"})
 
 
+def _req_base(request: Request) -> str:
+    """Host the user is actually on (from the proxy-passed Host header), so a checkout
+    redirect never bounces app<->staging. Falls back to PUBLIC_BASE_URL. ONLY for
+    user-facing redirects (Stripe success/cancel) -- server-to-server URLs that must be
+    publicly reachable (Printful fetch, og:image, receipt emails) keep PUBLIC_BASE_URL."""
+    host = request.headers.get("host")
+    if not host:
+        return PUBLIC_BASE_URL.rstrip("/")
+    proto = (request.headers.get("x-forwarded-proto", "") or "https").split(",")[0].strip() or "https"
+    return f"{proto}://{host}"
+
+
 @app.post("/checkout")
 def checkout(
+    request: Request,
     job: str = Form(...),
     sku: str = Form("digital"),
     size: Optional[str] = Form(None),
@@ -1238,8 +1251,8 @@ def checkout(
                     },
                 }],
                 metadata={"job": job, "ref": ref},
-                success_url=f"{PUBLIC_BASE_URL}/success?job={job}&session_id={{CHECKOUT_SESSION_ID}}",
-                cancel_url=f"{PUBLIC_BASE_URL}/static/index.html?canceled=1",
+                success_url=f"{_req_base(request)}/success?job={job}&session_id={{CHECKOUT_SESSION_ID}}",
+                cancel_url=f"{_req_base(request)}/static/index.html?canceled=1",
             )
         except Exception as e:  # noqa: BLE001
             return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
@@ -1284,8 +1297,8 @@ def checkout(
             metadata={"job": job, "sku": sku, "size": size or "", "order_id": order_id, "fmt": ext, "ref": ref},
             shipping_address_collection={"allowed_countries": ["US"]},
             phone_number_collection={"enabled": True},
-            success_url=f"{PUBLIC_BASE_URL}/order/{order_id}?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{PUBLIC_BASE_URL}/static/index.html?canceled=1",
+            success_url=f"{_req_base(request)}/order/{order_id}?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{_req_base(request)}/static/index.html?canceled=1",
         )
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
