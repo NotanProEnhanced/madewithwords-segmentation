@@ -14,10 +14,9 @@ import glob
 import io
 import math
 from functools import lru_cache
-from typing import Optional
 
-import qrcode
-from PIL import Image, ImageDraw, ImageFont
+import numpy as np
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 _NAVY = (13, 27, 58)
 
@@ -37,19 +36,18 @@ def _font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
-def _tile_watermark(im: Image.Image, mark: str = "typortrait.com", alpha: int = 66) -> Image.Image:
-    """Faint repeating diagonal mark across the WHOLE image so it can't be cropped
-    off (the corner QR/label can). White text with a dark outline, both at low
-    alpha, so it stays legible on dark grounds AND light/paper grounds without
-    obscuring the art. Burned into the pixels."""
+def _tile_watermark(im: Image.Image, mark: str = "typortrait.com", alpha: int = 120) -> Image.Image:
+    """A sparse repeating diagonal mark confined to the SUBJECT (the figure), not the
+    background -- fewer marks, a clean background, and unccroppable (you can't crop out
+    the face). White text with a dark outline so it reads on dark and light grounds."""
     W, H = im.size
-    wf = _font(max(14, int(W * 0.024)))
+    wf = _font(max(14, int(W * 0.023)))
     diag = int(math.hypot(W, H)) + 4               # big enough that the rotation still covers every corner
     layer = Image.new("RGBA", (diag, diag), (0, 0, 0, 0))
     ld = ImageDraw.Draw(layer)
     mw = ld.textlength(mark, font=wf)
-    step_x = int(mw + max(48, W * 0.12))
-    step_y = max(30, int(H * 0.105))
+    step_x = int(mw + max(70, W * 0.22))           # sparse -> few marks
+    step_y = max(46, int(H * 0.17))
     row = 0
     for yy in range(0, diag, step_y):
         off = (step_x // 2) if (row % 2) else 0    # brick offset so columns don't line up
@@ -60,44 +58,37 @@ def _tile_watermark(im: Image.Image, mark: str = "typortrait.com", alpha: int = 
     layer = layer.rotate(30, resample=Image.BICUBIC, expand=False)
     cx, cy = (diag - W) // 2, (diag - H) // 2
     layer = layer.crop((cx, cy, cx + W, cy + H))
+    # Confine the mark to the figure: multiply its alpha by the subject mask.
+    layer.putalpha(ImageChops.multiply(layer.split()[3], _subject_mask(im)))
     return Image.alpha_composite(im.convert("RGBA"), layer).convert("RGB")
 
 
-@lru_cache(maxsize=4)
-def _qr(url: str) -> Image.Image:
-    qr = qrcode.QRCode(border=2, box_size=10, error_correction=qrcode.constants.ERROR_CORRECT_M)
-    qr.add_data(url)
-    qr.make(fit=True)
-    return qr.make_image(fill_color="#0d1b3a", back_color="white").convert("RGB")
+def _subject_mask(im: Image.Image) -> Image.Image:
+    """Rough 'figure vs flat ground' mask. The preview's background is a flat ground
+    colour (renders run bg-removed), so pixels far from the sampled corner colour are
+    the subject. Returns an L image (255 = subject) used to confine the watermark to
+    the figure so the background stays clean."""
+    arr = np.asarray(im.convert("RGB")).astype(np.int16)
+    H, W = arr.shape[:2]
+    cs = max(6, int(min(W, H) * 0.02))
+    corners = np.concatenate([
+        arr[:cs, :cs].reshape(-1, 3), arr[:cs, -cs:].reshape(-1, 3),
+        arr[-cs:, :cs].reshape(-1, 3), arr[-cs:, -cs:].reshape(-1, 3)])
+    bg = np.median(corners, axis=0)
+    dist = np.sqrt(((arr - bg) ** 2).sum(axis=2))
+    msk = Image.fromarray(((dist > 42) * 255).astype(np.uint8), "L")
+    # close pinholes, then soften the edge so marks don't cling to the silhouette rim
+    return msk.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.GaussianBlur(2))
 
 
 def add_watermark(png_bytes: bytes, url: str = "https://typortrait.com",
                   label: str = "Typortrait.com") -> bytes:
+    """Burn the free-preview watermark into a render: a single sparse diagonal
+    "typortrait.com" over the figure only (no QR, no corner plate). Preview-only --
+    the paid download recomposes the clean PNG without this. `url`/`label` are kept
+    for call-site compatibility; the on-image mark is always the wordmark."""
     im = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-    W, H = im.size
-    # Unccroppable tiled mark first (background), then the corner QR + label on top.
     im = _tile_watermark(im)
-    d = ImageDraw.Draw(im, "RGBA")
-    m = max(10, int(W * 0.028))
-    plate = (255, 255, 255, 232)
-
-    # QR (bottom-right)
-    q = max(60, int(W * 0.13))
-    qr = _qr(url).resize((q, q), Image.NEAREST)
-    pad = max(4, int(q * 0.06))
-    d.rounded_rectangle([W - q - m - pad, H - q - m - pad, W - m + pad, H - m + pad],
-                        radius=int(q * 0.08), fill=plate)
-    im.paste(qr, (W - q - m, H - q - m))
-
-    # Label (bottom-left)
-    fs = max(16, int(W * 0.034))
-    font = _font(fs)
-    tw = d.textlength(label, font=font)
-    tp = int(fs * 0.45)
-    d.rounded_rectangle([m, H - m - fs - 2 * tp, m + tw + 2 * tp, H - m],
-                        radius=int(fs * 0.4), fill=plate)
-    d.text((m + tp, H - m - fs - tp), label, font=font, fill=_NAVY)
-
     out = io.BytesIO()
     im.save(out, "PNG")
     return out.getvalue()
