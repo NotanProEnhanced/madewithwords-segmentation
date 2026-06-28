@@ -231,12 +231,20 @@
   .seg.stylecards{background:none;gap:8px;padding:0;border-radius:0}
   .seg.stylecards button{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:6px;
      background:#f4f1eb;border-radius:14px;padding:6px 6px 8px;box-shadow:none}
-  .seg.stylecards button .styleth{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:10px;
-     display:block;background:#e7e3da;box-shadow:0 1px 3px rgba(0,0,0,.12)}
-  .seg.stylecards button span{font-size:13px;font-weight:600;color:var(--muted);letter-spacing:-.01em}
+  /* The thumbnail tile shows a short text HINT (what each style is for) while the
+     renderer works, then swaps to a thumbnail of the BUYER'S OWN photo via a
+     background-image (.has-img). No stock/stranger face -- that read as confusing. */
+  .seg.stylecards button .styleth{width:100%;aspect-ratio:1/1;border-radius:10px;display:flex;
+     align-items:center;justify-content:center;text-align:center;padding:6px;overflow:hidden;
+     background:#ece7df;background-size:cover;background-position:center;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  .seg.stylecards button .styleth::before{content:attr(data-hint);font-size:12px;font-weight:600;
+     color:var(--muted);line-height:1.25;letter-spacing:-.01em}
+  .seg.stylecards button .styleth.has-img::before{content:none}
+  .seg.stylecards button.on .styleth{background-color:#e3ddd2}
+  .seg.stylecards button .nm{font-size:13px;font-weight:600;color:var(--muted);letter-spacing:-.01em}
   .seg.stylecards button.on{background:#fff;box-shadow:0 0 0 2px var(--navy)}
-  .seg.stylecards button.on span{color:var(--navy)}
-  .seg.stylecards button.best span::after{content:"\2726";margin-left:5px;color:#c9a227;font-size:11px;vertical-align:1px}
+  .seg.stylecards button.on .nm{color:var(--navy)}
+  .seg.stylecards button.best .nm::after{content:"\2726";margin-left:5px;color:#c9a227;font-size:11px;vertical-align:1px}
   .seg.stylecards button.best::after{content:none}
   #bestNote{color:#8a6d1f}
   /* Center the style caption + recommendation note under the style picker. */
@@ -603,9 +611,9 @@
     <div class="ctl" id="styleGallery" style="margin-top:6px">
       <div class="ctl-lbl">Choose your style</div>
       <div class="seg stylecards" id="styleSegResult" aria-label="Choose your style">
-        <button type="button" data-style="displacement" class="on"><img class="styleth" src="/static/style-thumbs/lifelike.png" alt="" loading="lazy"><span>Lifelike</span></button>
-        <button type="button" data-style="words"><img class="styleth" src="/static/style-thumbs/mosaic.png" alt="" loading="lazy"><span>Mosaic</span></button>
-        <button type="button" data-style="message"><img class="styleth" src="/static/style-thumbs/passage.png" alt="" loading="lazy"><span>Passage</span></button>
+        <button type="button" data-style="displacement" class="on"><span class="styleth" data-hint="Words"></span><span class="nm">Lifelike</span></button>
+        <button type="button" data-style="words"><span class="styleth" data-hint="Word cloud"></span><span class="nm">Mosaic</span></button>
+        <button type="button" data-style="message"><span class="styleth" data-hint="Verses, Lyrics, etc."></span><span class="nm">Passage</span></button>
       </div>
       <div class="ctl-hint" id="styleCaption">A lifelike portrait — the words follow their face.</div>
       <div class="ctl-hint" id="bestNote" style="display:none"></div>
@@ -1478,12 +1486,12 @@ async function prewarmSizes(){
    portrait they're already looking at. */
 let styleScores={}, recoStarted=false, recoDone=false, userTouched=false;
 const STYLE_NAMES={words:"Mosaic",message:"Passage",displacement:"Lifelike"};
-// Style-picker thumbnails: start as stock samples (instant), then swap to a
-// thumbnail of the BUYER'S OWN photo as the reco's coarse per-style renders land
-// (no extra renders -- the reco already probes each style; we just keep its preview).
-const STYLE_THUMB_STOCK={displacement:"/static/style-thumbs/lifelike.png",words:"/static/style-thumbs/mosaic.png",message:"/static/style-thumbs/passage.png"};
-function setStyleThumb(style,url){ if(!url) return; const im=document.querySelector('#styleSegResult button[data-style="'+style+'"] img.styleth'); if(im && im.getAttribute("src")!==url) im.src=url; }
-function resetStyleThumbs(){ for(const s in STYLE_THUMB_STOCK) setStyleThumb(s, STYLE_THUMB_STOCK[s]); }
+// Style-picker thumbnails: show a short text HINT (data-hint) until the BUYER'S OWN
+// photo, rendered in that style, lands -- then the tile swaps to it (no extra renders;
+// the reco already probes each style, we just keep its preview). A new photo/words
+// reverts the tiles to the text hint until re-probed.
+function setStyleThumb(style,url){ if(!url) return; const t=document.querySelector('#styleSegResult button[data-style="'+style+'"] .styleth'); if(t){ t.style.backgroundImage='url("'+url+'")'; t.classList.add('has-img'); } }
+function resetStyleThumbs(){ document.querySelectorAll('#styleSegResult .styleth').forEach(t=>{ t.style.backgroundImage=''; t.classList.remove('has-img'); }); }
 function resetReco(){
   styleScores={}; recoStarted=false; recoDone=false; userTouched=false;
   document.querySelectorAll('#styleSegResult button').forEach(b=>b.classList.remove("best"));
