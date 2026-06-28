@@ -975,7 +975,7 @@ consent.addEventListener("change", refreshCreate);
         words.value=ws.join(", "); refreshCreate();
         setLabels(REVIEW_LBL, REVIEW_HINT);                         // write -> review, SAME box
         if(undoBtn) undoBtn.style.display="";
-        say("Here are their words — edit any that don’t fit.");
+        say("");   // the review hint + filled box + undo convey success; no redundant status line
         tp_track("story_suggest_ok",{n:ws.length});
         document.dispatchEvent(new CustomEvent("lw:words-suggested"));
       }else if(j && j.available===false){
