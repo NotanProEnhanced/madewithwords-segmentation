@@ -182,7 +182,7 @@ function render(s){
       d.innerHTML=`<p class="big">The portrait is finished.</p><p class="sub" style="margin:0 auto 16px">Made from everyone's words, including yours.</p>`+
         `<button class="btn" id="buyCopy" style="display:block;width:100%">Get your own copy${PRICE?` — ${PRICE}`:""}</button>`+
         `<div id="buyMsg" class="getown-msg"></div>`+
-        `<a class="getown-link" style="display:inline-block;margin-top:14px" href="https://app.typortrait.com/?brand=lovedinwords">Or create your own from scratch →</a>`;
+        `<a class="getown-link" style="display:inline-block;margin-top:14px" href="/?brand=lovedinwords">Or create your own from scratch →</a>`;
       $("#form").after(d);
       var bc=$("#buyCopy"); if(bc) bc.addEventListener("click", buyCopy);
     }

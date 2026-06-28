@@ -168,9 +168,10 @@ def _ensure_hires(g: sqlite3.Row):
     return hp
 
 
-def _notify_copy_requests(gid: int) -> None:
+def _notify_copy_requests(gid: int, base: str = "") -> None:
     """On reveal: email everyone who asked for their own copy, linking to the share
-    page (finished portrait + buy button). Off-thread; best-effort; idempotent."""
+    page (finished portrait + buy button). `base` is the host the reveal happened on
+    (so the link matches it); falls back to PUBLIC_BASE_URL. Off-thread; idempotent."""
     try:
         from .admin import send_email
     except Exception:  # noqa: BLE001
@@ -184,7 +185,7 @@ def _notify_copy_requests(gid: int) -> None:
         ).fetchall()
     if not reqs:
         return
-    share_url = f"{PUBLIC_BASE_URL}/g/{g['share_token']}"
+    share_url = f"{(base or PUBLIC_BASE_URL).rstrip('/')}/g/{g['share_token']}"
     raw_title = g["title"] or "the portrait"
     esc_title = html.escape(raw_title)
     subj = f"“{raw_title}” is ready"
@@ -349,6 +350,18 @@ def _rl_ok(bucket: dict, key: str, limit: int, window: float = 60.0) -> bool:
 _rl_add: dict = {}     # per-IP word-add rate limit
 
 
+def _base(request: Request) -> str:
+    """The host the visitor is actually on, from the (proxy-passed) Host header --
+    so gather links never jump app<->staging. A fixed PUBLIC_BASE_URL can point at a
+    different env behind the shared reverse proxy; the Host header is what the browser
+    sent. Falls back to PUBLIC_BASE_URL only if no Host is present."""
+    host = request.headers.get("host")
+    if not host:
+        return PUBLIC_BASE_URL.rstrip("/")
+    proto = (request.headers.get("x-forwarded-proto", "") or "https").split(",")[0].strip() or "https"
+    return f"{proto}://{host}"
+
+
 # --- routes: pages -----------------------------------------------------------
 
 @router.get("/api/gather/enabled")
@@ -377,6 +390,7 @@ def page_admin(admin: str):
 
 @router.post("/api/gather/create")
 async def create(
+    request: Request,
     image: UploadFile = File(...),
     title: str = Form(...),
     words: str = Form(""),                 # seed words (comma/space separated)
@@ -429,11 +443,12 @@ async def create(
                 )
             c.commit()
     _maybe_render(_gather_by("id", str(gid)), force=True)
+    b = _base(request)
     return {
         "ok": True,
         "gather_id": gid,
-        "share_url": f"{PUBLIC_BASE_URL}/g/{share_token}",
-        "admin_url": f"{PUBLIC_BASE_URL}/a/{admin_token}",
+        "share_url": f"{b}/g/{share_token}",
+        "admin_url": f"{b}/a/{admin_token}",
     }
 
 
@@ -507,7 +522,7 @@ def notify_me(share: str, email: str = Form(...)):
 
 
 @router.post("/api/gather/{share}/checkout")
-def gather_checkout(share: str):
+def gather_checkout(request: Request, share: str):
     """Buy your own high-resolution copy of the finished gather portrait (digital
     download). Decoupled from the studio: this art is the gather's own portrait."""
     g = _gather_by("share_token", share)
@@ -520,6 +535,7 @@ def gather_checkout(share: str):
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
     title = (g["title"] or "Gathered portrait")[:120]
+    b = _base(request)   # stay on the host the buyer is on (no app<->staging jump)
     try:
         sess = stripe.checkout.Session.create(
             mode="payment",
@@ -532,8 +548,8 @@ def gather_checkout(share: str):
                 },
             }],
             metadata={"gather_share": share},
-            success_url=f"{PUBLIC_BASE_URL}/api/gather/{share}/download?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{PUBLIC_BASE_URL}/g/{share}?canceled=1",
+            success_url=f"{b}/api/gather/{share}/download?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{b}/g/{share}?canceled=1",
         )
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
@@ -568,14 +584,14 @@ def gather_download(share: str, session_id: str):
 # --- routes: admin (token in the path == bearer auth) ------------------------
 
 @router.get("/api/gather/admin/{admin}/state")
-def admin_state(admin: str):
+def admin_state(request: Request, admin: str):
     g = _gather_by("admin_token", admin)
     if not g:
         raise HTTPException(404, "not found")
     if g["status"] == "open":
         _maybe_render(g)               # dashboard polling also keeps the portrait fresh
     s = _public_state(g, include_hidden=True)
-    s["share_url"] = f"{PUBLIC_BASE_URL}/g/{g['share_token']}"
+    s["share_url"] = f"{_base(request)}/g/{g['share_token']}"   # same host the admin is on
     return s
 
 
@@ -601,7 +617,7 @@ def admin_render(admin: str):
 
 
 @router.post("/api/gather/admin/{admin}/reveal")
-def admin_reveal(admin: str):
+def admin_reveal(request: Request, admin: str):
     g = _gather_by("admin_token", admin)
     if not g:
         raise HTTPException(404, "not found")
@@ -609,6 +625,7 @@ def admin_reveal(admin: str):
         c.execute("UPDATE gathers SET status='revealed' WHERE id=?", (g["id"],))
         c.commit()
     _maybe_render(_gather_by("admin_token", admin), force=True)   # final edition
+    b = _base(request)
     # Email everyone who asked to be told when it's ready (off-thread; best-effort).
-    threading.Thread(target=_notify_copy_requests, args=(g["id"],), daemon=True).start()
-    return {"ok": True, "share_url": f"{PUBLIC_BASE_URL}/g/{g['share_token']}"}
+    threading.Thread(target=_notify_copy_requests, args=(g["id"], b), daemon=True).start()
+    return {"ok": True, "share_url": f"{b}/g/{g['share_token']}"}
