@@ -46,6 +46,11 @@
      transform:translate(-50%,-50%) scale(1.15)}
   .countline{text-align:center;color:var(--muted);font-size:13px;margin:10px 0 22px}
   .countline b{color:var(--navy)}
+  /* "Get your own copy" — email-me-when-ready (during the gather) + buy (after reveal). */
+  .getown{margin-top:18px;text-align:center}
+  .getown-link{background:none;border:none;color:var(--navy);font-weight:600;font-size:14px;cursor:pointer;font-family:inherit;text-decoration:underline;letter-spacing:-.01em}
+  .getown input{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:15px;font-family:inherit;margin:0 0 8px;background:#fcfbf8;color:var(--ink)}
+  .getown-msg{font-size:13px;color:var(--muted);margin-top:9px;min-height:0}
   .form{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px}
   label{display:block;font-weight:600;font-size:14px;margin:0 0 7px;color:var(--ink)}
   input[type=text]{width:100%;border:1px solid var(--line);border-radius:12px;padding:13px 14px;
@@ -119,7 +124,14 @@
     <p class="sub" style="margin:0 auto">Your word is woven into their portrait.</p>
     <div class="recent" id="recent"></div>
     <button class="btn" id="another" style="margin-top:18px;background:#fff;color:var(--navy);box-shadow:inset 0 0 0 1.5px var(--navy)">Add another</button>
-    <a class="cta" id="getown" href="#">Want your own print when it's finished? →</a>
+    <div id="getown" class="getown">
+      <button type="button" id="getownBtn" class="getown-link">Want your own copy when it's ready? →</button>
+      <div id="getownForm" style="display:none">
+        <input id="getownEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" />
+        <button type="button" id="getownSend" class="btn">Email me when it's ready</button>
+      </div>
+      <div id="getownMsg" class="getown-msg" aria-live="polite"></div>
+    </div>
   </div>
 
   <div class="foot">Gathered with care · No account needed</div>
@@ -129,6 +141,8 @@
 const SHARE = location.pathname.split("/").pop();
 const $ = s => document.querySelector(s);
 let lastWords = 0;
+let PRICE = "";   // shown on the "Get your own copy" button after reveal
+fetch("/pricing").then(r=>r.json()).then(p=>{ if(p&&p.price_cents) PRICE="$"+(p.price_cents/100).toFixed(2); }).catch(()=>{});
 const mine = new Set();   // words I added this session -> highlighted in the wall
 function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
@@ -165,8 +179,12 @@ function render(s){
     $("#form").style.display="none"; $("#thanks").style.display="none";
     if(!$("#revealed")){
       const d=document.createElement("div"); d.className="form thanks"; d.id="revealed";
-      d.innerHTML=`<p class="big">The portrait is finished.</p><p class="sub" style="margin:0 auto 16px">Made from everyone's words, including yours.</p><a class="btn" style="text-decoration:none;display:block" href="https://app.typortrait.com/?brand=lovedinwords">Create your own keepsake →</a>`;
+      d.innerHTML=`<p class="big">The portrait is finished.</p><p class="sub" style="margin:0 auto 16px">Made from everyone's words, including yours.</p>`+
+        `<button class="btn" id="buyCopy" style="display:block;width:100%">Get your own copy${PRICE?` — ${PRICE}`:""}</button>`+
+        `<div id="buyMsg" class="getown-msg"></div>`+
+        `<a class="getown-link" style="display:inline-block;margin-top:14px" href="https://app.typortrait.com/?brand=lovedinwords">Or create your own from scratch →</a>`;
       $("#form").after(d);
+      var bc=$("#buyCopy"); if(bc) bc.addEventListener("click", buyCopy);
     }
   }
   lastWords = s.count;
@@ -216,7 +234,30 @@ function flyWord(text){
   setTimeout(()=>{ f.remove(); }, 2600);
 }
 $("#another").addEventListener("click", ()=>{ $("#thanks").style.display="none"; $("#form").style.display="block"; $("#word").focus(); });
-$("#getown").addEventListener("click", e=>{ e.preventDefault(); $("#getown").textContent="We'll let the family know it's ready. 🤍"; });
+$("#getownBtn").addEventListener("click", ()=>{ $("#getownForm").style.display="block"; $("#getownBtn").style.display="none"; $("#getownEmail").focus(); });
+$("#getownSend").addEventListener("click", async ()=>{
+  const em=$("#getownEmail").value.trim();
+  if(em.indexOf("@")<1 || em.lastIndexOf(".")<em.indexOf("@")){ $("#getownMsg").textContent="Please enter a valid email."; return; }
+  $("#getownSend").disabled=true;
+  try{
+    const fd=new FormData(); fd.append("email",em);
+    const r=await fetch(`/api/gather/${SHARE}/notify-me`,{method:"POST",body:fd});
+    const d=await r.json();
+    if(d.ok){ $("#getownForm").style.display="none"; $("#getownMsg").textContent = d.revealed ? "It's ready — see below to get your copy. 🤍" : "We'll email you when it's ready. 🤍"; }
+    else { $("#getownMsg").textContent = d.error==="bad_email" ? "Please enter a valid email." : "Couldn't save that — try again."; }
+  }catch(e){ $("#getownMsg").textContent="Network error — try again."; }
+  $("#getownSend").disabled=false;
+});
+async function buyCopy(){
+  const b=$("#buyCopy"); if(!b) return; b.disabled=true; const t=b.textContent; b.textContent="Opening secure checkout…";
+  try{
+    const r=await fetch(`/api/gather/${SHARE}/checkout`,{method:"POST"});
+    const d=await r.json();
+    if(d.ok && d.url){ location.href=d.url; return; }
+    const bm=$("#buyMsg"); if(bm) bm.textContent = ({payments_unconfigured:"Checkout isn't set up yet.", not_ready:"The portrait isn't ready yet."})[d.error] || "Couldn't start checkout — try again.";
+  }catch(e){ const bm=$("#buyMsg"); if(bm) bm.textContent="Network error — try again."; }
+  b.disabled=false; b.textContent=t;
+}
 
 load();
 setInterval(load, 6000);   // gentle live refresh as words + portrait evolve

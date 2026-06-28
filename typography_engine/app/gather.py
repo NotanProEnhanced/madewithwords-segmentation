@@ -17,6 +17,7 @@ so a busy gather can never hammer the single render slot the studio shares.
 """
 from __future__ import annotations
 
+import html
 import io
 import re
 import secrets
@@ -29,8 +30,9 @@ from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from .config import (
-    GATHER_DB, GATHER_DIR, GATHER_MAX_WORDS, GATHER_RENDER_EVERY,
-    GATHER_RENDER_INTERVAL, GATHER_WORD_MAXLEN, PUBLIC_BASE_URL, STATIC_DIR,
+    CURRENCY, DOWNLOAD_PRICE_CENTS, GATHER_DB, GATHER_DIR, GATHER_MAX_WORDS,
+    GATHER_RENDER_EVERY, GATHER_RENDER_INTERVAL, GATHER_WORD_MAXLEN,
+    PUBLIC_BASE_URL, STATIC_DIR, STRIPE_SECRET_KEY,
 )
 
 router = APIRouter()
@@ -76,6 +78,14 @@ def init_db() -> None:
               hidden INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS ix_contrib_gather ON contributions(gather_id);
+            CREATE TABLE IF NOT EXISTS copy_requests (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              gather_id INTEGER NOT NULL,
+              email TEXT NOT NULL,
+              created_at REAL NOT NULL,
+              notified INTEGER NOT NULL DEFAULT 0      -- 1 once the "it's ready" email is sent
+            );
+            CREATE INDEX IF NOT EXISTS ix_copyreq_gather ON copy_requests(gather_id);
             """
         )
 
@@ -131,6 +141,69 @@ def _portrait_path(gid: int):
     return GATHER_DIR / str(gid) / "portrait.png"
 
 
+def _hires_path(gid: int):
+    return GATHER_DIR / str(gid) / "portrait_hires.png"
+
+
+def _ensure_hires(g: sqlite3.Row):
+    """Render (once, cached) a print-resolution edition of the gather portrait for a
+    paid 'own copy' download, from the current visible words. Returns the path or None."""
+    hp = _hires_path(g["id"])
+    if hp.exists():
+        return hp
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT * FROM contributions WHERE gather_id=? ORDER BY id", (g["id"],)
+        ).fetchall()
+    words = _tokens_for_render(rows) or ["BELOVED"]
+    try:
+        raw = open(g["photo_path"], "rb").read()
+    except OSError:
+        return None
+    png = _render_words(raw, words, g, out_width=1600, supersample=2)
+    if not png:
+        return None
+    hp.parent.mkdir(parents=True, exist_ok=True)
+    hp.write_bytes(png)
+    return hp
+
+
+def _notify_copy_requests(gid: int) -> None:
+    """On reveal: email everyone who asked for their own copy, linking to the share
+    page (finished portrait + buy button). Off-thread; best-effort; idempotent."""
+    try:
+        from .admin import send_email
+    except Exception:  # noqa: BLE001
+        return
+    g = _gather_by("id", str(gid))
+    if not g:
+        return
+    with _conn() as c:
+        reqs = c.execute(
+            "SELECT * FROM copy_requests WHERE gather_id=? AND notified=0", (gid,)
+        ).fetchall()
+    if not reqs:
+        return
+    share_url = f"{PUBLIC_BASE_URL}/g/{g['share_token']}"
+    raw_title = g["title"] or "the portrait"
+    esc_title = html.escape(raw_title)
+    subj = f"“{raw_title}” is ready"
+    text_body = (f"The portrait for {raw_title} is ready.\n"
+                 f"See it and get your own copy: {share_url}\n\n"
+                 "You asked to be told when it was ready. — Loved in Words")
+    html_body = (
+        "<div style=\"font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#2d261f;line-height:1.5\">"
+        f"<p>The portrait for <b>{esc_title}</b> is finished — woven from everyone’s words, including yours.</p>"
+        f"<p><a href=\"{share_url}\" style=\"color:#2f3b52;font-weight:700\">See it and get your own copy &rarr;</a></p>"
+        "<p style=\"color:#7c7468;font-size:13px\">You asked to be told when it was ready. — Loved in Words</p></div>"
+    )
+    for r in reqs:
+        if send_email(r["email"], subj, html_body, text_body):
+            with _conn() as c:
+                c.execute("UPDATE copy_requests SET notified=1 WHERE id=?", (r["id"],))
+                c.commit()
+
+
 def _do_render(gid: int) -> None:
     """Render the current word set onto the stored photo and save portrait.png.
     Runs in a worker thread; respects the single-render lock."""
@@ -169,9 +242,10 @@ def _do_render(gid: int) -> None:
         _render_lock.release()
 
 
-def _render_words(raw: bytes, words: List[str], g: sqlite3.Row) -> Optional[bytes]:
-    """Reuse the studio render pipeline (same as gallery_render): a LIGHT preview
-    render of the gathered words on the source photo."""
+def _render_words(raw: bytes, words: List[str], g: sqlite3.Row,
+                  out_width: int = 760, supersample: int = 1) -> Optional[bytes]:
+    """Reuse the studio render pipeline. Defaults are a LIGHT live-preview render;
+    the paid 'own copy' download passes a larger out_width + supersample for print."""
     from .config import RenderConfig
     from .pipeline.warnings import WarningCollector
     from .pipeline.analyze import analyze_image
@@ -190,14 +264,14 @@ def _render_words(raw: bytes, words: List[str], g: sqlite3.Row) -> Optional[byte
             return render_displacement_portrait(
                 an, words, ground=ground,
                 ink=("photo" if g["ink"] in ("photo", "photo_paper", "custom") else g["ink"]),
-                out_width=760, supersample=1, uppercase=True,
+                out_width=out_width, supersample=supersample, uppercase=True,
             )
         from .pipeline.tonal import render_layered_png
         text = " ".join(words)
         png, *_ = render_layered_png(
             an, text, ("message" if style == "message" else "words"), cfg, warns,
             ink=(g["ink"] or "mono"), remove_bg=True, light=False,
-            out_width=760, render_w=1100,
+            out_width=out_width, render_w=max(1100, int(out_width * 1.45)),
         )
         return png
     except Exception:
@@ -410,6 +484,87 @@ def portrait(share: str):
     return FileResponse(str(p), media_type="image/png")
 
 
+# --- routes: "get your own copy" (email-me-when-ready + buy) ------------------
+
+@router.post("/api/gather/{share}/notify-me")
+def notify_me(share: str, email: str = Form(...)):
+    """A contributor asks to be emailed when the portrait is ready. Stored against
+    the gather; the reveal step emails them a link to see it + buy their own copy."""
+    g = _gather_by("share_token", share)
+    if not g:
+        raise HTTPException(404, "not found")
+    em = (email or "").strip().lower()[:160]
+    if "@" not in em or "." not in em.split("@")[-1]:
+        return JSONResponse({"ok": False, "error": "bad_email"}, status_code=400)
+    with _conn() as c:
+        ex = c.execute("SELECT 1 FROM copy_requests WHERE gather_id=? AND email=?",
+                       (g["id"], em)).fetchone()
+        if not ex:
+            c.execute("INSERT INTO copy_requests(gather_id,email,created_at) VALUES(?,?,?)",
+                      (g["id"], em, time.time()))
+            c.commit()
+    return {"ok": True, "revealed": g["status"] == "revealed"}
+
+
+@router.post("/api/gather/{share}/checkout")
+def gather_checkout(share: str):
+    """Buy your own high-resolution copy of the finished gather portrait (digital
+    download). Decoupled from the studio: this art is the gather's own portrait."""
+    g = _gather_by("share_token", share)
+    if not g:
+        raise HTTPException(404, "not found")
+    if not STRIPE_SECRET_KEY:
+        return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
+    if not _portrait_path(g["id"]).exists():
+        return JSONResponse({"ok": False, "error": "not_ready"}, status_code=409)
+    import stripe
+    stripe.api_key = STRIPE_SECRET_KEY
+    title = (g["title"] or "Gathered portrait")[:120]
+    try:
+        sess = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[{
+                "quantity": 1,
+                "price_data": {
+                    "currency": CURRENCY,
+                    "unit_amount": DOWNLOAD_PRICE_CENTS,
+                    "product_data": {"name": f"{title} — high-resolution download"},
+                },
+            }],
+            metadata={"gather_share": share},
+            success_url=f"{PUBLIC_BASE_URL}/api/gather/{share}/download?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{PUBLIC_BASE_URL}/g/{share}?canceled=1",
+        )
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
+    return {"ok": True, "url": sess.url}
+
+
+@router.get("/api/gather/{share}/download")
+def gather_download(share: str, session_id: str):
+    """Serve the print-resolution copy after verifying the paid Stripe session."""
+    g = _gather_by("share_token", share)
+    if not g:
+        raise HTTPException(404, "not found")
+    if not STRIPE_SECRET_KEY:
+        return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
+    import stripe
+    stripe.api_key = STRIPE_SECRET_KEY
+    try:
+        sess = stripe.checkout.Session.retrieve(session_id)
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "bad_session"}, status_code=400)
+    paid = getattr(sess, "payment_status", None) == "paid"
+    meta = getattr(sess, "metadata", None)
+    meta_share = getattr(meta, "gather_share", None) if meta is not None else None
+    if not paid or meta_share != share:
+        return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
+    hp = _ensure_hires(g)
+    if not hp:
+        return JSONResponse({"ok": False, "error": "render_failed"}, status_code=500)
+    return FileResponse(str(hp), media_type="image/png", filename=f"typortrait-gather-{share}.png")
+
+
 # --- routes: admin (token in the path == bearer auth) ------------------------
 
 @router.get("/api/gather/admin/{admin}/state")
@@ -454,4 +609,6 @@ def admin_reveal(admin: str):
         c.execute("UPDATE gathers SET status='revealed' WHERE id=?", (g["id"],))
         c.commit()
     _maybe_render(_gather_by("admin_token", admin), force=True)   # final edition
+    # Email everyone who asked to be told when it's ready (off-thread; best-effort).
+    threading.Thread(target=_notify_copy_requests, args=(g["id"],), daemon=True).start()
     return {"ok": True, "share_url": f"{PUBLIC_BASE_URL}/g/{g['share_token']}"}

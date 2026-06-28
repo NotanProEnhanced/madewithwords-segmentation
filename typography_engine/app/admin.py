@@ -440,6 +440,32 @@ def smtp_configured() -> bool:
     return bool(SMTP_HOST and SMTP_USER and SMTP_PASS and ADMIN_EMAIL and SECRET_KEY)
 
 
+def send_email(to: str, subject: str, body_html: str, body_text: str) -> bool:
+    """Send an email to an ARBITRARY recipient (e.g. a gather contributor who asked
+    to be told when the portrait is ready) via the same Gmail SMTP path. Best-effort;
+    needs only the SMTP creds (not ADMIN_EMAIL/SECRET_KEY). Returns True on send."""
+    if not (SMTP_HOST and SMTP_USER and SMTP_PASS and to):
+        _log("send_email skipped (smtp not configured / no recipient)")
+        return False
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = SMTP_USER
+    msg["To"] = to
+    msg.set_content(body_text or " ")
+    if body_html:
+        msg.add_alternative(body_html, subtype="html")
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
+            s.starttls()
+            s.login(SMTP_USER, SMTP_PASS)
+            s.send_message(msg)
+        _log(f"send_email ok to={to}")
+        return True
+    except Exception as e:  # noqa: BLE001
+        _log(f"send_email failed to={to}: {e}")
+        return False
+
+
 def _read_words_for_job(job: str):
     rp = PRIVATE_DIR / f"{job}.json"
     if not rp.exists():
