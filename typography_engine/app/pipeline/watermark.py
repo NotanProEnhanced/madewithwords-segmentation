@@ -20,6 +20,21 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 _NAVY = (13, 27, 58)
 
+# The preview wordmark is brand-aware: on a PARTNER skin we must NOT stamp
+# "typortrait.com" -- it would advertise the direct site to a customer who came
+# through the partner (diverting the sale + their commission) and break the
+# white-label. First-party brands use their own domain; partner skins use the
+# partner's name; anything else falls back to typortrait.com.
+_BRAND_MARK = {
+    "lovedinwords": "lovedinwords.com",
+    "keeper": "Keeper",
+    "everloved": "Ever Loved",
+}
+
+
+def _brand_mark(brand: str) -> str:
+    return _BRAND_MARK.get((brand or "").strip().lower(), "typortrait.com")
+
 
 @lru_cache(maxsize=8)
 def _font(size: int) -> ImageFont.FreeTypeFont:
@@ -81,14 +96,13 @@ def _subject_mask(im: Image.Image) -> Image.Image:
     return msk.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.GaussianBlur(2))
 
 
-def add_watermark(png_bytes: bytes, url: str = "https://typortrait.com",
-                  label: str = "Typortrait.com") -> bytes:
+def add_watermark(png_bytes: bytes, brand: str = "", mark: str = "") -> bytes:
     """Burn the free-preview watermark into a render: a single sparse diagonal
-    "typortrait.com" over the figure only (no QR, no corner plate). Preview-only --
-    the paid download recomposes the clean PNG without this. `url`/`label` are kept
-    for call-site compatibility; the on-image mark is always the wordmark."""
+    wordmark over the figure only (no QR, no corner plate). The wordmark is
+    BRAND-AWARE -- partner skins never show "typortrait.com" (see _BRAND_MARK).
+    Preview-only -- the paid download recomposes the clean PNG without this."""
     im = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-    im = _tile_watermark(im)
+    im = _tile_watermark(im, mark=(mark or _brand_mark(brand)))
     out = io.BytesIO()
     im.save(out, "PNG")
     return out.getvalue()

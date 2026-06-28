@@ -53,7 +53,6 @@ from .config import (
     UMAMI_HOST,
     UMAMI_HOSTNAME,
     UMAMI_WEBSITE_ID,
-    WATERMARK_URL,
     RenderConfig,
 )
 from .pipeline.analyze import analyze_image
@@ -883,7 +882,9 @@ async def render(
     preview_path = OUTPUTS_DIR / f"{job_id}_preview.png"
     try:
         from .pipeline.watermark import add_watermark
-        preview_path.write_bytes(add_watermark(png_bytes, url=WATERMARK_URL))
+        # Brand-aware mark: partner skins never stamp "typortrait.com" (would divert
+        # the partner's referral). `brand` is the active skin from the request.
+        preview_path.write_bytes(add_watermark(png_bytes, brand=brand))
     except Exception as e:  # noqa: BLE001
         warns.warn("render", "preview_failed", f"Watermark failed: {e}")
         preview_path.write_bytes(png_bytes)
