@@ -1512,8 +1512,14 @@ function recoFd(style, coarse){
 async function recommendStyle(){
   if(recoDone) return;
   const myGen=gen;
-  for(const st of ["words","message","displacement"]){
-    if(typeof styleScores[st]==="number") continue;
+  // Order: render the VISIBLE word styles first (Passage/Mosaic) so their thumbnails
+  // personalize fast; the current style is already scored by the main render (skipped
+  // below), and hidden styles are skipped so we never burn a render slot on a card the
+  // user can't see (e.g. Mosaic on the memorial skin -- that was making Passage wait).
+  for(const st of ["message","words","displacement"]){
+    if(typeof styleScores[st]==="number") continue;       // already scored (e.g. the current style) -> skip
+    const _sb=document.querySelector('#styleSegResult button[data-style="'+st+'"]');
+    if(_sb && _sb.style.display==="none") continue;        // hidden style -> don't render/score it
     try{
       const r=await fetchWithTimeout("/render",{method:"POST",body:recoFd(st,true)}, RENDER_TIMEOUT_MS);
       const d=await r.json();
