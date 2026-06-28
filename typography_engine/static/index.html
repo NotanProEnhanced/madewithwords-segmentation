@@ -556,7 +556,7 @@
          Shown only on memorial skins (see brand-apply JS); fails soft to typing. -->
     <div id="storyStep" class="story-step" style="display:none">
       <div class="story-actions">
-        <button type="button" id="suggestWords" class="btn secondary">Turn this into their words</button>
+        <button type="button" id="suggestWords" class="btn secondary">Find the words</button>
         <button type="button" id="undoSuggest" class="linklike" style="display:none">&#8617; Back to what I wrote</button>
       </div>
       <details class="story-more" id="storyMore">
@@ -871,7 +871,7 @@ if(BRAND){
       const _ss=document.getElementById("storyStep"); if(_ss) _ss.style.display="block";          // generate helper under the one box = memorial
       // The one box becomes "tell us about them": paste a tribute OR list words.
       const _wl=document.getElementById("wordsLbl"); if(_wl) _wl.textContent="Tell us about them";
-      const _wh=document.getElementById("wordsHint"); if(_wh) _wh.textContent="Paste an obituary or tribute, share a memory, or just list a few words — then “Turn this into their words.” You can edit everything.";
+      const _wh=document.getElementById("wordsHint"); if(_wh) _wh.textContent="Paste an obituary or tribute, share a memory, or just list a few words — then tap “Find the words.” You can edit everything.";
       const _wt=document.getElementById("words"); if(_wt){ _wt.setAttribute("placeholder","Paste a tribute, share a memory, or list a few words…"); _wt.rows=5; }
     }
     if(BRAND.theme){ const rs=document.documentElement.style; for(const k in BRAND.theme) rs.setProperty(k, BRAND.theme[k]); }
@@ -2474,7 +2474,7 @@ function fetchWithTimeout(url, opts, ms){
       // titles the field, so its own label is hidden to avoid a redundant heading.
       if(elStory){ elStory.style.display="block"; }
       if(_wl) _wl.style.display="none";
-      if(_wh){ _wh.textContent="Paste a tribute or share a memory — or just list a few words. Then “Turn this into their words,” and edit anything."; _wh.style.display=""; }
+      if(_wh){ _wh.textContent="Paste a tribute or share a memory — or just list a few words. Then tap “Find the words,” and edit anything."; _wh.style.display=""; }
       S[2].b.append.apply(S[2].b, [elWords, elStory, elSize].filter(Boolean));
       // Drop the "Writing a letter or a message instead?" link -- the one box already
       // takes a letter/tribute/prose. (Message style stays reachable from the result.)
@@ -2551,11 +2551,11 @@ function fetchWithTimeout(url, opts, ms){
       var resp=await fetch("sample-keeper.jpg"); var blob=await resp.blob();
       var file=new File([blob],"sample-keeper.jpg",{type:blob.type||"image/jpeg"});
       if(typeof useCroppedFile==="function") useCroppedFile(file); else if(typeof setFile==="function") setFile(file);
-      setv("words", SAMPLE_OBIT);   // the one box now holds the story; "Turn this into their words" distills it in place
+      setv("words", SAMPLE_OBIT);   // the one box now holds the story; "Find the words" distills it in place
       setv("dtNickname","Bob"); setv("dtSaying","There’s good in everyone."); setv("dtThree","kind, wise, patient"); setv("dtHobby","fishing");
       var sm=document.getElementById("storyMore"); if(sm) sm.open=true;
       if(window.guidedOpenStep) setTimeout(function(){ try{ guidedOpenStep(2); }catch(e){} },60);
-      var msg=document.getElementById("storyMsg"); if(msg) msg.textContent="Example loaded — tap “Turn this into their words,” then “Create their portrait.”";
+      var msg=document.getElementById("storyMsg"); if(msg) msg.textContent="Example loaded — tap “Find the words,” then “Create their portrait.”";
     }catch(e){ var m=document.getElementById("storyMsg"); if(m) m.textContent="Couldn’t load the example — please try again."; }
     if(sb){ sb.disabled=false; sb.textContent="✨ See a sample"; }
   }
