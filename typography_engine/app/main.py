@@ -2837,7 +2837,7 @@ def refunds():
 def privacy():
     blocks = [
         ("Overview", "<p>This Privacy Policy explains what Typortrait (&ldquo;we&rdquo;) collects, why, and your rights. We collect only what we need to create your portrait and process your order. For how we handle facial geometry specifically, see our <a href=\"/biometric-policy\">Biometric Data Policy</a>.</p>"),
-        ("Who we are", f"<p>Typortrait is the data controller for the information described here. Contact us at <a href='mailto:{_POLICY_CONTACT}'>{_POLICY_CONTACT}</a> with any privacy question or to exercise your rights.</p>"),
+        ("Who we are", f"<p>Typortrait (which also operates the <b>Loved in Words</b> memorial service) is the organization responsible for, and the data controller of, the information described here. Contact our privacy contact at <a href='mailto:{_POLICY_CONTACT}'>{_POLICY_CONTACT}</a> with any privacy question, to exercise your rights, or to raise a concern.</p>"),
         ("What we collect", "<ul>"
             "<li><b>Images you upload</b> and the <b>words/message</b> you enter.</li>"
             "<li><b>Facial geometry</b> derived from your photo, used transiently to place the type. We do <b>not</b> create or store a faceprint/biometric template &mdash; see the <a href=\"/biometric-policy\">Biometric Data Policy</a>.</li>"
@@ -2853,6 +2853,19 @@ def privacy():
         ("International transfers", "<p>We operate from the United States, so if you are outside the U.S. your information is transferred to and processed there. Where required, we rely on appropriate safeguards (such as the EU Standard Contractual Clauses) and/or your consent.</p>"),
         ("Your rights", "<p>Depending on where you live, you may have rights to access, correct, delete, port, or object to/restrict processing of your data, and to withdraw consent. To exercise them, use our <a href=\"/data-request\">data request page</a> or email us. We will not discriminate against you for exercising your rights, and we respond within the time limits the law requires.</p>"),
         ("California (CCPA/CPRA)", "<p>California residents have the rights to know, delete, and correct their personal information, and to limit the use of sensitive personal information. Your photo and facial geometry are treated as <b>sensitive personal information</b>, used only to provide the portrait you requested. We do not sell or share personal information. Submit a request via our <a href=\"/data-request\">data request page</a>.</p>"),
+        ("Canada (PIPEDA)", "<p>If you are in Canada, we handle your personal information in accordance with the federal "
+            "<b>Personal Information Protection and Electronic Documents Act (PIPEDA)</b> and substantially similar provincial "
+            "laws, including <b>Quebec&rsquo;s Law&nbsp;25</b> and the personal-information laws of British Columbia and Alberta. "
+            "We collect, use, and disclose personal information only for the purposes described in this policy, and we obtain "
+            "your <b>express consent</b> before analysing the facial geometry in your photo &mdash; sensitive information that "
+            "we process transiently and <b>never retain as a faceprint</b>. We do <b>not</b> create or maintain a biometric "
+            "database (see our <a href=\"/biometric-policy\">Biometric Data Policy</a>). You may <b>access or correct</b> your "
+            "information, <b>withdraw consent</b>, or request its deletion at any time through our "
+            "<a href=\"/data-request\">data request page</a>. Because we operate from the United States, your information is "
+            "transferred to and processed there and may be subject to access by U.S. authorities under U.S. law; we remain "
+            "accountable for it and require our service providers to safeguard it. If you have a concern we cannot resolve, "
+            "you may contact the <b>Office of the Privacy Commissioner of Canada</b> &mdash; and, in Quebec, the "
+            "<b>Commission d&rsquo;acc&egrave;s &agrave; l&rsquo;information</b>.</p>"),
         ("Photos of other people", "<p>If you upload a photo of someone else, you confirm you have the right to do so (see the <a href=\"/terms\">Terms of Use</a>). If you believe your image was uploaded without your permission, contact us via the <a href=\"/data-request\">data request page</a> and we will remove it.</p>"),
         ("Children", "<p>The Service is not directed to children under 13, and you should not upload a minor&rsquo;s photo without the consent of their parent or guardian.</p>"),
         ("Security", "<p>We use reasonable technical and organisational measures to protect your data, but no method of transmission or storage is completely secure.</p>"),
@@ -2870,6 +2883,11 @@ def biometric_policy():
         ("Consent", "<p>Before we process your photo, we ask you to confirm that you understand this analysis and consent to it, and that you have the right to upload the image. We do not process the face until you give that consent, and you can withdraw it at any time.</p>"),
         ("Retention and destruction", f"<p>Because we keep no biometric template, there is nothing biometric to retain beyond the moment of rendering. The <b>source photo</b> you upload is stored only to provide your preview and download and is automatically deleted after about {RETENTION_DAYS} days, or sooner on request. This is our written retention schedule and destruction guideline for biometric data.</p>"),
         ("No sale or disclosure", "<p>We do not sell, lease, trade, or otherwise profit from biometric data, and we do not disclose it to third parties except as strictly necessary to provide the Service or as required by law.</p>"),
+        ("Canada (PIPEDA &amp; Quebec Law&nbsp;25)", "<p>For visitors in Canada, the facial-geometry analysis described here is "
+            "performed transiently and immediately discarded: we do <b>not</b> create, store, or maintain a biometric "
+            "database. We obtain your <b>express consent</b> before any analysis and honour withdrawal and deletion requests, "
+            "consistent with <b>PIPEDA</b> and <b>Quebec&rsquo;s Law&nbsp;25</b>. You can withdraw consent and request deletion "
+            "at any time via our <a href=\"/data-request\">data request page</a>.</p>"),
         ("Availability", "<p>To reduce risk, the Service may be unavailable to visitors in certain locations (for example, Illinois). Where it is available, the protections above apply.</p>"),
         ("Your choices", "<p>You can withdraw consent and request deletion of your photo at any time via our <a href=\"/data-request\">data request page</a>. See our <a href=\"/privacy\">Privacy Policy</a> for the full picture.</p>"),
     ]
