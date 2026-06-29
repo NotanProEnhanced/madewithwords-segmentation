@@ -1345,7 +1345,7 @@ function buildSwatches(){
     const el=document.createElement("button"); el.type="button";
     // "Paper" is the Lifelike-on-white look (it drives the Sculpt renderer), so it
     // only applies to Lifelike -- strike it out / make it inert under Mosaic & Passage.
-    const paperNA = (id==="photo_paper" && state.style!=="displacement");
+    const paperNA = (id==="photo_paper" && state.style!=="displacement" && state.style!=="letter");
     el.className="thumb"+(id===state.ink?" sel":"")+(paperNA?" na":""); el.dataset.ink=id;
     if(paperNA) el.title="Paper is available with the Lifelike style";
     const pic=document.createElement("div"); pic.className="pic"; pic.dataset.ink=id;
@@ -1447,7 +1447,7 @@ function buildSizeStrip(){
   if(!sizeStripEl) return;
   // Sculpted is auto-scaled; Message auto-sizes from text length (build_poster
   // repeats to fill, so the type size is the renderer's call, not the user's).
-  if(state.style==="displacement" || state.style==="message"){ if(sizeFilmEl) sizeFilmEl.style.display="none"; return; }  // no size control
+  if(state.style==="displacement" || state.style==="letter" || state.style==="message"){ if(sizeFilmEl) sizeFilmEl.style.display="none"; return; }  // no size control (Letter = displacement: auto-scaled, ignores min_font)
   sizeStripEl.innerHTML="";
   const set=new Set(allowedMf.map(Number));
   sizesForStyle().forEach(([mf,label])=>{
@@ -1502,7 +1502,7 @@ let prewarmingSizes=false;
 const LAZY_THUMBS = true;
 async function prewarmSizes(){
   if(LAZY_THUMBS) return;
-  if(prewarmingSizes || resultView.style.display!=="block" || state.style==="displacement" || state.style==="message") return;
+  if(prewarmingSizes || resultView.style.display!=="block" || state.style==="displacement" || state.style==="letter" || state.style==="message") return;
   prewarmingSizes=true;
   const myGen=gen;
   for(const mf of allowedMf){
