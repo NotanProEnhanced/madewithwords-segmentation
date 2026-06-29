@@ -705,6 +705,8 @@ async def render(
     ink_hex: Optional[str] = Form(None),   # for ink="custom": the user-picked colour
     style: str = Form("mosaic"),
     message: Optional[str] = Form(None),
+    flow: Optional[str] = Form(None),   # displacement only: stream the text as a MESSAGE
+                                        # (in order, looping) instead of a weighted word list
     poster: bool = Form(False),
     title: Optional[str] = Form(None),
     caption: Optional[str] = Form(None),
@@ -824,6 +826,7 @@ async def render(
     # raster renderer + ground choice); "message" = poster rows; anything else =
     # "words" (the scattered mosaic). Words/Passage share the layered renderer.
     is_displacement = (style == "displacement")
+    disp_flow = is_displacement and str(flow or "").strip().lower() in ("1", "true", "yes", "on")
     ground_choice = ground if ground in ("paper", "navy", "black") else "navy"
     style_choice = "displacement" if is_displacement else (
         "message" if style in ("message", "poster", "story") else "words")
@@ -847,7 +850,7 @@ async def render(
             disp_ss = 1 if int(png_width) < 1200 else 2
             png_bytes = await _bounded_to_thread(
                 render_displacement_portrait, an, disp_words, ground=ground_choice,
-                out_width=max(320, preview_w), supersample=disp_ss,
+                out_width=max(320, preview_w), supersample=disp_ss, flow=disp_flow,
                 uppercase=uppercase, ink=("photo" if ink_choice in ("custom", "photo_paper") else ink_choice))
             runs, ground_hex, mask_svg = [], None, None
         else:
@@ -926,6 +929,7 @@ async def render(
             "light": bool(light), "text": text, "uppercase": bool(uppercase),
             "min_font_px": float(cfg.min_font_px), "ground": ground_choice,
             "ink_hex": ink_hex if ink_choice == "custom" else None,   # rebuild the custom colour at download
+            "flow": bool(disp_flow),   # displacement message-flow -> paid recompose must match
             "ref": ref_clean, "brand": brand_clean,
         }), encoding="utf-8")
 
@@ -1379,7 +1383,7 @@ def _ensure_clean_png(job: str, aspect: float = _PRINT_ASPECT) -> Optional[Path]
             png_bytes = render_displacement_portrait(
                 an, (r.get("text", "") or "").split(),
                 ground=r.get("ground", "navy"), out_width=DOWNLOAD_PNG_WIDTH,
-                uppercase=bool(r.get("uppercase", True)),
+                uppercase=bool(r.get("uppercase", True)), flow=bool(r.get("flow")),
                 ink=("photo" if r.get("ink") == "custom" else r.get("ink")),
                 print_aspect=aspect)
             if not png_bytes:

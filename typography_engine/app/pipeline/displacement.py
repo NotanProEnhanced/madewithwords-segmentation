@@ -169,6 +169,9 @@ def render_displacement_portrait(
     uppercase: bool = True,
     ink: Optional[str] = None,
     print_aspect: float = 0.8,    # width/height of the print canvas (4:5 default)
+    flow: bool = False,           # True => the text is a MESSAGE: keep it in written
+                                  # order and stream it continuously (a sculpted letter),
+                                  # instead of importance-weighting a word list.
 ) -> bytes:
     """Render a displacement typographic portrait to PNG bytes.
 
@@ -187,7 +190,10 @@ def render_displacement_portrait(
     # the portrait is built mostly OF them. Each word's copies are spread evenly across
     # the stream so none clump, and the skew is gentle (top ~3x the tail) to avoid a
     # monotonous look. Tiny lists (<3 words) stay flat.
-    if len(vocab) < 3:
+    if flow or len(vocab) < 3:
+        # flow: a message must read in its written order (importance-weighting would
+        # multiply and scatter the opening words, shredding the sentence). Tiny lists
+        # also stay flat. Everything else gets the importance skew below.
         _vocab_stream = list(vocab)
     else:
         _n = len(vocab)
@@ -301,12 +307,31 @@ def render_displacement_portrait(
         im = Image.new("L", (W, H), 255)
         d = ImageDraw.Draw(im)
         y = 0
-        while y < H + fs:
-            # Keep the words in the order they were entered (a sentence stays a
-            # sentence); only the row's horizontal start is jittered for variety.
-            line = (" ".join(_vocab_stream) + " ") * (W // max(1, int(fs * 3)) + 18)
-            d.text((-rng.randint(0, int(fs * 6)), y), line, font=f, fill=0)
-            y += max(6, int(fs))
+        if flow:
+            # MESSAGE mode: stream the words continuously DOWN the rows, wrapping word
+            # by word and looping seamlessly, so the sentence reads in order and then
+            # repeats like a refrain across the face. A gentle, deterministic per-row
+            # indent (no random jitter) breaks vertical seams while staying legible.
+            adv = {w: float(d.textlength(w + " ", font=f)) for w in set(_vocab_stream)}
+            space = max(1.0, float(d.textlength(" ", font=f)))
+            n = max(1, len(_vocab_stream))
+            wi = 0
+            target = float(W) + fs * 6.0
+            ry = 0
+            while y < H + fs:
+                parts, row_w = [], 0.0
+                while row_w < target:
+                    tok = _vocab_stream[wi % n]; wi += 1
+                    parts.append(tok); row_w += adv.get(tok, space)
+                d.text((-(ry % 5) * fs * 0.5, y), " ".join(parts), font=f, fill=0)
+                y += max(6, int(fs)); ry += 1
+        else:
+            while y < H + fs:
+                # Keep the words in the order they were entered (a sentence stays a
+                # sentence); only the row's horizontal start is jittered for variety.
+                line = (" ".join(_vocab_stream) + " ") * (W // max(1, int(fs * 3)) + 18)
+                d.text((-rng.randint(0, int(fs * 6)), y), line, font=f, fill=0)
+                y += max(6, int(fs))
         return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
 
     # Four size tiers blended *continuously* (below) so the type eases from large

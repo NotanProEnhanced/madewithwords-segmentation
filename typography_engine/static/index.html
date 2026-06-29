@@ -625,6 +625,7 @@
         <button type="button" data-style="displacement" class="on"><span class="styleth" data-hint="Words"></span><span class="nm">Lifelike</span></button>
         <button type="button" data-style="words"><span class="styleth" data-hint="Word cloud"></span><span class="nm">Mosaic</span></button>
         <button type="button" data-style="message"><span class="styleth" data-hint="Verses, Lyrics, etc."></span><span class="nm">Passage</span></button>
+        <button type="button" data-style="letter" style="display:none"><span class="styleth" data-hint="A letter, sculpted"></span><span class="nm">Letter</span></button>
       </div>
       <div class="ctl-hint" id="styleCaption">A lifelike portrait — the words follow their face.</div>
       <div class="ctl-hint" id="bestNote" style="display:none"></div>
@@ -860,6 +861,8 @@ if(!_isMemorialBrand){
 if(_isMemorialBrand){
   const _mb=document.querySelector('#styleSegResult button[data-style="words"]');
   if(_mb) _mb.style.display="none";
+  const _lt=document.querySelector('#styleSegResult button[data-style="letter"]');
+  if(_lt) _lt.style.display="";   // sculpted-message option -> memorial only (a letter, in their face)
 }
 if(BRAND){
   try{
@@ -912,6 +915,7 @@ function variantPost(id){
   // engraving can't carry a light-eyed face on white; Sculpt/paper renders the eyes
   // and likeness beautifully. (The dark grounds stay the dense Words/Sculpt looks.)
   if(id==="photo_paper") return {ink:"photo", style:"displacement", ground:"paper"};
+  if(state.style==="letter") return {ink:(id||"photo"), style:"displacement", ground:"navy"};   // Letter = displacement renderer, message-flow (flag sent in render())
   return state.style==="displacement"
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
     : {ink:id, style:state.style, ground:"navy"}; }
@@ -1002,31 +1006,38 @@ const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch");
 // Shared style switcher — used by the style control on BOTH the input screen and
 // the result screen (the result one re-renders in place). Keeps both segments in sync.
 function setStyle(newStyle, rerender){
-  const wasDisp = state.style==="displacement";
+  const wasDisp = state.style==="displacement" || state.style==="letter";
   state.style=newStyle;
   // Paper is the Lifelike-on-white look; leaving Lifelike with it selected falls
   // back to Original so Mosaic/Passage never render the (now struck-out) Paper.
-  if(newStyle!=="displacement" && state.ink==="photo_paper") state.ink="photo";
+  if(newStyle!=="displacement" && newStyle!=="letter" && state.ink==="photo_paper") state.ink="photo";
   document.querySelectorAll('#styleSeg button, #styleSegResult button')
     .forEach(c=>c.classList.toggle("on", c.dataset.style===newStyle));
-  const prose = newStyle==="message", disp = newStyle==="displacement";
-  wordsLbl.innerHTML = disp ? "The words to sculpt the face"
+  // "letter" = a MESSAGE sculpted by the Lifelike renderer: it composes like a sculpt
+  // (disp swatches) but is written/typed like a passage (letter textarea).
+  const letter = newStyle==="letter";
+  const prose = newStyle==="message", disp = newStyle==="displacement" || letter;
+  const letterUI = prose || letter;
+  wordsLbl.innerHTML = letter ? "Their letter — sculpted into their face"
+    : disp ? "The words to sculpt the face"
     : prose ? "A passage, in your words" : "The words that make them <em>them</em>";
-  wordsHint.textContent = disp
-    ? "Their name and the traits you love — sculpted across the face and draped over its form. Separate with commas."
+  wordsHint.textContent = letter
+    ? "A letter, a tribute, a poem — sculpted across their face and draped over its form, reading like a refrain."
+    : disp ? "Their name and the traits you love — sculpted across the face and draped over its form. Separate with commas."
     : prose ? "A letter, lyrics, a poem, a tribute, your vows — it becomes the portrait."
     : "Their name, what you love, a date, an inside joke. Separate with commas.";
-  words.rows = prose ? 5 : 3;
-  words.placeholder = prose
+  words.rows = letterUI ? 5 : 3;
+  words.placeholder = letterUI
     ? "You are the kindest soul I know. From the day you were born…"
     : "GRACE, KIND, BRILLIANT, MOM, ALWAYS";
-  bgRow.style.display = prose ? "flex" : "none";   // background toggle = Passage only
+  bgRow.style.display = prose ? "flex" : "none";   // background toggle = Passage only (flat)
   // Input-screen content link reflects the current mode.
   const ct=document.getElementById("contentToggle");
-  if(ct) ct.innerHTML = prose ? "&larr; Use a few words instead" : "Writing a letter or a message instead? &rarr;";
+  if(ct) ct.innerHTML = letterUI ? "&larr; Use a few words instead" : "Writing a letter or a message instead? &rarr;";
   // Result-screen gallery caption — plain-language description of the chosen look.
   const cap=document.getElementById("styleCaption");
-  if(cap) cap.textContent = disp ? "A lifelike portrait — the words shaped to follow their face."
+  if(cap) cap.textContent = letter ? "Their letter, sculpted into their face — reading like a refrain."
+    : disp ? "A lifelike portrait — the words shaped to follow their face."
     : prose ? "Their face from a whole message — a letter, a poem, a tribute."
     : "Their face from scattered words & names you choose.";
   if(disp !== wasDisp) rebuildSwatches();          // swap the swatch strip: inks <-> grounds
@@ -2077,7 +2088,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   if(!background && !thumb) showBusy(animate);
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim());
-  const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
+  const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(state.minFont||20));
   if(thumb){
