@@ -320,16 +320,24 @@ def render_displacement_portrait(
             ry = 0
             while y < H + fs:
                 parts, row_w = [], 0.0
-                while row_w < target:
+                while row_w < target and len(parts) < 20000:   # cap: never hang a row
                     tok = _vocab_stream[wi % n]; wi += 1
                     parts.append(tok); row_w += adv.get(tok, space)
                 d.text((-(ry % 5) * fs * 0.5, y), " ".join(parts), font=f, fill=0)
                 y += max(6, int(fs)); ry += 1
         else:
+            # Keep the words in the order they were entered (a sentence stays a
+            # sentence); only the row's horizontal start is jittered for variety.
+            base = " ".join(_vocab_stream) + " "
+            # Repeat only enough to span the canvas + jitter margin. The legacy fixed
+            # multiplier (W//(3*fs)+18) assumed a SHORT word list; fed a long list or a
+            # pasted tribute it made every row a giant, mostly-off-canvas string -> 60s+
+            # renders (the 120s timeout). Sizing by measured width is visually identical
+            # (the surplus copies fell off the right edge) but bounds the work. Built
+            # once -- it never varied per row.
+            bw = max(1.0, float(d.textlength(base, font=f)))
+            line = base * max(2, int((W + fs * 7) / bw) + 2)
             while y < H + fs:
-                # Keep the words in the order they were entered (a sentence stays a
-                # sentence); only the row's horizontal start is jittered for variety.
-                line = (" ".join(_vocab_stream) + " ") * (W // max(1, int(fs * 3)) + 18)
                 d.text((-rng.randint(0, int(fs * 6)), y), line, font=f, fill=0)
                 y += max(6, int(fs))
         return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
