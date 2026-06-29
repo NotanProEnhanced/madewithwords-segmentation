@@ -2061,11 +2061,14 @@ function showBusy(animate){
     ? (_slow ? "Composing their portrait — this takes a moment…" : "Composing their portrait, in your words…")
     : (_slow ? "Sculpting your portrait — this takes about 30 seconds…" : "Composing your portrait, woven from your words…");
   busy.classList.remove("hide");
-  startComposeStatus();   // live phased progress, every render (keepsake forces animate=false)
   // Show the word-assembly for the first Create — meaningful progress feedback,
   // played for everyone (it's brief and on-brand, not gratuitous motion).
   if(animate){ busy.classList.add("anim"); compareEl.classList.add("hide-cmp"); startAssembly(); }
   else { stopAssembly(); if(KEEPSAKE) compareEl.classList.add("hide-cmp"); }   // no stray slider handle over the placeholder
+  // MUST run AFTER the anim/else branch: stopAssembly()->stopComposeStatus() would
+  // otherwise strip the 'phased' class (reviving the legacy .spin alongside the ring
+  // = two spinners) and clear the cycle timer (freezing the text). One ring, live text.
+  startComposeStatus();   // live phased progress, every render (keepsake forces animate=false)
 }
 async function render(ink,{animate=false,background=false,thumb=false}={}){
   if(!state.file) return;
