@@ -114,7 +114,9 @@
       <button data-q="A quality you loved">a quality</button>
     </div>
     <label for="name" style="font-weight:500;color:var(--muted);font-size:13px">Your name (optional)</label>
-    <input id="name" type="text" autocomplete="off" placeholder="So the family knows you were here" maxlength="24" style="margin-bottom:16px" />
+    <input id="name" type="text" autocomplete="off" placeholder="So the family knows you were here" maxlength="24" style="margin-bottom:14px" />
+    <label for="addEmail" style="font-weight:500;color:var(--muted);font-size:13px">&#9993;&#65039; Email me when it's ready (optional)</label>
+    <input id="addEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com — and get your own copy" maxlength="160" style="margin-bottom:16px" />
     <button class="btn" id="submit">Weave in my word</button>
     <div class="err" id="err"></div>
   </div>
@@ -194,11 +196,13 @@ $("#submit").addEventListener("click", submit);
 $("#word").addEventListener("keydown", e=>{ if(e.key==="Enter") submit(); });
 async function submit(){
   const text=$("#word").value.trim(); const name=$("#name").value.trim();
+  const email=($("#addEmail").value||"").trim();
   $("#err").textContent="";
   if(text.length<2){ $("#err").textContent="Add a word first."; return; }
   $("#submit").disabled=true;
   try{
     const fd=new FormData(); fd.append("text",text); fd.append("name",name);
+    if(email) fd.append("email",email);   // optional opt-in: notify + offer their own copy on reveal
     const r=await fetch(`/api/gather/${SHARE}/word`,{method:"POST",body:fd});
     const d=await r.json();
     if(!d.ok){ $("#err").textContent = d.error==="rate_limited" ? "Thanks — that's plenty for now." : d.error==="closed" ? "Gathering has closed." : "Couldn't add that — try a different word."; $("#submit").disabled=false; return; }
@@ -209,7 +213,15 @@ async function submit(){
     const rc=$("#recent"); const chip=document.createElement("span"); chip.className="chip"; chip.textContent=text.toUpperCase(); rc.prepend(chip);
     while(rc.children.length>8) rc.lastChild.remove();
     $("#thanks").style.display="block";
-    $("#word").value="";
+    // If they opted in on the form, confirm it here and skip the redundant
+    // "Want your own copy?" prompt (they're already on the reveal list).
+    if(email && /.+@.+\..+/.test(email)){
+      const gb=$("#getownBtn"), gf=$("#getownForm"), gm=$("#getownMsg");
+      if(gb) gb.style.display="none";
+      if(gf) gf.style.display="none";
+      if(gm) gm.textContent="✉️ We'll email "+email+" when it's ready — and you can get your own copy then.";
+    }
+    $("#word").value=""; $("#addEmail").value="";
     load();
   }catch(e){ $("#err").textContent="Network error — try again."; }
   $("#submit").disabled=false;

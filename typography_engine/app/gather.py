@@ -463,7 +463,7 @@ def state(share: str):
 
 
 @router.post("/api/gather/{share}/word")
-async def add_word(share: str, request: Request, text: str = Form(...), name: str = Form("")):
+async def add_word(share: str, request: Request, text: str = Form(...), name: str = Form(""), email: str = Form("")):
     g = _gather_by("share_token", share)
     if not g:
         raise HTTPException(404, "not found")
@@ -483,6 +483,17 @@ async def add_word(share: str, request: Request, text: str = Form(...), name: st
             "INSERT INTO contributions(gather_id,text,name,created_at) VALUES(?,?,?,?)",
             (g["id"], t, nm, time.time()),
         )
+        # Optional opt-in: the contributor wants to be emailed when the portrait is
+        # ready (and offered their own copy). Stored in the same copy_requests the
+        # reveal step notifies. A bad/empty address is ignored silently — the word
+        # is what matters; we never fail a contribution over the opt-in field.
+        em = (email or "").strip().lower()[:160]
+        if "@" in em and "." in em.split("@")[-1]:
+            ex = c.execute("SELECT 1 FROM copy_requests WHERE gather_id=? AND email=?",
+                           (g["id"], em)).fetchone()
+            if not ex:
+                c.execute("INSERT INTO copy_requests(gather_id,email,created_at) VALUES(?,?,?)",
+                          (g["id"], em, time.time()))
         c.commit()
     _maybe_render(_gather_by("share_token", share))
     return {"ok": True}
