@@ -66,6 +66,18 @@ ls -R /root/test-restore        # confirm the DBs, private/, .env are present
 rm -rf /root/test-restore
 ```
 
+## Running restic by hand
+The scripts load the credentials automatically. To run restic yourself (list,
+check, forget, restore), load the env into your shell first with the helper:
+```bash
+source /root/typortrait-staging/typography_engine/ops/rc.sh
+restic snapshots      # then any restic command works this session
+```
+(The env only lasts for the current terminal — source it again in a new shell.)
+
+## Full recovery
+Step-by-step, command-level recovery instructions are in **ops/RECOVERY-RUNBOOK.md**.
+
 ## What gets backed up
 `data/orders.db`, `data/gather/gather.db` (consistent snapshots), `private/`
 (recipes + consent records), `.env`, `/etc/nginx/sites-available`,
