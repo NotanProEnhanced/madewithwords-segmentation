@@ -45,19 +45,31 @@ done
 # 2) Initialise the repo on first run (no-op once it exists).
 restic snapshots >/dev/null 2>&1 || restic init
 
-# 3) Back up DB snapshots + private data + secrets + server config.
+# 3) DR set — everything, tagged 'data'. SHORT retention (below) so source
+#    photos roll off in ~35 days, matching our ~30-day deletion promise to users.
 restic backup \
   "$STAGING" \
   "$APP_DIR/.env" \
   "$APP_DIR/data/private" \
   /etc/nginx/sites-available \
   /etc/letsencrypt \
-  --tag typortrait --exclude-caches
+  --tag typortrait --tag data --exclude-caches
 
-# 4) Retention: ~1h RPO recent, thinning to long-term (yearly x7 covers the
-#    ~7-year consent-record retention).
-restic forget --prune \
-  --keep-hourly 24 --keep-daily 30 --keep-monthly 12 --keep-yearly 7
+# 3b) Consent records ONLY, tagged 'consent'. LONG retention (legal evidence,
+#     ~7 years). They also live in the 'data' snapshot; this is what keeps them
+#     after the photos have rolled off, WITHOUT retaining photos for years.
+find "$APP_DIR/data/private" \( -name '*.consent.json' -o -name '*.biometric_consent.json' \) -print \
+  > "$STAGING/consent-list.txt" || true
+if [ -s "$STAGING/consent-list.txt" ]; then
+  restic backup --files-from "$STAGING/consent-list.txt" --tag typortrait --tag consent
+fi
+
+# 4) Two-tier retention, then a single prune.
+#    data    -> photos/DBs/config roll off ~35 days (matches the deletion promise)
+#    consent -> kept long for the legal retention window
+restic forget --tag data    --keep-hourly 24 --keep-daily 35
+restic forget --tag consent --keep-daily 30 --keep-monthly 12 --keep-yearly 7
+restic prune
 
 # 5) Fast structural integrity check (non-fatal warning if it flags anything).
 restic check || echo "WARN: restic check reported an issue — investigate."

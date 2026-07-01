@@ -71,8 +71,11 @@ rm -rf /root/test-restore
 (recipes + consent records), `.env`, `/etc/nginx/sites-available`,
 `/etc/letsencrypt`.
 
-**Retention:** 24 hourly · 30 daily · 12 monthly · 7 yearly (the yearly line
-covers the ~7-year consent-record retention).
+**Retention (two-tier, so photos don't outlive the deletion promise):**
+- **Full DR set** (photos, DBs, config, `.env`) — 24 hourly + 35 daily. Source
+  photos roll off in ~35 days, matching the ~30-day auto-deletion we promise users.
+- **Consent records only** — 30 daily + 12 monthly + 7 yearly (the legal retention
+  window). Tiny, so long retention is cheap.
 
 ## What is NOT backed up (by design — it's recoverable elsewhere)
 Code (GitHub) · container images (rebuilt) · `outputs/` (regenerated from
