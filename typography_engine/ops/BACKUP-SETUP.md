@@ -80,8 +80,9 @@ Step-by-step, command-level recovery instructions are in **ops/RECOVERY-RUNBOOK.
 
 ## What gets backed up
 `data/orders.db`, `data/gather/gather.db` (consistent snapshots), `private/`
-(recipes + consent records), `.env`, `/etc/nginx/sites-available`,
-`/etc/letsencrypt`.
+(recipes + consent records), `.env`, the live marketing web roots
+(`/var/www/typortrait.com`, `/var/www/lovedinwords.com`),
+`/etc/nginx/sites-available`, `/etc/letsencrypt`.
 
 **Retention (two-tier, so photos don't outlive the deletion promise):**
 - **Full DR set** (photos, DBs, config, `.env`) — 24 hourly + 35 daily. Source

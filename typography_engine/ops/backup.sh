@@ -47,10 +47,15 @@ restic snapshots >/dev/null 2>&1 || restic init
 
 # 3) DR set — everything, tagged 'data'. SHORT retention (below) so source
 #    photos roll off in ~35 days, matching our ~30-day deletion promise to users.
+#    Include the live marketing web roots: some of their assets aren't tracked in
+#    git, so the backup is their authoritative recovery source (present-dirs only).
+WWW=()
+for d in /var/www/typortrait.com /var/www/lovedinwords.com; do [ -d "$d" ] && WWW+=("$d"); done
 restic backup \
   "$STAGING" \
   "$APP_DIR/.env" \
   "$APP_DIR/data/private" \
+  "${WWW[@]}" \
   /etc/nginx/sites-available \
   /etc/letsencrypt \
   --tag typortrait --tag data --exclude-caches

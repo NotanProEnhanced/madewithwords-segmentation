@@ -72,14 +72,17 @@ nginx -t && systemctl reload nginx
 At your registrar, point the A records for `typortrait.com`, `www`, `app.typortrait.com`,
 `lovedinwords.com` (and staging) to the **new server IP**. Wait for propagation, verify HTTPS.
 
-### 9. Restore the marketing static sites
+### 9. Restore the marketing static sites (from the backup)
+The live web roots are backed up to B2 and were restored under `$R/var/www` in
+step 4/5, so put them back exactly as served — no repo copy or guesswork:
 ```bash
-mkdir -p /var/www/typortrait.com/keeper /var/www/typortrait.com/everloved /var/www/lovedinwords.com
-cp -a marketing/_deploy/.       /var/www/typortrait.com/
-cp -a marketing/keeper/.        /var/www/typortrait.com/keeper/
-cp -a marketing/everloved/.     /var/www/typortrait.com/everloved/
-cp -a marketing/lovedinwords/.  /var/www/lovedinwords.com/
+mkdir -p /var/www
+cp -a "$R/var/www/typortrait.com"   /var/www/
+cp -a "$R/var/www/lovedinwords.com" /var/www/
 ```
+(FYI, in the repo `typortrait.com` is served from `marketing/_deploy/` and
+`lovedinwords.com` from `marketing/lovedinwords/`; restoring the web roots from B2
+also recovers the assets that aren't tracked in git.)
 
 ### 10. Reconcile + smoke test + re-arm backups
 ```bash
