@@ -37,7 +37,7 @@ Review, then place each piece:
   • Databases   $RESTORE_TO/root/.typortrait-backup-staging/orders.db
                 $RESTORE_TO/root/.typortrait-backup-staging/gather.db
                 ->  $APP_DIR/data/orders.db   and   $APP_DIR/data/gather/gather.db
-  • Private     $RESTORE_TO$APP_DIR/private/   ->  $APP_DIR/private/
+  • Private     $RESTORE_TO$APP_DIR/data/private/   ->  $APP_DIR/data/private/
   • Secrets     $RESTORE_TO$APP_DIR/.env       ->  $APP_DIR/.env      (chmod 600)
   • nginx       $RESTORE_TO/etc/nginx/sites-available/  ->  /etc/nginx/sites-available/
   • TLS certs   $RESTORE_TO/etc/letsencrypt/            ->  /etc/letsencrypt/   (or re-issue via certbot)

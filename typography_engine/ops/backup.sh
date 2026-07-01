@@ -49,7 +49,7 @@ restic snapshots >/dev/null 2>&1 || restic init
 restic backup \
   "$STAGING" \
   "$APP_DIR/.env" \
-  "$APP_DIR/private" \
+  "$APP_DIR/data/private" \
   /etc/nginx/sites-available \
   /etc/letsencrypt \
   --tag typortrait --exclude-caches
