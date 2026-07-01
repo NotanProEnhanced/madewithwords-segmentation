@@ -2786,7 +2786,7 @@ def _policy_page(title: str, blocks) -> HTMLResponse:
         "a{color:#0d1b3a}.back{display:inline-block;margin-bottom:18px;color:#6b7280;text-decoration:none;font-size:14px}"
         ".note{background:#fff;border:1px solid #ece9e3;border-left:4px solid #c9a24a;border-radius:10px;padding:12px 14px;font-size:13px;color:#6b5a2a}"
         "</style></head><body><div class='wrap'>"
-        "<a class='back' href='/static/index.html'>&larr; Back to Typortrait</a>"
+        "<a class='back' href='/static/index.html'>&larr; Back to Typortrait&trade;</a>"
         f"<h1>{title}</h1><p class='upd'>Last updated {_POLICY_UPDATED}</p>"
         + body +
         f"<h2>Contact</h2><p>Questions? Email <a href='mailto:{_POLICY_CONTACT}'>{_POLICY_CONTACT}</a>.</p>"
