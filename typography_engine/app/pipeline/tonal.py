@@ -352,7 +352,31 @@ def _balance_faces(dark: np.ndarray, an, scale: float, mset: np.ndarray) -> np.n
     seam at the jaw/neck and the rest of the portrait is untouched."""
     faces = _faces_of(an)
     if not faces:
-        return dark
+        # No detected face. The human app (Typortrait / Loved in Words) leaves
+        # this untouched -- return `dark` exactly as before, so faceless human
+        # renders are byte-identical to prod.
+        #
+        # Only an EXPLICIT pet render opts in via `an.pet_subject = True`. There,
+        # without the per-face rescue, a pale, low-contrast coat -- a golden, a
+        # white or spotted dog -- collapses into a narrow bright band under the
+        # global `_tone_field` stretch and washes out to near-blank. Balance the
+        # whole silhouette as one region so it still reaches full ink depth,
+        # using the same wide-band remap as the per-face path.
+        if not getattr(an, "pet_subject", False):
+            return dark
+        core = mset > 0.5  # robust to a bool or a float subject mask
+        if int(core.sum()) < 50:
+            return dark
+        vals = dark[core]
+        lo, hi = np.percentile(vals, [10, 90])
+        if hi - lo < 0.04:
+            hi = lo + 0.04
+        t_lo, t_hi = 0.12, 0.96
+        remap = np.clip((dark - lo) / (hi - lo), 0.0, 1.0) * (t_hi - t_lo) + t_lo
+        alpha = 0.72
+        out = dark.copy()
+        out[core] = (dark * (1.0 - alpha) + remap * alpha)[core]
+        return np.clip(out, 0.0, 1.0)
     H, W = dark.shape[:2]
     out = dark.copy()
     for face in faces:

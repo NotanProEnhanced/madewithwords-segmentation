@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Dog Landmark Annotator — Typortrait Pet Sculpt v2</title>
+<style>
+  :root { --bg:#141821; --panel:#1c2230; --line:#2b3448; --ink:#e6ebf5; --mut:#8f9bb3; --acc:#4f7dff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:13px/1.45 system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:10px 16px; border-bottom:1px solid var(--line); display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:14px; margin:0; font-weight:600; letter-spacing:.2px; }
+  header .sub { color:var(--mut); font-size:12px; }
+  .wrap { display:flex; gap:0; height:calc(100vh - 47px); }
+  .stage { flex:1; display:flex; align-items:center; justify-content:center; overflow:auto; background:#0d1017; position:relative; }
+  canvas { cursor:crosshair; box-shadow:0 0 0 1px var(--line); }
+  .side { width:290px; border-left:1px solid var(--line); background:var(--panel); overflow-y:auto; padding:12px; }
+  .btn { background:#26304a; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:6px 10px; cursor:pointer; font-size:12px; }
+  .btn:hover { border-color:var(--acc); }
+  .btn.acc { background:var(--acc); border-color:var(--acc); color:#fff; }
+  .row { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0; }
+  ol.pts { list-style:none; margin:8px 0; padding:0; }
+  ol.pts li { display:flex; align-items:center; gap:8px; padding:5px 7px; border-radius:6px; cursor:pointer; }
+  ol.pts li.cur { background:#2a3350; outline:1px solid var(--acc); }
+  ol.pts li .dot { width:14px; height:14px; border-radius:50%; flex:0 0 auto; border:1px solid #0006; }
+  ol.pts li .k { flex:1; }
+  ol.pts li .st { color:var(--mut); font-size:11px; }
+  ol.pts li .st.ok { color:#57d38c; }
+  ol.pts li .st.skip { color:#e0a34a; }
+  .grp { color:var(--mut); font-size:11px; text-transform:uppercase; letter-spacing:.5px; margin:10px 0 2px; }
+  .hint { color:var(--mut); font-size:11.5px; margin-top:6px; }
+  .prog { font-size:12px; color:var(--mut); }
+  input[type=file] { font-size:12px; color:var(--mut); }
+  kbd { background:#0d1017; border:1px solid var(--line); border-radius:4px; padding:0 5px; font-size:11px; }
+</style>
+
+<header>
+  <h1>🐾 Dog Landmark Annotator</h1>
+  <span class="sub">15 clicks/dog · one per feature · exports normalized JSON for Pet Sculpt v2</span>
+  <span style="flex:1"></span>
+  <input id="files" type="file" accept="image/*" multiple>
+  <button class="btn" id="importBtn">Import JSON</button>
+  <input id="importFile" type="file" accept="application/json" style="display:none">
+  <button class="btn acc" id="exportBtn">⬇ Export JSON</button>
+</header>
+
+<div class="wrap">
+  <div class="stage"><canvas id="cv" width="10" height="10"></canvas></div>
+  <div class="side">
+    <div class="row">
+      <button class="btn" id="prevImg">◀ Prev</button>
+      <span class="prog" id="imgProg">no images</span>
+      <button class="btn" id="nextImg">Next ▶</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="undo">Undo (U)</button>
+      <button class="btn" id="skip">Skip pt (K)</button>
+      <button class="btn" id="clearImg">Clear image</button>
+    </div>
+    <div class="prog" id="ptProg">0 / 15 placed</div>
+    <ol class="pts" id="ptList"></ol>
+    <div class="hint">
+      <b>How:</b> click the image to drop the highlighted point; it auto-advances.
+      Click a list row to re-select. Drag any dot to nudge. <kbd>U</kbd> undo ·
+      <kbd>K</kbd> skip (occluded) · <kbd>N</kbd>/<kbd>P</kbd> next/prev image.<br><br>
+      Left/Right are <b>image side</b> (as you see it), not the dog's anatomy — the
+      adapter handles the mapping. Work saves to your browser automatically; Export
+      when done. Re-add the same image files later + Import to resume.
+    </div>
+  </div>
+</div>
+
+<script>
+// ~15-point scheme, mapped 1:1 to the displacement adapter's groups.
+const SCHEME = [
+  {k:"skull_top",   g:"face ring", c:"#7aa2ff", h:"top of the head/crown, between the ears"},
+  {k:"ear_base_L",  g:"face ring", c:"#7aa2ff", h:"where the LEFT ear meets the head (image left)"},
+  {k:"cheek_L",     g:"face ring", c:"#7aa2ff", h:"widest point of the LEFT cheek/jaw"},
+  {k:"chin",        g:"face ring", c:"#7aa2ff", h:"bottom of the chin / lower muzzle"},
+  {k:"cheek_R",     g:"face ring", c:"#7aa2ff", h:"widest point of the RIGHT cheek/jaw"},
+  {k:"ear_base_R",  g:"face ring", c:"#7aa2ff", h:"where the RIGHT ear meets the head (image right)"},
+  {k:"eye_L",       g:"eyes",      c:"#57d38c", h:"center of the LEFT eye (image left)"},
+  {k:"eye_R",       g:"eyes",      c:"#57d38c", h:"center of the RIGHT eye (image right)"},
+  {k:"brow_L",      g:"brows",     c:"#c58cff", h:"just above the LEFT eye"},
+  {k:"brow_R",      g:"brows",     c:"#c58cff", h:"just above the RIGHT eye"},
+  {k:"nose_top",    g:"nose",      c:"#ff9f4a", h:"bridge/stop between the eyes (top of muzzle)"},
+  {k:"nose_tip",    g:"nose",      c:"#ff9f4a", h:"center of the wet black nose"},
+  {k:"mouth_L",     g:"mouth",     c:"#ff6b8b", h:"LEFT mouth corner"},
+  {k:"mouth_center",g:"mouth",     c:"#ff6b8b", h:"center of the mouth line / lower lip"},
+  {k:"mouth_R",     g:"mouth",     c:"#ff6b8b", h:"RIGHT mouth corner"},
+];
+const LSKEY = "dogAnno.v1";
+
+let imgs = [];        // {name, img, w, h}
+let idx = -1;         // current image index
+let cur = 0;          // current point index to place
+let anno = {};        // name -> { label: [nx,ny] | null }
+let dragging = null;  // label being dragged
+
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+let scale = 1;
+
+try { anno = JSON.parse(localStorage.getItem(LSKEY)) || {}; } catch(e){ anno = {}; }
+
+function curName(){ return idx>=0 ? imgs[idx].name : null; }
+function pts(){ const n=curName(); if(!n) return null; anno[n] = anno[n] || {}; return anno[n]; }
+
+function save(){ try{ localStorage.setItem(LSKEY, JSON.stringify(anno)); }catch(e){} }
+
+function fitAndDraw(){
+  if(idx<0){ cv.width=10; cv.height=10; return; }
+  const im = imgs[idx];
+  const maxW = Math.min(window.innerWidth-320, 1100), maxH = window.innerHeight-90;
+  scale = Math.min(maxW/im.w, maxH/im.h, 1);
+  cv.width = Math.round(im.w*scale); cv.height = Math.round(im.h*scale);
+  ctx.drawImage(im.img, 0, 0, cv.width, cv.height);
+  const P = pts();
+  SCHEME.forEach((s,i)=>{
+    const p = P[s.k];
+    if(!p || p==="skip") return;
+    const x=p[0]*cv.width, y=p[1]*cv.height;
+    ctx.beginPath(); ctx.arc(x,y,6,0,7); ctx.fillStyle=s.c; ctx.fill();
+    ctx.lineWidth=1.5; ctx.strokeStyle= i===cur ? "#fff" : "#0009"; ctx.stroke();
+    ctx.fillStyle="#fff"; ctx.font="bold 11px system-ui"; ctx.textAlign="center";
+    ctx.fillText(i+1, x, y-9);
+  });
+}
+
+function renderList(){
+  const el = document.getElementById("ptList"); el.innerHTML="";
+  let lastG=null; const P = pts()||{};
+  SCHEME.forEach((s,i)=>{
+    if(s.g!==lastG){ const g=document.createElement("div"); g.className="grp"; g.textContent=s.g; el.appendChild(g); lastG=s.g; }
+    const li=document.createElement("li"); if(i===cur) li.className="cur";
+    const v=P[s.k];
+    const st = v==="skip" ? '<span class="st skip">skipped</span>' : (v ? '<span class="st ok">✓</span>' : '<span class="st">—</span>');
+    li.innerHTML = `<span class="dot" style="background:${s.c}"></span><span class="k">${i+1}. ${s.k}</span>${st}`;
+    li.title = s.h;
+    li.onclick = ()=>{ cur=i; refresh(); };
+    el.appendChild(li);
+  });
+  const placed = SCHEME.filter(s=>{const v=P[s.k]; return v && v!=="skip";}).length;
+  const skipped = SCHEME.filter(s=>P[s.k]==="skip").length;
+  document.getElementById("ptProg").textContent = `${placed} / ${SCHEME.length} placed`+(skipped?` · ${skipped} skipped`:"");
+  document.getElementById("imgProg").textContent = idx<0 ? "no images" : `image ${idx+1} / ${imgs.length}: ${curName()}`;
+}
+function refresh(){ fitAndDraw(); renderList(); }
+
+// ---- placing / dragging ----
+function evPos(e){
+  const r=cv.getBoundingClientRect();
+  return [ Math.min(1,Math.max(0,(e.clientX-r.left)/cv.width)),
+           Math.min(1,Math.max(0,(e.clientY-r.top)/cv.height)) ];
+}
+function hitPoint(nx,ny){
+  const P=pts()||{};
+  for(let i=0;i<SCHEME.length;i++){ const p=P[SCHEME[i].k]; if(!p||p==="skip") continue;
+    if(Math.hypot((p[0]-nx)*cv.width,(p[1]-ny)*cv.height) < 10) return SCHEME[i].k; }
+  return null;
+}
+cv.addEventListener("mousedown", e=>{
+  if(idx<0) return;
+  const [nx,ny]=evPos(e); const hit=hitPoint(nx,ny);
+  if(hit){ dragging=hit; return; }
+  const P=pts(); P[SCHEME[cur].k]=[nx,ny];
+  if(cur<SCHEME.length-1) cur++;
+  save(); refresh();
+});
+window.addEventListener("mousemove", e=>{
+  if(dragging==null) return; const [nx,ny]=evPos(e); pts()[dragging]=[nx,ny]; fitAndDraw();
+});
+window.addEventListener("mouseup", ()=>{ if(dragging!=null){ dragging=null; save(); renderList(); } });
+
+// ---- controls ----
+function loadIdx(i){ if(i<0||i>=imgs.length) return; idx=i; cur=0;
+  // advance cur to first unplaced
+  const P=pts(); for(let j=0;j<SCHEME.length;j++){ if(!P[SCHEME[j].k]){ cur=j; break; } }
+  refresh();
+}
+document.getElementById("prevImg").onclick=()=>loadIdx(idx-1);
+document.getElementById("nextImg").onclick=()=>loadIdx(idx+1);
+document.getElementById("undo").onclick=()=>{ const P=pts(); delete P[SCHEME[cur].k]; if(cur>0 && !P[SCHEME[cur].k]) {} save(); refresh(); };
+document.getElementById("skip").onclick=()=>{ const P=pts(); P[SCHEME[cur].k]="skip"; if(cur<SCHEME.length-1) cur++; save(); refresh(); };
+document.getElementById("clearImg").onclick=()=>{ if(confirm("Clear all points on this image?")){ anno[curName()]={}; cur=0; save(); refresh(); } };
+
+window.addEventListener("keydown", e=>{
+  if(e.target.tagName==="INPUT") return;
+  const k=e.key.toLowerCase();
+  if(k==="u"){ document.getElementById("undo").click(); }
+  else if(k==="k"){ document.getElementById("skip").click(); }
+  else if(k==="n"){ loadIdx(idx+1); }
+  else if(k==="p"){ loadIdx(idx-1); }
+});
+
+document.getElementById("files").addEventListener("change", e=>{
+  const fs=[...e.target.files]; let pending=fs.length; if(!pending) return;
+  fs.forEach(f=>{
+    if(imgs.some(x=>x.name===f.name)){ if(--pending===0 && idx<0) loadIdx(0); return; }
+    const im=new Image(); im.onload=()=>{ imgs.push({name:f.name,img:im,w:im.naturalWidth,h:im.naturalHeight});
+      imgs.sort((a,b)=>a.name.localeCompare(b.name)); if(--pending===0){ if(idx<0) loadIdx(0); else refresh(); } };
+    im.src=URL.createObjectURL(f);
+  });
+});
+
+document.getElementById("exportBtn").onclick=()=>{
+  const out={ scheme:SCHEME.map(s=>s.k), points:{} };
+  for(const [name,P] of Object.entries(anno)){
+    const im=imgs.find(x=>x.name===name);
+    const rec={ w:im?im.w:null, h:im?im.h:null, points:{} };
+    let any=false;
+    SCHEME.forEach(s=>{ const v=P[s.k]; if(v==="skip"){ rec.points[s.k]=null; any=true; }
+      else if(v){ rec.points[s.k]=[+v[0].toFixed(5), +v[1].toFixed(5)]; any=true; } });
+    if(any) out.points[name]=rec;
+  }
+  const blob=new Blob([JSON.stringify(out,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="dog_landmarks.json"; a.click();
+};
+
+document.getElementById("importBtn").onclick=()=>document.getElementById("importFile").click();
+document.getElementById("importFile").addEventListener("change", e=>{
+  const f=e.target.files[0]; if(!f) return; const r=new FileReader();
+  r.onload=()=>{ try{ const d=JSON.parse(r.result); if(d.points){ for(const [name,rec] of Object.entries(d.points)){
+    anno[name]=anno[name]||{}; for(const [k,v] of Object.entries(rec.points||{})) anno[name][k]= v===null?"skip":v; } }
+    save(); refresh(); alert("Imported "+Object.keys(d.points||{}).length+" annotated images."); }
+    catch(err){ alert("Bad JSON: "+err); } };
+  r.readAsText(f);
+});
+
+window.addEventListener("resize", fitAndDraw);
+refresh();
+</script>
