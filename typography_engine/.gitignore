@@ -28,3 +28,7 @@ marketing/lovedinwords/_gallery/
 *.bak
 *.bak-*
 *-backup-*.html
+
+# Admin Studio (local batch generator) — credentials + generated output, never deployed
+tools/admin_studio.env
+tools/_gallery_out/
