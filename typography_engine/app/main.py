@@ -1025,11 +1025,21 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
         # Item is in the catalog but its artwork isn't in place yet.
         return JSONResponse({"ok": False, "error": "art_missing"}, status_code=409)
     product = products.get(sku)
-    if not product:
+    if not product or products.is_gallery_hidden(sku):
         return JSONResponse({"ok": False, "error": "unknown_product"}, status_code=400)
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
     title = str(it.get("title") or "Typortrait")[:120]
+    # Per-item digital price: the catalog item may carry a `price` (in dollars); use
+    # it when present, else the gallery digital price. The value comes from the trusted
+    # catalog on disk -- never from the request -- so a buyer cannot set their own price.
+    digital_cents = products.gallery_price_for(product)[0]
+    try:
+        _p = float(str(it.get("price") or "").strip())
+        if _p > 0:
+            digital_cents = int(round(_p * 100))
+    except (TypeError, ValueError):
+        pass
 
     # --- Digital download ----------------------------------------------------
     if not product.physical:
@@ -1040,7 +1050,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
                     "quantity": 1,
                     "price_data": {
                         "currency": CURRENCY,
-                        "unit_amount": DOWNLOAD_PRICE_CENTS,
+                        "unit_amount": digital_cents,
                         "product_data": {"name": f"Typortrait — {title} (digital download)"},
                     },
                 }],
@@ -1060,7 +1070,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
     if product.memorial_only or product.size_variants or product.bundle_items or not product.printful_variant_id:
         return JSONResponse({"ok": False, "error": "unsupported_product"}, status_code=409)
     variant_id = product.printful_variant_id
-    eff_price, eff_ship = products.price_for(product, memorial=False)
+    eff_price, eff_ship = products.gallery_price_for(product)   # Sacred Collection schedule
     order_id = uuid.uuid4().hex[:16]
     line_items: List[dict] = [{
         "quantity": 1,
@@ -1168,16 +1178,168 @@ def gallery_download(item: str, session_id: str):
     return FileResponse(str(path), media_type="image/png", filename=f"typortrait-{item}.png")
 
 
+_ITEM_PAGE = '''<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>[[TITLE]] &mdash; Sacred Word Portrait &middot; Typortrait</title>
+<meta name="description" content="[[DESC]]">
+<link rel="canonical" href="[[URL]]">
+<meta property="og:type" content="product">
+<meta property="og:site_name" content="Typortrait">
+<meta property="og:title" content="[[TITLE]] &mdash; Sacred Word Portrait">
+<meta property="og:description" content="[[DESC]]">
+<meta property="og:image" content="[[IMG]]">
+<meta property="og:image:width" content="900"><meta property="og:image:height" content="1125">
+<meta property="og:url" content="[[URL]]">
+<meta property="product:price:amount" content="[[PRICE]]">
+<meta property="product:price:currency" content="[[CUR]]">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="[[TITLE]] &mdash; Sacred Word Portrait">
+<meta name="twitter:description" content="[[DESC]]">
+<meta name="twitter:image" content="[[IMG]]">
+<script type="application/ld+json">[[LD]]</script>
+<style>
+ :root{--bg:#f5f1e8;--card:#fff;--ink:#221d16;--mut:#736a58;--line:#e4ddce;--gold:#a9812f;--navy:#1a2b52}
+ *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+ .serif{font-family:"Palatino Linotype","Book Antiqua",Palatino,Georgia,serif}
+ a{color:var(--navy)}.wrap{max-width:1060px;margin:0 auto;padding:0 22px}
+ header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;border-bottom:1px solid var(--line)}
+ header .bm{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
+ header a.back{font-size:14px;color:var(--mut);text-decoration:none}
+ .product{display:grid;grid-template-columns:1fr 1fr;gap:44px;padding:40px 0 24px}
+ @media(max-width:760px){.product{grid-template-columns:1fr;gap:26px}}
+ .frame{background:#0c1730;border-radius:4px;overflow:hidden;box-shadow:0 30px 60px -28px rgba(20,16,10,.5)}
+ .frame img{width:100%;display:block;aspect-ratio:4/5;object-fit:cover}
+ .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600}
+ h1{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(30px,4.4vw,44px);margin:10px 0 4px;text-wrap:balance}
+ .price{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:30px;color:var(--navy);margin:14px 0 2px}
+ .pnote{color:var(--mut);font-size:14px;margin:0 0 18px}
+ .buy{width:100%;background:var(--navy);color:#fff;border:none;border-radius:10px;padding:15px;font-size:16px;font-weight:600;cursor:pointer}
+ .buy:hover{background:#233a6b}
+ .prints{margin-top:22px}.prints h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:0 0 10px}
+ .opt{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--card);
+  border:1px solid var(--line);border-radius:9px;padding:12px 14px;margin-bottom:9px;cursor:pointer;text-align:left;font:inherit;color:var(--ink)}
+ .opt:hover{border-color:var(--navy)}.opt:disabled{opacity:.55;cursor:default}.opt small{color:var(--mut)}
+ .opt b{font-size:16px;white-space:nowrap}
+ .soon{color:var(--mut);font-size:13px;margin:4px 0 0}.err{color:#b0331f;font-size:14px;min-height:20px;margin-top:8px}
+ .woven{border-top:1px solid var(--line);margin-top:20px;padding-top:16px}
+ .woven h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:0 0 8px}
+ .woven p{font-size:12.5px;line-height:2;letter-spacing:.06em;text-transform:uppercase;color:#8a7f6a;margin:0}
+ footer{border-top:1px solid var(--line);margin-top:30px;padding:26px 0 60px;color:var(--mut);font-size:13.5px;text-align:center}
+</style></head><body>
+<div class="wrap">
+ <header><a class="bm" href="/gallery">Typortrait</a><a class="back" href="/gallery">&larr; The Sacred Collection</a></header>
+ <div class="product">
+  <div class="frame"><img src="[[ART]]" alt="[[TITLE]] &mdash; sacred word portrait"></div>
+  <div class="panel">
+   <div class="eyebrow">[[CAT]]</div>
+   <h1>[[TITLE]]</h1>
+   <p class="serif" style="color:var(--mut);margin:2px 0 0">A portrait woven entirely from the words that belong to [[SUBJECT]].</p>
+   <div class="price">$[[PRICE]]</div>
+   <p class="pnote">High-resolution digital download &mdash; no watermark, print it anywhere.</p>
+   <button class="buy" id="buyDigital">Buy the digital download</button>
+   <div class="err" id="err"></div>
+   <div class="prints"><h3>Order it as a print</h3>[[PRINTS]][[SOON]]</div>
+   <div class="woven"><h3>Woven from these words</h3><p>[[WORDS]]</p></div>
+  </div>
+ </div>
+ <footer>Each Typortrait is rendered entirely from the words that belong to its subject. &nbsp;&middot;&nbsp; <a href="/gallery">Browse the whole collection &rarr;</a></footer>
+</div>
+<script>
+var ITEM=[[ITEMJSON]];
+function err(m){document.getElementById('err').textContent=({payments_unconfigured:"Checkout isn't available here yet.",fulfillment_unconfigured:"Prints aren't available right now — the digital download is ready.",art_missing:"This piece is being finished — check back soon.",unknown_item:"This piece isn't available right now."}[m])||"Couldn't start checkout — please try again.";}
+async function buy(sku,btn){var o=btn.innerHTML;btn.disabled=true;document.getElementById('err').textContent='';
+ try{var fd=new FormData();fd.append('item',ITEM);fd.append('sku',sku);
+  var r=await fetch('/gallery/checkout',{method:'POST',body:fd});var d=await r.json();
+  if(d.ok&&d.url){location.href=d.url;return;}err(d.error);}catch(_){err();}
+ btn.disabled=false;btn.innerHTML=o;}
+document.getElementById('buyDigital').onclick=function(){this.textContent='Opening secure checkout…';buy('digital',this);};
+document.querySelectorAll('.opt').forEach(function(b){if(!b.disabled)b.onclick=function(){buy(b.dataset.sku,b);};});
+</script></body></html>'''
+
+
+@app.api_route("/gallery/{item_id}", methods=["GET", "HEAD"], response_class=HTMLResponse)
+def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
+    """Per-item landing page: its own crawlable URL with Open Graph / Rich Pin /
+    Twitter meta + Product structured data, and buy buttons that open Stripe Checkout
+    via /gallery/checkout. This is the destination for Pinterest/Instagram/Google
+    referral traffic (a pin or shared link lands on a real product page)."""
+    import html as _h
+    import json as _j
+    if not GALLERY_ENABLED:
+        raise HTTPException(status_code=404, detail="not_found")
+    it = gallery_catalog.get(item_id)
+    if not it or gallery_catalog.art_path(item_id) is None:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    base = _req_base(request)
+    og_base = PUBLIC_BASE_URL.rstrip("/")                 # absolute + scraper-reachable
+    page_url = f"{base}/gallery/{item_id}"
+    img_abs = f"{og_base}/static/gallery/art/{item_id}.png"
+    title = str(it.get("title") or "Sacred Word Portrait")
+    subject = str(it.get("subject") or "").strip() or title   # grammatical tagline subject
+    words = " ".join(str(it.get("words") or "").split())
+    cat = str(it.get("category") or "Sacred Figures")
+
+    digital_cents = products.gallery_price_for(products.get("digital"))[0]   # gallery channel
+    try:
+        _p = float(str(it.get("price") or "").strip())
+        if _p > 0:
+            digital_cents = int(round(_p * 100))
+    except (TypeError, ValueError):
+        pass
+    price = f"{digital_cents / 100:.2f}"
+    desc = (f"{title} — a typographic portrait woven entirely from the words that belong to "
+            f"them. High-resolution digital download and archival prints.")[:185]
+
+    prints = [p for p in products.public_catalog(gallery=True)
+              if p["physical"] and not p["memorial_only"] and not p["sizes"]]
+    live = bool(PRINTFUL_API_TOKEN)
+    prints_html = "".join(
+        f'<button class="opt" data-sku="{_h.escape(p["sku"])}"{"" if live else " disabled"}>'
+        f'<span>{_h.escape(p["name"])}<br><small>+ ${p["shipping_cents"]/100:.2f} shipping</small></span>'
+        f'<b>${p["price_cents"]/100:.2f}</b></button>' for p in prints)
+    soon = "" if live else '<p class="soon">Prints arrive soon — the digital download is ready now.</p>'
+
+    ld = _j.dumps({
+        "@context": "https://schema.org/", "@type": "Product",
+        "name": f"{title} — Sacred Word Portrait", "image": img_abs,
+        "description": desc, "category": cat,
+        "brand": {"@type": "Brand", "name": "Typortrait"},
+        "offers": {"@type": "Offer", "priceCurrency": CURRENCY.upper(), "price": price,
+                   "availability": "https://schema.org/InStock", "url": page_url},
+    })
+
+    html = (_ITEM_PAGE
+            .replace("[[TITLE]]", _h.escape(title))
+            .replace("[[SUBJECT]]", _h.escape(subject))
+            .replace("[[DESC]]", _h.escape(desc))
+            .replace("[[URL]]", _h.escape(page_url))
+            .replace("[[IMG]]", _h.escape(img_abs))
+            .replace("[[ART]]", _h.escape(f"/static/gallery/art/{item_id}.png"))
+            .replace("[[CAT]]", _h.escape(cat))
+            .replace("[[PRICE]]", _h.escape(price))
+            .replace("[[CUR]]", _h.escape(CURRENCY.upper()))
+            .replace("[[PRINTS]]", prints_html)
+            .replace("[[SOON]]", soon)
+            .replace("[[WORDS]]", _h.escape(" · ".join(words.split())))
+            .replace("[[LD]]", ld)
+            .replace("[[ITEMJSON]]", _j.dumps(item_id)))
+    return HTMLResponse(html)
+
+
 @app.get("/products")
-def list_products(brand: str = "") -> JSONResponse:
+def list_products(brand: str = "", gallery: int = 0) -> JSONResponse:
     """Storefront catalog (prices, shipping, sizes) — single source of truth so
     the UI never hardcodes prices. `brand` selects channel pricing (the memorial/
-    EverLoved brand carries commission-adjusted prices). `fulfillment_configured`
-    tells the front-end whether physical print-on-demand is live."""
+    EverLoved brand carries commission-adjusted prices); `gallery=1` selects the
+    Sacred Collection schedule. `fulfillment_configured` tells the front-end whether
+    physical print-on-demand is live."""
     return JSONResponse({
         "ok": True,
         "currency": CURRENCY,
-        "products": products.public_catalog(memorial=products.is_memorial_channel(brand)),
+        "products": products.public_catalog(
+            memorial=products.is_memorial_channel(brand), gallery=bool(gallery)),
         "fulfillment_configured": bool(PRINTFUL_API_TOKEN),
     })
 

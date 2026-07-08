@@ -212,11 +212,43 @@ def price_for(p: Product, memorial: bool) -> Tuple[int, int]:
     return p.price_cents, p.shipping_cents
 
 
-def public_catalog(memorial: bool = False) -> List[dict]:
-    """JSON-safe catalog payload for the storefront UI (brand-priced when memorial)."""
+# Sacred Collection (gallery) price schedule -- the gallery's OWN prices, SEPARATE
+# from the personalized studio (which keeps the Product.price_cents defaults). This
+# is the one place to BULK-reprice every gallery item at once: edit a number here and
+# all 300-500 items reflect it immediately (a sku absent here uses its default price).
+# Digital is per-item (catalog.json) but falls back to the value here.
+_GALLERY_PRICE: Dict[str, int] = {
+    "digital":      2900,
+    "framed_16x20": 7900,
+    "canvas_16x20": 5900,
+    "poster_18x24": 3400,
+    "framed_8x10":  4500,
+    "canvas_8x10":  3400,
+}
+# Prints hidden from the gallery storefront (thin margin -- the pure-margin $29
+# digital is the affordable entry). Kept for the personalized/memorial flows, where a
+# small, cheap keepsake still makes sense.
+_GALLERY_HIDE = {"print_5x7", "poster_8x10"}
+
+
+def gallery_price_for(p: Product) -> Tuple[int, int]:
+    """(price_cents, shipping_cents) for a product in the Sacred Collection channel."""
+    return _GALLERY_PRICE.get(p.sku, p.price_cents), p.shipping_cents
+
+
+def is_gallery_hidden(sku: str) -> bool:
+    return (sku or "") in _GALLERY_HIDE
+
+
+def public_catalog(memorial: bool = False, gallery: bool = False) -> List[dict]:
+    """JSON-safe catalog payload for the storefront UI. `gallery` selects the Sacred
+    Collection channel (its own prices; thin-margin small prints hidden). `memorial`
+    selects the commission-adjusted brand prices. Default = the personalized studio."""
     out = []
     for p in CATALOG:
-        price, ship = price_for(p, memorial)
+        if gallery and p.sku in _GALLERY_HIDE:
+            continue
+        price, ship = gallery_price_for(p) if gallery else price_for(p, memorial)
         out.append({
             "sku": p.sku,
             "name": p.name,

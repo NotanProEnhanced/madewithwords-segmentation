@@ -80,6 +80,8 @@
   <header>
     <h1>The Typortrait Gallery</h1>
     <p class="lead">Sacred figures and beloved moments, each portrait woven entirely from the words that belong to it.</p>
+    <input id="search" placeholder="Search the collection…" autocomplete="off"
+      style="width:100%;max-width:440px;margin:14px auto 0;display:block;padding:11px 16px;border:1px solid #d9d2c4;border-radius:999px;font:inherit;background:#fff;color:#2a2620" />
   </header>
 
   <div class="tabs" id="tabs"></div>
@@ -110,14 +112,14 @@
 
 <script>
 const $ = s => document.querySelector(s);
-let CAT=null, PRODUCTS=null, DIGITAL_CENTS=1499, curCol=0, curSec=0, curItem=null;
+let CAT=null, PRODUCTS=null, DIGITAL_CENTS=1499, curCol=0, curSec=0, curItem=null, SEARCH="";
 
 function money(c){ return "$"+(c/100).toFixed(2); }
 
 async function init(){
   const [c,p] = await Promise.all([
-    fetch("/static/gallery/catalog.json").then(r=>r.json()),
-    fetch("/products").then(r=>r.ok?r.json():null).catch(()=>null)
+    fetch("/static/gallery/catalog.json?v="+Date.now()).then(r=>r.json()),
+    fetch("/products?gallery=1").then(r=>r.ok?r.json():null).catch(()=>null)
   ]);
   CAT=c; PRODUCTS=p;
   if(p && p.products){
@@ -147,13 +149,32 @@ function renderTabs(){
 
 function renderGrid(){
   const g=$("#grid"); g.innerHTML="";
-  const sec=CAT.collections[curCol].sections[curSec];
-  sec.items.forEach(it=>{
-    const card=document.createElement("div"); card.className="item";
+  const col=CAT.collections[curCol];
+  let items;
+  if(SEARCH){
+    // Search spans the whole collection (all sections); hide the sub-tabs.
+    const q=SEARCH;
+    items=col.sections.flatMap(s=>s.items).filter(it=>
+      ((it.title||"")+" "+(it.words||"")).toLowerCase().includes(q));
+    $("#subtabs").style.display="none";
+  } else {
+    items=(col.sections[curSec]||{items:[]}).items;
+    $("#subtabs").style.display="";
+  }
+  if(!items.length){ g.innerHTML='<p style="grid-column:1/-1;color:#8a8172;text-align:center;padding:40px 0">No pieces match.</p>'; return; }
+  items.forEach(it=>{
+    // Each card is a real link to the item's own landing page — crawlable for
+    // Google/Pinterest and the destination for referral traffic.
+    const card=document.createElement("a"); card.className="item";
+    card.href="/gallery/"+encodeURIComponent(it.id); card.style.textDecoration="none";
     card.innerHTML=`<img src="/static/gallery/art/${it.id}.png" alt="${it.title}" loading="lazy"/>
       <div class="meta"><p class="t">${it.title}</p><p class="w">${it.words}</p></div>`;
-    card.onclick=()=>openItem(it); g.appendChild(card);
+    g.appendChild(card);
   });
+}
+// item digital price in cents: per-item `price` (dollars) if set, else the default.
+function itemCents(it){
+  const p=parseFloat(it && it.price); return (isFinite(p)&&p>0)?Math.round(p*100):DIGITAL_CENTS;
 }
 
 function openItem(it){
@@ -162,7 +183,7 @@ function openItem(it){
   $("#mtitle").textContent=it.title;
   $("#mwords").textContent=it.words;
   $("#mprov").innerHTML=`<b>The words:</b> ${it.text}<br/><b>The art:</b> ${it.art}`;
-  $("#mprice").textContent=money(DIGITAL_CENTS);
+  $("#mprice").textContent=money(itemCents(it));
   $("#err").textContent="";
   const buy=$("#buy"); buy.disabled=false; buy.textContent="Buy the digital download";
   // prints — buyable when fulfillment is configured
@@ -208,6 +229,7 @@ async function startCheckout(itemId, sku, btn){
   buy.disabled=false; buy.textContent="Buy the digital download";
 }
 $("#buy").onclick=()=>{ if(curItem){ $("#buy").textContent="Opening secure checkout…"; startCheckout(curItem.id,"digital",$("#buy")); } };
+$("#search").addEventListener("input", e=>{ SEARCH=e.target.value.trim().toLowerCase(); renderGrid(); });
 
 init();
 </script>
