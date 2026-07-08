@@ -1,0 +1,39 @@
+# Typortrait Sacred Collection — curated launch list (30 figures)
+# Format:  Title | Category   (blank lines and #-comments ignored)
+# Weighted to proven-demand subjects from the market research.
+
+Jesus Christ | Life of Christ
+The Sacred Heart of Jesus | Life of Christ
+Divine Mercy | Life of Christ
+The Good Shepherd | Life of Christ
+Ecce Homo | Life of Christ
+
+The Blessed Virgin Mary | The Blessed Mother
+Immaculate Heart of Mary | The Blessed Mother
+Our Lady of Sorrows | The Blessed Mother
+Our Lady of Guadalupe | The Blessed Mother
+Mary, Queen of Heaven | The Blessed Mother
+
+St. Michael the Archangel | Angels
+Guardian Angel | Angels
+St. Raphael the Archangel | Angels
+
+St. Peter | Apostles & Prophets
+St. Paul | Apostles & Prophets
+St. John the Baptist | Apostles & Prophets
+Moses | Apostles & Prophets
+King David | Apostles & Prophets
+
+St. Joseph | Beloved Patron Saints
+St. Francis of Assisi | Beloved Patron Saints
+St. Anthony of Padua | Beloved Patron Saints
+St. Jude | Beloved Patron Saints
+St. Therese of Lisieux | Beloved Patron Saints
+Padre Pio | Beloved Patron Saints
+St. Christopher | Beloved Patron Saints
+St. Rita of Cascia | Beloved Patron Saints
+St. Joan of Arc | Beloved Patron Saints
+
+St. Teresa of Calcutta | Modern Saints
+Pope St. John Paul II | Modern Saints
+St. Faustina | Modern Saints

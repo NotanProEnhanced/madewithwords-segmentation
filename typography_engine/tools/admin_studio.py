@@ -109,6 +109,28 @@ def _save_master_preview(item_id: str, png: bytes, catalog_row: dict) -> None:
     prev.save(OUT / "previews" / f"{item_id}.png", "PNG")
 
 
+# --- approvals ----------------------------------------------------------------
+# Per-item review state {id: "approved"|"rejected"} in _gallery_out/approvals.json.
+# Kept separate from catalog.json so re-running a batch never wipes your decisions.
+def _approvals_path() -> Path:
+    return OUT / "approvals.json"
+
+
+def _load_approvals() -> dict:
+    p = _approvals_path()
+    if p.exists():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            return {}
+    return {}
+
+
+def _save_approvals(data: dict) -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
+    _approvals_path().write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
 # --- batch state --------------------------------------------------------------
 BATCH: dict = {"running": False, "total": 0, "done": 0, "current": "",
                "errors": [], "cancel": False, "log": []}
@@ -144,6 +166,8 @@ def run_batch(manifest_path: str, images_dir: str, out_width: int, supersample: 
             _save_master_preview(item, png, row)
             catalog.append({
                 "id": item, "title": (row.get("title") or item).strip(),
+                "subject": (row.get("subject") or row.get("title") or item).strip(),
+                "category": (row.get("category") or "").strip(),
                 "price": (row.get("price") or "").strip(),
                 "style": (row.get("style") or "lifelike").strip(),
                 "ground": (row.get("ground") or "navy").strip(),
@@ -221,8 +245,22 @@ def api_batch_cancel(user: str = Depends(auth)):
 @app.get("/api/outputs")
 def api_outputs(user: str = Depends(auth)):
     prev = OUT / "previews"
-    items = sorted(p.stem for p in prev.glob("*.png")) if prev.exists() else []
+    appr = _load_approvals()
+    ids = sorted(p.stem for p in prev.glob("*.png")) if prev.exists() else []
+    items = [{"id": i, "status": appr.get(i, "pending")} for i in ids]
     return {"count": len(items), "items": items}
+
+
+@app.post("/api/review")
+def api_review(user: str = Depends(auth), item: str = Form(...), status: str = Form(...)):
+    item = (item or "").strip()
+    appr = _load_approvals()
+    if status in ("approved", "rejected"):
+        appr[item] = status
+    else:                                   # anything else clears back to pending
+        appr.pop(item, None)
+    _save_approvals(appr)
+    return {"ok": True, "status": appr.get(item, "pending")}
 
 
 @app.get("/out/preview/{item}.png")
@@ -260,6 +298,15 @@ PAGE = """<!doctype html><meta charset=utf-8><title>Typortrait Admin Studio</tit
  .log{font:12px/1.5 ui-monospace,monospace;background:#0b0f17;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:220px;overflow:auto;white-space:pre-wrap}
  .err{color:#ff8b8b}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
  .grid a{display:block}.grid img{width:100%;border-radius:8px;border:1px solid var(--line)}.grid .cap{font-size:11px;color:var(--mut);margin-top:3px;word-break:break-all}
+ .rcard{background:#141b28;border:1px solid var(--line);border-radius:9px;padding:8px}
+ .rcard img{width:100%;border-radius:6px;border:1px solid var(--line);cursor:pointer}
+ .rcard.approved{outline:2px solid #2fa35f}.rcard.rejected{outline:2px solid #c05262;opacity:.6}
+ .rcard .cap{font-size:11px;color:var(--mut);margin:5px 0 6px;word-break:break-all}
+ .badge{font-size:10px;padding:1px 6px;border-radius:5px;text-transform:uppercase;letter-spacing:.03em}
+ .badge.approved{background:#1f7a44;color:#fff}.badge.rejected{background:#7a2431;color:#fff}.badge.pending{background:#2b3448;color:var(--mut)}
+ .rv{display:flex;gap:6px}.rv button{flex:1;border:1px solid var(--line);border-radius:6px;padding:6px;cursor:pointer;font-size:12px;background:#10161f;color:var(--ink)}
+ .rv .ap.on{background:#1f7a44;border-color:#2fa35f;color:#fff}.rv .rj.on{background:#7a2431;border-color:#c05262;color:#fff}
+ .filt button.on{background:var(--acc);border-color:var(--acc);color:#fff}
 </style>
 <header><h1>🎨 Typortrait Admin Studio</h1><span class=mut>local · no consent · no Stripe · not connected to prod</span></header>
 <div class=tabs><button class=on data-t=single>Single</button><button data-t=batch>Batch (CSV)</button><button data-t=out>Output</button></div>
@@ -301,7 +348,17 @@ PAGE = """<!doctype html><meta charset=utf-8><title>Typortrait Admin Studio</tit
  </div></div>
 
  <div id=out class=hide><div class=card>
-  <button class=sec id=o_refresh>Refresh</button> <span id=o_count class=mut></span>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+   <button class=sec id=o_refresh>Refresh</button>
+   <span class=mut style=margin-left:auto>Filter:</span>
+   <span class=filt>
+    <button class="sec on" data-f=all>All</button>
+    <button class=sec data-f=pending>Pending</button>
+    <button class=sec data-f=approved>Approved</button>
+    <button class=sec data-f=rejected>Rejected</button>
+   </span>
+  </div>
+  <div id=o_count class=mut style=margin-top:8px></div>
   <div class=grid id=o_grid style=margin-top:14px></div>
  </div></div>
 </div>
@@ -345,11 +402,32 @@ async function status(){
  $('#b_log').innerHTML=(s.log||[]).slice(-40).map(l=>l.startsWith('ERR')?'<span class=err>'+l+'</span>':l).join('\\n')
    +(s.errors.length?'\\n\\n'+s.errors.map(e=>'<span class=err>'+e+'</span>').join('\\n'):'');
  if(!s.running&&poll){clearInterval(poll);poll=null;}}
+let OUTFILTER='all';
 async function loadOut(){
  const s=await (await fetch('/api/outputs')).json();
- $('#o_count').textContent=s.count+' generated';
- $('#o_grid').innerHTML=s.items.map(i=>`<a href="/out/master/${i}.png" target=_blank><img src="/out/preview/${i}.png"><div class=cap>${i}</div></a>`).join('');}
+ const items=s.items||[];
+ const c={all:items.length,pending:0,approved:0,rejected:0};
+ items.forEach(i=>c[i.status||'pending']++);
+ $('#o_count').textContent=`${c.all} generated · ${c.approved} approved · ${c.pending} pending · ${c.rejected} rejected`;
+ const show=items.filter(i=>OUTFILTER==='all'||(i.status||'pending')===OUTFILTER);
+ $('#o_grid').innerHTML=show.map(i=>{const st=i.status||'pending';return `
+  <div class="rcard ${st}">
+   <a href="/out/master/${i.id}.png" target=_blank><img src="/out/preview/${i.id}.png"></a>
+   <div class=cap>${i.id} <span class="badge ${st}">${st}</span></div>
+   <div class=rv>
+    <button class="ap ${st==='approved'?'on':''}" data-id="${i.id}" data-s=approved>✓ Approve</button>
+    <button class="rj ${st==='rejected'?'on':''}" data-id="${i.id}" data-s=rejected>✗ Reject</button>
+   </div>
+  </div>`}).join('')||'<p class=mut style="grid-column:1/-1">No items in this filter.</p>';
+ $('#o_grid').querySelectorAll('.rv button').forEach(b=>b.onclick=async()=>{
+  const newS=b.classList.contains('on')?'pending':b.dataset.s;
+  await fetch('/api/review',{method:'POST',body:new URLSearchParams({item:b.dataset.id,status:newS})});
+  loadOut();});
+}
 $('#o_refresh').onclick=loadOut;
+document.querySelectorAll('.filt button').forEach(b=>b.onclick=()=>{
+ document.querySelectorAll('.filt button').forEach(x=>x.classList.remove('on'));
+ b.classList.add('on'); OUTFILTER=b.dataset.f; loadOut();});
 </script>"""
 
 

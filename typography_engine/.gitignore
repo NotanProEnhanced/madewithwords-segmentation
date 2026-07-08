@@ -32,3 +32,4 @@ marketing/lovedinwords/_gallery/
 # Admin Studio (local batch generator) — credentials + generated output, never deployed
 tools/admin_studio.env
 tools/_gallery_out/
+tools/_sacred_src/
