@@ -815,13 +815,6 @@ const BRANDS={
   lovedinwords:{ name:"Loved in Words", owned:true, tag:"A portrait of a life, in the words that describe them.", title:"Loved in Words — a remembrance portrait made from words", host:"lovedinwords.com",
     style:"displacement", ink:"photo", pinStyle:true, memorial:true,
     theme:{ "--navy":"#42525f", "--ink":"#2f3742", "--paper":"#f4efe8", "--card":"#fffdf9", "--line":"#e7e0d5", "--muted":"#776f64" } },
-  // Keeper Memorials (mykeeper.com) — co-brand demo for the partnership pitch.
-  // Colours are a tasteful placeholder (a cooler stone/slate than LiW's warm
-  // ivory, so it reads as its own brand); swap to Keeper's real palette once
-  // confirmed. ?brand=keeper drives memorial pricing via the "keeper" ref.
-  keeper:{ name:"Keeper", tag:"A keepsake portrait, in the words that remember them.", title:"Keeper — a remembrance portrait made from words", host:"mykeeper.com",
-    style:"displacement", ink:"photo", pinStyle:true, memorial:true,
-    theme:{ "--navy":"#3b4a57", "--ink":"#2b333b", "--paper":"#f1f0ec", "--card":"#fbfaf7", "--line":"#e3e1da", "--muted":"#71776f" } },
   // EverLoved (everloved.com) — co-brand demo for the partnership pitch. A soft sage
   // palette (placeholder; swap to EverLoved's real brand once confirmed).
   // ?brand=everloved drives memorial pricing via the "everloved" ref (already set).
@@ -881,7 +874,7 @@ if(BRAND){
     }
     if(BRAND.theme){ const rs=document.documentElement.style; for(const k in BRAND.theme) rs.setProperty(k, BRAND.theme[k]); }
     // Swap the favicon to this brand's typographic heart (default is the generic T).
-    const _FAV={lovedinwords:1,keeper:1,everloved:1};
+    const _FAV={lovedinwords:1,everloved:1};
     if(_FAV[BRAND_ID]) document.querySelectorAll('link[rel*="icon"]').forEach(function(l){
       const h=l.getAttribute("href"); if(h) l.setAttribute("href", h.replace("/favicons/typortrait/","/favicons/"+BRAND_ID+"/")); });
   }catch(e){}

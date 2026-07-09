@@ -1905,7 +1905,7 @@ def _notify_sale(sess: dict, order: Optional[dict]) -> None:
 def _fav_links(brand: str = "typortrait") -> str:
     """Favicon <link> tags for a server-rendered page. `brand` maps to the studio
     favicon set at /static/favicons/{brand}/; an unknown brand -> generic typortrait."""
-    b = brand if brand in ("typortrait", "lovedinwords", "keeper", "everloved") else "typortrait"
+    b = brand if brand in ("typortrait", "lovedinwords", "everloved") else "typortrait"
     p = f"/static/favicons/{b}"
     return (f"<link rel='icon' type='image/svg+xml' href='{p}/favicon.svg'>"
             f"<link rel='icon' type='image/png' sizes='32x32' href='{p}/favicon-32.png'>"
@@ -2518,7 +2518,7 @@ def success(job: str, session_id: str):
                        '(<a href="/terms" target="_blank" rel="noopener">terms</a>). You can revoke any time by emailing us.</span></label>')
         # Memorial card (brand-aware): a free print-ready prayer-card PDF for the
         # memorial skins, generated from the portrait's own words (recipe `text`).
-        show_card = _ref in ("lovedinwords", "keeper", "everloved")
+        show_card = _ref in ("lovedinwords", "everloved")
         card_html = ""
         card_js = ""
         if show_card:

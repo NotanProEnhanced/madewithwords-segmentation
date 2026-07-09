@@ -196,7 +196,7 @@ _MEMORIAL_PRICE: Dict[str, int] = {
     "poster_8x10":  2300,
     "print_5x7":    1600,
 }
-_MEMORIAL_REFS = {"lovedinwords", "everloved", "keeper"}
+_MEMORIAL_REFS = {"lovedinwords", "everloved"}
 
 
 def is_memorial_channel(ref: Optional[str]) -> bool:

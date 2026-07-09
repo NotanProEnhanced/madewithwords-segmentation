@@ -27,7 +27,6 @@ _NAVY = (13, 27, 58)
 # partner's name; anything else falls back to typortrait.com.
 _BRAND_MARK = {
     "lovedinwords": "lovedinwords.com",
-    "keeper": "Keeper",
     "everloved": "Ever Loved",
 }
 
