@@ -180,12 +180,22 @@ _WORDS_SYSTEM = (
     "THIS figure -- their specific name, unique roles, deeds, place, and associated "
     "scripture; use at most two or three generic virtues like GRACE LOVE HOPE FAITH; never "
     "contested, negative, or offensive labels); "
-    "image_prompt (a photorealistic FRONT-FACING single-subject portrait: the face fills the "
-    "frame, soft reverent studio light, plain dark background, dignified; appearance "
-    "appropriate to THIS figure in AGE, ethnicity, and bearing (e.g. the Virgin Mary a serene "
-    "young woman about 16-20; elders older); Middle-Eastern for biblical / Holy Land figures, "
-    "region-appropriate for later saints; a bare photograph with absolutely NO caption, title, "
-    "name, label, watermark, border, or letters)."
+    "image_prompt: WRITE A NEW one-sentence prompt SPECIFIC to THIS figure -- do NOT copy this "
+    "instruction or reuse the same wording twice. Every prompt MUST begin with 'Photorealistic "
+    "front-facing studio portrait, face filling the frame, plain dark background, soft reverent "
+    "light: ' and then state the subject's SEX, approximate AGE, ethnicity/skin, hair, and "
+    "FACIAL HAIR stated explicitly ('clean-shaven', 'a full grey beard', etc.), plus one or two "
+    "defining visual attributes or attire. Middle-Eastern for biblical / Holy Land figures, "
+    "region-appropriate for later saints. Put a veil or head-covering ONLY where iconographically "
+    "correct (Marian figures, some friars/nuns) -- NEVER veil a male figure. Match sex and age to "
+    "the real person: most apostles, prophets and patriarchs are bearded men, often elderly "
+    "(Moses, Peter, Joseph old; Michael a youth; Therese/Faustina young women). Examples: "
+    "Moses -> '...an elderly Middle-Eastern man about 80, weathered skin, long flowing white "
+    "beard and white hair, resolute.'; St. Michael the Archangel -> '...a strong youthful figure "
+    "with an intense gaze, clean-shaven, a hint of burnished armor at the shoulders.'; Our Lady "
+    "of Guadalupe -> '...a serene young mestiza woman about 18, dark hair, a soft rose-and-blue "
+    "mantle draped over her head.' The image must contain absolutely NO caption, title, name, "
+    "label, letters, numbers, watermark, or border."
 )
 
 
@@ -193,28 +203,47 @@ def _mkey(t: str) -> str:
     return "".join(c for c in t.lower() if c.isalnum())
 
 
-def load_figures(path: str) -> list[tuple[str, str]]:
-    """Read a curated 'Title | Category' list (one per line; # comments ignored)."""
+def load_figures(path: str) -> list[tuple[str, str, str]]:
+    """Read a curated 'Title | Category | appearance-hint' list (one per line; # comments
+    ignored). Category and hint are optional. When a hint is present we build the image prompt
+    deterministically from it (see _img_prompt_from_hint), so each figure looks distinct instead
+    of the model collapsing all 30 onto one archetype."""
     out = []
     for ln in Path(path).read_text(encoding="utf-8").splitlines():
         ln = ln.strip()
         if not ln or ln.startswith("#"):
             continue
-        if "|" in ln:
-            t, c = ln.split("|", 1)
-            out.append((t.strip(), c.strip()))
-        else:
-            out.append((ln, "Saints & Figures"))
+        parts = [p.strip() for p in ln.split("|")]
+        title = parts[0]
+        category = parts[1] if len(parts) > 1 and parts[1] else "Saints & Figures"
+        hint = parts[2] if len(parts) > 2 else ""
+        out.append((title, category, hint))
     return out
 
 
-def plan_from_figures(key: str, model: str, figures: list[tuple[str, str]],
+# When a curated figure carries an appearance hint we build the image prompt DETERMINISTICALLY
+# (fixed prefix + the hint + a hard no-text suffix) rather than trusting the model, which tends
+# to converge every figure onto one archetype (we saw all 30 render as one veiled woman). This
+# is the single lever that keeps the faces genuinely distinct.
+_IMG_PREFIX = ("Photorealistic front-facing studio portrait, the face filling the frame, on a "
+               "plain dark background in soft reverent light: ")
+_IMG_SUFFIX = (" A bare photograph -- absolutely no caption, title, name, label, letters, "
+               "numbers, text on any garment or object, watermark, or border.")
+
+
+def _img_prompt_from_hint(hint: str) -> str:
+    return _IMG_PREFIX + hint.strip().rstrip(".") + "." + _IMG_SUFFIX
+
+
+def plan_from_figures(key: str, model: str, figures: list[tuple[str, str, str]],
                       per_call: int) -> list[dict]:
-    """Write words + image_prompt for a FIXED list of figures (titles/categories kept)."""
+    """Write words + subject for a FIXED list of figures (titles/categories kept). The image
+    prompt is built deterministically from each figure's appearance hint when one is given, so
+    the model can't collapse the whole set onto one look."""
     items: list[dict] = []
     for i in range(0, len(figures), per_call):
         chunk = figures[i:i + per_call]
-        listing = "\n".join(f"- {t} | {c}" for t, c in chunk)
+        listing = "\n".join(f"- {t} | {c}" for t, c, _h in chunk)
         data = _post("https://api.openai.com/v1/chat/completions", key, {
             "model": model,
             "response_format": {"type": "json_object"},
@@ -228,15 +257,16 @@ def plan_from_figures(key: str, model: str, figures: list[tuple[str, str]],
         except json.JSONDecodeError:
             batch = []
         by_key = {_mkey(str(it.get("title") or "")): it for it in batch}
-        for t, c in chunk:
+        for t, c, hint in chunk:
             it = by_key.get(_mkey(t)) or {}
             words = [w for w in str(it.get("words") or "").upper().split() if w not in _BANNED]
             if not words:
                 print(f"  (!) no words returned for '{t}' -- skipped"); continue
+            img = _img_prompt_from_hint(hint) if hint else str(it.get("image_prompt") or "").strip()
             items.append({"item_id": _slug(t), "title": t, "category": c,
                           "subject": (str(it.get("subject") or "").strip() or t),
                           "words": " ".join(words),
-                          "image_prompt": str(it.get("image_prompt") or "").strip()})
+                          "image_prompt": img})
         print(f"  words written {len(items)}/{len(figures)}")
     return items
 
@@ -300,11 +330,11 @@ def main() -> None:
     if a.figures:
         figs = load_figures(a.figures)
         have = {p["title"].strip().lower() for p in plan}
-        todo = [(t, c) for t, c in figs if t.strip().lower() not in have]
+        todo = [(t, c, h) for t, c, h in figs if t.strip().lower() not in have]
         if todo:
             print(f"Writing words for {len(todo)} curated figure(s) via {a.model_text}…")
             plan.extend(plan_from_figures(key, a.model_text, todo, a.per_call))
-        keep = {t.strip().lower() for t, _ in figs}
+        keep = {t.strip().lower() for t, _c, _h in figs}
         plan = [p for p in plan if p["title"].strip().lower() in keep]   # exactly the curated set
     else:
         if len(plan) < a.count:

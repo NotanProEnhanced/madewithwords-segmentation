@@ -1,39 +1,44 @@
 # Typortrait Sacred Collection — curated launch list (30 figures)
-# Format:  Title | Category   (blank lines and #-comments ignored)
-# Weighted to proven-demand subjects from the market research.
+# Format:  Title | Category | appearance-hint
+#   - blank lines and #-comments ignored
+#   - the appearance-hint is dropped in verbatim after a fixed studio-portrait prefix and a
+#     hard "no text/letters" suffix, so each figure looks DISTINCT (state sex, age, hair, and
+#     facial hair explicitly; veils only where iconographically correct; never veil a man).
+# Weighted to proven-demand subjects. Modern real people (recognisable photos + rights/backlash
+# risk) are intentionally excluded in favour of classical, non-photographic saints.
 
-Jesus Christ | Life of Christ
-The Sacred Heart of Jesus | Life of Christ
-Divine Mercy | Life of Christ
-The Good Shepherd | Life of Christ
-Ecce Homo | Life of Christ
+Jesus Christ | Life of Christ | a Middle-Eastern man in his early 30s, brown shoulder-length hair and a full brown beard, gentle and serene
+The Sacred Heart of Jesus | Life of Christ | a Middle-Eastern man in his early 30s, brown hair and beard, serene and compassionate, a warm golden glow rising from his chest
+Divine Mercy | Life of Christ | a Middle-Eastern man in his early 30s, brown hair and full beard, a serene compassionate gaze, two soft rays of pale white and red light glowing at his chest
+The Good Shepherd | Life of Christ | a rugged Middle-Eastern man about 30, brown hair and beard, a young lamb resting across his shoulders
+Ecce Homo | Life of Christ | a Middle-Eastern man about 33, brown hair and beard, a crown of thorns, sorrowful and wounded, a few traces of blood
 
-The Blessed Virgin Mary | The Blessed Mother
-Immaculate Heart of Mary | The Blessed Mother
-Our Lady of Sorrows | The Blessed Mother
-Our Lady of Guadalupe | The Blessed Mother
-Mary, Queen of Heaven | The Blessed Mother
+The Blessed Virgin Mary | The Blessed Mother | a serene young Middle-Eastern woman about 18, dark hair, a soft blue veil draped over her head
+Immaculate Heart of Mary | The Blessed Mother | a tender young woman about 20, dark hair, a soft white veil, a pale rose glow at her heart
+Our Lady of Sorrows | The Blessed Mother | a sorrowful young woman about 25, dark hair, a single tear on her cheek, a dark blue veil
+Our Lady of Guadalupe | The Blessed Mother | a serene young mestiza woman about 18, dark hair, a rose-and-turquoise star-covered mantle over her head
+Mary, Queen of Heaven | The Blessed Mother | a regal young woman about 22, dark hair, a jeweled golden crown, a deep-blue starred veil
 
-St. Michael the Archangel | Angels
-Guardian Angel | Angels
-St. Raphael the Archangel | Angels
+St. Michael the Archangel | Angels | a strong clean-shaven youth with an intense resolute gaze, a hint of burnished bronze armor at the shoulders
+Guardian Angel | Angels | a serene fair young adult with a calm kind face and clear open eyes gazing forward, a soft suggestion of feathered wings behind the shoulders
+St. Raphael the Archangel | Angels | a kind youthful clean-shaven man with warm eyes and a gentle travelers' air, faint soft wings
 
-St. Peter | Apostles & Prophets
-St. Paul | Apostles & Prophets
-St. John the Baptist | Apostles & Prophets
-Moses | Apostles & Prophets
-King David | Apostles & Prophets
+St. Peter | Apostles & Prophets | a sturdy elderly man about 65, a weathered fisherman's face, short curly white hair and a full white beard
+St. Paul | Apostles & Prophets | a balding man about 50 with a high forehead, a long dark greying beard, intense penetrating eyes
+St. John the Baptist | Apostles & Prophets | a lean ascetic man about 30, wild dark hair and an unkempt dark beard, a rough camel-hair garment
+Moses | Apostles & Prophets | an elderly Middle-Eastern man about 80, weathered skin, long flowing white beard and white hair, resolute
+King David | Apostles & Prophets | a strong Middle-Eastern man about 40, auburn hair and a short reddish beard, a simple golden circlet crown
+St. Mary Magdalene | Apostles & Prophets | a tender Middle-Eastern woman about 30, long loose auburn hair and no veil, a penitent contemplative gaze
 
-St. Joseph | Beloved Patron Saints
-St. Francis of Assisi | Beloved Patron Saints
-St. Anthony of Padua | Beloved Patron Saints
-St. Jude | Beloved Patron Saints
-St. Therese of Lisieux | Beloved Patron Saints
-Padre Pio | Beloved Patron Saints
-St. Christopher | Beloved Patron Saints
-St. Rita of Cascia | Beloved Patron Saints
-St. Joan of Arc | Beloved Patron Saints
+St. Joseph | Beloved Patron Saints | a kind Middle-Eastern man about 50, a short greying brown beard, a gentle steady expression, a plain carpenter's tunic
+St. Francis of Assisi | Beloved Patron Saints | a thin Italian man about 40, tonsured brown hair, a short beard, a coarse brown friar's habit and hood
+St. Anthony of Padua | Beloved Patron Saints | a young Franciscan friar about 33, tonsured, clean-shaven and gentle, a brown habit
+St. Jude Thaddeus | Beloved Patron Saints | a Middle-Eastern man about 45, dark hair and a full dark beard, an earnest kind face
+St. Therese of Lisieux | Beloved Patron Saints | an idealized young woman about 22 with a soft round face, a brown Carmelite veil and cream wimple, holding roses
+St. Christopher | Beloved Patron Saints | a large powerfully built man about 40, thick dark hair and a full beard, a strong rugged face
+St. Rita of Cascia | Beloved Patron Saints | an older woman about 60, a black Augustinian nun's veil, a small wound on her forehead, a serene worn face
+St. Joan of Arc | Beloved Patron Saints | a determined young French woman about 18 with short cropped dark hair, a hint of steel armor at the shoulders
 
-St. Teresa of Calcutta | Modern Saints
-Pope St. John Paul II | Modern Saints
-St. Faustina | Modern Saints
+St. Augustine of Hippo | Doctors & Martyrs | a contemplative North African man about 50, short dark curly hair and a trimmed dark beard, a bishop's mitre and rich cope
+St. Sebastian | Doctors & Martyrs | a youthful clean-shaven man about 20, short dark hair, bare shoulders, an expression of calm fortitude
+St. George | Doctors & Martyrs | a valiant young man about 28, short dark hair and a trimmed beard, a hint of polished steel armor at the shoulders
