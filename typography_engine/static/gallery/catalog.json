@@ -10,37 +10,115 @@
           "id": "life-of-christ",
           "title": "Life of Christ",
           "items": [
-            { "id": "good-shepherd", "title": "The Good Shepherd", "words": "Woven from Psalm 23 — “The Lord is my shepherd, I shall not want…”", "art": "original", "text": "Psalm 23, KJV (public domain)" },
-            { "id": "sermon-on-the-mount", "title": "The Sermon on the Mount", "words": "Woven from the Beatitudes — “Blessed are the poor in spirit…”", "art": "original", "text": "Matthew 5, KJV (public domain)" },
-            { "id": "the-nativity", "title": "The Nativity", "words": "Woven from the Christmas story — “And she brought forth her firstborn son…”", "art": "original", "text": "Luke 2, KJV (public domain)" },
-            { "id": "christ-the-redeemer", "title": "Christ the Redeemer", "words": "Woven from John 3:16 — “For God so loved the world…”", "art": "original", "text": "John 3:16, KJV (public domain)" },
-            { "id": "light-of-the-world", "title": "The Light of the World", "words": "Woven from John 8:12 — “I am the light of the world…”", "art": "public-domain: Holman Hunt, The Light of the World (1853)", "text": "John 8:12, KJV (public domain)" }
+            {
+              "id": "good-shepherd",
+              "title": "The Good Shepherd",
+              "words": "Woven from Psalm 23 — “The Lord is my shepherd, I shall not want…”",
+              "art": "original",
+              "text": "Psalm 23, KJV (public domain)"
+            },
+            {
+              "id": "sermon-on-the-mount",
+              "title": "The Sermon on the Mount",
+              "words": "Woven from the Beatitudes — “Blessed are the poor in spirit…”",
+              "art": "original",
+              "text": "Matthew 5, KJV (public domain)"
+            },
+            {
+              "id": "the-nativity",
+              "title": "The Nativity",
+              "words": "Woven from the Christmas story — “And she brought forth her firstborn son…”",
+              "art": "original",
+              "text": "Luke 2, KJV (public domain)"
+            },
+            {
+              "id": "christ-the-redeemer",
+              "title": "Christ the Redeemer",
+              "words": "Woven from John 3:16 — “For God so loved the world…”",
+              "art": "original",
+              "text": "John 3:16, KJV (public domain)"
+            },
+            {
+              "id": "light-of-the-world",
+              "title": "The Light of the World",
+              "words": "Woven from John 8:12 — “I am the light of the world…”",
+              "art": "public-domain: Holman Hunt, The Light of the World (1853)",
+              "text": "John 8:12, KJV (public domain)"
+            }
           ]
         },
         {
           "id": "psalms-prayers",
           "title": "Psalms & Prayers",
           "items": [
-            { "id": "psalm-23", "title": "Psalm 23", "words": "The whole of the 23rd Psalm, shaped into a shepherd's hill.", "art": "original", "text": "Psalm 23, KJV (public domain)" },
-            { "id": "lords-prayer", "title": "The Lord's Prayer", "words": "“Our Father, which art in heaven…” in full.", "art": "original", "text": "Matthew 6:9-13, KJV (public domain)" },
-            { "id": "psalm-91", "title": "Psalm 91", "words": "“He that dwelleth in the secret place of the most High…”", "art": "original", "text": "Psalm 91, KJV (public domain)" }
+            {
+              "id": "psalm-23",
+              "title": "Psalm 23",
+              "words": "The whole of the 23rd Psalm, shaped into a shepherd's hill.",
+              "art": "original",
+              "text": "Psalm 23, KJV (public domain)"
+            },
+            {
+              "id": "lords-prayer",
+              "title": "The Lord's Prayer",
+              "words": "“Our Father, which art in heaven…” in full.",
+              "art": "original",
+              "text": "Matthew 6:9-13, KJV (public domain)"
+            },
+            {
+              "id": "psalm-91",
+              "title": "Psalm 91",
+              "words": "“He that dwelleth in the secret place of the most High…”",
+              "art": "original",
+              "text": "Psalm 91, KJV (public domain)"
+            }
           ]
         },
         {
           "id": "saints-figures",
           "title": "Saints & Figures",
           "items": [
-            { "id": "mary-magnificat", "title": "Mary, the Magnificat", "words": "Woven from Mary's song — “My soul doth magnify the Lord…”", "art": "public-domain: Renaissance Madonna (verified PD scan)", "text": "Luke 1:46-55, KJV (public domain)" },
-            { "id": "moses", "title": "Moses", "words": "Woven from the Ten Commandments.", "art": "original", "text": "Exodus 20, KJV (public domain)" },
-            { "id": "david", "title": "David", "words": "Woven from Psalm 51 — “Create in me a clean heart…”", "art": "original", "text": "Psalm 51, KJV (public domain)" }
+            {
+              "id": "mary-magnificat",
+              "title": "Mary, the Magnificat",
+              "words": "Woven from Mary's song — “My soul doth magnify the Lord…”",
+              "art": "public-domain: Renaissance Madonna (verified PD scan)",
+              "text": "Luke 1:46-55, KJV (public domain)"
+            },
+            {
+              "id": "moses",
+              "title": "Moses",
+              "words": "Woven from the Ten Commandments.",
+              "art": "original",
+              "text": "Exodus 20, KJV (public domain)"
+            },
+            {
+              "id": "david",
+              "title": "David",
+              "words": "Woven from Psalm 51 — “Create in me a clean heart…”",
+              "art": "original",
+              "text": "Psalm 51, KJV (public domain)"
+            }
           ]
         },
         {
           "id": "old-testament",
           "title": "Old Testament",
           "items": [
-            { "id": "creation", "title": "Creation", "words": "Woven from Genesis 1 — “In the beginning… let there be light.”", "art": "original", "text": "Genesis 1, KJV (public domain)" },
-            { "id": "noahs-ark", "title": "Noah's Ark", "words": "Woven from the story of the flood and the rainbow promise.", "art": "original", "text": "Genesis 6-9, KJV (public domain)" }
+            {
+              "id": "creation",
+              "title": "Creation",
+              "words": "Woven from Genesis 1 — “In the beginning… let there be light.”",
+              "art": "original",
+              "text": "Genesis 1, KJV (public domain)"
+            },
+            {
+              "id": "noahs-ark",
+              "title": "Noah's Ark",
+              "words": "Woven from the story of the flood and the rainbow promise.",
+              "art": "original",
+              "text": "Genesis 6-9, KJV (public domain)"
+            }
           ]
         }
       ]
@@ -54,17 +132,360 @@
           "id": "christmas",
           "title": "Christmas",
           "items": [
-            { "id": "santa-claus", "title": "Santa Claus", "words": "Woven from “Twas the Night Before Christmas — “His eyes how they twinkled…”", "art": "original", "text": "A Visit from St. Nicholas, Clement Clarke Moore, 1823 (public domain)" },
-            { "id": "joy-to-the-world", "title": "Joy", "words": "Woven from the carol — “Joy to the world, the Lord is come…”", "art": "original", "text": "Joy to the World, 1719 (public domain)" },
-            { "id": "silent-night", "title": "Silent Night", "words": "Woven from the carol — “Silent night, holy night, all is calm…”", "art": "original", "text": "Silent Night, 1818 (public domain)" }
+            {
+              "id": "santa-claus",
+              "title": "Santa Claus",
+              "words": "Woven from “Twas the Night Before Christmas — “His eyes how they twinkled…”",
+              "art": "original",
+              "text": "A Visit from St. Nicholas, Clement Clarke Moore, 1823 (public domain)"
+            },
+            {
+              "id": "joy-to-the-world",
+              "title": "Joy",
+              "words": "Woven from the carol — “Joy to the world, the Lord is come…”",
+              "art": "original",
+              "text": "Joy to the World, 1719 (public domain)"
+            },
+            {
+              "id": "silent-night",
+              "title": "Silent Night",
+              "words": "Woven from the carol — “Silent night, holy night, all is calm…”",
+              "art": "original",
+              "text": "Silent Night, 1818 (public domain)"
+            }
           ]
         },
         {
           "id": "seasonal",
           "title": "Easter & More",
           "items": [
-            { "id": "he-is-risen", "title": "He Is Risen", "words": "Woven from the Easter morning — “He is not here: for he is risen…”", "art": "original", "text": "Matthew 28, KJV (public domain)" },
-            { "id": "give-thanks", "title": "Give Thanks", "words": "Woven from Psalm 100 — “Enter into his gates with thanksgiving…”", "art": "original", "text": "Psalm 100, KJV (public domain)" }
+            {
+              "id": "he-is-risen",
+              "title": "He Is Risen",
+              "words": "Woven from the Easter morning — “He is not here: for he is risen…”",
+              "art": "original",
+              "text": "Matthew 28, KJV (public domain)"
+            },
+            {
+              "id": "give-thanks",
+              "title": "Give Thanks",
+              "words": "Woven from Psalm 100 — “Enter into his gates with thanksgiving…”",
+              "art": "original",
+              "text": "Psalm 100, KJV (public domain)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sacred",
+      "title": "The Sacred Collection",
+      "blurb": "Sacred figures, each woven entirely from the words that belong to them.",
+      "sections": [
+        {
+          "id": "life-of-christ",
+          "title": "Life of Christ",
+          "items": [
+            {
+              "id": "jesus-compassionate-savior",
+              "title": "Compassionate Savior",
+              "subject": "Jesus Christ",
+              "words": "CHRIST SAVIOR COMPASSION MERCY LOVE GRACE GENTLE FORGIVENESS TENDER HEALING SHEPHERD REDEEMER",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "jesus-good-shepherd",
+              "title": "Good Shepherd",
+              "subject": "Jesus Christ",
+              "words": "CHRIST GOOD SHEPHERD GUIDE PROTECT FLOCK LAMB LEAD CARE PASTURE VOICE GATE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "jesus-prince-of-peace",
+              "title": "Prince of Peace",
+              "subject": "Jesus Christ",
+              "words": "CHRIST PRINCE PEACE SERENITY CALM STILLNESS QUIET REST COMFORT ASSURANCE SHALOM",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "jesus-light-of-the-world",
+              "title": "Light of the World",
+              "subject": "Jesus Christ",
+              "words": "CHRIST LIGHT WORLD ILLUMINATION RADIANCE BRIGHTNESS SHINE DAWN GLOW TRUTH GUIDE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "jesus-king-of-kings",
+              "title": "King of Kings",
+              "subject": "Jesus Christ",
+              "words": "CHRIST KING KINGS LORD MAJESTY GLORY SOVEREIGN ALMIGHTY REIGN THRONE DOMINION AUTHORITY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            }
+          ]
+        },
+        {
+          "id": "the-blessed-mother",
+          "title": "The Blessed Mother",
+          "items": [
+            {
+              "id": "the-blessed-virgin-mary",
+              "title": "The Blessed Virgin Mary",
+              "subject": "the Blessed Mother",
+              "words": "MOTHER JESUS VIRGIN BLESSED GRACE ANNUNCIATION NATIVITY ASSUMPTION QUEEN HEAVEN INTERCESSOR",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "immaculate-heart-of-mary",
+              "title": "Immaculate Heart of Mary",
+              "subject": "the Blessed Mother",
+              "words": "HEART MARY LOVE PURITY DEVOTION SYMBOL SORROW JOY COMPASSION GRACE PEACE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "our-lady-of-sorrows",
+              "title": "Our Lady of Sorrows",
+              "subject": "the Blessed Mother",
+              "words": "SIX SORROWS PROPHECY SIMEON LOSS SWORD HEART COMPASSION FAITH PASSION LOVE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "our-lady-of-guadalupe",
+              "title": "Our Lady of Guadalupe",
+              "subject": "the Blessed Mother",
+              "words": "MESTIZA VIRGIN OF GUADALUPE JUAN DIEGO TEPEYAC ROSE TILMA COMPASSION MOTHER OF MERCY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "mary-queen-of-heaven",
+              "title": "Mary, Queen of Heaven",
+              "subject": "the Blessed Mother",
+              "words": "QUEEN OF HEAVEN IMMACULATE CONCEPTION ASSUMPTION HOLY MOTHER VIRGINITY PERPETUAL GRACE LOVE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            }
+          ]
+        },
+        {
+          "id": "angels",
+          "title": "Angels",
+          "items": [
+            {
+              "id": "st-michael-the-archangel",
+              "title": "St. Michael the Archangel",
+              "subject": "St. Michael",
+              "words": "ARCHANGEL MICHAEL DEFENDER HEAVENLY HOSTS SPIRITUAL WARFARE SWORD VANQUISHER OF EVIL PROTECTOR",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "st-raphael-the-archangel",
+              "title": "St. Raphael the Archangel",
+              "subject": "St. Raphael",
+              "words": "ARCHANGEL RAPHAEL HEALER DIVINE MESSENGER BOOK OF TOBIT COMPANION HEALING POWER",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "guardian-angel",
+              "title": "Guardian Angel",
+              "subject": "the Guardian Angel",
+              "words": "PROTECTOR GUIDE HEAVENLY MESSENGER DIVINE LIGHT WATCHFUL CARE GUARDIANSHIP FAITH LOVE HOLY PRESENCE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            }
+          ]
+        },
+        {
+          "id": "apostles---prophets",
+          "title": "Apostles & Prophets",
+          "items": [
+            {
+              "id": "st-peter",
+              "title": "St. Peter",
+              "subject": "St. Peter",
+              "words": "APOSTLE PETER ROCK OF THE CHURCH FISHERMAN KEYS TO HEAVEN MARTYRDOM FAITH",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "st-paul",
+              "title": "St. Paul",
+              "subject": "St. Paul",
+              "words": "APOSTLE PAUL ROAD TO DAMASCUS LETTERS TO THE CHURCHES MISSIONARY JOURNEYS CONVERSION",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "st-john-the-baptist",
+              "title": "St. John the Baptist",
+              "subject": "St. John the Baptist",
+              "words": "PROPHET JOHN BAPTIST WILDERNESS PREACHER HERALD OF MESSIAH BAPTISM REPENTANCE LAMB OF GOD",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "moses",
+              "title": "Moses",
+              "subject": "Moses",
+              "words": "PROPHET LAW-GIVER EXODUS TEN COMMANDMENTS RED SEA BURNING BUSH SINAI COVENANT FAITH DELIVERANCE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "king-david",
+              "title": "King David",
+              "subject": "David",
+              "words": "KING ISRAEL SHEPHERD PSALMIST GOLIATH BETHLEHEM ARK JERUSALEM HARP REPENTANCE COVENANT",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "st-mary-magdalene",
+              "title": "St. Mary Magdalene",
+              "subject": "Mary Magdalene",
+              "words": "DISCIPLE WITNESS RESURRECTION ANOINTING SPICES TOMB GOSPEL PENITENT LOVE DEVOTION FAITHFUL",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            }
+          ]
+        },
+        {
+          "id": "beloved-patron-saints",
+          "title": "Beloved Patron Saints",
+          "items": [
+            {
+              "id": "st-joseph",
+              "title": "St. Joseph",
+              "subject": "Joseph",
+              "words": "CARPENTER FATHER JESUS GUARDIAN VIRGIN MARY DREAMS PROTECTOR HOLY FAMILY NAZARETH OBEDIENCE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "st-francis-of-assisi",
+              "title": "St. Francis of Assisi",
+              "subject": "Francis of Assisi",
+              "words": "POVERTY HUMILITY BIRDS STIGMATA ASSISI PEACE CREATION BROTHER SUN GOSPEL REBUILD CHURCH",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "st-anthony-of-padua",
+              "title": "St. Anthony of Padua",
+              "subject": "Anthony of Padua",
+              "words": "PREACHER MIRACLES LOST THINGS LISBON PADUA LILY CHILD JESUS DEVOTION FRANCISCAN SIMPLICITY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "st-jude-thaddeus",
+              "title": "St. Jude Thaddeus",
+              "subject": "Jude Thaddeus",
+              "words": "APOSTLE HOPE DESPERATE CASES PATRON MIRACLES FAITHFUL LABORER HOLY SPIRIT MARTYRDOM LETTER",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "st-therese-of-lisieux",
+              "title": "St. Therese of Lisieux",
+              "subject": "Therese of Lisieux",
+              "words": "LITTLE WAY SIMPLICITY LOVE CARMELITE FLOWERS PRAYER LISIEUX SACRIFICE HUMILITY GRACE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "st-christopher",
+              "title": "St. Christopher",
+              "subject": "St. Christopher",
+              "words": "CHRISTOPHER PATRON SAINT TRAVELERS MARTYR LEGENDARY CARRIED CHRIST CHILD BEARDED STRENGTH PROTECTION",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "st-rita-of-cascia",
+              "title": "St. Rita of Cascia",
+              "subject": "St. Rita of Cascia",
+              "words": "RITA AUGUSTINIAN NUN WIFE MOTHER FORGIVENESS IMPOSSIBLE CAUSES STIGMATA DEVOTION PEACE PRAYER",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "st-joan-of-arc",
+              "title": "St. Joan of Arc",
+              "subject": "St. Joan of Arc",
+              "words": "JOAN OF ARC MAID ORLEANS WARRIOR MARTYR VISIONARY FRANCE COURAGE ARMOR YOUTHFUL DETERMINATION",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            }
+          ]
+        },
+        {
+          "id": "doctors---martyrs",
+          "title": "Doctors & Martyrs",
+          "items": [
+            {
+              "id": "st-augustine-of-hippo",
+              "title": "St. Augustine of Hippo",
+              "subject": "St. Augustine of Hippo",
+              "words": "AUGUSTINE BISHOP HIPPO THEOLOGIAN CONFESSIONS GRACE CONVERSION LATIN CHURCH FATHER DOCTOR",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "st-sebastian",
+              "title": "St. Sebastian",
+              "subject": "St. Sebastian",
+              "words": "SEBASTIAN MARTYR ROMAN SOLDIER YOUNG MAN ARROWS COURAGE RESILIENCE FAITHFULNESS PATRON ATHLETES",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "st-george",
+              "title": "St. George",
+              "subject": "St. George",
+              "words": "GEORGE DRAGON MARTYR ENGLAND KNIGHT COURAGEOUS SAINT PROTECTOR CHIVALRY FAITH LEGEND",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            }
           ]
         }
       ]
