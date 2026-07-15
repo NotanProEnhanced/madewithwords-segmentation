@@ -489,6 +489,94 @@
           ]
         }
       ]
+    },
+    {
+      "id": "christmas",
+      "title": "The Christmas Collection",
+      "blurb": "The Nativity, the Magi, and the gift-bringers — each woven entirely from the words that belong to them.",
+      "sections": [
+        {
+          "id": "the-magi",
+          "title": "The Magi",
+          "items": [
+            {
+              "id": "melchior",
+              "title": "Melchior",
+              "subject": "Melchior",
+              "words": "MELCHIOR MAGI WISE MAN GOLD KING PERSIA STAR BETHLEHEM EPIPHANY JOURNEY HOMAGE ELDEST",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "caspar",
+              "title": "Caspar",
+              "subject": "Caspar",
+              "words": "CASPAR MAGI WISE MAN FRANKINCENSE YOUNG KING STAR BETHLEHEM EPIPHANY JOURNEY GIFT ADORATION",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "balthazar",
+              "title": "Balthazar",
+              "subject": "Balthazar",
+              "words": "BALTHAZAR MAGI WISE MAN MYRRH KING ARABIA STAR BETHLEHEM EPIPHANY JOURNEY GIFT REVERENCE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            }
+          ]
+        },
+        {
+          "id": "the-nativity",
+          "title": "The Nativity",
+          "items": [
+            {
+              "id": "christ-child",
+              "title": "The Christ Child",
+              "subject": "the Christ Child",
+              "words": "CHRIST CHILD EMMANUEL NATIVITY BETHLEHEM MANGER SWADDLING NEWBORN KING WONDER LIGHT HOPE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "herald-angel",
+              "title": "The Herald Angel",
+              "subject": "the Herald Angel",
+              "words": "GLORY TO GOD IN THE HIGHEST TIDINGS GREAT JOY HERALD SHEPHERDS PEACE GOODWILL BETHLEHEM",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            }
+          ]
+        },
+        {
+          "id": "the-gift-bringers",
+          "title": "The Gift-Bringers",
+          "items": [
+            {
+              "id": "st-nicholas-of-myra",
+              "title": "St. Nicholas of Myra",
+              "subject": "St. Nicholas",
+              "words": "NICHOLAS BISHOP MYRA WONDERWORKER GIVER GIFTS CHILDREN SAILORS GENEROSITY SECRET ALMS PATRON",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "santa-claus",
+              "title": "Santa Claus",
+              "subject": "Santa Claus",
+              "words": "SANTA CLAUS JOY WONDER BELIEVE GIVING CHRISTMAS EVE SLEIGH REINDEER CHIMNEY MAGIC GENEROSITY KINDNESS",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
