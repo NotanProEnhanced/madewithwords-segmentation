@@ -78,7 +78,24 @@ def env_int(key: str, default: int) -> int:
         return default
 
 
+def env_float(key: str, default: float) -> float:
+    try:
+        return float(os.environ.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
 PORT = env_int("TYPO_PORT", 8077)
+
+# Typography dials for the displacement (Lifelike/Letter) renderer. BOTH DEFAULT TO 0.0,
+# which is the original engine, byte-for-byte -- so an environment that sets nothing is
+# unchanged. Set them per-environment in .env (e.g. staging only) to trial the tuned look
+# without touching prod; reverting is deleting the line, no code change:
+#   TYPO_WORD_VARIETY=0.7   flatten the 3x lead-word skew so a varied list reads as varied
+#   TYPO_SIZE_GRADIENT=0.4  enlarge the body type so it eases down to fine type on the face
+# Applied to BOTH the preview and the paid file, so what a buyer sees is what they get.
+WORD_VARIETY = env_float("TYPO_WORD_VARIETY", 0.0)
+SIZE_GRADIENT = env_float("TYPO_SIZE_GRADIENT", 0.0)
 
 # Largest upload we accept. Normal phone photos are a few MB; this caps the
 # pathological (40MP+ files) that would slow a render or exhaust memory on the
