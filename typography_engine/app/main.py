@@ -1206,7 +1206,7 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
  header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;border-bottom:1px solid var(--line)}
  header .bm{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
  header a.back{font-size:14px;color:var(--mut);text-decoration:none}
- .product{display:grid;grid-template-columns:1fr 1fr;gap:44px;padding:40px 0 24px}
+ .product{display:grid;grid-template-columns:1fr 1fr;gap:44px;padding:40px 0 24px;align-items:start}
  @media(max-width:760px){.product{grid-template-columns:1fr;gap:26px}}
  .frame{background:#0c1730;border-radius:4px;overflow:hidden;box-shadow:0 30px 60px -28px rgba(20,16,10,.5)}
  .frame img{width:100%;display:block;aspect-ratio:4/5;object-fit:cover}
@@ -1230,7 +1230,10 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
 <div class="wrap">
  <header><a class="bm" href="/gallery">Typortrait</a><a class="back" href="/gallery">&larr; The Sacred Collection</a></header>
  <div class="product">
-  <div class="frame"><img src="[[ART]]" alt="[[TITLE]] &mdash; sacred word portrait"></div>
+  <div class="media">
+   <div class="frame"><img src="[[ART]]" alt="[[TITLE]] &mdash; sacred word portrait"></div>
+   <div class="woven"><h3>Woven from these words</h3><p>[[WORDS]]</p></div>
+  </div>
   <div class="panel">
    <div class="eyebrow">[[CAT]]</div>
    <h1>[[TITLE]]</h1>
@@ -1240,7 +1243,6 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
    <button class="buy" id="buyDigital">Buy the digital download</button>
    <div class="err" id="err"></div>
    <div class="prints"><h3>Order it as a print</h3>[[PRINTS]][[SOON]]</div>
-   <div class="woven"><h3>Woven from these words</h3><p>[[WORDS]]</p></div>
   </div>
  </div>
  <footer>Each Typortrait is rendered entirely from the words that belong to its subject. &nbsp;&middot;&nbsp; <a href="/gallery">Browse the whole collection &rarr;</a></footer>

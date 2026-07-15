@@ -78,8 +78,8 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>The Typortrait Gallery</h1>
-    <p class="lead">Sacred figures and beloved moments, each portrait woven entirely from the words that belong to it.</p>
+    <h1 id="brandTitle">The Typortrait Gallery</h1>
+    <p class="lead" id="brandLead">Sacred figures and beloved moments, each portrait woven entirely from the words that belong to it.</p>
     <input id="search" placeholder="Search the collection…" autocomplete="off"
       style="width:100%;max-width:440px;margin:14px auto 0;display:block;padding:11px 16px;border:1px solid #d9d2c4;border-radius:999px;font:inherit;background:#fff;color:#2a2620" />
   </header>
@@ -89,8 +89,8 @@
   <div class="subtabs" id="subtabs"></div>
   <div class="grid" id="grid"></div>
 
-  <p class="foot">Every piece is rendered from public-domain scripture and verse. &nbsp;·&nbsp;
-     <a href="/static/index.html">Make your own from a photo →</a></p>
+  <p class="foot"><span id="footNote">Every piece is rendered from public-domain scripture and verse.</span><span id="toolLink"> &nbsp;·&nbsp;
+     <a href="/static/index.html">Make your own from a photo →</a></span></p>
 </div>
 
 <div class="scrim" id="scrim">
@@ -114,9 +114,45 @@
 const $ = s => document.querySelector(s);
 let CAT=null, PRODUCTS=null, DIGITAL_CENTS=1499, curCol=0, curSec=0, curItem=null, SEARCH="";
 
+// Gallery brand skins. Same storefront, different front: name, tagline, theme, and
+// whether the generator ("make your own from a photo") is surfaced. A gallery-only
+// brand (faithinwords) hides the tool -- it's a pure pre-made sales site, so the
+// render engine is never exposed. Selected by ?brand= (local) or hostname (prod).
+const BRANDS = {
+  typortrait: {
+    title: "The Typortrait Gallery",
+    lead: "Sacred figures and beloved moments, each portrait woven entirely from the words that belong to it.",
+    showTool: true, theme: null,
+  },
+  faithinwords: {
+    title: "Faith in Words",
+    lead: "Sacred art woven from scripture — the Savior, His Mother, and the saints, each portrait made from the very words that belong to them.",
+    foot: "Every piece is rendered from public-domain scripture and verse.",
+    showTool: false,
+    theme: { "--navy":"#2f2b57", "--gold":"#b0863a", "--rose":"#b0863a",
+             "--paper":"#f6f3ee", "--line":"#e6ded0" },
+  },
+};
+function currentBrand(){
+  const q=(new URLSearchParams(location.search).get("brand")||"").toLowerCase();
+  if(q && BRANDS[q]) return q;                       // ?brand= wins (local testing)
+  if(location.hostname.toLowerCase().includes("faithinwords")) return "faithinwords";
+  return "typortrait";
+}
+function applyBrand(){
+  const b=BRANDS[currentBrand()]||BRANDS.typortrait;
+  document.title=b.title;
+  const t=$("#brandTitle"); if(t) t.textContent=b.title;
+  const l=$("#brandLead");  if(l) l.textContent=b.lead;
+  if(b.theme){ for(const k in b.theme) document.documentElement.style.setProperty(k,b.theme[k]); }
+  const fn=$("#footNote"); if(fn && b.foot) fn.textContent=b.foot;
+  const tl=$("#toolLink"); if(tl && b.showTool===false) tl.style.display="none";  // gate the generator
+}
+
 function money(c){ return "$"+(c/100).toFixed(2); }
 
 async function init(){
+  applyBrand();
   const [c,p] = await Promise.all([
     fetch("/static/gallery/catalog.json?v="+Date.now()).then(r=>r.json()),
     fetch("/products?gallery=1").then(r=>r.ok?r.json():null).catch(()=>null)
