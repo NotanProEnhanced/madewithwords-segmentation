@@ -29,7 +29,9 @@ marketing/lovedinwords/_gallery/
 *.bak-*
 *-backup-*.html
 
-# Admin Studio (local batch generator) — credentials + generated output, never deployed
+# Admin Studio (local batch generator) — credentials + generated output, never deployed.
+# Glob the staging dirs: each collection stages in its own (_gallery_out, _gallery_out_xmas,
+# ...) and they hold the full-size sellable MASTERS, which must never enter git.
 tools/admin_studio.env
-tools/_gallery_out/
-tools/_sacred_src/
+tools/_gallery_out*/
+tools/_sacred_src*/

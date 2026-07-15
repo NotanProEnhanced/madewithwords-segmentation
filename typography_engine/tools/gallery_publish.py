@@ -47,10 +47,15 @@ def main() -> None:
     ap.add_argument("--default-category", default="Sacred Figures")
     ap.add_argument("--all", action="store_true",
                     help="publish EVERY rendered item, ignoring the approval gate")
+    ap.add_argument("--out", default=str(OUT),
+                    help="staging dir to publish FROM (masters/ previews/ catalog.json). Each "
+                         "collection stages in its own dir, so publishing one never disturbs "
+                         "another -- only the named --collection-id is replaced in the catalog.")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
-    src = OUT / "catalog.json"
+    out = Path(a.out)
+    src = out / "catalog.json"
     if not src.exists():
         sys.exit(f"No {src} — run an Admin Studio batch first.")
     items = json.loads(src.read_text(encoding="utf-8"))
@@ -63,7 +68,7 @@ def main() -> None:
     # Approval gate: publish only items marked "approved" in the Admin Studio,
     # unless --all is passed. Keeps a rejected/pending render out of the store.
     approvals: dict = {}
-    ap_file = OUT / "approvals.json"
+    ap_file = out / "approvals.json"
     if ap_file.exists():
         try:
             approvals = json.loads(ap_file.read_text(encoding="utf-8"))
@@ -75,8 +80,8 @@ def main() -> None:
     copied, missing, unapproved = 0, [], []
     for it in items:
         iid = str(it.get("id") or "").strip()
-        prev = OUT / "previews" / f"{iid}.png"
-        mast = OUT / "masters" / f"{iid}.png"
+        prev = out / "previews" / f"{iid}.png"
+        mast = out / "masters" / f"{iid}.png"
         if not iid or not prev.exists() or not mast.exists():
             missing.append(iid or "(no id)")
             continue
