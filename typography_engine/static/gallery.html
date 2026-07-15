@@ -118,17 +118,21 @@ let CAT=null, PRODUCTS=null, DIGITAL_CENTS=1499, curCol=0, curSec=0, curItem=nul
 // whether the generator ("make your own from a photo") is surfaced. A gallery-only
 // brand (faithinwords) hides the tool -- it's a pure pre-made sales site, so the
 // render engine is never exposed. Selected by ?brand= (local) or hostname (prod).
+// `collections`: an allowlist of collection ids this brand may show. Omit = show all.
+// This is a BRAND-SAFETY gate, not a convenience: faithinwords is a devotional brand and
+// must never surface secular pieces (Santa lives in the christmas collection).
 const BRANDS = {
   typortrait: {
     title: "The Typortrait Gallery",
     lead: "Sacred figures and beloved moments, each portrait woven entirely from the words that belong to it.",
-    showTool: true, theme: null,
+    showTool: true, theme: null,          // no allowlist -> every collection
   },
   faithinwords: {
     title: "Faith in Words",
     lead: "Sacred art woven from scripture — the Savior, His Mother, and the saints, each portrait made from the very words that belong to them.",
     foot: "Every piece is rendered from public-domain scripture and verse.",
     showTool: false,
+    collections: ["sacred"],              // devotional only -- never the secular christmas set
     theme: { "--navy":"#2f2b57", "--gold":"#b0863a", "--rose":"#b0863a",
              "--paper":"#f6f3ee", "--line":"#e6ded0" },
   },
@@ -158,6 +162,12 @@ async function init(){
     fetch("/products?gallery=1").then(r=>r.ok?r.json():null).catch(()=>null)
   ]);
   CAT=c; PRODUCTS=p;
+  // Apply the brand's collection allowlist before anything renders, so a restricted brand
+  // can never show a collection it shouldn't -- not even for a frame.
+  const _b = BRANDS[currentBrand()] || BRANDS.typortrait;
+  if(_b.collections && CAT && CAT.collections){
+    CAT.collections = CAT.collections.filter(x => _b.collections.includes(x.id));
+  }
   if(p && p.products){
     const dig = p.products.find(x=>x.sku==="digital");
     if(dig) DIGITAL_CENTS = dig.price_cents;
