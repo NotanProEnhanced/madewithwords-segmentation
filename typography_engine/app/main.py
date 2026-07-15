@@ -32,7 +32,6 @@ from .config import (
     ENABLE_DEBUG_ENDPOINTS,
     GALLERY_ENABLED,
     WORD_VARIETY,
-    SIZE_GRADIENT,
     RENDER_CONCURRENCY,
     DATA_DIR,
     DOWNLOAD_PNG_WIDTH,
@@ -854,9 +853,9 @@ async def render(
                 render_displacement_portrait, an, disp_words, ground=ground_choice,
                 out_width=max(320, preview_w), supersample=disp_ss, flow=disp_flow,
                 uppercase=uppercase, ink=("photo" if ink_choice in ("custom", "photo_paper") else ink_choice),
-                # Env-driven typography dials (0.0 = original engine). MUST match the
+                # Env-driven word-variety dial (0.0 = original engine). MUST match the
                 # paid render in _ensure_clean_png or the preview would misrepresent it.
-                variety=WORD_VARIETY, size_gradient=SIZE_GRADIENT)
+                variety=WORD_VARIETY)
             runs, ground_hex, mask_svg = [], None, None
         else:
             png_bytes, runs, ground_hex, mask_svg = await _bounded_to_thread(
@@ -1555,9 +1554,9 @@ def _ensure_clean_png(job: str, aspect: float = _PRINT_ASPECT) -> Optional[Path]
                 uppercase=bool(r.get("uppercase", True)), flow=bool(r.get("flow")),
                 ink=("photo" if r.get("ink") == "custom" else r.get("ink")),
                 print_aspect=aspect,
-                # Same dials as the preview render -- the paid file must match what
+                # Same dial as the preview render -- the paid file must match what
                 # the buyer approved on screen.
-                variety=WORD_VARIETY, size_gradient=SIZE_GRADIENT)
+                variety=WORD_VARIETY)
             if not png_bytes:
                 return None
             path.write_bytes(png_bytes)

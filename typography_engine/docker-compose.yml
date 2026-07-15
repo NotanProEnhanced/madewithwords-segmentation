@@ -65,12 +65,10 @@ services:
       # This lets the code deploy INERT and be switched on deliberately afterwards.
       # Without this line the flag can never reach the app, however .env is set.
       - TYPO_GALLERY_ENABLED=${TYPO_GALLERY_ENABLED:-}
-      # Typography dials for the Lifelike/Letter renderer. Unset = 0.0 = the original
-      # engine, byte-identical. Set in .env to trial the tuned look (e.g. staging only):
-      #   TYPO_WORD_VARIETY=0.7  TYPO_SIZE_GRADIENT=0.4
-      # Reverting is deleting the .env lines + recreating -- no code change.
+      # Word-variety dial for the Lifelike/Letter renderer. Unset = 0.0 = the original
+      # engine, byte-identical. Set TYPO_WORD_VARIETY=0.7 in .env to flatten the lead-word
+      # repetition so a varied word list reads as varied. Revert by deleting the line.
       - TYPO_WORD_VARIETY=${TYPO_WORD_VARIETY:-}
-      - TYPO_SIZE_GRADIENT=${TYPO_SIZE_GRADIENT:-}
       - TYPO_ENABLE_DEBUG=${TYPO_ENABLE_DEBUG:-}
       - TYPO_REQUIRE_CAIROSVG=${TYPO_REQUIRE_CAIROSVG:-}
       - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}

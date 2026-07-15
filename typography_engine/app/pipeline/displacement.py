@@ -176,8 +176,6 @@ def render_displacement_portrait(
     variety: float = 0.0,         # 0 = current importance skew (leading words repeat up to
                                   # ~3x, so the portrait is built mostly OF them); ->1 flattens
                                   # the skew so a varied word list reads as varied, not name-dominated.
-    size_gradient: float = 0.0,   # 0 = current tier sizes; ->1 enlarges ONLY the large (body)
-                                  # tier, steepening the chest->face size ramp.
 ) -> bytes:
     """Render a displacement typographic portrait to PNG bytes.
 
@@ -358,10 +356,7 @@ def render_displacement_portrait(
 
     # Four size tiers blended *continuously* (below) so the type eases from large
     # to small instead of snapping between discrete sizes.
-    # size_gradient dial: enlarge ONLY the large (body) tier, so the type is bigger on the
-    # chest/shoulders and still eases to the same fine sizes on the face -- a steeper ramp.
-    _gl = 1.0 + 0.55 * max(0.0, min(1.0, size_gradient))
-    t_large, t_mid, t_fine, t_micro = (rows(64 * s * _ssn * _gl), rows(40 * s * _ssn),
+    t_large, t_mid, t_fine, t_micro = (rows(64 * s * _ssn), rows(40 * s * _ssn),
                                        rows(26 * s * _ssn), rows(16 * s * _ssn))
     # Fifth tier, scaled to the EYE rather than the face: even "micro" type spans
     # a whole iris on a close-up, so the iris gets rows proportional to its own
