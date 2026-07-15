@@ -226,7 +226,9 @@ def load_figures(path: str) -> list[tuple[str, str, str]]:
 # to converge every figure onto one archetype (we saw all 30 render as one veiled woman). This
 # is the single lever that keeps the faces genuinely distinct.
 _IMG_PREFIX = ("Photorealistic front-facing studio portrait, the face filling the frame, on a "
-               "plain dark background in soft reverent light: ")
+               "plain dark background in soft reverent light, both eyes wide open and gazing "
+               "directly at the camera with clearly visible irises and catchlights (never "
+               "downcast, closed, or shadowed): ")
 _IMG_SUFFIX = (" A bare photograph -- absolutely no caption, title, name, label, letters, "
                "numbers, text on any garment or object, watermark, or border.")
 
