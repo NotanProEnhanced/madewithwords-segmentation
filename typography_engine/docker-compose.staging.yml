@@ -61,6 +61,10 @@ services:
       # Gather (crowd-sourced words). Default OFF; set TYPO_GATHER_ENABLED=1 in
       # this tree's .env to turn the feature + its routes on (staging only).
       - TYPO_GATHER_ENABLED=${TYPO_GATHER_ENABLED:-}
+      # Gallery storefront (pre-made collections: Sacred, Christmas). Default OFF;
+      # set TYPO_GALLERY_ENABLED=1 in THIS tree's .env to expose /gallery on staging
+      # only. Without this line the flag can never reach the app.
+      - TYPO_GALLERY_ENABLED=${TYPO_GALLERY_ENABLED:-}
       - TYPO_RETENTION_DAYS=${TYPO_RETENTION_DAYS:-30}
       - TYPO_CONSENT_RETENTION_DAYS=${TYPO_CONSENT_RETENTION_DAYS:-}
       - TYPO_ENABLE_DEBUG=${TYPO_ENABLE_DEBUG:-}

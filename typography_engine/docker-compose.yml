@@ -60,6 +60,11 @@ services:
       # exist when TYPO_GATHER_ENABLED=1 is set in .env. Leave unset in prod until
       # you choose to launch it.
       - TYPO_GATHER_ENABLED=${TYPO_GATHER_ENABLED:-}
+      # Gallery storefront (pre-made collections: Sacred, Christmas). Default OFF --
+      # /gallery + the item pages 404 until TYPO_GALLERY_ENABLED=1 is set in .env.
+      # This lets the code deploy INERT and be switched on deliberately afterwards.
+      # Without this line the flag can never reach the app, however .env is set.
+      - TYPO_GALLERY_ENABLED=${TYPO_GALLERY_ENABLED:-}
       - TYPO_ENABLE_DEBUG=${TYPO_ENABLE_DEBUG:-}
       - TYPO_REQUIRE_CAIROSVG=${TYPO_REQUIRE_CAIROSVG:-}
       - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}
