@@ -1628,6 +1628,11 @@ function applyKeepsake(prelim){
   resultView.classList.add("kp-desk");
 }
 buy.addEventListener("click", async ()=>{
+  // Redemption mode (gift/partner/pre-need code) claims the keepsake via /redeem
+  // with no Stripe charge. Inert unless a valid code cookie is present — in the
+  // normal flow __redeemIntercept is undefined, so this is a no-op and checkout
+  // proceeds exactly as before. See the redemption hook at the end of this file.
+  if(window.__redeemIntercept && window.__redeemIntercept()) return;
   if(!currentJob) return;
   buy.disabled=true; const old=buy.textContent; buy.textContent="Opening secure checkout…";
   try{
@@ -2619,6 +2624,149 @@ function fetchWithTimeout(url, opts, ms){
     }catch(e){ err.textContent="Network error — please try again."; }
     btn.disabled=false; btn.textContent=old;
   });
+})();
+
+/* ============================ Redemption mode ============================
+   ADDITIVE + gated by ?redeem=1 AND a valid server-set cookie. When either is
+   absent, __redeemIntercept is never installed, so the buy button's one-line
+   guard is a no-op and the live Stripe checkout is byte-for-byte unchanged.
+   In redemption mode the recipient personalizes as normal, then "claims" the
+   keepsake with no charge (the sale happened off-platform). See app/redemption.py. */
+(function(){
+  try{ if(!new URLSearchParams(location.search).has("redeem")) return; }catch(e){ return; }
+  var REDEEM = null;   // {sku, kind, product_name, needs_size, sizes} once confirmed
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){
+    return ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]; }); }
+
+  fetch("/redeem/status",{credentials:"same-origin"})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(!d || !d.active) return;    // no valid code cookie → studio behaves normally
+      REDEEM = d;
+      installRibbon(d);
+      lockToSku(d.sku, 0);
+      window.__redeemIntercept = function(){
+        if(!REDEEM) return false;
+        if(!currentJob){ try{ buynote.textContent="Create your portrait first."; }catch(e){} return true; }
+        if(REDEEM.kind==="physical") openAddressModal(); else submitRedeem({});
+        return true;   // always bypass Stripe while a code is active
+      };
+      try{ buynote.textContent="Already paid — no charge. Personalize your keepsake, then claim it below."; }catch(e){}
+    })
+    .catch(function(){});
+
+  function installRibbon(d){
+    if(document.getElementById("redeemBar")) return;
+    var bar=document.createElement("div"); bar.id="redeemBar";
+    bar.style.cssText="position:sticky;top:0;z-index:80;background:#42525f;color:#fff;"
+      +"text-align:center;padding:10px 16px;font-size:14px;line-height:1.4;"
+      +"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+    bar.innerHTML="🎁 <b>Gift code applied</b> — creating your "+esc(d.product_name)
+      +". Personalize below; <b>no payment needed</b>.";
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+
+  function lockToSku(sku, tries){
+    // CATALOG loads async (/products); retry until the sku is present, then lock to it.
+    var ready = (typeof CATALOG!=="undefined") && CATALOG && CATALOG.length;
+    var p = ready ? CATALOG.find(function(x){ return x.sku===sku; }) : null;
+    if(!p){
+      if(tries<40) return void setTimeout(function(){ lockToSku(sku, tries+1); }, 150);
+      return;   // sku not offered here — leave the studio as-is (defensive)
+    }
+    try{ selectProduct(sku); }catch(e){}
+    var fr=document.getElementById("formatRow"), ol=document.getElementById("optionList");
+    if(fr) fr.style.display="none";      // hide the format/product choices…
+    if(ol) ol.style.display="none";      // …so the recipient gets exactly what was bought
+    var lbl=document.querySelector("#productPicker .film-lbl"); if(lbl) lbl.textContent="Your keepsake";
+    var pk=document.getElementById("productPicker"); if(pk) pk.style.display="block";  // keep size row usable
+    try{ buy.textContent = (REDEEM.kind==="physical") ? "Claim my keepsake" : "Get my keepsake"; }catch(e){}
+  }
+
+  function submitRedeem(extra){
+    var old=buy.textContent; buy.disabled=true; buy.textContent="Preparing…";
+    var fd=new FormData(); fd.append("job", currentJob);
+    if(typeof state!=="undefined" && state && state.size) fd.append("size", state.size);
+    Object.keys(extra||{}).forEach(function(k){ fd.append(k, extra[k]); });
+    fetch("/redeem/fulfill",{method:"POST",body:fd,credentials:"same-origin"})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d && d.ok && d.kind==="digital" && d.download){
+          buy.textContent="Downloading…"; window.location.href=d.download;
+          finish("Your keepsake is downloading — check your files. You can close this page.");
+        } else if(d && d.ok && d.kind==="physical"){
+          finish("All set 🤍 Your keepsake is being made and ships to the address you gave"
+                 + (d.order_id? " (order "+d.order_id+")":"") + ".");
+        } else {
+          buy.disabled=false; buy.textContent=old;
+          try{ buynote.textContent=errMsg(d && d.error); }catch(e){}
+        }
+      })
+      .catch(function(){ buy.disabled=false; buy.textContent=old;
+        try{ buynote.textContent="Network error — please try again."; }catch(e){} });
+  }
+
+  function finish(msg){
+    try{ buy.style.display="none"; }catch(e){}
+    var bar=document.getElementById("redeemBar");
+    if(bar){ bar.innerHTML="✓ "+esc(msg); bar.style.background="#3f6f52"; }
+    try{ buynote.textContent=msg; }catch(e){}
+    closeModal();
+    window.__redeemIntercept=function(){ return true; };   // no double-submit after success
+  }
+
+  function errMsg(code){
+    return ({
+      code_unavailable:"This code has already been redeemed.",
+      no_redemption:"Your session expired — please re-enter your code at /redeem.",
+      incomplete_address:"Please fill in your full shipping address.",
+      missing_or_invalid_size:"Please choose a size first.",
+      export_failed:"Something went wrong preparing your file — please try again.",
+      fulfillment_unconfigured:"Print fulfilment isn’t available right now — please contact support."
+    })[code] || "Couldn’t complete your redemption — please try again.";
+  }
+
+  // --- Shipping modal (built in JS; no template change) ----------------------
+  function openAddressModal(){
+    var ex=document.getElementById("redeemModal"); if(ex){ ex.style.display="flex"; return; }
+    var f="border:1px solid #ddd6cc;border-radius:10px;padding:11px 12px;font-size:15px;font-family:inherit;width:100%";
+    var ov=document.createElement("div"); ov.id="redeemModal";
+    ov.style.cssText="position:fixed;inset:0;z-index:90;background:rgba(20,18,14,.55);"
+      +"display:flex;align-items:center;justify-content:center;padding:18px";
+    ov.innerHTML=
+      '<div style="background:var(--paper,#faf8f3);border-radius:18px;max-width:440px;width:100%;'
+      +'padding:22px;box-shadow:0 24px 70px rgba(0,0,0,.4);max-height:92vh;overflow:auto">'
+      +'<h3 style="font-family:var(--serif,Georgia);font-weight:600;font-size:20px;margin:0 0 4px;'
+      +'color:var(--navy,#42525f)">Where should we send it?</h3>'
+      +'<p style="color:var(--muted,#7a756e);font-size:13.5px;margin:0 0 14px">Ships free within the U.S. '
+      +'No payment — it’s already covered.</p>'
+      +'<div style="display:grid;gap:9px">'
+      +'<input id="rz_name" placeholder="Full name" style="'+f+'">'
+      +'<input id="rz_email" type="email" placeholder="Email (for shipping updates)" style="'+f+'">'
+      +'<input id="rz_addr1" placeholder="Street address" style="'+f+'">'
+      +'<input id="rz_addr2" placeholder="Apt, suite (optional)" style="'+f+'">'
+      +'<div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:9px">'
+      +'<input id="rz_city" placeholder="City" style="'+f+'">'
+      +'<input id="rz_state" placeholder="State" maxlength="2" style="'+f+';text-transform:uppercase">'
+      +'<input id="rz_zip" placeholder="ZIP" style="'+f+'"></div>'
+      +'<input id="rz_phone" placeholder="Phone (optional)" style="'+f+'"></div>'
+      +'<div id="rz_err" style="color:#c85b57;font-size:13px;min-height:16px;margin:8px 0 0"></div>'
+      +'<button id="rz_go" class="btn" style="width:100%;margin-top:8px">Send my keepsake</button>'
+      +'<button id="rz_cancel" class="btn secondary" style="width:100%;margin-top:8px">Cancel</button></div>';
+    document.body.appendChild(ov);
+    document.getElementById("rz_cancel").addEventListener("click", closeModal);
+    document.getElementById("rz_go").addEventListener("click", function(){
+      var v=function(id){ return (document.getElementById(id).value||"").trim(); };
+      var name=v("rz_name"), a1=v("rz_addr1"), city=v("rz_city"), st=v("rz_state"), zip=v("rz_zip");
+      var err=document.getElementById("rz_err");
+      if(!name||!a1||!city||!st||!zip){ err.textContent="Please fill in name, address, city, state and ZIP."; return; }
+      if(st.length!==2){ err.textContent="Use the 2-letter state code (e.g. TX)."; return; }
+      closeModal();
+      submitRedeem({ name:name, email:v("rz_email"), address1:a1, address2:v("rz_addr2"),
+                     city:city, state:st.toUpperCase(), zip:zip, phone:v("rz_phone") });
+    });
+  }
+  function closeModal(){ var m=document.getElementById("redeemModal"); if(m) m.style.display="none"; }
 })();
 </script>
 </body>

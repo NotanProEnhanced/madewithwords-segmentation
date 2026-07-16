@@ -69,6 +69,12 @@ services:
       # engine, byte-identical. Set TYPO_WORD_VARIETY=0.7 in .env to flatten the lead-word
       # repetition so a varied word list reads as varied. Revert by deleting the line.
       - TYPO_WORD_VARIETY=${TYPO_WORD_VARIETY:-}
+      # Redemption codes (gift/partner/pre-need: a code buys the personalize+fulfil flow
+      # with NO Stripe charge). Default OFF -- every /redeem route 404s until
+      # TYPO_REDEEM_ENABLED=1 is set in .env, so the code deploys INERT. Optionally set
+      # TYPO_REDEEM_BRAND (default lovedinwords) to choose the studio skin recipients land in.
+      - TYPO_REDEEM_ENABLED=${TYPO_REDEEM_ENABLED:-}
+      - TYPO_REDEEM_BRAND=${TYPO_REDEEM_BRAND:-}
       - TYPO_ENABLE_DEBUG=${TYPO_ENABLE_DEBUG:-}
       - TYPO_REQUIRE_CAIROSVG=${TYPO_REQUIRE_CAIROSVG:-}
       - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}

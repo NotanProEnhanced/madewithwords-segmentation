@@ -173,6 +173,16 @@ GATHER_ENABLED = (os.environ.get("TYPO_GATHER_ENABLED", "").strip().lower()
 # to expose it. The studio link reveal probes /gallery, so it tracks this flag.
 GALLERY_ENABLED = (os.environ.get("TYPO_GALLERY_ENABLED", "").strip().lower()
                    in ("1", "true", "yes", "on"))
+# Redemption codes (gift/pre-need/partner fulfilment: a code buys the personalize+
+# fulfil flow WITHOUT Stripe). Default OFF so every /redeem route stays inert in prod
+# until deliberately enabled (e.g. on staging first). Same additive, flag-gated shape
+# as the gallery: when off, the codes DB is never touched and the studio is unchanged.
+REDEEM_ENABLED = (os.environ.get("TYPO_REDEEM_ENABLED", "").strip().lower()
+                  in ("1", "true", "yes", "on"))
+REDEEM_DB = DATA_DIR / "redemption.db"
+# Which brand a redemption sends the customer into (studio skin + memorial pricing/tone).
+REDEEM_BRAND = os.environ.get("TYPO_REDEEM_BRAND", "lovedinwords").strip() or "lovedinwords"
+
 GATHER_DIR = DATA_DIR / "gather"
 GATHER_DB = GATHER_DIR / "gather.db"
 # Throttle live re-renders so a busy gather can't hammer the single render slot:

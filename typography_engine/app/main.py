@@ -7,8 +7,11 @@ Later phases add /render.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hmac
 import json
 import re
+import time
 import uuid
 from pathlib import Path
 from typing import List, Optional
@@ -20,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from . import admin as admin_mod
 from . import orders as orders_db
+from . import redemption as redeem_db
 from . import moderation
 from . import suggest
 from . import printful, products
@@ -31,6 +35,8 @@ from .config import (
     CURRENCY,
     ENABLE_DEBUG_ENDPOINTS,
     GALLERY_ENABLED,
+    REDEEM_ENABLED,
+    REDEEM_BRAND,
     WORD_VARIETY,
     RENDER_CONCURRENCY,
     DATA_DIR,
@@ -174,6 +180,13 @@ def _init_orders_db() -> None:
         orders_db.init_db()
     except Exception:  # noqa: BLE001
         pass
+    # Redemption codes DB — only touched when the feature is enabled, so it stays
+    # entirely inert (no file created) in prod until TYPO_REDEEM_ENABLED is set.
+    if REDEEM_ENABLED:
+        try:
+            redeem_db.init_db()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 @app.on_event("startup")
@@ -1821,6 +1834,332 @@ def _fulfill_with_printful(order_id: str, recipient: dict) -> None:
         orders_db.mark_fulfilling(order_id=order_id, printful_order_id=int(pf_id or 0), raw=res)
     except Exception as e:  # noqa: BLE001
         orders_db.mark_error(order_id=order_id, error_message=str(e))
+
+
+# ============================= Redemption codes =============================
+# A redemption code is a prepaid ticket for ONE product: the recipient enters it
+# at /redeem, personalises the portrait in the normal studio, and the EXISTING
+# fulfilment path (digital download or _fulfill_with_printful) runs with NO Stripe
+# charge — the sale already happened off-platform (an EverLoved order, a gift, a
+# pre-need arrangement). ADDITIVE + FLAG-GATED (TYPO_REDEEM_ENABLED): every route
+# here 404s in prod until deliberately enabled, so the live studio/checkout is
+# untouched. See app/redemption.py + tools/gen_codes.py.
+
+_REDEEM_COOKIE = "liw_redeem"
+_REDEEM_TTL = 2 * 3600            # a redemption session lasts 2h (create + claim)
+_REDEEM_DL_TTL = 30 * 60          # signed digital-download link validity
+
+
+def _redeem_config_error() -> Optional[JSONResponse]:
+    """None if redemption can run; a 503 JSON if TYPO_SECRET_KEY is missing (we
+    sign the redemption cookie + download links with it)."""
+    if not admin_mod.SECRET_KEY:
+        return JSONResponse({"ok": False, "error": "redeem_unconfigured"}, status_code=503)
+    return None
+
+
+def _redeem_cookie_make(code: str, sku: str) -> str:
+    exp = int(time.time()) + _REDEEM_TTL
+    payload = f"{code}|{sku}|{exp}"
+    raw = f"{payload}|{admin_mod._sign(payload)}".encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _redeem_cookie_read(cookie: Optional[str]):
+    """Return (canonical_code, sku) from a valid, unexpired cookie, else None."""
+    if not cookie or not admin_mod.SECRET_KEY:
+        return None
+    try:
+        padded = cookie + "=" * (-len(cookie) % 4)
+        raw = base64.urlsafe_b64decode(padded).decode("utf-8")
+        code, sku, exp_s, sig = raw.split("|")
+        if int(exp_s) < int(time.time()):
+            return None
+        if not hmac.compare_digest(admin_mod._sign(f"{code}|{sku}|{exp_s}"), sig):
+            return None
+        return code, sku
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _redeem_dl_link(code: str, job: str) -> str:
+    exp = int(time.time()) + _REDEEM_DL_TTL
+    sig = admin_mod._sign(f"redeem-dl|{code}|{job}|{exp}")
+    return f"/redeem/download?job={job}&code={code}&exp={exp}&sig={sig}"
+
+
+def _redeem_dl_ok(code: str, job: str, exp: str, sig: str) -> bool:
+    try:
+        if int(exp) < int(time.time()):
+            return False
+    except (TypeError, ValueError):
+        return False
+    return hmac.compare_digest(admin_mod._sign(f"redeem-dl|{code}|{job}|{int(exp)}"), sig or "")
+
+
+def _redeem_page(code_prefill: str = "", error: str = "") -> HTMLResponse:
+    """Standalone, self-contained code-entry page (no studio SPA). Brand-neutral,
+    calm, mobile-first — the first thing a grieving recipient sees."""
+    err_html = (f'<p class="err">{re.sub(r"[<>]", "", error)}</p>') if error else ""
+    prefill = re.sub(r'[^A-Za-z0-9\- ]', "", code_prefill or "")[:40]
+    body = f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Redeem your keepsake · Loved in Words</title>
+<style>
+*{{box-sizing:border-box}}
+body{{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+ background:#f4efe8;color:#2b2f36;padding:24px}}
+.card{{background:#fff;max-width:440px;width:100%;border-radius:18px;padding:34px 30px;
+ box-shadow:0 18px 50px rgba(40,40,60,.10);text-align:center}}
+h1{{font-family:Georgia,'Times New Roman',serif;color:#42525f;font-size:26px;margin:0 0 6px}}
+.sub{{color:#7a756e;font-size:14.5px;line-height:1.55;margin:0 0 22px}}
+input{{width:100%;padding:14px 16px;font-size:18px;letter-spacing:.06em;text-align:center;
+ border:1.5px solid #ddd6cc;border-radius:12px;text-transform:uppercase;font-family:inherit}}
+input:focus{{outline:none;border-color:#c85b57}}
+button{{width:100%;margin-top:14px;padding:14px;font-size:16px;font-weight:700;color:#fff;
+ background:#c85b57;border:none;border-radius:999px;cursor:pointer;font-family:inherit}}
+button:hover{{background:#b64f4b}}
+.err{{background:#fdecea;color:#a12622;border-radius:10px;padding:10px 12px;font-size:14px;margin:0 0 16px}}
+.note{{color:#9a948c;font-size:12.5px;margin-top:18px;line-height:1.5}}
+.heart{{color:#c85b57;font-size:30px;line-height:1;margin-bottom:8px}}
+</style></head><body>
+<form class="card" method="post" action="/redeem">
+  <div class="heart">&#9829;</div>
+  <h1>Redeem your keepsake</h1>
+  <p class="sub">Enter the code from your order to create your personalized word&nbsp;portrait &mdash;
+   no payment needed. It&rsquo;s already paid for.</p>
+  {err_html}
+  <input name="code" value="{prefill}" placeholder="LIW-XXXX-XXXX-XXXX" autocomplete="off"
+   autocapitalize="characters" spellcheck="false" autofocus>
+  <button type="submit">Continue</button>
+  <p class="note">Your code works once and unlocks one keepsake. Keep it private &mdash;
+   anyone with the code can redeem it.</p>
+</form></body></html>"""
+    return HTMLResponse(body)
+
+
+@app.get("/redeem", response_class=HTMLResponse)
+def redeem_page(code: str = "", err: str = ""):
+    """Code-entry page. `?code=` pre-fills it (the link a partner emails); `?err=`
+    surfaces a friendly message after a failed attempt."""
+    if not REDEEM_ENABLED:
+        raise HTTPException(status_code=404)
+    messages = {
+        "invalid": "That code isn’t valid. Please check it and try again.",
+        "used": "This code has already been redeemed.",
+        "config": "Redemption isn’t available right now. Please contact support.",
+    }
+    return _redeem_page(code_prefill=code, error=messages.get(err, ""))
+
+
+@app.post("/redeem")
+def redeem_submit(code: str = Form(...)):
+    """Validate a code and, on success, drop a signed 2h cookie and send the
+    recipient into the studio in redemption mode."""
+    if not REDEEM_ENABLED:
+        raise HTTPException(status_code=404)
+    if not admin_mod.SECRET_KEY:
+        return RedirectResponse(url="/redeem?err=config", status_code=303)
+    rec = redeem_db.get(code)
+    if not rec:
+        return RedirectResponse(url="/redeem?err=invalid", status_code=303)
+    if not redeem_db.is_redeemable(code):
+        return RedirectResponse(url="/redeem?err=used", status_code=303)
+    canonical = rec["code"]
+    sku = rec["sku"]
+    resp = RedirectResponse(url=f"/static/index.html?redeem=1&brand={REDEEM_BRAND}", status_code=303)
+    resp.set_cookie(_REDEEM_COOKIE, _redeem_cookie_make(canonical, sku),
+                    httponly=True, secure=PUBLIC_BASE_URL.lower().startswith("https://"),
+                    samesite="lax", max_age=_REDEEM_TTL, path="/")
+    return resp
+
+
+@app.get("/redeem/status")
+def redeem_status(request: Request):
+    """The studio hook calls this on load: reports whether a valid redemption
+    cookie is present and, if so, which product it entitles (so the studio can
+    lock the picker + show the banner). Inert/negative when the flag is off."""
+    if not REDEEM_ENABLED:
+        return JSONResponse({"active": False})
+    parsed = _redeem_cookie_read(request.cookies.get(_REDEEM_COOKIE))
+    if not parsed:
+        return JSONResponse({"active": False})
+    code, sku = parsed
+    product = products.get(sku)
+    if not product:
+        return JSONResponse({"active": False})
+    return JSONResponse({
+        "active": True,
+        "sku": sku,
+        "kind": "physical" if product.physical else "digital",
+        "product_name": product.name,
+        "needs_size": bool(product.size_variants),
+        "sizes": list(product.size_variants.keys()) if product.size_variants else [],
+    })
+
+
+@app.post("/redeem/fulfill")
+def redeem_fulfill(
+    request: Request,
+    job: str = Form(...),
+    size: Optional[str] = Form(None),
+    name: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    address1: Optional[str] = Form(None),
+    address2: Optional[str] = Form(None),
+    city: Optional[str] = Form(None),
+    state: Optional[str] = Form(None),
+    zip_code: Optional[str] = Form(None, alias="zip"),
+    phone: Optional[str] = Form(None),
+):
+    """Consume the code and run fulfilment with NO Stripe charge. Digital → sign a
+    download link. Physical → create a $0 paid order and hand it to the same
+    Printful path the webhook uses. Atomic: begin_redeem is the double-spend guard;
+    any failure releases the code so the customer can retry."""
+    if not REDEEM_ENABLED:
+        raise HTTPException(status_code=404)
+    cfg_err = _redeem_config_error()
+    if cfg_err is not None:
+        return cfg_err
+    parsed = _redeem_cookie_read(request.cookies.get(_REDEEM_COOKIE))
+    if not parsed:
+        return JSONResponse({"ok": False, "error": "no_redemption"}, status_code=401)
+    code, sku = parsed
+    product = products.get(sku)
+    if not product:
+        return JSONResponse({"ok": False, "error": "unknown_product"}, status_code=400)
+    if not (PRIVATE_DIR / f"{job}.json").exists():
+        return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+
+    # Atomic claim: only the winner proceeds; a used/in-flight code is rejected here.
+    claimed = redeem_db.begin_redeem(code)
+    if not claimed:
+        return JSONResponse({"ok": False, "error": "code_unavailable"}, status_code=409)
+    # From here on, ANY failure must release the code so it isn't burned.
+    try:
+        # ---- Digital: compose the clean file + sign a one-time download link ----
+        if not product.physical:
+            clean = _ensure_clean_png(job)
+            if clean is None:
+                redeem_db.release(code)
+                return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
+            paid_marker = PRIVATE_DIR / f"{job}.paid"      # count it in admin stats, like /download
+            if not paid_marker.exists():
+                try:
+                    paid_marker.write_text(str(int(time.time())), encoding="utf-8")
+                except OSError:
+                    pass
+            redeem_db.complete_redeem(code, job_id=job, order_id=None,
+                                      customer_email=(email or "").strip() or None)
+            resp = JSONResponse({"ok": True, "kind": "digital",
+                                 "download": _redeem_dl_link(code, job)})
+            resp.delete_cookie(_REDEEM_COOKIE, path="/")
+            _redeem_notify(product, code, order_id=None, email=email, recipient=None)
+            return resp
+
+        # ---- Physical: $0 paid order → the same Printful path the webhook uses --
+        if not PRINTFUL_API_TOKEN:
+            redeem_db.release(code)
+            return JSONResponse({"ok": False, "error": "fulfillment_unconfigured"}, status_code=503)
+        variant_id = products.resolve_variant_id(product, size)
+        if variant_id is None and not product.bundle_items:
+            redeem_db.release(code)
+            return JSONResponse({"ok": False, "error": "missing_or_invalid_size",
+                                 "sizes": list(product.size_variants.keys())
+                                 if product.size_variants else []}, status_code=400)
+        if product.bundle_items:
+            variant_id = product.bundle_items[0][0]
+        recipient = {
+            "name": (name or "").strip(),
+            "address1": (address1 or "").strip(),
+            "address2": (address2 or "").strip(),
+            "city": (city or "").strip(),
+            "state_code": (state or "").strip(),
+            "country_code": "US",
+            "zip": (zip_code or "").strip(),
+            "email": (email or "").strip(),
+            "phone": (phone or "").strip(),
+        }
+        if not (recipient["name"] and recipient["address1"] and recipient["city"]
+                and recipient["state_code"] and recipient["zip"]):
+            redeem_db.release(code)
+            return JSONResponse({"ok": False, "error": "incomplete_address"}, status_code=400)
+
+        order_id = uuid.uuid4().hex[:16]
+        # The synthetic session id is keyed on the FRESH per-attempt order_id (not the
+        # code), so a retry after a released failure never collides with a leftover
+        # pending row (orders.stripe_session_id is UNIQUE). The code — not this id — is
+        # the double-spend guard, enforced by begin_redeem above.
+        session_key = f"redeem:{order_id}"
+        # price_cents=0: this order netted us nothing directly — the customer paid the
+        # partner off-platform. The Orders dashboard shows Source=redeem:<sku>.
+        orders_db.create_pending(
+            order_id=order_id, stripe_session_id=session_key, job_id=job,
+            sku=sku, size=size, variant_id=variant_id, price_cents=0,
+            shipping_cents=0, currency=CURRENCY, ref=f"redeem:{sku}",
+        )
+        transitioned = orders_db.mark_paid(
+            stripe_session_id=session_key, payment_intent="redemption",
+            customer_email=recipient["email"] or None, recipient=recipient,
+        )
+        if not transitioned:
+            # Fresh session id should always transition; if it didn't, something is off —
+            # release the code so the customer can retry rather than burning it.
+            redeem_db.release(code)
+            return JSONResponse({"ok": False, "error": "order_persist_failed"}, status_code=500)
+        # Submit to Printful off the request thread, exactly like the webhook.
+        import threading
+        threading.Thread(target=_fulfill_with_printful,
+                         args=(transitioned["id"], recipient), daemon=True).start()
+        redeem_db.complete_redeem(code, job_id=job, order_id=order_id,
+                                  customer_email=recipient["email"] or None)
+        resp = JSONResponse({"ok": True, "kind": "physical", "order_id": order_id})
+        resp.delete_cookie(_REDEEM_COOKIE, path="/")
+        _redeem_notify(product, code, order_id=order_id, email=recipient["email"],
+                       recipient=recipient)
+        return resp
+    except Exception as e:  # noqa: BLE001 — never burn a code on an unexpected error
+        redeem_db.release(code)
+        return JSONResponse({"ok": False, "error": "fulfill_failed", "detail": str(e)[:200]},
+                            status_code=500)
+
+
+@app.api_route("/redeem/download", methods=["GET", "HEAD"])
+def redeem_download(job: str, code: str, exp: str, sig: str):
+    """Serve the clean print-resolution PNG for a redeemed digital code, gated by
+    an HMAC-signed, time-limited link and a check that the code was consumed for
+    exactly this job."""
+    if not REDEEM_ENABLED:
+        raise HTTPException(status_code=404)
+    if not _redeem_dl_ok(code, job, exp, sig):
+        raise HTTPException(status_code=403, detail="invalid_or_expired_link")
+    rec = redeem_db.get(code)
+    if not rec or rec["status"] != "used" or rec.get("job_id") != job:
+        raise HTTPException(status_code=403, detail="not_redeemed")
+    path = _ensure_clean_png(job)
+    if path is None:
+        return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
+    return FileResponse(str(path), media_type="image/png", filename=f"lovedinwords-{job}.png")
+
+
+def _redeem_notify(product, code: str, *, order_id, email, recipient) -> None:
+    """Best-effort admin-only 'redemption fulfilled' email so the operator sees
+    partner/gift redemptions land. Never raises into the fulfilment path."""
+    try:
+        summary = {
+            "product": f"{product.name} (redeemed)",
+            "amount": "$0.00 · redemption code",
+            "email": email or "—",
+            "ref": "redemption",
+            "order_id": order_id or "",
+            "shipping": recipient,
+            "digital_included": not product.physical,
+        }
+        import threading
+        threading.Thread(target=admin_mod.send_sale_email, args=(summary,), daemon=True).start()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _umami_event(name: str, data: Optional[dict] = None) -> None:
