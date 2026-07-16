@@ -2762,19 +2762,55 @@ function fetchWithTimeout(url, opts, ms){
       +'<input id="rz_zip" placeholder="ZIP" style="'+f+'"></div>'
       +'<input id="rz_phone" placeholder="Phone (optional)" style="'+f+'"></div>'
       +'<div id="rz_err" style="color:#c85b57;font-size:13px;min-height:16px;margin:8px 0 0"></div>'
-      +'<button id="rz_go" class="btn" style="width:100%;margin-top:8px">Send my keepsake</button>'
-      +'<button id="rz_cancel" class="btn secondary" style="width:100%;margin-top:8px">Cancel</button></div>';
+      +'<button id="rz_go" class="btn" style="width:100%;margin-top:8px">Review &amp; send</button>'
+      +'<button id="rz_cancel" class="btn secondary" style="width:100%;margin-top:8px">Cancel</button>'
+      +'</div>'   // /#rz_form
+      // --- Step 2: confirm-before-it-ships (no Stripe step here, so THIS is the gate) --
+      +'<div id="rz_review" style="display:none">'
+      +'<h3 style="font-family:var(--serif,Georgia);font-weight:600;font-size:20px;margin:0 0 4px;'
+      +'color:var(--navy,#42525f)">One last look</h3>'
+      +'<p style="color:var(--muted,#7a756e);font-size:13.5px;margin:0 0 12px">Please check the details — '
+      +'<b>your keepsake is made to order and can’t be changed once you send.</b></p>'
+      +'<div id="rz_summary" style="background:#fff;border:1px solid #ece7dd;border-radius:12px;'
+      +'padding:14px;font-size:14px;line-height:1.5;color:#2b2f36;margin:0 0 14px"></div>'
+      +'<button id="rz_confirm" class="btn" style="width:100%">Confirm &amp; send my keepsake</button>'
+      +'<button id="rz_back" class="btn secondary" style="width:100%;margin-top:8px">Back to edit</button>'
+      +'</div>'   // /#rz_review
+      +'</div>';  // /card
     document.body.appendChild(ov);
+    var vf=function(id){ return (document.getElementById(id).value||"").trim(); };
+    function fields(){
+      return { name:vf("rz_name"), email:vf("rz_email"), address1:vf("rz_addr1"),
+               address2:vf("rz_addr2"), city:vf("rz_city"), state:vf("rz_state").toUpperCase(),
+               zip:vf("rz_zip"), phone:vf("rz_phone") };
+    }
     document.getElementById("rz_cancel").addEventListener("click", closeModal);
+    // Step 1 -> validate, then show the review (does NOT send yet).
     document.getElementById("rz_go").addEventListener("click", function(){
-      var v=function(id){ return (document.getElementById(id).value||"").trim(); };
-      var name=v("rz_name"), a1=v("rz_addr1"), city=v("rz_city"), st=v("rz_state"), zip=v("rz_zip");
-      var err=document.getElementById("rz_err");
-      if(!name||!a1||!city||!st||!zip){ err.textContent="Please fill in name, address, city, state and ZIP."; return; }
-      if(st.length!==2){ err.textContent="Use the 2-letter state code (e.g. TX)."; return; }
+      var d=fields(), err=document.getElementById("rz_err");
+      if(!d.name||!d.address1||!d.city||!d.state||!d.zip){
+        err.textContent="Please fill in name, address, city, state and ZIP."; return; }
+      if(d.state.length!==2){ err.textContent="Use the 2-letter state code (e.g. TX)."; return; }
+      var prod = (REDEEM && REDEEM.product_name) ? REDEEM.product_name : "Your keepsake";
+      var line2 = d.address2 ? esc(d.address2)+"<br>" : "";
+      document.getElementById("rz_summary").innerHTML =
+        '<div style="font-weight:600;margin-bottom:6px">'+esc(prod)+'</div>'
+        + esc(d.name)+"<br>"+esc(d.address1)+"<br>"+line2
+        + esc(d.city)+", "+esc(d.state)+" "+esc(d.zip)
+        + (d.email ? '<br><span style="color:#7a756e">'+esc(d.email)+'</span>' : "");
+      document.getElementById("rz_form").style.display="none";
+      document.getElementById("rz_review").style.display="block";
+    });
+    // Step 2 -> back to editing.
+    document.getElementById("rz_back").addEventListener("click", function(){
+      document.getElementById("rz_review").style.display="none";
+      document.getElementById("rz_form").style.display="block";
+    });
+    // Step 2 -> the actual commit. Only here does the print job fire.
+    document.getElementById("rz_confirm").addEventListener("click", function(){
+      var d=fields();
       closeModal();
-      submitRedeem({ name:name, email:v("rz_email"), address1:a1, address2:v("rz_addr2"),
-                     city:city, state:st.toUpperCase(), zip:zip, phone:v("rz_phone") });
+      submitRedeem(d);
     });
   }
   function closeModal(){ var m=document.getElementById("redeemModal"); if(m) m.style.display="none"; }
