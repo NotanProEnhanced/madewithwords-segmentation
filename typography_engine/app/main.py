@@ -2114,7 +2114,10 @@ def redeem_fulfill(
                          args=(transitioned["id"], recipient), daemon=True).start()
         redeem_db.complete_redeem(code, job_id=job, order_id=order_id,
                                   customer_email=recipient["email"] or None)
-        resp = JSONResponse({"ok": True, "kind": "physical", "order_id": order_id})
+        # The free high-res digital file that comes with every print. The code is now
+        # 'used' for THIS job, so the same signed /redeem/download link works for it.
+        resp = JSONResponse({"ok": True, "kind": "physical", "order_id": order_id,
+                             "download": _redeem_dl_link(code, job)})
         resp.delete_cookie(_REDEEM_COOKIE, path="/")
         _redeem_notify(product, code, order_id=order_id, email=recipient["email"],
                        recipient=recipient)

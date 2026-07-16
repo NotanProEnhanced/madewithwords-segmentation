@@ -2693,10 +2693,11 @@ function fetchWithTimeout(url, opts, ms){
       .then(function(d){
         if(d && d.ok && d.kind==="digital" && d.download){
           buy.textContent="Downloading…"; window.location.href=d.download;
-          finish("Your keepsake is downloading — check your files. You can close this page.");
+          finish("Your keepsake is downloading — check your files. If it didn’t start, use the button below.", d.download);
         } else if(d && d.ok && d.kind==="physical"){
           finish("All set 🤍 Your keepsake is being made and ships to the address you gave"
-                 + (d.order_id? " (order "+d.order_id+")":"") + ".");
+                 + (d.order_id? " (order "+d.order_id+")":"")
+                 + ". Your free high-res digital file is ready below — keep it, reprint it, share it.", d.download);
         } else {
           buy.disabled=false; buy.textContent=old;
           try{ buynote.textContent=errMsg(d && d.error); }catch(e){}
@@ -2706,11 +2707,21 @@ function fetchWithTimeout(url, opts, ms){
         try{ buynote.textContent="Network error — please try again."; }catch(e){} });
   }
 
-  function finish(msg){
+  function finish(msg, dl){
     try{ buy.style.display="none"; }catch(e){}
     var bar=document.getElementById("redeemBar");
     if(bar){ bar.innerHTML="✓ "+esc(msg); bar.style.background="#3f6f52"; }
     try{ buynote.textContent=msg; }catch(e){}
+    if(dl){   // the high-res digital file (the deliverable for digital; free-with-print for physical)
+      var a=document.getElementById("redeemDl");
+      if(!a){
+        a=document.createElement("a"); a.id="redeemDl"; a.className="btn";
+        a.style.cssText="display:block;text-align:center;text-decoration:none;margin-top:10px";
+        try{ buynote.parentNode.insertBefore(a, buynote.nextSibling); }
+        catch(e){ document.body.appendChild(a); }
+      }
+      a.href=dl; a.setAttribute("download",""); a.textContent="Download your high-res file";
+    }
     closeModal();
     window.__redeemIntercept=function(){ return true; };   // no double-submit after success
   }
