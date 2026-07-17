@@ -2652,7 +2652,7 @@ function fetchWithTimeout(url, opts, ms){
         if(REDEEM.kind==="physical") openAddressModal(); else submitRedeem({});
         return true;   // always bypass Stripe while a code is active
       };
-      try{ buynote.textContent="Already paid — no charge. Personalize your keepsake, then claim it below."; }catch(e){}
+      try{ buynote.textContent="Your keepsake is ready to personalize — take your time. There's nothing more to pay."; }catch(e){}
     })
     .catch(function(){});
 
@@ -2662,8 +2662,11 @@ function fetchWithTimeout(url, opts, ms){
     bar.style.cssText="position:sticky;top:0;z-index:80;background:#42525f;color:#fff;"
       +"text-align:center;padding:10px 16px;font-size:14px;line-height:1.4;"
       +"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+    var step = (d.kind==="physical")
+      ? "then press <b>Send my keepsake to me</b> to have it printed and shipped"
+      : "then press <b>Download my keepsake</b> to save your high-res file";
     bar.innerHTML="&#10003; <b>Your redemption code is applied.</b> You're creating your "
-      +esc(d.product_name)+" — add a photo and the words below, then <b>claim it</b> to finish.";
+      +esc(d.product_name)+" — add a photo and a few words below, "+step+".";
     document.body.insertBefore(bar, document.body.firstChild);
   }
 
@@ -2695,7 +2698,9 @@ function fetchWithTimeout(url, opts, ms){
     if(ol) ol.style.display="none";      // …so the recipient gets exactly what was bought
     var lbl=document.querySelector("#productPicker .film-lbl"); if(lbl) lbl.textContent="Your keepsake";
     var pk=document.getElementById("productPicker"); if(pk) pk.style.display="block";  // keep size row usable
-    try{ buy.textContent = (REDEEM.kind==="physical") ? "Claim my keepsake" : "Get my keepsake"; }catch(e){}
+    // Plain-language action, not "Order" (already paid) or "Claim" (jargon): the print
+    // gets made & shipped; the digital gets downloaded.
+    try{ buy.textContent = (REDEEM.kind==="physical") ? "Send my keepsake to me" : "Download my keepsake"; }catch(e){}
   }
 
   function submitRedeem(extra){
