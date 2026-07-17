@@ -2665,7 +2665,7 @@ function fetchWithTimeout(url, opts, ms){
         if(REDEEM.kind==="physical") openAddressModal(); else submitRedeem({});
         return true;   // always bypass Stripe while a code is active
       };
-      try{ buynote.textContent="Your keepsake is ready to personalize — take your time. There's nothing more to pay."; }catch(e){}
+      try{ buynote.textContent="Your keepsake is ready to personalize — take your time."; }catch(e){}
     })
     .catch(function(){});
 
