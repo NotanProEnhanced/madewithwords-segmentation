@@ -2644,6 +2644,7 @@ function fetchWithTimeout(url, opts, ms){
       if(!d || !d.active) return;    // no valid code cookie → studio behaves normally
       REDEEM = d;
       installRibbon(d);
+      hideGather();
       lockToSku(d.sku, 0);
       window.__redeemIntercept = function(){
         if(!REDEEM) return false;
@@ -2664,6 +2665,20 @@ function fetchWithTimeout(url, opts, ms){
     bar.innerHTML="🎁 <b>Gift code applied</b> — creating your "+esc(d.product_name)
       +". Personalize below; <b>no payment needed</b>.";
     document.body.insertBefore(bar, document.body.firstChild);
+  }
+
+  // A gather invites people to ADD WORDS, i.e. it produces a DIFFERENT portrait. That
+  // can't compose with a redemption: the claim fulfils the portrait in the studio (and
+  // for a print, the art is at Printful the moment they confirm), and the code is spent
+  // — so gathered words could never reach the print, and there'd be no way to claim the
+  // gathered version. Offering it here promises an outcome we can't deliver, so hide it.
+  // Uses a stylesheet rule, not an inline style: the gather card is revealed async by
+  // the /api/gather/enabled probe, which would overwrite an inline display:none.
+  function hideGather(){
+    if(document.getElementById("redeemHideGather")) return;
+    var s=document.createElement("style"); s.id="redeemHideGather";
+    s.textContent="#gatherCard,#gatherModal{display:none!important}";
+    document.head.appendChild(s);
   }
 
   function lockToSku(sku, tries){
