@@ -1902,17 +1902,32 @@ def _redeem_page(code_prefill: str = "", error: str = "") -> HTMLResponse:
     calm, mobile-first — the first thing a grieving recipient sees."""
     err_html = (f'<p class="err">{re.sub(r"[<>]", "", error)}</p>') if error else ""
     prefill = re.sub(r'[^A-Za-z0-9\- ]', "", code_prefill or "")[:40]
+    heart_svg = ('<svg class="mark" width="46" height="46" viewBox="0 0 64 64" aria-hidden="true">'
+                 '<path d="M32 52 C 14 38, 10 28, 10 20.5 C 10 14.5, 14.8 10, 20.6 10 '
+                 'C 25.6 10, 29.9 13.2, 32 17 C 34.1 13.2, 38.4 10, 43.4 10 '
+                 'C 49.2 10, 54 14.5, 54 20.5 C 54 28, 50 38, 32 52 Z" fill="#c85b57"/></svg>')
     body = f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
 <title>Redeem your keepsake · Loved in Words</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicons/lovedinwords/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/lovedinwords/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/favicons/lovedinwords/favicon-16.png">
+<link rel="apple-touch-icon" href="/static/favicons/lovedinwords/apple-touch-icon.png">
+<link rel="icon" href="/static/favicons/lovedinwords/favicon.ico" sizes="any">
 <style>
 *{{box-sizing:border-box}}
 body{{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
  background:#f4efe8;color:#2b2f36;padding:24px}}
-.card{{background:#fff;max-width:440px;width:100%;border-radius:18px;padding:34px 30px;
+.wrap{{max-width:440px;width:100%}}
+.brand{{text-align:center;margin:0 0 18px}}
+.brand .mark{{display:block;margin:0 auto 6px}}
+.brand .wordmark{{font-family:Georgia,'Times New Roman',serif;color:#42525f;font-size:20px;
+ letter-spacing:.01em}}
+.card{{background:#fff;width:100%;border-radius:18px;padding:34px 30px;
  box-shadow:0 18px 50px rgba(40,40,60,.10);text-align:center}}
-h1{{font-family:Georgia,'Times New Roman',serif;color:#42525f;font-size:26px;margin:0 0 6px}}
+h1{{font-family:Georgia,'Times New Roman',serif;color:#42525f;font-size:24px;margin:0 0 6px}}
 .sub{{color:#7a756e;font-size:14.5px;line-height:1.55;margin:0 0 22px}}
 input{{width:100%;padding:14px 16px;font-size:18px;letter-spacing:.06em;text-align:center;
  border:1.5px solid #ddd6cc;border-radius:12px;text-transform:uppercase;font-family:inherit}}
@@ -1922,20 +1937,25 @@ button{{width:100%;margin-top:14px;padding:14px;font-size:16px;font-weight:700;c
 button:hover{{background:#b64f4b}}
 .err{{background:#fdecea;color:#a12622;border-radius:10px;padding:10px 12px;font-size:14px;margin:0 0 16px}}
 .note{{color:#9a948c;font-size:12.5px;margin-top:18px;line-height:1.5}}
-.heart{{color:#c85b57;font-size:30px;line-height:1;margin-bottom:8px}}
+.powered{{text-align:center;color:#a49e95;font-size:12px;margin:16px 0 0}}
+.powered a{{color:#7a756e;text-decoration:none}}
+.powered a:hover{{text-decoration:underline}}
 </style></head><body>
-<form class="card" method="post" action="/redeem">
-  <div class="heart">&#9829;</div>
-  <h1>Redeem your keepsake</h1>
-  <p class="sub">Enter the code from your order to create your personalized word&nbsp;portrait &mdash;
-   no payment needed. It&rsquo;s already paid for.</p>
-  {err_html}
-  <input name="code" value="{prefill}" placeholder="LIW-XXXX-XXXX-XXXX" autocomplete="off"
-   autocapitalize="characters" spellcheck="false" autofocus>
-  <button type="submit">Continue</button>
-  <p class="note">Your code works once and unlocks one keepsake. Keep it private &mdash;
-   anyone with the code can redeem it.</p>
-</form></body></html>"""
+<main class="wrap">
+  <div class="brand">{heart_svg}<div class="wordmark">Loved in Words</div></div>
+  <form class="card" method="post" action="/redeem">
+    <h1>Redeem your keepsake</h1>
+    <p class="sub">Enter the code from your order to create your personalized word&nbsp;portrait.
+     It&rsquo;s already paid for &mdash; this is where you make it yours.</p>
+    {err_html}
+    <input name="code" value="{prefill}" placeholder="LIW-XXXX-XXXX-XXXX" autocomplete="off"
+     autocapitalize="characters" spellcheck="false" autofocus>
+    <button type="submit">Continue</button>
+    <p class="note">Your code works once and unlocks one keepsake. Keep it private &mdash;
+     anyone with the code can redeem it.</p>
+  </form>
+  <p class="powered">Powered by <a href="https://typortrait.com" target="_blank" rel="noopener">Typortrait.com</a></p>
+</main></body></html>"""
     return HTMLResponse(body)
 
 
@@ -2150,11 +2170,12 @@ def _redeem_notify(product, code: str, *, order_id, email, recipient) -> None:
     """Best-effort admin-only 'redemption fulfilled' email so the operator sees
     partner/gift redemptions land. Never raises into the fulfilment path."""
     try:
+        code_fmt = redeem_db.format_code(code)
         summary = {
-            "product": f"{product.name} (redeemed)",
-            "amount": "$0.00 · redemption code",
+            "product": f"Redemption claimed — {product.name}",
+            "amount": "redeemed (no charge)",
             "email": email or "—",
-            "ref": "redemption",
+            "ref": f"redemption · {code_fmt}",   # the code, so the admin can cross-reference
             "order_id": order_id or "",
             "shipping": recipient,
             "digital_included": not product.physical,
