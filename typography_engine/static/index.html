@@ -2794,11 +2794,16 @@ function fetchWithTimeout(url, opts, ms){
       if(d.state.length!==2){ err.textContent="Use the 2-letter state code (e.g. TX)."; return; }
       var prod = (REDEEM && REDEEM.product_name) ? REDEEM.product_name : "Your keepsake";
       var line2 = d.address2 ? esc(d.address2)+"<br>" : "";
+      // Show every field they typed — including the optional ones. A review that
+      // hides a value is a review you can't actually check.
+      var extra = [];
+      if(d.email) extra.push(esc(d.email));
+      if(d.phone) extra.push(esc(d.phone));
       document.getElementById("rz_summary").innerHTML =
         '<div style="font-weight:600;margin-bottom:6px">'+esc(prod)+'</div>'
         + esc(d.name)+"<br>"+esc(d.address1)+"<br>"+line2
         + esc(d.city)+", "+esc(d.state)+" "+esc(d.zip)
-        + (d.email ? '<br><span style="color:#7a756e">'+esc(d.email)+'</span>' : "");
+        + (extra.length ? '<br><span style="color:#7a756e">'+extra.join(" &middot; ")+'</span>' : "");
       document.getElementById("rz_form").style.display="none";
       document.getElementById("rz_review").style.display="block";
     });
