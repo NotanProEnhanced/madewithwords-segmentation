@@ -2645,6 +2645,19 @@ function fetchWithTimeout(url, opts, ms){
       REDEEM = d;
       installRibbon(d);
       hideGather();
+      // The studio's updateBuyLabel() re-sets the button to "Order — $XX" after a render
+      // and on other interactions, which would clobber a one-time label. Override it so
+      // the redemption label sticks everywhere it's applied. (Only in redemption mode —
+      // the normal flow returns before this hook runs, so its labels are untouched.)
+      try{
+        if(typeof updateBuyLabel==="function"){
+          updateBuyLabel=function(){
+            try{ buy.textContent=(REDEEM.kind==="physical")?"Send my keepsake to me":"Download my keepsake"; }catch(e){}
+          };
+        }
+      }catch(e){}
+      // "By purchasing you agree…" doesn't apply — the purchase already happened off-platform.
+      var _bt=document.getElementById("buyterms"); if(_bt) _bt.style.display="none";
       lockToSku(d.sku, 0);
       window.__redeemIntercept = function(){
         if(!REDEEM) return false;
