@@ -181,7 +181,9 @@ REDEEM_ENABLED = (os.environ.get("TYPO_REDEEM_ENABLED", "").strip().lower()
                   in ("1", "true", "yes", "on"))
 REDEEM_DB = DATA_DIR / "redemption.db"
 # Which brand a redemption sends the customer into (studio skin + memorial pricing/tone).
-REDEEM_BRAND = os.environ.get("TYPO_REDEEM_BRAND", "lovedinwords").strip() or "lovedinwords"
+# Redemption is the EverLoved partnership mechanism — it routes into the EverLoved skin,
+# NOT the general lovedinwords.com site. Override via TYPO_REDEEM_BRAND if that changes.
+REDEEM_BRAND = os.environ.get("TYPO_REDEEM_BRAND", "everloved").strip() or "everloved"
 
 GATHER_DIR = DATA_DIR / "gather"
 GATHER_DB = GATHER_DIR / "gather.db"
