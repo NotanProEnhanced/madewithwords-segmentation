@@ -23,11 +23,13 @@ _NAVY = (13, 27, 58)
 # The preview wordmark is brand-aware: on a PARTNER skin we must NOT stamp
 # "typortrait.com" -- it would advertise the direct site to a customer who came
 # through the partner (diverting the sale + their commission) and break the
-# white-label. First-party brands use their own domain; partner skins use the
-# partner's name; anything else falls back to typortrait.com.
+# white-label. Anything not listed falls back to typortrait.com.
+# For the EverLoved partnership, the customer-facing maker is Loved in Words, so
+# BOTH the lovedinwords site and the everloved partnership skin stamp
+# "LovedInWords.com" on the preview (never "EverLoved" or "typortrait.com").
 _BRAND_MARK = {
-    "lovedinwords": "lovedinwords.com",
-    "everloved": "Ever Loved",
+    "lovedinwords": "LovedInWords.com",
+    "everloved": "LovedInWords.com",
 }
 
 
