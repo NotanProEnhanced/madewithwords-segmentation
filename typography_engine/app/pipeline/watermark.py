@@ -24,12 +24,14 @@ _NAVY = (13, 27, 58)
 # "typortrait.com" -- it would advertise the direct site to a customer who came
 # through the partner (diverting the sale + their commission) and break the
 # white-label. Anything not listed falls back to typortrait.com.
-# For the EverLoved partnership, the customer-facing maker is Loved in Words, so
-# BOTH the lovedinwords site and the everloved partnership skin stamp
-# "LovedInWords.com" on the preview (never "EverLoved" or "typortrait.com").
+# First-party brands use their own domain; partner skins use the partner's name.
+# `keepsake` is the Loved in Words redemption skin (partner-redemption customers land
+# here), so its preview reads "LovedInWords.com" — the maker — never "typortrait.com".
+# `everloved` is only the pitch demo, so it keeps its own name.
 _BRAND_MARK = {
     "lovedinwords": "LovedInWords.com",
-    "everloved": "LovedInWords.com",
+    "keepsake": "LovedInWords.com",
+    "everloved": "Ever Loved",
 }
 
 

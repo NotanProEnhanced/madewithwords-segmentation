@@ -1910,11 +1910,11 @@ def _redeem_page(code_prefill: str = "", error: str = "") -> HTMLResponse:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>Redeem your keepsake · Loved in Words</title>
-<link rel="icon" type="image/svg+xml" href="/static/favicons/everloved/favicon.svg">
-<link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/everloved/favicon-32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="/static/favicons/everloved/favicon-16.png">
-<link rel="apple-touch-icon" href="/static/favicons/everloved/apple-touch-icon.png">
-<link rel="icon" href="/static/favicons/everloved/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/static/favicons/keepsake/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/keepsake/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/favicons/keepsake/favicon-16.png">
+<link rel="apple-touch-icon" href="/static/favicons/keepsake/apple-touch-icon.png">
+<link rel="icon" href="/static/favicons/keepsake/favicon.ico" sizes="any">
 <style>
 *{{box-sizing:border-box}}
 body{{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;

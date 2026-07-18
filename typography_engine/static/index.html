@@ -820,7 +820,15 @@ const BRANDS={
   // ?brand=everloved drives memorial pricing via the "everloved" ref (already set).
   everloved:{ name:"EverLoved", tag:"A keepsake portrait, in the words that loved them.", title:"EverLoved — a remembrance portrait made from words", host:"everloved.com",
     style:"displacement", ink:"photo", pinStyle:true, memorial:true,
-    theme:{ "--navy":"#46594e", "--ink":"#2c352e", "--paper":"#f2f1ea", "--card":"#fbfaf6", "--line":"#e2e1d6", "--muted":"#6f756c" } }
+    theme:{ "--navy":"#46594e", "--ink":"#2c352e", "--paper":"#f2f1ea", "--card":"#fbfaf6", "--line":"#e2e1d6", "--muted":"#6f756c" } },
+  // Redemption skin: the Loved in Words identity a partner-redemption customer lands
+  // in (via /redeem's ?brand=keepsake redirect). Deliberately a SEPARATE slot from
+  // `lovedinwords` (the public site) and `everloved` (the pitch demo), so its branding
+  // — red-heart favicon, LovedInWords.com preview mark — never touches either. No host:
+  // it's reached only by the redeem redirect, never by referrer.
+  keepsake:{ name:"Loved in Words", owned:true, tag:"A portrait of a life, in the words that describe them.", title:"Loved in Words — a remembrance portrait made from words",
+    style:"displacement", ink:"photo", pinStyle:true, memorial:true,
+    theme:{ "--navy":"#42525f", "--ink":"#2f3742", "--paper":"#f4efe8", "--card":"#fffdf9", "--line":"#e7e0d5", "--muted":"#776f64" } }
 };
 function _brandFromReferrer(){
   try{
@@ -874,7 +882,7 @@ if(BRAND){
     }
     if(BRAND.theme){ const rs=document.documentElement.style; for(const k in BRAND.theme) rs.setProperty(k, BRAND.theme[k]); }
     // Swap the favicon to this brand's typographic heart (default is the generic T).
-    const _FAV={lovedinwords:1,everloved:1};
+    const _FAV={lovedinwords:1,everloved:1,keepsake:1};
     if(_FAV[BRAND_ID]) document.querySelectorAll('link[rel*="icon"]').forEach(function(l){
       const h=l.getAttribute("href"); if(h) l.setAttribute("href", h.replace("/favicons/typortrait/","/favicons/"+BRAND_ID+"/")); });
   }catch(e){}
