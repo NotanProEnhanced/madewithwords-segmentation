@@ -399,6 +399,93 @@
               "price": "29"
             }
           ]
+        },
+        {
+          "id": "santa-claus",
+          "title": "Santa Claus",
+          "items": [
+            {
+              "id": "santa-jolly-classic",
+              "title": "The Jolly Classic",
+              "subject": "Santa Claus",
+              "words": "SANTA CLAUS JOLLY MERRY JOY HO HO HO CHEER LAUGHTER WARMTH KINDNESS GIVING VELVET",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "santa-kindly-grandfather",
+              "title": "The Kindly Grandfather",
+              "subject": "Santa Claus",
+              "words": "SAINT NICHOLAS GENTLE WISE KINDNESS PATIENCE GRANDFATHER WARMTH GRACE COMFORT TENDER PEACE LOVE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "santa-hearty-ho-ho-ho",
+              "title": "The Hearty Ho Ho Ho",
+              "subject": "Santa Claus",
+              "words": "HO HO HO LAUGHTER MERRIMENT GLEE MIRTH DELIGHT TWINKLE JOLLY HAPPINESS WONDER JOY CHEER",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "santa-candlelight-wonder",
+              "title": "Candlelight & Wonder",
+              "subject": "Santa Claus",
+              "words": "BELIEVE WONDER MAGIC HOPE LIGHT PEACE STARLIGHT DREAMS MIRACLE GLOW FAITH SILENT NIGHT",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "santa-fresh-from-snow",
+              "title": "Fresh from the Snow",
+              "subject": "Santa Claus",
+              "words": "NORTH POLE SNOW FROST WINTER REINDEER SLEIGH BELLS JINGLE JOURNEY CRISP ADVENTURE WONDER",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "santa-by-the-tree",
+              "title": "By the Christmas Tree",
+              "subject": "Santa Claus",
+              "words": "CHRISTMAS TREE LIGHTS PRESENTS STOCKINGS MISTLETOE ORNAMENTS FAMILY HOME TRADITION MEMORIES CHEER",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "santa-peace-goodwill",
+              "title": "Peace & Goodwill",
+              "subject": "Santa Claus",
+              "words": "NOEL PEACE ON EARTH GOODWILL BLESSINGS GENEROSITY COMPASSION CHARITY GRACE HOPE LOVE JOY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "santa-christmas-secret",
+              "title": "A Christmas Secret",
+              "subject": "Santa Claus",
+              "words": "SECRET SURPRISE WISHES DREAMS ANTICIPATION MYSTERY DELIGHT TWINKLE HUSH WONDER MAGIC BELIEVE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "father-christmas-regal",
+              "title": "Father Christmas",
+              "subject": "Father Christmas",
+              "words": "FATHER CHRISTMAS SANTA CLAUS KRIS KRINGLE SAINT NICHOLAS LEGEND TRADITION MAJESTY GENEROSITY TIMELESS GLORY WONDER JOY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            }
+          ]
         }
       ]
     }
