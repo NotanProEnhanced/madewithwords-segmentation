@@ -1025,7 +1025,8 @@ def gallery_page() -> HTMLResponse:
 
 
 @app.post("/gallery/checkout")
-def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("digital")) -> JSONResponse:
+def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("digital"),
+                     ref: str = Form("")) -> JSONResponse:
     """Create a Stripe Checkout session for a fixed gallery item. Decoupled from
     the personalized /checkout: a gallery item is pre-rendered art, validated
     against the catalog, with a master PNG on disk. Handles the digital download
@@ -1046,6 +1047,10 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
         return JSONResponse({"ok": False, "error": "unknown_product"}, status_code=400)
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
+    # Attribution: the storefront sends its brand (or an explicit ?ref) so per-brand and
+    # per-partner revenue breaks out in the admin referral funnel. Sanitised; the metadata
+    # ref is what _track_purchase_once records as the sale's `source`. Falls back to "gallery".
+    src = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40] or "gallery"
     title = str(it.get("title") or "Typortrait")[:120]
     # Per-item digital price: the catalog item may carry a `price` (in dollars); use
     # it when present, else the gallery digital price. The value comes from the trusted
@@ -1071,7 +1076,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
                         "product_data": {"name": f"Typortrait — {title} (digital download)"},
                     },
                 }],
-                metadata={"gallery_item": item},
+                metadata={"gallery_item": item, "ref": src},
                 success_url=f"{_req_base(request)}/gallery/download?item={item}&session_id={{CHECKOUT_SESSION_ID}}",
                 cancel_url=f"{_req_base(request)}/gallery?canceled=1",
             )
@@ -1107,7 +1112,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
         session = stripe.checkout.Session.create(
             mode="payment",
             line_items=line_items,
-            metadata={"gallery_item": item, "sku": sku, "order_id": order_id, "ref": "gallery"},
+            metadata={"gallery_item": item, "sku": sku, "order_id": order_id, "ref": src},
             shipping_address_collection={"allowed_countries": ["US"]},
             phone_number_collection={"enabled": True},
             success_url=f"{_req_base(request)}/order/{order_id}?session_id={{CHECKOUT_SESSION_ID}}",
@@ -1121,7 +1126,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
         orders_db.create_pending(
             order_id=order_id, stripe_session_id=session.id, job_id=f"gallery:{item}",
             sku=sku, size=None, variant_id=variant_id, price_cents=eff_price,
-            shipping_cents=eff_ship, currency=CURRENCY, ref="gallery",
+            shipping_cents=eff_ship, currency=CURRENCY, ref=src,
         )
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "order_persist_failed", "detail": str(e)}, status_code=500)

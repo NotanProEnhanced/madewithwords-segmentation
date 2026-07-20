@@ -260,6 +260,8 @@ async function startCheckout(itemId, sku, btn){
   $("#err").textContent="";
   try{
     const fd=new FormData(); fd.append("item",itemId); fd.append("sku",sku);
+    const _ref=(new URLSearchParams(location.search).get("ref")||"").trim();
+    fd.append("ref", _ref || currentBrand());   // attribution: explicit ?ref wins, else the brand
     const r=await fetch("/gallery/checkout",{method:"POST",body:fd});
     const d=await r.json();
     if(d.ok && d.url){ window.location.href=d.url; return; }
