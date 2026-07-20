@@ -32,8 +32,10 @@
           font-weight:700;font-size:14px;cursor:pointer;font-family:inherit}
   .subtab.on{color:var(--navy);border-bottom-color:var(--gold)}
   /* grid */
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:22px;margin-top:26px}
-  .item{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;cursor:pointer;
+  /* Flex (not grid) so a section's short last row CENTERS instead of hanging left.
+     Cards hold a fixed ~240px width (no grow) so rows read as centered, consistent tiles. */
+  .grid{display:flex;flex-wrap:wrap;justify-content:center;gap:22px;margin-top:26px}
+  .item{flex:0 1 240px;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;cursor:pointer;
         border:1px solid var(--line);transition:transform .15s, box-shadow .15s}
   .item:hover{transform:translateY(-3px);box-shadow:0 20px 48px rgba(30,28,22,.16)}
   .item img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;background:#eee}
