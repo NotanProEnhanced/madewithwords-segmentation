@@ -17,7 +17,9 @@
               "words": "CHRIST SAVIOR COMPASSION MERCY LOVE GRACE GENTLE FORGIVENESS TENDER HEALING SHEPHERD REDEEMER",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "Come to me, all who labor and are heavy laden, and I will give you rest.",
+              "scripture_ref": "Matthew 11:28"
             },
             {
               "id": "jesus-good-shepherd",
@@ -26,7 +28,9 @@
               "words": "CHRIST GOOD SHEPHERD GUIDE PROTECT FLOCK LAMB LEAD CARE PASTURE VOICE GATE",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "I am the good shepherd. The good shepherd lays down his life for the sheep.",
+              "scripture_ref": "John 10:11"
             },
             {
               "id": "jesus-prince-of-peace",
@@ -35,7 +39,9 @@
               "words": "CHRIST PRINCE PEACE SERENITY CALM STILLNESS QUIET REST COMFORT ASSURANCE SHALOM",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "For to us a child is born, to us a son is given; and his name shall be called Prince of Peace.",
+              "scripture_ref": "Isaiah 9:6"
             },
             {
               "id": "jesus-light-of-the-world",
@@ -44,7 +50,9 @@
               "words": "CHRIST LIGHT WORLD ILLUMINATION RADIANCE BRIGHTNESS SHINE DAWN GLOW TRUTH GUIDE",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "I am the light of the world. Whoever follows me will not walk in darkness.",
+              "scripture_ref": "John 8:12"
             },
             {
               "id": "jesus-king-of-kings",
@@ -53,7 +61,9 @@
               "words": "CHRIST KING KINGS LORD MAJESTY GLORY SOVEREIGN ALMIGHTY REIGN THRONE DOMINION AUTHORITY",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "On his robe and on his thigh he has a name written: King of kings and Lord of lords.",
+              "scripture_ref": "Revelation 19:16"
             }
           ]
         },
@@ -68,7 +78,9 @@
               "words": "MOTHER JESUS VIRGIN BLESSED GRACE ANNUNCIATION NATIVITY ASSUMPTION QUEEN HEAVEN INTERCESSOR",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "Behold, I am the handmaid of the Lord; let it be to me according to your word.",
+              "scripture_ref": "Luke 1:38"
             },
             {
               "id": "immaculate-heart-of-mary",
@@ -77,7 +89,9 @@
               "words": "HEART MARY LOVE PURITY DEVOTION SYMBOL SORROW JOY COMPASSION GRACE PEACE",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "And Mary treasured up all these things, pondering them in her heart.",
+              "scripture_ref": "Luke 2:19"
             },
             {
               "id": "our-lady-of-sorrows",
@@ -86,7 +100,9 @@
               "words": "SIX SORROWS PROPHECY SIMEON LOSS SWORD HEART COMPASSION FAITH PASSION LOVE",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "And a sword will pierce through your own soul also.",
+              "scripture_ref": "Luke 2:35"
             },
             {
               "id": "our-lady-of-guadalupe",
@@ -95,7 +111,9 @@
               "words": "MESTIZA VIRGIN OF GUADALUPE JUAN DIEGO TEPEYAC ROSE TILMA COMPASSION MOTHER OF MERCY",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "A great sign appeared in heaven: a woman clothed with the sun.",
+              "scripture_ref": "Revelation 12:1"
             },
             {
               "id": "mary-queen-of-heaven",
@@ -104,7 +122,9 @@
               "words": "QUEEN OF HEAVEN IMMACULATE CONCEPTION ASSUMPTION HOLY MOTHER VIRGINITY PERPETUAL GRACE LOVE",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "The Mighty One has done great things for me, and holy is his name.",
+              "scripture_ref": "Luke 1:49"
             }
           ]
         },
@@ -119,7 +139,9 @@
               "words": "ARCHANGEL MICHAEL DEFENDER HEAVENLY HOSTS SPIRITUAL WARFARE SWORD VANQUISHER OF EVIL PROTECTOR",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "Then war broke out in heaven; Michael and his angels fought against the dragon.",
+              "scripture_ref": "Revelation 12:7"
             },
             {
               "id": "st-raphael-the-archangel",
@@ -128,7 +150,9 @@
               "words": "ARCHANGEL RAPHAEL HEALER DIVINE MESSENGER BOOK OF TOBIT COMPANION HEALING POWER",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "I am Raphael, one of the seven angels who stand and serve before the Glory of the Lord.",
+              "scripture_ref": "Tobit 12:15"
             },
             {
               "id": "guardian-angel",
@@ -137,7 +161,9 @@
               "words": "PROTECTOR GUIDE HEAVENLY MESSENGER DIVINE LIGHT WATCHFUL CARE GUARDIANSHIP FAITH LOVE HOLY PRESENCE",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "For he will command his angels concerning you to guard you in all your ways.",
+              "scripture_ref": "Psalm 91:11"
             }
           ]
         },
@@ -152,7 +178,9 @@
               "words": "APOSTLE PETER ROCK OF THE CHURCH FISHERMAN KEYS TO HEAVEN MARTYRDOM FAITH",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "You are Peter, and on this rock I will build my church.",
+              "scripture_ref": "Matthew 16:18"
             },
             {
               "id": "st-paul",
@@ -161,7 +189,9 @@
               "words": "APOSTLE PAUL ROAD TO DAMASCUS LETTERS TO THE CHURCHES MISSIONARY JOURNEYS CONVERSION",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "I have fought the good fight, I have finished the race, I have kept the faith.",
+              "scripture_ref": "2 Timothy 4:7"
             },
             {
               "id": "st-john-the-baptist",
@@ -170,7 +200,9 @@
               "words": "PROPHET JOHN BAPTIST WILDERNESS PREACHER HERALD OF MESSIAH BAPTISM REPENTANCE LAMB OF GOD",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "Behold, the Lamb of God, who takes away the sin of the world!",
+              "scripture_ref": "John 1:29"
             },
             {
               "id": "moses",
@@ -179,7 +211,9 @@
               "words": "PROPHET LAW-GIVER EXODUS TEN COMMANDMENTS RED SEA BURNING BUSH SINAI COVENANT FAITH DELIVERANCE",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "The Lord would speak to Moses face to face, as one speaks to a friend.",
+              "scripture_ref": "Exodus 33:11"
             },
             {
               "id": "king-david",
@@ -188,7 +222,9 @@
               "words": "KING ISRAEL SHEPHERD PSALMIST GOLIATH BETHLEHEM ARK JERUSALEM HARP REPENTANCE COVENANT",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "The Lord is my shepherd; I shall not want.",
+              "scripture_ref": "Psalm 23:1"
             },
             {
               "id": "st-mary-magdalene",
@@ -197,7 +233,9 @@
               "words": "DISCIPLE WITNESS RESURRECTION ANOINTING SPICES TOMB GOSPEL PENITENT LOVE DEVOTION FAITHFUL",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "She turned and said to him, 'Rabboni!' — which means Teacher.",
+              "scripture_ref": "John 20:16"
             }
           ]
         },
@@ -212,7 +250,9 @@
               "words": "CARPENTER FATHER JESUS GUARDIAN VIRGIN MARY DREAMS PROTECTOR HOLY FAMILY NAZARETH OBEDIENCE",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "Joseph, son of David, do not fear to take Mary as your wife.",
+              "scripture_ref": "Matthew 1:20"
             },
             {
               "id": "st-francis-of-assisi",
@@ -221,7 +261,9 @@
               "words": "POVERTY HUMILITY BIRDS STIGMATA ASSISI PEACE CREATION BROTHER SUN GOSPEL REBUILD CHURCH",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "Look at the birds of the air; your heavenly Father feeds them.",
+              "scripture_ref": "Matthew 6:26"
             },
             {
               "id": "st-anthony-of-padua",
@@ -230,7 +272,9 @@
               "words": "PREACHER MIRACLES LOST THINGS LISBON PADUA LILY CHILD JESUS DEVOTION FRANCISCAN SIMPLICITY",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "Rejoice with me, for I have found my sheep that was lost.",
+              "scripture_ref": "Luke 15:6"
             },
             {
               "id": "st-jude-thaddeus",
@@ -239,7 +283,9 @@
               "words": "APOSTLE HOPE DESPERATE CASES PATRON MIRACLES FAITHFUL LABORER HOLY SPIRIT MARTYRDOM LETTER",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "Hope does not disappoint us, because God's love has been poured into our hearts.",
+              "scripture_ref": "Romans 5:5"
             },
             {
               "id": "st-therese-of-lisieux",
@@ -248,7 +294,9 @@
               "words": "LITTLE WAY SIMPLICITY LOVE CARMELITE FLOWERS PRAYER LISIEUX SACRIFICE HUMILITY GRACE",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "Unless you turn and become like children, you will never enter the kingdom of heaven.",
+              "scripture_ref": "Matthew 18:3"
             },
             {
               "id": "st-christopher",
@@ -257,7 +305,9 @@
               "words": "CHRISTOPHER PATRON SAINT TRAVELERS MARTYR LEGENDARY CARRIED CHRIST CHILD BEARDED STRENGTH PROTECTION",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "When you pass through the waters, I will be with you.",
+              "scripture_ref": "Isaiah 43:2"
             },
             {
               "id": "st-rita-of-cascia",
@@ -266,7 +316,9 @@
               "words": "RITA AUGUSTINIAN NUN WIFE MOTHER FORGIVENESS IMPOSSIBLE CAUSES STIGMATA DEVOTION PEACE PRAYER",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "With God all things are possible.",
+              "scripture_ref": "Matthew 19:26"
             },
             {
               "id": "st-joan-of-arc",
@@ -275,7 +327,9 @@
               "words": "JOAN OF ARC MAID ORLEANS WARRIOR MARTYR VISIONARY FRANCE COURAGE ARMOR YOUTHFUL DETERMINATION",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "Be strong and courageous. Do not be afraid, for the Lord your God is with you.",
+              "scripture_ref": "Joshua 1:9"
             }
           ]
         },
@@ -290,7 +344,9 @@
               "words": "AUGUSTINE BISHOP HIPPO THEOLOGIAN CONFESSIONS GRACE CONVERSION LATIN CHURCH FATHER DOCTOR",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "Put on the Lord Jesus Christ, and make no provision for the flesh.",
+              "scripture_ref": "Romans 13:14"
             },
             {
               "id": "st-sebastian",
@@ -299,7 +355,9 @@
               "words": "SEBASTIAN MARTYR ROMAN SOLDIER YOUNG MAN ARROWS COURAGE RESILIENCE FAITHFULNESS PATRON ATHLETES",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "Who shall separate us from the love of Christ? Shall tribulation, or distress, or persecution?",
+              "scripture_ref": "Romans 8:35"
             },
             {
               "id": "st-george",
@@ -308,7 +366,9 @@
               "words": "GEORGE DRAGON MARTYR ENGLAND KNIGHT COURAGEOUS SAINT PROTECTOR CHIVALRY FAITH LEGEND",
               "art": "original (AI-generated)",
               "text": "",
-              "price": "29"
+              "price": "29",
+              "scripture": "Put on the whole armor of God, that you may be able to stand against the schemes of the devil.",
+              "scripture_ref": "Ephesians 6:11"
             }
           ]
         }

@@ -1202,11 +1202,11 @@ def gallery_download(item: str, session_id: str):
 
 _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>[[TITLE]] &mdash; Sacred Word Portrait &middot; Typortrait</title>
+<title>[[TITLE]] &mdash; Sacred Word Portrait &middot; [[BRAND]]</title>
 <meta name="description" content="[[DESC]]">
 <link rel="canonical" href="[[URL]]">
 <meta property="og:type" content="product">
-<meta property="og:site_name" content="Typortrait">
+<meta property="og:site_name" content="[[BRAND]]">
 <meta property="og:title" content="[[TITLE]] &mdash; Sacred Word Portrait">
 <meta property="og:description" content="[[DESC]]">
 <meta property="og:image" content="[[IMG]]">
@@ -1236,6 +1236,9 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
  h1{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(30px,4.4vw,44px);margin:10px 0 4px;text-wrap:balance}
  .price{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:30px;color:var(--navy);margin:14px 0 2px}
  .pnote{color:var(--mut);font-size:14px;margin:0 0 18px}
+ .scripture{border-left:3px solid var(--gold);margin:16px 0 4px;padding:3px 0 3px 15px}
+ .scripture p{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-style:italic;font-size:17px;line-height:1.5;color:var(--ink);margin:0 0 5px}
+ .scripture cite{font-style:normal;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
  .buy{width:100%;background:var(--navy);color:#fff;border:none;border-radius:10px;padding:15px;font-size:16px;font-weight:600;cursor:pointer}
  .buy:hover{background:#233a6b}
  .prints{margin-top:22px}.prints h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:0 0 10px}
@@ -1250,7 +1253,7 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
  footer{border-top:1px solid var(--line);margin-top:30px;padding:26px 0 60px;color:var(--mut);font-size:13.5px;text-align:center}
 </style></head><body>
 <div class="wrap">
- <header><a class="bm" href="/gallery">Typortrait</a><a class="back" href="/gallery">&larr; The Sacred Collection</a></header>
+ <header><a class="bm" href="/gallery">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Sacred Collection</a></header>
  <div class="product">
   <div class="media">
    <div class="frame"><img src="[[ART]]" alt="[[TITLE]] &mdash; sacred word portrait"></div>
@@ -1260,6 +1263,7 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
    <div class="eyebrow">[[CAT]]</div>
    <h1>[[TITLE]]</h1>
    <p class="serif" style="color:var(--mut);margin:2px 0 0">A portrait woven entirely from the words that belong to [[SUBJECT]].</p>
+   [[SCRIPTUREBLOCK]]
    <div class="price">$[[PRICE]]</div>
    <p class="pnote">High-resolution digital download &mdash; no watermark, print it anywhere.</p>
    <button class="buy" id="buyDigital">Buy the digital download</button>
@@ -1267,7 +1271,7 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
    <div class="prints"><h3>Order it as a print</h3>[[PRINTS]][[SOON]]</div>
   </div>
  </div>
- <footer>Each Typortrait is rendered entirely from the words that belong to its subject. &nbsp;&middot;&nbsp; <a href="/gallery">Browse the whole collection &rarr;</a></footer>
+ <footer>Each portrait is rendered entirely from the words that belong to its subject. &nbsp;&middot;&nbsp; <a href="/gallery">Browse the whole collection &rarr;</a></footer>
 </div>
 <script>
 var ITEM=[[ITEMJSON]];
@@ -1304,6 +1308,12 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
     subject = str(it.get("subject") or "").strip() or title   # grammatical tagline subject
     words = " ".join(str(it.get("words") or "").split())
     cat = str(it.get("category") or "Sacred Figures")
+    scrip = str(it.get("scripture") or "").strip()
+    scrip_ref = str(it.get("scripture_ref") or "").strip()
+    # Brand-aware: the same item page serves the general gallery AND FaithInWords.com,
+    # so the wordmark/site name/schema brand follow the host the visitor is on.
+    host = (request.headers.get("host") or "").lower()
+    brand = "Faith in Words" if "faithinwords" in host else "Typortrait"
 
     digital_cents = products.gallery_price_for(products.get("digital"))[0]   # gallery channel
     try:
@@ -1313,8 +1323,14 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
     except (TypeError, ValueError):
         pass
     price = f"{digital_cents / 100:.2f}"
-    desc = (f"{title} — a typographic portrait woven entirely from the words that belong to "
-            f"them. High-resolution digital download and archival prints.")[:185]
+    if scrip:
+        desc = (f"“{scrip}” — {scrip_ref}  ·  {title}: a word portrait woven "
+                f"from the name and titles of {subject}. Digital download + archival prints.")[:300]
+    else:
+        desc = (f"{title} — a typographic portrait woven entirely from the words that belong to "
+                f"them. High-resolution digital download and archival prints.")[:185]
+    scripture_block = (f'<blockquote class="scripture"><p>&ldquo;{_h.escape(scrip)}&rdquo;</p>'
+                       f'<cite>{_h.escape(scrip_ref)}</cite></blockquote>') if scrip else ""
 
     prints = [p for p in products.public_catalog(gallery=True)
               if p["physical"] and not p["memorial_only"] and not p["sizes"]]
@@ -1329,7 +1345,7 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
         "@context": "https://schema.org/", "@type": "Product",
         "name": f"{title} — Sacred Word Portrait", "image": img_abs,
         "description": desc, "category": cat,
-        "brand": {"@type": "Brand", "name": "Typortrait"},
+        "brand": {"@type": "Brand", "name": brand},
         "offers": {"@type": "Offer", "priceCurrency": CURRENCY.upper(), "price": price,
                    "availability": "https://schema.org/InStock", "url": page_url},
     })
@@ -1342,6 +1358,8 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
             .replace("[[IMG]]", _h.escape(img_abs))
             .replace("[[ART]]", _h.escape(f"/static/gallery/art/{item_id}.png"))
             .replace("[[CAT]]", _h.escape(cat))
+            .replace("[[BRAND]]", _h.escape(brand))
+            .replace("[[SCRIPTUREBLOCK]]", scripture_block)
             .replace("[[PRICE]]", _h.escape(price))
             .replace("[[CUR]]", _h.escape(CURRENCY.upper()))
             .replace("[[PRINTS]]", prints_html)
