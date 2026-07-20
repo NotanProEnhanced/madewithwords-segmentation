@@ -1275,9 +1275,13 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
 </div>
 <script>
 var ITEM=[[ITEMJSON]];
+var BRANDREF=[[BRANDREF]];
+// Attribution: ?ref (e.g. from a Pinterest pin) wins, else the brand default, so
+// referral traffic to this page shows up per-source in the admin funnel.
+var PINREF=((new URLSearchParams(location.search).get('ref')||'').replace(/[^A-Za-z0-9_-]/g,'').slice(0,40))||BRANDREF;
 function err(m){document.getElementById('err').textContent=({payments_unconfigured:"Checkout isn't available here yet.",fulfillment_unconfigured:"Prints aren't available right now — the digital download is ready.",art_missing:"This piece is being finished — check back soon.",unknown_item:"This piece isn't available right now."}[m])||"Couldn't start checkout — please try again.";}
 async function buy(sku,btn){var o=btn.innerHTML;btn.disabled=true;document.getElementById('err').textContent='';
- try{var fd=new FormData();fd.append('item',ITEM);fd.append('sku',sku);
+ try{var fd=new FormData();fd.append('item',ITEM);fd.append('sku',sku);fd.append('ref',PINREF);
   var r=await fetch('/gallery/checkout',{method:'POST',body:fd});var d=await r.json();
   if(d.ok&&d.url){location.href=d.url;return;}err(d.error);}catch(_){err();}
  btn.disabled=false;btn.innerHTML=o;}
@@ -1314,6 +1318,7 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
     # so the wordmark/site name/schema brand follow the host the visitor is on.
     host = (request.headers.get("host") or "").lower()
     brand = "Faith in Words" if "faithinwords" in host else "Typortrait"
+    brand_ref = "faithinwords" if "faithinwords" in host else "gallery"   # default sale attribution
 
     digital_cents = products.gallery_price_for(products.get("digital"))[0]   # gallery channel
     try:
@@ -1366,6 +1371,7 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
             .replace("[[SOON]]", soon)
             .replace("[[WORDS]]", _h.escape(" · ".join(words.split())))
             .replace("[[LD]]", ld)
+            .replace("[[BRANDREF]]", _j.dumps(brand_ref))
             .replace("[[ITEMJSON]]", _j.dumps(item_id)))
     return HTMLResponse(html)
 
