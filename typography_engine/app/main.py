@@ -1237,6 +1237,7 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
  .price{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:30px;color:var(--navy);margin:14px 0 2px}
  .pnote{color:var(--mut);font-size:14px;margin:0 0 18px}
  .scripture{border-left:3px solid var(--gold);margin:16px 0 4px;padding:3px 0 3px 15px}
+ .scripture .scr-eyebrow{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);margin:0 0 5px;font-weight:600}
  .scripture p{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-style:italic;font-size:17px;line-height:1.5;color:var(--ink);margin:0 0 5px}
  .scripture cite{font-style:normal;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
  .buy{width:100%;background:var(--navy);color:#fff;border:none;border-radius:10px;padding:15px;font-size:16px;font-weight:600;cursor:pointer}
@@ -1262,7 +1263,7 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
   <div class="panel">
    <div class="eyebrow">[[CAT]]</div>
    <h1>[[TITLE]]</h1>
-   <p class="serif" style="color:var(--mut);margin:2px 0 0">A portrait woven entirely from the words that belong to [[SUBJECT]].</p>
+   <p class="serif" style="color:var(--mut);margin:2px 0 0">A portrait woven entirely from the names and titles that belong to [[SUBJECT]].</p>
    [[SCRIPTUREBLOCK]]
    <div class="price">$[[PRICE]]</div>
    <p class="pnote">High-resolution digital download &mdash; no watermark, print it anywhere.</p>
@@ -1329,12 +1330,13 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
         pass
     price = f"{digital_cents / 100:.2f}"
     if scrip:
-        desc = (f"“{scrip}” — {scrip_ref}  ·  {title}: a word portrait woven "
-                f"from the name and titles of {subject}. Digital download + archival prints.")[:300]
+        desc = (f"{title}: a word portrait woven from the names and titles of {subject} — "
+                f"paired with the verse “{scrip}” ({scrip_ref}). Digital download + archival prints.")[:300]
     else:
         desc = (f"{title} — a typographic portrait woven entirely from the words that belong to "
                 f"them. High-resolution digital download and archival prints.")[:185]
-    scripture_block = (f'<blockquote class="scripture"><p>&ldquo;{_h.escape(scrip)}&rdquo;</p>'
+    scripture_block = (f'<blockquote class="scripture"><div class="scr-eyebrow">Paired with Scripture</div>'
+                       f'<p>&ldquo;{_h.escape(scrip)}&rdquo;</p>'
                        f'<cite>{_h.escape(scrip_ref)}</cite></blockquote>') if scrip else ""
 
     prints = [p for p in products.public_catalog(gallery=True)
