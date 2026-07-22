@@ -1636,6 +1636,52 @@ def _ensure_clean_png(job: str, aspect: float = _PRINT_ASPECT) -> Optional[Path]
         return None
 
 
+_BUNDLE_README = (
+    "Your LovedInWords Keepsake — Digital Files\n"
+    "==========================================\n\n"
+    "Thank you. Inside this folder is your portrait, ready for every screen and for print:\n\n"
+    "  • Print (high-resolution).png  — full quality, no watermark. Print it at home or\n"
+    "    at any photo lab, up to poster size.\n"
+    "  • Phone Wallpaper.png          — sized for your phone's lock screen.\n"
+    "  • Desktop Wallpaper.png        — sized for a computer background.\n"
+    "  • Square (for sharing).png     — perfect for sharing with family.\n\n"
+    "To set the phone wallpaper: save the Phone image to your photos, then open\n"
+    "Settings → Wallpaper (iPhone), or long-press the home screen → Wallpapers (Android).\n\n"
+    "With love,\n"
+    "LovedInWords.com  ·  powered by Typortrait\n"
+)
+
+
+def _ensure_wallpaper_bundle(job: str) -> Optional[Path]:
+    """Build (once) the 'digital everywhere' ZIP for a job: the print master plus
+    phone / desktop / square wallpapers and a short read-me. Cached on disk next to
+    the other job artefacts. Returns None if the clean master can't be produced or
+    the bundle can't be built (callers fall back to the single print PNG so a
+    redemption is never broken by this value-add)."""
+    zip_path = PRIVATE_DIR / f"{job}.bundle.zip"
+    if zip_path.exists():
+        return zip_path
+    master = _ensure_clean_png(job)
+    if master is None:
+        return None
+    try:
+        import zipfile
+        from .wallpaper import build_wallpaper_set
+        master_bytes = master.read_bytes()
+        wp = build_wallpaper_set(master_bytes)
+        tmp = zip_path.with_suffix(".zip.tmp")
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("LovedInWords - Print (high-resolution).png", master_bytes)
+            z.writestr("LovedInWords - Phone Wallpaper.png", wp["phone"])
+            z.writestr("LovedInWords - Desktop Wallpaper.png", wp["desktop"])
+            z.writestr("LovedInWords - Square (for sharing).png", wp["square"])
+            z.writestr("Read Me.txt", _BUNDLE_README)
+        tmp.replace(zip_path)
+        return zip_path
+    except Exception:  # noqa: BLE001 — never break fulfilment; caller falls back to PNG
+        return None
+
+
 @app.get("/download")
 def download(job: str, session_id: str, fmt: str = "png"):
     """Serve the clean file only after verifying the Stripe payment for `job`."""
@@ -2180,10 +2226,13 @@ def redeem_fulfill(
 
 
 @app.api_route("/redeem/download", methods=["GET", "HEAD"])
-def redeem_download(job: str, code: str, exp: str, sig: str):
-    """Serve the clean print-resolution PNG for a redeemed digital code, gated by
-    an HMAC-signed, time-limited link and a check that the code was consumed for
-    exactly this job."""
+def redeem_download(job: str, code: str, exp: str, sig: str, fmt: str = "zip"):
+    """Serve the redeemed digital keepsake, gated by an HMAC-signed, time-limited
+    link and a check that the code was consumed for exactly this job.
+
+    Default (`fmt=zip`) hands over the full 'digital everywhere' bundle — the print
+    master plus phone / desktop / square wallpapers and a read-me. `fmt=png` serves
+    just the print master (fallback / print-only)."""
     if not REDEEM_ENABLED:
         raise HTTPException(status_code=404)
     if not _redeem_dl_ok(code, job, exp, sig):
@@ -2191,6 +2240,12 @@ def redeem_download(job: str, code: str, exp: str, sig: str):
     rec = redeem_db.get(code)
     if not rec or rec["status"] != "used" or rec.get("job_id") != job:
         raise HTTPException(status_code=403, detail="not_redeemed")
+    if fmt != "png":
+        bundle = _ensure_wallpaper_bundle(job)
+        if bundle is not None:
+            return FileResponse(str(bundle), media_type="application/zip",
+                                filename=f"LovedInWords-Keepsake-{job}.zip")
+        # bundle build failed — fall through to the single print PNG below.
     path = _ensure_clean_png(job)
     if path is None:
         return JSONResponse({"ok": False, "error": "export_failed"}, status_code=500)
