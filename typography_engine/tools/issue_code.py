@@ -40,6 +40,8 @@ def _email_bodies(code_fmt: str, link: str, product_name: str, name: str):
         f"Open this link to add a favorite photo and the words that describe your loved one,\n"
         f"see the portrait come together, and send it to us:\n\n"
         f"    {link}\n\n"
+        f"Buying this as a gift? You can forward this email to the family — the link is\n"
+        f"theirs to personalize, whenever they're ready.\n\n"
         f"Your code works once. Please keep it private — anyone with the code can redeem it.\n\n"
         f"With care,\nLoved in Words\n"
     )
@@ -53,6 +55,7 @@ def _email_bodies(code_fmt: str, link: str, product_name: str, name: str):
 <p style="text-align:center;margin:0 0 18px">
   <a href="{link}" style="background:#c85b57;color:#fff;padding:13px 30px;border-radius:999px;text-decoration:none;display:inline-block;font-weight:700">Personalize my keepsake</a>
 </p>
+<p style="margin:0 0 16px;color:#7a756e;font-size:14px;font-style:italic">Buying this as a gift? Forward this email to the family &mdash; the link is theirs to personalize, whenever they&rsquo;re ready.</p>
 <p style="color:#9a948c;font-size:12.5px;margin:0">Your code works once. Please keep it private &mdash; anyone with the code can redeem it.</p>
 <p style="color:#a49e95;font-size:12px;margin:18px 0 0">With care, Loved in Words &middot; powered by Typortrait.com</p>
 </div>"""
