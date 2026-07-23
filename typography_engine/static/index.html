@@ -838,10 +838,20 @@ function _brandFromReferrer(){
   }catch(e){}
   return "";
 }
+// Also resolve from THIS site's own host: when a brand runs on its own domain /
+// container (e.g. lovedinwords.com), a direct visit — no ?brand param, no referrer
+// — must still wear that brand. Only hosts explicitly registered in BRANDS match,
+// so the generic typortrait.com studio is unaffected.
+function _brandFromHost(){
+  try{
+    const h=location.hostname.replace(/^www\./,"");
+    for(const id in BRANDS){ if(BRANDS[id].host===h) return id; }
+  }catch(e){}
+  return "";
+}
 // Brand id: explicit ?brand param first (reliable + survives refresh in the URL),
-// else the referring brand domain. Skin is URL/referrer-driven only — it never
-// sticks to a later direct visit.
-const BRAND_ID=((_qp.get("brand")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40)) || _brandFromReferrer();
+// else the referring brand domain, else this site's own registered host.
+const BRAND_ID=((_qp.get("brand")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40)) || _brandFromReferrer() || _brandFromHost();
 // Attribution source: an explicit ?ref wins; else the brand; else the persisted
 // last-touch tag.
 const REF=(_qp.get("ref")||BRAND_ID||localStorage.getItem("typo_ref")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
