@@ -900,11 +900,26 @@ async def render(
 
     job_id = uuid.uuid4().hex[:12]
     preview_path = OUTPUTS_DIR / f"{job_id}_preview.png"
+    # A visitor in a valid redemption session has already paid (off-platform, via a
+    # partner/gift code), so their preview should be clean -- no watermark to nag a
+    # buyer who's already entitled to the full-resolution file.
+    in_redeem = False
     try:
-        from .pipeline.watermark import add_watermark
-        # Brand-aware mark: partner skins never stamp "typortrait.com" (would divert
-        # the partner's referral). `brand` is the active skin from the request.
-        preview_path.write_bytes(add_watermark(png_bytes, brand=brand))
+        if REDEEM_ENABLED:
+            parsed = _redeem_cookie_read(request.cookies.get(_REDEEM_COOKIE))
+            if parsed:
+                rec = redeem_db.get(parsed[0])
+                in_redeem = bool(rec and rec["status"] in ("unused", "redeeming"))
+    except Exception:  # noqa: BLE001 -- watermarking must never depend on a redeem lookup
+        in_redeem = False
+    try:
+        if in_redeem:
+            preview_path.write_bytes(png_bytes)          # paid via code -> clean preview
+        else:
+            from .pipeline.watermark import add_watermark
+            # Brand-aware mark: partner skins never stamp "typortrait.com" (would divert
+            # the partner's referral). `brand` is the active skin from the request.
+            preview_path.write_bytes(add_watermark(png_bytes, brand=brand))
     except Exception as e:  # noqa: BLE001
         warns.warn("render", "preview_failed", f"Watermark failed: {e}")
         preview_path.write_bytes(png_bytes)
