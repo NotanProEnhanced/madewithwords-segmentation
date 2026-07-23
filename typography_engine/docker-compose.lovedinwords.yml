@@ -1,0 +1,76 @@
+# LovedInWords.com — the memorial studio + EverLoved redemption store, as a COMPLETE
+# standalone compose file (not an override), so it never inherits/merges prod's port
+# and can't collide. Run it from a SEPARATE working tree checked out to this branch
+# (e.g. ~/typortrait-lovedinwords), via the lovedinwords.sh helper:
+#
+#   ./lovedinwords.sh up -d --build     # build + start
+#   ./lovedinwords.sh ps                # status
+#   ./lovedinwords.sh logs -f           # tail logs
+#   ./lovedinwords.sh down              # stop
+#
+# (lovedinwords.sh wraps: docker compose -f docker-compose.lovedinwords.yml -p typortrait-lovedinwords <args>)
+#
+# Isolation vs prod / staging / faithinwords:
+#   * image typortrait-lovedinwords:latest  -> never overwrites another image
+#   * container typortrait-lovedinwords      -> no name clash
+#   * port 127.0.0.1:8080                     -> prod 8077, staging 8078, faithinwords 8079
+#   * bind-mounts resolve inside THIS tree    -> its OWN data / orders / redemption DB
+#   * secrets come from THIS tree's .env (copy prod's .env, then apply the overrides)
+# This is the EverLoved keepsake redemption home: REDEEM is ON and the skin is "keepsake".
+# nginx terminates TLS (cert already exists for lovedinwords.com) and proxies here.
+name: typortrait-lovedinwords
+services:
+  typortrait:
+    build: .
+    image: typortrait-lovedinwords:latest
+    container_name: typortrait-lovedinwords
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8077"
+    environment:
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - TYPO_PRICE_CENTS=${TYPO_PRICE_CENTS:-1499}
+      - TYPO_CURRENCY=${TYPO_CURRENCY:-usd}
+      - TYPO_PUBLIC_URL=${TYPO_PUBLIC_URL:-https://lovedinwords.com}
+      - TYPO_ADMIN_PASSWORD=${TYPO_ADMIN_PASSWORD:-}
+      - TYPO_ADMIN_EMAIL=${TYPO_ADMIN_EMAIL:-}
+      - TYPO_SECRET_KEY=${TYPO_SECRET_KEY:-}
+      - TYPO_SMTP_HOST=${TYPO_SMTP_HOST:-smtp.gmail.com}
+      - TYPO_SMTP_PORT=${TYPO_SMTP_PORT:-587}
+      - TYPO_SMTP_USER=${TYPO_SMTP_USER:-}
+      - TYPO_SMTP_PASS=${TYPO_SMTP_PASS:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - PRINTFUL_API_TOKEN=${PRINTFUL_API_TOKEN:-}
+      - PRINTFUL_STORE_ID=${PRINTFUL_STORE_ID:-}
+      - PRINTFUL_API_BASE=${PRINTFUL_API_BASE:-https://api.printful.com}
+      - PRINT_URL_SECRET=${PRINT_URL_SECRET:-}
+      # Starts as DRAFTS (safe). Set PRINTFUL_CONFIRM=true in .env to fulfil real prints.
+      - PRINTFUL_CONFIRM=${PRINTFUL_CONFIRM:-false}
+      - UMAMI_WEBSITE_ID=${UMAMI_WEBSITE_ID:-}
+      - UMAMI_HOST=${UMAMI_HOST:-https://cloud.umami.is}
+      - UMAMI_HOSTNAME=${UMAMI_HOSTNAME:-lovedinwords.com}
+      # Memorial studio takes a face photo -> keep the biometric-region gate (matches prod).
+      - TYPO_BLOCKED_REGIONS=${TYPO_BLOCKED_REGIONS:-US-IL}
+      - TYPO_GEO_COUNTRY_HEADER=${TYPO_GEO_COUNTRY_HEADER:-X-Geo-Country}
+      - TYPO_GEO_REGION_HEADER=${TYPO_GEO_REGION_HEADER:-X-Geo-Region}
+      - TYPO_BIO_CONSENT_VERSION=${TYPO_BIO_CONSENT_VERSION:-bio-v1-2026-06}
+      # This is the memorial STUDIO, not the pre-made gallery storefront -> gallery OFF.
+      - TYPO_GALLERY_ENABLED=${TYPO_GALLERY_ENABLED:-}
+      - TYPO_GATHER_ENABLED=${TYPO_GATHER_ENABLED:-}
+      # --- The reason this container exists: EverLoved code redemption, keepsake skin ---
+      - TYPO_REDEEM_ENABLED=${TYPO_REDEEM_ENABLED:-1}
+      - TYPO_REDEEM_BRAND=${TYPO_REDEEM_BRAND:-keepsake}
+      - TYPO_WORD_VARIETY=${TYPO_WORD_VARIETY:-}
+      - TYPO_RETENTION_DAYS=${TYPO_RETENTION_DAYS:-30}
+      - TYPO_CONSENT_RETENTION_DAYS=${TYPO_CONSENT_RETENTION_DAYS:-}
+      - TYPO_ENABLE_DEBUG=${TYPO_ENABLE_DEBUG:-}
+      - TYPO_REQUIRE_CAIROSVG=${TYPO_REQUIRE_CAIROSVG:-}
+      - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}
+      - TYPO_RASTERIZER=${TYPO_RASTERIZER:-auto}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - TYPO_MODERATION_MODEL=${TYPO_MODERATION_MODEL:-omni-moderation-latest}
+    volumes:
+      - ./data/outputs:/app/outputs
+      - ./data/private:/app/private
+      - ./data:/app/data
+      - ./static:/app/static:ro
