@@ -2407,6 +2407,41 @@ def _fav_links(brand: str = "typortrait") -> str:
             f"<link rel='icon' href='{p}/favicon.ico' sizes='any'>")
 
 
+# Server-side brand registry for the server-RENDERED pages (order status, saved
+# portrait, expiry). Mirrors the studio's client BRANDS: a brand id (from a job's
+# recipe) or the request host resolves to a display name, home URL, and favicon set.
+_SITE_BRANDS = {
+    "lovedinwords": ("Loved in Words", "https://lovedinwords.com", "lovedinwords"),
+    "keepsake":     ("Loved in Words", "https://lovedinwords.com", "lovedinwords"),
+    "everloved":    ("Ever Loved",     "https://everloved.com",    "everloved"),
+    "faithinwords": ("Faith in Words", "https://faithinwords.com", "typortrait"),
+}
+
+
+def _site_brand(brand_id: str = "", host: str = "") -> dict:
+    """Display name / home URL / favicon slug for a server-rendered page — from a
+    recipe brand id first, else the request host. Falls back to Typortrait so the
+    generic studio is unaffected."""
+    bid = (brand_id or "").strip().lower()
+    if bid in _SITE_BRANDS:
+        n, h, f = _SITE_BRANDS[bid]
+        return {"name": n, "home": h, "fav": f}
+    hh = (host or "").split(":")[0].replace("www.", "").lower()
+    if hh:
+        for n, h, f in _SITE_BRANDS.values():
+            if hh in h:
+                return {"name": n, "home": h, "fav": f}
+    return {"name": "Typortrait", "home": "https://typortrait.com", "fav": "typortrait"}
+
+
+def _recipe_brand(job: str) -> str:
+    """The brand id stored in a job's recipe ('' if unknown/purged)."""
+    try:
+        return str(json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("brand") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _make_another(job: str) -> tuple:
     """(href, label) for the post-purchase 'make another' link, preserving the
     buyer's brand: Loved in Words -> branded studio + 'Make another Tribute
@@ -2649,12 +2684,13 @@ def _reel_maker_block(job: str, session_id: str) -> str:
 
 
 @app.get("/order/{order_id}", response_class=HTMLResponse)
-def order_status(order_id: str, session_id: Optional[str] = None):
+def order_status(request: Request, order_id: str, session_id: Optional[str] = None):
     """Customer-facing order status page (physical print orders land here from
     Stripe's success_url)."""
     o = orders_db.get(order_id)
     if not o:
         raise HTTPException(status_code=404, detail="unknown_order")
+    _b = _site_brand(host=request.headers.get("host", ""))
 
     # If we arrived from Stripe success and the webhook hasn't fired yet, poll
     # Stripe directly so the customer sees a confirmed state instead of "pending
@@ -2747,11 +2783,8 @@ def order_status(order_id: str, session_id: Optional[str] = None):
     body = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" type="image/svg+xml" href="/static/favicons/typortrait/favicon.svg">
-<link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/typortrait/favicon-32.png">
-<link rel="apple-touch-icon" href="/static/favicons/typortrait/apple-touch-icon.png">
-<link rel="icon" href="/static/favicons/typortrait/favicon.ico" sizes="any">
-<title>Typortrait — Order {order_id}</title>
+{_fav_links(_b['fav'])}
+<title>{_b['name']} — Order {order_id}</title>
 <link rel="stylesheet" href="/static/inter.css">
 <style>
   *{{box-sizing:border-box}}
@@ -3278,13 +3311,14 @@ async def save_link(email: str = Form(...), job: str = Form(...)) -> JSONRespons
     return JSONResponse({"ok": True, "emailed": sent})
 
 
-def _resume_expired_page() -> str:
+def _resume_expired_page(b: Optional[dict] = None) -> str:
     """Shown when a saved link is opened after the portrait's files were purged
     by the retention sweep (~RETENTION_DAYS) or the job never existed."""
+    b = b or {"name": "Typortrait", "home": "https://typortrait.com", "fav": "typortrait"}
     return (
         "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
-        "<meta name='viewport' content='width=device-width, initial-scale=1'>" + _fav_links() +
-        "<title>Portrait expired — Typortrait</title><link rel='stylesheet' href='/static/inter.css'><style>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>" + _fav_links(b["fav"]) +
+        f"<title>Portrait expired — {b['name']}</title><link rel='stylesheet' href='/static/inter.css'><style>"
         "*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;"
         "justify-content:center;background:#faf9f7;color:#16203a;font-family:Inter,-apple-system,BlinkMacSystemFont,"
         "'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:24px;text-align:center}.w{max-width:440px}"
@@ -3293,23 +3327,20 @@ def _resume_expired_page() -> str:
         "p{color:#6b7280;font-size:15px;line-height:1.6;margin:0 0 22px}"
         "a{display:inline-block;background:#0d1b3a;color:#fff;font-weight:700;text-decoration:none;"
         "padding:14px 28px;border-radius:999px;font-size:16px}</style></head><body><div class='w'>"
-        "<div class='brand'>Typortrait</div>"
+        f"<div class='brand'>{b['name']}</div>"
         "<h1>This portrait has expired.</h1>"
         f"<p>To keep storage private, we automatically delete uploaded photos and generated files "
         f"after about {RETENTION_DAYS} days, so this saved link is no longer available. "
         "It only takes a minute to make a new one.</p>"
-        "<a href='https://typortrait.com'>Make a new portrait &rarr;</a>"
+        f"<a href='{b['home']}'>Make a new portrait &rarr;</a>"
         "</div></body></html>"
     )
 
 
 _RESUME_TPL = """<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
-<link rel='icon' type='image/svg+xml' href='/static/favicons/typortrait/favicon.svg'>
-<link rel='icon' type='image/png' sizes='32x32' href='/static/favicons/typortrait/favicon-32.png'>
-<link rel='apple-touch-icon' href='/static/favicons/typortrait/apple-touch-icon.png'>
-<link rel='icon' href='/static/favicons/typortrait/favicon.ico' sizes='any'>
-<title>Your saved portrait — Typortrait</title>
+__FAV__
+<title>Your saved portrait — __BRANDNAME__</title>
 <meta name='robots' content='noindex'>
 <link rel="stylesheet" href="/static/inter.css">
 <style>
@@ -3341,7 +3372,7 @@ html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sa
 .alt{display:block;text-align:center;color:var(--muted);font-size:13px;margin-top:16px;text-decoration:none}
 .alt:hover{color:var(--navy)}
 </style></head><body><div class="wrap">
-<div class="brand">Typortrait</div>
+<div class="brand">__BRANDNAME__</div>
 <div class="sub">Welcome back &mdash; here&rsquo;s the portrait you saved.</div>
 <div class="card">
 <img class="shot" src="__IMG__" alt="Your saved portrait"/>
@@ -3355,7 +3386,7 @@ html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sa
 <button class="btn" id="buy">Download</button>
 <p class="note" id="note"></p>
 </div>
-<a class="alt" href="https://typortrait.com">Start a new portrait &rarr;</a>
+<a class="alt" href="__HOME__">Start a new portrait &rarr;</a>
 </div>
 <script>
 const JOB="__JOB__";
@@ -3420,7 +3451,7 @@ buy.addEventListener("click", async ()=>{
 
 
 @app.get("/resume/{job}", response_class=HTMLResponse)
-def resume_page(job: str):
+def resume_page(request: Request, job: str):
     """Reopen a saved portrait with working Download + print options, wired to
     the same /checkout contract as the studio. This is the target of the
     exit-intent 'save your portrait' email link, so a returning user can buy the
@@ -3431,9 +3462,12 @@ def resume_page(job: str):
     job = _re.sub(r"[^a-zA-Z0-9]", "", job or "")[:40]
     recipe = PRIVATE_DIR / f"{job}.json"
     preview = OUTPUTS_DIR / f"{job}_preview.png"
+    _b = _site_brand(_recipe_brand(job), request.headers.get("host", ""))
     if not job or not recipe.exists() or not preview.exists():
-        return HTMLResponse(_resume_expired_page(), status_code=404)
-    page = _RESUME_TPL.replace("__JOB__", job).replace("__IMG__", f"/outputs/{job}_preview.png")
+        return HTMLResponse(_resume_expired_page(_b), status_code=404)
+    page = (_RESUME_TPL.replace("__FAV__", _fav_links(_b["fav"]))
+            .replace("__BRANDNAME__", _b["name"]).replace("__HOME__", _b["home"])
+            .replace("__JOB__", job).replace("__IMG__", f"/outputs/{job}_preview.png"))
     return HTMLResponse(page)
 
 
