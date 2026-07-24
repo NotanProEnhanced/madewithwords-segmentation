@@ -1147,8 +1147,6 @@ def _trust_nav(active: str = "") -> str:
     return " &middot; ".join(out)
 
 
-_TRUST_UPDATED = "Last updated: July 2026"
-
 _TRUST_TPL = '''<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>[[PT]] &middot; [[BRAND]]</title>
@@ -3881,7 +3879,9 @@ def resume_page(request: Request, job: str):
 
 
 _POLICY_CONTACT = "support@typortrait.com"
-_POLICY_UPDATED = "June 2026"
+# Bump this whenever the policy/legal copy materially changes — it is the audit-trail
+# date shown as "Last updated …" on every policy page (Terms/Privacy/Refunds/etc.).
+_POLICY_UPDATED = "July 2026"
 
 
 def _policy_page(title: str, blocks, b: Optional[dict] = None) -> HTMLResponse:
