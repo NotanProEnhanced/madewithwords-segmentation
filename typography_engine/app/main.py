@@ -1076,6 +1076,7 @@ def _sitemap_paths(host: str) -> list:
     A brand with its own domain (faithinwords) is limited to its allowed collections
     so the sitemap can never surface a piece that brand hides."""
     paths = ["/"]
+    paths += [f"/{s}" for s in _TRUST_SLUGS]     # About / FAQ / Refunds / Terms / Privacy
     if not GALLERY_ENABLED:
         return paths
     paths.append("/gallery")
@@ -1113,6 +1114,222 @@ def robots_txt(request: Request) -> Response:
     base = _req_base(request)
     body = f"User-agent: *\nAllow: /\nSitemap: {base}/sitemap.xml\n"
     return Response(content=body, media_type="text/plain")
+
+
+# ---------------------------------------------------------------------------
+# Trust pages (About / FAQ / Terms / Privacy / Refunds)
+# Server-rendered and brand-aware: the same routes serve Faith in Words, Loved in
+# Words and Typortrait, taking their name/home/favicon and tone from the request
+# host. Standard commerce trust surface — cross-linked in every footer, listed in
+# the sitemap — so shoppers (and Google) find the policies a real store must show.
+# ---------------------------------------------------------------------------
+_TRUST_SLUGS = ("about", "faq", "refunds", "terms", "privacy")
+_TRUST_LABELS = {"about": "About", "faq": "FAQ", "refunds": "Returns &amp; Refunds",
+                 "terms": "Terms", "privacy": "Privacy"}
+
+
+def _trust_brand(host: str = "") -> dict:
+    """Name / home / favicon / support-email / tone for the trust pages, resolved
+    from the request host (falls back to Typortrait)."""
+    sb = _site_brand(host=host)
+    domain = sb["home"].split("//", 1)[-1].strip("/")
+    kind = "faith" if "faithinwords" in domain else "memorial" if "lovedinwords" in domain else "generic"
+    return {"name": sb["name"], "home": sb["home"], "fav": sb["fav"],
+            "domain": domain, "support": f"support@{domain}", "kind": kind}
+
+
+def _trust_nav(active: str = "") -> str:
+    """The shared cross-link row of trust pages (relative, so host stays intact)."""
+    out = []
+    for s in _TRUST_SLUGS:
+        lbl = _TRUST_LABELS[s]
+        out.append(f'<span>{lbl}</span>' if s == active else f'<a href="/{s}">{lbl}</a>')
+    return " &middot; ".join(out)
+
+
+_TRUST_UPDATED = "Last updated: July 2026"
+
+_TRUST_TPL = '''<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>[[PT]] &middot; [[BRAND]]</title>
+<meta name="description" content="[[META]]">
+<link rel="canonical" href="[[URL]]">
+[[FAV]]
+<style>
+ :root{--bg:#f5f1e8;--card:#fff;--ink:#221d16;--mut:#736a58;--line:#e4ddce;--gold:#a9812f;--navy:#1a2b52}
+ *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.7 system-ui,-apple-system,"Segoe UI",sans-serif}
+ a{color:var(--navy)}.wrap{max-width:1060px;margin:0 auto;padding:0 22px}
+ header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;border-bottom:1px solid var(--line)}
+ header .bm{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
+ header a.back{font-size:14px;color:var(--mut);text-decoration:none}
+ .doc{max-width:760px;margin:0 auto;padding:34px 0 8px}
+ .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600}
+ .doc h1{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(28px,4vw,40px);margin:8px 0 4px;text-wrap:balance;color:var(--ink)}
+ .doc h2{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:21px;color:var(--navy);margin:30px 0 6px}
+ .doc p,.doc li{color:#3a342a;font-size:16px;line-height:1.72}
+ .doc ul{padding-left:20px;margin:8px 0}.doc li{margin:5px 0}
+ .doc .upd{color:var(--mut);font-size:13px;margin:2px 0 10px}
+ .doc .lead{font-family:"Palatino Linotype","Book Antiqua",Palatino,Georgia,serif;font-size:19px;line-height:1.6;color:var(--ink)}
+ .doc a{color:var(--navy)}
+ footer{border-top:1px solid var(--line);margin-top:40px;padding:24px 0 60px;color:var(--mut);font-size:13.5px;text-align:center}
+ footer nav{margin-bottom:8px}footer nav a,footer nav span{margin:0 2px;color:var(--mut);text-decoration:none}
+ footer nav a:hover{color:var(--navy)}
+</style></head><body>
+<div class="wrap">
+ <header><a class="bm" href="[[HOME]]">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Collection</a></header>
+ <article class="doc">
+  <div class="eyebrow">[[EYEBROW]]</div>
+  <h1>[[H1]]</h1>
+  [[BODY]]
+ </article>
+ <footer><nav>[[NAV]]</nav>&copy; [[YEAR]] [[BRAND]]. &nbsp;<a href="/gallery">Browse the collection &rarr;</a></footer>
+</div></body></html>'''
+
+
+def _trust_doc(slug: str, b: dict) -> Optional[dict]:
+    """Return {pt,eyebrow,h1,meta,body} for a brand-voiced marketing trust page
+    (about / faq). The legal pages (terms/privacy/refunds) are served by the detailed
+    policy routes elsewhere, not here."""
+    name, support, home, kind = b["name"], b["support"], b["home"], b["kind"]
+
+    if slug == "about":
+        eyebrow = "Our Story"
+        if kind == "faith":
+            h1 = "About Faith in Words"
+            body = f'''
+ <p class="lead">{name} creates sacred Christian portraits woven entirely from words &mdash; the names, titles,
+  Scripture and devotion that belong to Jesus Christ, the Blessed Virgin Mary, the angels, apostles and saints.</p>
+ <p>Step close and the likeness dissolves into language; step back and the face returns. Every letter is
+  meaningful: a portrait of the Good Shepherd is built from the very words that describe Him.</p>
+ <h2>How each portrait is made</h2>
+ <p>We begin with a classical depiction of the figure, then rebuild it line by line out of carefully chosen
+  words &mdash; titles, attributes and phrases drawn from Scripture and tradition. Each finished piece is paired
+  with a verse chosen for its subject, so the art and the Word belong together.</p>
+ <h2>Made to keep</h2>
+ <p>Every portrait is available as a high-resolution digital download &mdash; with matching phone and desktop
+  wallpapers included free &mdash; and as archival fine-art prints and framed keepsakes shipped to your door.</p>
+ <h2>Our promise</h2>
+ <p>Reverence comes first. If a portrait ever falls short of what this subject deserves, write to us at
+  <a href="mailto:{support}">{support}</a> and we will make it right.</p>'''
+            meta = f"About {name} — sacred Christian portraits woven entirely from words of Scripture and devotion."
+        elif kind == "memorial":
+            h1 = "About Loved in Words"
+            body = f'''
+ <p class="lead">{name} turns a photograph of someone you love into a portrait made entirely of the words that
+  describe them &mdash; their name, the roles they filled, the traits you treasured, the dates that framed a life.</p>
+ <p>It is a keepsake you can hold, hang and pass down: a likeness that, read closely, becomes the story of a person.</p>
+ <h2>How it works</h2>
+ <p>Upload a favorite photo and tell us about them &mdash; in your own words, or by pasting an obituary or tribute
+  we can gently draw from. We compose the portrait from those words and render it as a faithful likeness.</p>
+ <h2>Crafted with care</h2>
+ <p>Each tribute comes as a high-resolution digital download &mdash; with matching phone and desktop wallpapers
+  included free, so they are never far &mdash; and as archival prints and framed keepsakes delivered to your door.</p>
+ <h2>Our promise</h2>
+ <p>We know what these portraits mean and when they are needed. If anything is not right, write to us at
+  <a href="mailto:{support}">{support}</a> and we will take care of it with the care it deserves.</p>'''
+            meta = f"About {name} — memorial portraits made from the words that describe someone you love."
+        else:
+            h1 = f"About {name}"
+            body = f'''
+ <p class="lead">{name} turns a photograph into a portrait made entirely of words &mdash; a likeness that, read
+  closely, becomes the very words that describe its subject.</p>
+ <h2>How it works</h2>
+ <p>Upload a photo and choose the words that matter. We compose those words into a faithful likeness and render
+  it at high resolution, ready to download or print.</p>
+ <h2>What you get</h2>
+ <p>A high-resolution digital download with matching phone and desktop wallpapers included free, plus archival
+  prints and framed pieces shipped to your door.</p>
+ <h2>Our promise</h2>
+ <p>If a portrait ever falls short, write to us at <a href="mailto:{support}">{support}</a> and we will make it right.</p>'''
+            meta = f"About {name} — portraits made entirely from words."
+        return {"pt": "About", "eyebrow": eyebrow, "h1": h1, "meta": meta, "body": body}
+
+    if slug == "faq":
+        # One brand-voiced question, then a shared core.
+        if kind == "faith":
+            q_special = ("Is this appropriate as a gift or for my parish?",
+                         "Yes. These portraits are made with reverence and are popular as gifts for baptisms, "
+                         "confirmations, weddings and clergy, and as devotional art for homes, parishes and schools.")
+        elif kind == "memorial":
+            q_special = ("Can I use an obituary or tribute I already have?",
+                         "Absolutely. Paste an obituary, eulogy or a few sentences about your loved one and we will "
+                         "gently draw the words for the portrait from it &mdash; you can always edit them yourself.")
+        else:
+            q_special = ("Can I choose the words in the portrait?",
+                         "Yes. You provide the words that matter &mdash; a name, roles, traits, a short tribute &mdash; "
+                         "and the portrait is composed from them.")
+        qs = [
+            ("What exactly do I receive?",
+             f"A high-resolution PNG (about 3600&times;4500&nbsp;px, no watermark) you can print up to poster size, "
+             f"plus matching phone, desktop and square wallpapers included free. It carries a personal-use license."),
+            ("Are the portraits really made of words?",
+             "Yes &mdash; every portrait is composed entirely of real, legible words. Look closely (or zoom the "
+             "detail image on any product page) and the likeness resolves into language."),
+            q_special,
+            ("Can I order a physical print?",
+             "Yes. Most pieces are available as archival fine-art prints, gallery canvas and framed keepsakes, "
+             "produced by our print partner and shipped to your door. Prices and sizes are on each product page."),
+            ("How soon will I get it?",
+             "The digital download and wallpapers are available immediately after checkout. Prints are made to "
+             "order and typically ship within a few business days, plus carrier transit time."),
+            ("Can I use it on my phone and computer?",
+             "Yes &mdash; phone, desktop and square wallpapers are included free with every digital purchase, sized "
+             "for modern screens."),
+            ("What is your return policy?",
+             f'See <a href="/refunds">Returns &amp; Refunds</a>. In short: if a print arrives damaged, defective or '
+             f'wrong, we replace it or refund it.'),
+            ("How is my photo and information handled?",
+             f'Privately. Uploaded photos and generated files are kept only as long as needed to deliver your order '
+             f'and are then automatically deleted. See our <a href="/privacy">Privacy Policy</a>.'),
+            ("Still have a question?",
+             f'We are happy to help &mdash; email <a href="mailto:{support}">{support}</a> and a real person will reply, '
+             f'usually within one business day.'),
+        ]
+        body = "\n".join(f" <h2>{q}</h2>\n <p>{a}</p>" for q, a in qs)
+        return {"pt": "FAQ", "eyebrow": "Questions &amp; Answers", "h1": "Frequently Asked Questions",
+                "meta": f"Answers about {name} — what you receive, prints, delivery, wallpapers, returns and privacy.",
+                "body": body}
+
+    return None
+
+
+def _render_trust(slug: str, request: Request) -> HTMLResponse:
+    """Serve a brand-aware trust page. Explicit routes (below) avoid any greedy
+    catch-all that could shadow other single-segment GET routes."""
+    b = _trust_brand(request.headers.get("host", ""))
+    doc = _trust_doc(slug, b)
+    if not doc:
+        raise HTTPException(status_code=404, detail="not_found")
+    url = f"{_req_base(request)}/{slug}"
+    html = (_TRUST_TPL
+            .replace("[[BODY]]", doc["body"])          # body first: may itself contain no placeholders
+            .replace("[[PT]]", doc["pt"])
+            .replace("[[META]]", doc["meta"])
+            .replace("[[URL]]", url)
+            .replace("[[FAV]]", _fav_links(b["fav"]))
+            .replace("[[HOME]]", b["home"])
+            .replace("[[EYEBROW]]", doc["eyebrow"])
+            .replace("[[H1]]", doc["h1"])
+            .replace("[[NAV]]", _trust_nav(active=slug))
+            .replace("[[YEAR]]", "2026")
+            .replace("[[BRAND]]", b["name"]))
+    return HTMLResponse(html)
+
+
+@app.api_route("/about", methods=["GET", "HEAD"], response_class=HTMLResponse)
+def about_page(request: Request) -> HTMLResponse:
+    return _render_trust("about", request)
+
+
+@app.api_route("/faq", methods=["GET", "HEAD"], response_class=HTMLResponse)
+def faq_page(request: Request) -> HTMLResponse:
+    return _render_trust("faq", request)
+
+
+# NOTE: /terms, /refunds and /privacy are served by the existing, legally-detailed
+# policy pages further below (GDPR/CCPA/PIPEDA + biometric + sub-processors). We keep
+# those and only make them brand-aware — we do NOT shadow them here.
 
 
 @app.post("/gallery/checkout")
@@ -1364,6 +1581,7 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
  .woven h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:0 0 8px}
  .woven p{font-size:12.5px;line-height:2;letter-spacing:.06em;text-transform:uppercase;color:#8a7f6a;margin:0}
  footer{border-top:1px solid var(--line);margin-top:30px;padding:26px 0 60px;color:var(--mut);font-size:13.5px;text-align:center}
+ footer nav{margin-bottom:9px}footer nav a{margin:0 6px;color:var(--mut);text-decoration:none}footer nav a:hover{color:var(--navy)}
 </style></head><body>
 <div class="wrap">
  <header><a class="bm" href="/gallery">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Sacred Collection</a></header>
@@ -1397,7 +1615,7 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
   </div>
  </div>
  [[RELATEDSECTION]]
- <footer>Each portrait is rendered entirely from the words that belong to its subject. &nbsp;&middot;&nbsp; <a href="/gallery">Browse the whole collection &rarr;</a></footer>
+ <footer><nav>[[TRUSTNAV]]</nav>Each portrait is rendered entirely from the words that belong to its subject. &nbsp;&middot;&nbsp; <a href="/gallery">Browse the whole collection &rarr;</a></footer>
 </div>
 <script>
 var ITEM=[[ITEMJSON]];
@@ -1516,6 +1734,7 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
             .replace("[[LOUPE]]", _h.escape(f"{art_base}-loupe.jpg"))
             .replace("[[FRAMED]]", _h.escape(f"{art_base}-framed.jpg"))
             .replace("[[RELATEDSECTION]]", related_section)
+            .replace("[[TRUSTNAV]]", _trust_nav())
             .replace("[[CAT]]", _h.escape(cat))
             .replace("[[BRAND]]", _h.escape(brand))
             .replace("[[SCRIPTUREBLOCK]]", scripture_block)
@@ -3665,12 +3884,34 @@ _POLICY_CONTACT = "support@typortrait.com"
 _POLICY_UPDATED = "June 2026"
 
 
-def _policy_page(title: str, blocks) -> HTMLResponse:
+def _policy_page(title: str, blocks, b: Optional[dict] = None) -> HTMLResponse:
+    """Render a policy/legal page. Brand-aware: on a sub-brand host (Faith in Words,
+    Loved in Words) the visible name, support email, favicon and back-link follow that
+    brand, the customer-facing copy is rebranded, and an operator-disclosure note names
+    Typortrait as the responsible legal entity. On typortrait.com the output is
+    byte-for-byte identical to before (the default brand is Typortrait)."""
+    b = b or {"name": "Typortrait", "home": "/static/index.html",
+              "fav": "typortrait", "support": _POLICY_CONTACT}
+    bn = b.get("name") or "Typortrait"
+    sup = b.get("support") or _POLICY_CONTACT
     body = "".join((f"<h2>{h}</h2>{p}" if h else p) for h, p in blocks)
+    back_href, back_lbl, note = "/static/index.html", "Back to Typortrait&trade;", ""
+    if bn != "Typortrait":
+        # Full rebrand of customer-facing copy; the LEGAL entity stays Typortrait, so
+        # controller/liability/indemnity clauses still name the real operating company.
+        body = (body.replace("(which also operates the <b>Loved in Words</b> memorial service) ", "")
+                    .replace(_POLICY_CONTACT, sup)
+                    .replace("Typortrait&trade;", bn)
+                    .replace("Typortrait", bn))
+        back_href, back_lbl = (b.get("home") or "/static/index.html"), f"Back to {bn}"
+        note = (f"<p class='note'>{bn} is a brand operated by <b>Typortrait</b>. In this policy, "
+                f"&ldquo;{bn}&rdquo; and &ldquo;we&rdquo; refer to that service; the entity legally "
+                f"responsible for it is Typortrait. For any request under this policy, contact "
+                f"<a href='mailto:{sup}'>{sup}</a>.</p>")
     page = (
         "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
-        "<meta name='viewport' content='width=device-width, initial-scale=1'>" + _fav_links() +
-        f"<title>{title} — Typortrait</title><link rel='stylesheet' href='/static/inter.css'><style>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>" + _fav_links(b.get("fav") or "typortrait") +
+        f"<title>{title} — {bn}</title><link rel='stylesheet' href='/static/inter.css'><style>"
         "body{margin:0;background:#faf9f7;color:#16203a;font-family:Inter,-apple-system,BlinkMacSystemFont,"
         "'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.6}"
         ".wrap{max-width:760px;margin:0 auto;padding:40px 22px 80px}"
@@ -3680,17 +3921,17 @@ def _policy_page(title: str, blocks) -> HTMLResponse:
         "a{color:#0d1b3a}.back{display:inline-block;margin-bottom:18px;color:#6b7280;text-decoration:none;font-size:14px}"
         ".note{background:#fff;border:1px solid #ece9e3;border-left:4px solid #c9a24a;border-radius:10px;padding:12px 14px;font-size:13px;color:#6b5a2a}"
         "</style></head><body><div class='wrap'>"
-        "<a class='back' href='/static/index.html'>&larr; Back to Typortrait&trade;</a>"
+        f"<a class='back' href='{back_href}'>&larr; {back_lbl}</a>"
         f"<h1>{title}</h1><p class='upd'>Last updated {_POLICY_UPDATED}</p>"
-        + body +
-        f"<h2>Contact</h2><p>Questions? Email <a href='mailto:{_POLICY_CONTACT}'>{_POLICY_CONTACT}</a>.</p>"
+        + note + body +
+        f"<h2>Contact</h2><p>Questions? Email <a href='mailto:{sup}'>{sup}</a>.</p>"
         "</div></body></html>"
     )
     return HTMLResponse(page)
 
 
 @app.get("/terms", response_class=HTMLResponse)
-def terms():
+def terms(request: Request):
     blocks = [
         ("1. Acceptance", "<p>By using Typortrait (the &ldquo;Service&rdquo;) you agree to these Terms of Use. If you do not agree, please do not use the Service. You must be at least 13 years old to use the Service, and if you are under 18 you must have your parent or legal guardian&rsquo;s permission. The Service is not for children under 13.</p>"),
         ("2. The Service", "<p>Typortrait turns a photo and words you provide into a typographic portrait, offered as a free watermarked preview and a paid, watermark-free digital download.</p>"),
@@ -3712,11 +3953,11 @@ def terms():
         ("9. Indemnification", "<p>You agree to indemnify Typortrait against claims arising from your content or your breach of these Terms.</p>"),
         ("10. Changes and governing law", "<p>We may update these Terms; continued use means you accept the changes. These Terms are governed by the laws of New York State, United States of America.</p>"),
     ]
-    return _policy_page("Terms of Use", blocks)
+    return _policy_page("Terms of Use", blocks, _trust_brand(request.headers.get("host", "")))
 
 
 @app.get("/refunds", response_class=HTMLResponse)
-def refunds():
+def refunds(request: Request):
     blocks = [
         ("Our promise", "<p>We want you to love your portrait. If anything is wrong, tell us &mdash; <b>we&rsquo;ll fix it or refund it.</b> Email <a href='mailto:support@typortrait.com'>support@typortrait.com</a>.</p>"),
         ("Digital downloads", "<p>Your watermark-free download is delivered instantly, so purchases are generally final once delivered. But if the file has a quality problem &mdash; a poor likeness, a rendering glitch, or the wrong file &mdash; we will <b>re-create it or refund you in full</b>. Just contact us with your order details.</p>"),
@@ -3724,11 +3965,11 @@ def refunds():
         ("How to request a refund", "<p>Email <a href='mailto:support@typortrait.com'>support@typortrait.com</a> with your order number (and a photo, for print issues). Approved refunds go back to your original payment method via Stripe, usually within a few business days.</p>"),
         ("EU/UK customers", "<p>For digital downloads you agree at checkout to immediate delivery and acknowledge that you lose your 14-day right of withdrawal once the download begins. Personalised prints are likewise exempt from the 14-day withdrawal right. None of this affects your statutory rights regarding faulty goods, which we always honour.</p>"),
     ]
-    return _policy_page("Refund Policy", blocks)
+    return _policy_page("Refund Policy", blocks, _trust_brand(request.headers.get("host", "")))
 
 
 @app.get("/privacy", response_class=HTMLResponse)
-def privacy():
+def privacy(request: Request):
     blocks = [
         ("Overview", "<p>This Privacy Policy explains what Typortrait (&ldquo;we&rdquo;) collects, why, and your rights. We collect only what we need to create your portrait and process your order. For how we handle facial geometry specifically, see our <a href=\"/biometric-policy\">Biometric Data Policy</a>.</p>"),
         ("Who we are", f"<p>Typortrait (which also operates the <b>Loved in Words</b> memorial service) is the organization responsible for, and the data controller of, the information described here. Contact our privacy contact at <a href='mailto:{_POLICY_CONTACT}'>{_POLICY_CONTACT}</a> with any privacy question, to exercise your rights, or to raise a concern.</p>"),
@@ -3766,11 +4007,11 @@ def privacy():
         ("Security", "<p>We use reasonable technical and organisational measures to protect your data, but no method of transmission or storage is completely secure.</p>"),
         ("Changes", "<p>We may update this policy; the &ldquo;last updated&rdquo; date above will change accordingly.</p>"),
     ]
-    return _policy_page("Privacy Policy", blocks)
+    return _policy_page("Privacy Policy", blocks, _trust_brand(request.headers.get("host", "")))
 
 
 @app.get("/biometric-policy", response_class=HTMLResponse)
-def biometric_policy():
+def biometric_policy(request: Request):
     blocks = [
         ("What this covers", "<p>This Biometric Data Policy explains how Typortrait handles facial geometry, including for the purposes of the Illinois Biometric Information Privacy Act (BIPA) and similar laws. It is our publicly available written policy for biometric data.</p>"),
         ("What we analyse and why", "<p>To turn your photo into a typographic portrait, our software analyses the geometry of the face in the image (the relative positions of facial features) so it can place the type along the contours of the face. This face-geometry analysis is the only biometric processing we perform, and its sole purpose is to render the artwork you requested.</p>"),
@@ -3786,7 +4027,7 @@ def biometric_policy():
         ("Availability", "<p>To reduce risk, the Service may be unavailable to visitors in certain locations (for example, Illinois). Where it is available, the protections above apply.</p>"),
         ("Your choices", "<p>You can withdraw consent and request deletion of your photo at any time via our <a href=\"/data-request\">data request page</a>. See our <a href=\"/privacy\">Privacy Policy</a> for the full picture.</p>"),
     ]
-    return _policy_page("Biometric Data Policy", blocks)
+    return _policy_page("Biometric Data Policy", blocks, _trust_brand(request.headers.get("host", "")))
 
 
 _JOB_RE = re.compile(r"^[a-f0-9]{12}$")
@@ -3845,8 +4086,9 @@ _DATA_REQUEST_FORM = (
 
 
 @app.get("/data-request", response_class=HTMLResponse)
-def data_request_page():
-    return _policy_page("Data Request", [("", _DATA_REQUEST_FORM)])
+def data_request_page(request: Request):
+    return _policy_page("Data Request", [("", _DATA_REQUEST_FORM)],
+                        _trust_brand(request.headers.get("host", "")))
 
 
 @app.post("/data-request", response_class=HTMLResponse)
@@ -3889,7 +4131,8 @@ async def data_request_submit(
             "you provided if anything further is needed. Most requests are completed within 30 days "
             "(sooner where the law requires).</p>"
             "<p><a href='/static/index.html'>&larr; Back to Typortrait</a></p>")
-    return _policy_page("Data request received", [("", body)])
+    return _policy_page("Data request received", [("", body)],
+                        _trust_brand(request.headers.get("host", "")))
 
 
 @app.get("/compliance/region")
