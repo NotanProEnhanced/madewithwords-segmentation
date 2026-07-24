@@ -1067,6 +1067,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
     # ref is what _track_purchase_once records as the sale's `source`. Falls back to "gallery".
     src = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40] or "gallery"
     title = str(it.get("title") or "Typortrait")[:120]
+    _bn = _site_brand(host=request.headers.get("host", "")).get("name", "Typortrait")   # brand for the Stripe line item
     # Per-item digital price: the catalog item may carry a `price` (in dollars); use
     # it when present, else the gallery digital price. The value comes from the trusted
     # catalog on disk -- never from the request -- so a buyer cannot set their own price.
@@ -1088,7 +1089,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
                     "price_data": {
                         "currency": CURRENCY,
                         "unit_amount": digital_cents,
-                        "product_data": {"name": f"Typortrait — {title} (digital download)"},
+                        "product_data": {"name": f"{_bn} — {title} (digital download)"},
                     },
                 }],
                 metadata={"gallery_item": item, "ref": src},
@@ -1114,7 +1115,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
         "price_data": {
             "currency": CURRENCY,
             "unit_amount": eff_price,
-            "product_data": {"name": f"Typortrait — {title} — {product.name}"},
+            "product_data": {"name": f"{_bn} — {title} — {product.name}"},
         },
     }]
     if eff_ship > 0:
