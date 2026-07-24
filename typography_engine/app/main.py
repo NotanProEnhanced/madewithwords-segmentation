@@ -1323,8 +1323,20 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
  header a.back{font-size:14px;color:var(--mut);text-decoration:none}
  .product{display:grid;grid-template-columns:1fr 1fr;gap:44px;padding:40px 0 24px;align-items:start}
  @media(max-width:760px){.product{grid-template-columns:1fr;gap:26px}}
- .frame{background:#0c1730;border-radius:4px;overflow:hidden;box-shadow:0 30px 60px -28px rgba(20,16,10,.5)}
- .frame img{width:100%;display:block;aspect-ratio:4/5;object-fit:cover}
+ .frame{background:#0c1730;border-radius:4px;overflow:hidden;box-shadow:0 30px 60px -28px rgba(20,16,10,.5);aspect-ratio:4/5}
+ .frame img{width:100%;height:100%;display:block;object-fit:contain}
+ .thumbs{display:flex;gap:10px;margin-top:12px}
+ .th{flex:0 0 auto;width:84px;padding:0;border:2px solid transparent;border-radius:8px;overflow:hidden;background:#0c1730;cursor:pointer}
+ .th.on{border-color:var(--gold)} .th img{width:100%;height:70px;object-fit:cover;display:block}
+ .receive{border-top:1px solid var(--line);margin-top:20px;padding-top:16px}
+ .receive h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:0 0 8px}
+ .receive ul{margin:0;padding-left:18px;font-size:14px;line-height:1.7;color:var(--ink)}
+ .related{border-top:1px solid var(--line);margin-top:34px;padding-top:24px}
+ .related h2{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:22px;color:var(--navy);margin:0 0 16px}
+ .relgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+ @media(max-width:640px){.relgrid{grid-template-columns:repeat(2,1fr)}}
+ .relcard{text-decoration:none;color:var(--ink)} .relcard img{width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:8px;display:block;background:#0c1730}
+ .relcard span{display:block;font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:14px;margin-top:7px;text-align:center}
  .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600}
  h1{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(30px,4.4vw,44px);margin:10px 0 4px;text-wrap:balance}
  .price{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:30px;color:var(--navy);margin:14px 0 2px}
@@ -1350,7 +1362,13 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
  <header><a class="bm" href="/gallery">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Sacred Collection</a></header>
  <div class="product">
   <div class="media">
-   <div class="frame"><img src="[[ART]]" alt="[[TITLE]] &mdash; sacred word portrait"></div>
+   <div class="frame"><img id="mainart" src="[[ART]]" alt="[[TITLE]] &mdash; sacred word portrait"></div>
+   <div class="thumbs" id="thumbs">
+    <button class="th on" data-src="[[ART]]"><img src="[[ART]]" alt=""></button>
+    <button class="th" data-src="[[CLOSEUP]]"><img src="[[CLOSEUP]]" alt="Close-up of the words"></button>
+    <button class="th" data-src="[[LOUPE]]"><img src="[[LOUPE]]" alt="Detail &mdash; made of real words"></button>
+    <button class="th" data-src="[[FRAMED]]"><img src="[[FRAMED]]" alt="Framed on a wall"></button>
+   </div>
    <div class="woven"><h3>Woven from these words</h3><p>[[WORDS]]</p></div>
   </div>
   <div class="panel">
@@ -1363,8 +1381,14 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
    <button class="buy" id="buyDigital">Buy the digital download</button>
    <div class="err" id="err"></div>
    <div class="prints"><h3>Order it as a print</h3>[[PRINTS]][[SOON]]</div>
+   <div class="receive"><h3>What you receive</h3><ul>
+    <li>High-resolution PNG, about 3600&times;4500&nbsp;px &mdash; no watermark</li>
+    <li>Print at home or any lab, up to poster size</li>
+    <li>Personal-use license &mdash; not for resale or redistribution</li>
+   </ul></div>
   </div>
  </div>
+ [[RELATEDSECTION]]
  <footer>Each portrait is rendered entirely from the words that belong to its subject. &nbsp;&middot;&nbsp; <a href="/gallery">Browse the whole collection &rarr;</a></footer>
 </div>
 <script>
@@ -1381,6 +1405,8 @@ async function buy(sku,btn){var o=btn.innerHTML;btn.disabled=true;document.getEl
  btn.disabled=false;btn.innerHTML=o;}
 document.getElementById('buyDigital').onclick=function(){this.textContent='Opening secure checkout…';buy('digital',this);};
 document.querySelectorAll('.opt').forEach(function(b){if(!b.disabled)b.onclick=function(){buy(b.dataset.sku,b);};});
+var _main=document.getElementById('mainart');
+document.querySelectorAll('#thumbs .th').forEach(function(b){b.onclick=function(){if(_main)_main.src=b.dataset.src;document.querySelectorAll('#thumbs .th').forEach(function(x){x.classList.remove('on');});b.classList.add('on');};});
 </script></body></html>'''
 
 
@@ -1450,6 +1476,27 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
                    "availability": "https://schema.org/InStock", "url": page_url},
     })
 
+    # Product images (auto-generated from the master) + related portraits (same collection).
+    art_base = f"/static/gallery/art/{item_id}"
+    related_html = ""
+    try:
+        fullcat = _j.loads((STATIC_DIR / "gallery" / "catalog.json").read_text(encoding="utf-8"))
+        for col in fullcat.get("collections", []):
+            col_ids = [i["id"] for sec in col.get("sections", []) for i in sec.get("items", []) if i.get("id")]
+            if item_id in col_ids:
+                k = col_ids.index(item_id)
+                for rid in (col_ids[k + 1:] + col_ids[:k])[:4]:
+                    ri = gallery_catalog.get(rid)
+                    rt = str((ri or {}).get("title") or rid)
+                    related_html += (f'<a class="relcard" href="/gallery/{_h.escape(rid)}">'
+                                     f'<img src="/static/gallery/art/{_h.escape(rid)}.png" alt="{_h.escape(rt)}" loading="lazy">'
+                                     f'<span>{_h.escape(rt)}</span></a>')
+                break
+    except Exception:  # noqa: BLE001
+        related_html = ""
+    related_section = (f'<section class="related"><h2>More from the Sacred Collection</h2>'
+                       f'<div class="relgrid">{related_html}</div></section>') if related_html else ""
+
     html = (_ITEM_PAGE
             .replace("[[TITLE]]", _h.escape(title))
             .replace("[[SUBJECT]]", _h.escape(subject))
@@ -1457,6 +1504,10 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
             .replace("[[URL]]", _h.escape(page_url))
             .replace("[[IMG]]", _h.escape(img_abs))
             .replace("[[ART]]", _h.escape(f"/static/gallery/art/{item_id}.png"))
+            .replace("[[CLOSEUP]]", _h.escape(f"{art_base}-closeup.jpg"))
+            .replace("[[LOUPE]]", _h.escape(f"{art_base}-loupe.jpg"))
+            .replace("[[FRAMED]]", _h.escape(f"{art_base}-framed.jpg"))
+            .replace("[[RELATEDSECTION]]", related_section)
             .replace("[[CAT]]", _h.escape(cat))
             .replace("[[BRAND]]", _h.escape(brand))
             .replace("[[SCRIPTUREBLOCK]]", scripture_block)
