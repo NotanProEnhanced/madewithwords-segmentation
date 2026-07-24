@@ -1302,6 +1302,15 @@ def gallery_page(request: Request) -> HTMLResponse:
             html = html.replace('<nav class="trustnav"', nav + '<nav class="trustnav"', 1)
     except Exception:  # noqa: BLE001
         pass
+    # Structured data: Organization + WebSite entity on the storefront home (the JS grid
+    # itself carries none). Brand-aware, so crawlers/AI resolve the site as an entity.
+    try:
+        _b = _trust_brand(host)
+        _ld = json.dumps({"@context": "https://schema.org",
+                          "@graph": _org_website_schema(_req_base(request), _b)})
+        html = html.replace("</head>", f'<script type="application/ld+json">{_ld}</script></head>', 1)
+    except Exception:  # noqa: BLE001
+        pass
     return HTMLResponse(html)
 
 
