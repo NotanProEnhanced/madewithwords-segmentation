@@ -1651,28 +1651,40 @@ def _ensure_clean_png(job: str, aspect: float = _PRINT_ASPECT) -> Optional[Path]
         return None
 
 
-_BUNDLE_README = (
-    "Your LovedInWords Keepsake — Digital Files\n"
-    "==========================================\n\n"
-    "Thank you. Inside this folder is your portrait, ready for every screen and for print:\n\n"
-    "  • Print (high-resolution).png  — full quality, no watermark. Print it at home or\n"
-    "    at any photo lab, up to poster size.\n"
-    "  • Phone Wallpaper.png          — sized for your phone's lock screen.\n"
-    "  • Desktop Wallpaper.png        — sized for a computer background.\n"
-    "  • Square (for sharing).png     — perfect for sharing with family.\n\n"
-    "To set the phone wallpaper: save the Phone image to your photos, then open\n"
-    "Settings → Wallpaper (iPhone), or long-press the home screen → Wallpapers (Android).\n\n"
-    "With love,\n"
-    "LovedInWords.com  ·  powered by Typortrait\n"
-)
+def _bundle_label(job: str) -> str:
+    """Brand name stamped on the digital-bundle files, from the job's recipe brand.
+    Memorial skins present as 'LovedInWords'; the generic studio as 'Typortrait'."""
+    try:
+        b = str(json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("brand") or "")
+    except Exception:  # noqa: BLE001
+        b = ""
+    return "LovedInWords" if b in ("keepsake", "lovedinwords", "everloved") else "Typortrait"
+
+
+def _bundle_readme(label: str) -> str:
+    signoff = ("With love,\nLovedInWords.com  ·  powered by Typortrait\n"
+               if label == "LovedInWords" else "Thank you,\nTyportrait.com\n")
+    return (
+        f"Your {label} Keepsake — Digital Files\n"
+        "==========================================\n\n"
+        "Thank you. Inside this folder is your portrait, ready for every screen and for print:\n\n"
+        "  • Print (high-resolution).png  — full quality, no watermark. Print it at home or\n"
+        "    at any photo lab, up to poster size.\n"
+        "  • Phone Wallpaper.png          — sized for your phone's lock screen.\n"
+        "  • Desktop Wallpaper.png        — sized for a computer background.\n"
+        "  • Square (for sharing).png     — perfect for sharing.\n\n"
+        "To set the phone wallpaper: save the Phone image to your photos, then open\n"
+        "Settings → Wallpaper (iPhone), or long-press the home screen → Wallpapers (Android).\n\n"
+        + signoff
+    )
 
 
 def _ensure_wallpaper_bundle(job: str) -> Optional[Path]:
     """Build (once) the 'digital everywhere' ZIP for a job: the print master plus
     phone / desktop / square wallpapers and a short read-me. Cached on disk next to
-    the other job artefacts. Returns None if the clean master can't be produced or
-    the bundle can't be built (callers fall back to the single print PNG so a
-    redemption is never broken by this value-add)."""
+    the other job artefacts, brand-labelled from the recipe. Returns None if the
+    clean master can't be produced or the bundle can't be built (callers fall back
+    to the single print PNG so a purchase is never broken by this value-add)."""
     zip_path = PRIVATE_DIR / f"{job}.bundle.zip"
     if zip_path.exists():
         return zip_path
@@ -1682,15 +1694,16 @@ def _ensure_wallpaper_bundle(job: str) -> Optional[Path]:
     try:
         import zipfile
         from .wallpaper import build_wallpaper_set
+        label = _bundle_label(job)
         master_bytes = master.read_bytes()
         wp = build_wallpaper_set(master_bytes)
         tmp = zip_path.with_suffix(".zip.tmp")
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
-            z.writestr("LovedInWords - Print (high-resolution).png", master_bytes)
-            z.writestr("LovedInWords - Phone Wallpaper.png", wp["phone"])
-            z.writestr("LovedInWords - Desktop Wallpaper.png", wp["desktop"])
-            z.writestr("LovedInWords - Square (for sharing).png", wp["square"])
-            z.writestr("Read Me.txt", _BUNDLE_README)
+            z.writestr(f"{label} - Print (high-resolution).png", master_bytes)
+            z.writestr(f"{label} - Phone Wallpaper.png", wp["phone"])
+            z.writestr(f"{label} - Desktop Wallpaper.png", wp["desktop"])
+            z.writestr(f"{label} - Square (for sharing).png", wp["square"])
+            z.writestr("Read Me.txt", _bundle_readme(label))
         tmp.replace(zip_path)
         return zip_path
     except Exception:  # noqa: BLE001 — never break fulfilment; caller falls back to PNG
@@ -1732,6 +1745,14 @@ def download(job: str, session_id: str, fmt: str = "png"):
             paid_marker.write_text(str(int(_time.time())), encoding="utf-8")
         except OSError:
             pass
+    # fmt=zip -> the full "digital everywhere" bundle (portrait + phone/desktop/square
+    # wallpapers + read-me). Same free value-add redeemers get; fmt=png stays the
+    # single print file. Falls back to the PNG if the bundle can't be built.
+    if fmt == "zip":
+        bundle = _ensure_wallpaper_bundle(job)
+        if bundle is not None:
+            return FileResponse(str(bundle), media_type="application/zip",
+                                filename=f"{_bundle_label(job)}-Keepsake.zip")
     return FileResponse(str(path), media_type="image/png", filename=f"typortrait-{job}.png")
 
 
@@ -2992,6 +3013,20 @@ def success(job: str, session_id: str):
         # Memorial card (brand-aware): a free print-ready prayer-card PDF for the
         # memorial skins, generated from the portrait's own words (recipe `text`).
         show_card = _ref in ("lovedinwords", "everloved")
+        # Memorial skins deliver the free "digital everywhere" bundle (portrait +
+        # phone/desktop/square wallpapers); the generic studio keeps the single PNG.
+        if show_card:
+            dl_url = f"/download?job={jq}&fmt=zip&session_id={sq}"
+            dl_fname = "LovedInWords-Keepsake.zip"
+            dl_h1 = "Your keepsake is ready"
+            dl_btn = "Download your keepsake"
+            dl_note = ("Your portrait &mdash; plus phone &amp; desktop wallpapers, so they&rsquo;re "
+                       "with you everywhere. Watermark-free, print-quality.")
+        else:
+            dl_url = f"/download?job={jq}&fmt=zip&session_id={sq}"; dl_fname = "Typortrait-Keepsake.zip"
+            dl_h1 = "Your Typortrait is ready"; dl_btn = "Download your files"
+            dl_note = ("Your portrait &mdash; plus phone &amp; desktop wallpapers, all included. "
+                       "Watermark-free, print-quality.")
         card_html = ""
         card_js = ""
         if show_card:
@@ -3059,11 +3094,11 @@ def success(job: str, session_id: str):
         # user a ready, instant download instead of a hung button.
         inner = (
             '<div class="check">&#10003;</div>'
-            '<h1>Your Typortrait is ready</h1>'
+            '<h1>' + dl_h1 + '</h1>'
             '<p class="sub" id="sub">Preparing your high-resolution file — this can take up to a minute…</p>'
             '<button class="btn" id="dl" disabled><span class="spin"></span>Preparing…</button>'
             '<button class="btn ghost" id="sh">Share</button>'
-            '<p class="note">Watermark-free, print-quality — ready to print or share.</p>'
+            '<p class="note">' + dl_note + '</p>'
             # ---- Phase B: optional reel / tribute-video card (brand-aware) ----
             '<div class="divider"></div>'
             '<h2 class="reel-h">' + reel_title + '</h2>'
@@ -3079,16 +3114,16 @@ def success(job: str, session_id: str):
             '<a class="btn ghost" id="rlGif" download="typortrait-reel.gif">Download GIF</a>'
             '<button class="btn ghost" id="rlSh" style="display:none">' + share_label + '</button>'
             '</div>' + card_html +
-            '<script>(function(){var url=' + _json.dumps(png_url) + ';'
+            '<script>(function(){var url=' + _json.dumps(dl_url) + ';'
             'var job=' + _json.dumps(job) + ',sid=' + _json.dumps(session_id) + ',o=location.origin;'
             'var shareUrl=o+"/p/"+job,prevUrl=o+"/outputs/"+job+"_preview.png";'
             'var btn=document.getElementById("dl"),sub=document.getElementById("sub"),sh=document.getElementById("sh");'
             'function save(b){var a=document.createElement("a");a.href=URL.createObjectURL(b);'
-            'a.download="typortrait.png";document.body.appendChild(a);a.click();a.remove();}'
+            'a.download=' + _json.dumps(dl_fname) + ';document.body.appendChild(a);a.click();a.remove();}'
             'fetch(url).then(function(r){if(!r.ok)throw 0;return r.blob();}).then(function(b){'
-            'btn.disabled=false;btn.innerHTML="Download your portrait";btn.onclick=function(){save(b);};'
+            'btn.disabled=false;btn.innerHTML=' + _json.dumps(dl_btn) + ';btn.onclick=function(){save(b);};'
             'sub.textContent="Done! Tap below to save it.";}).catch(function(){'
-            'btn.disabled=false;btn.innerHTML="Download your portrait";btn.onclick=function(){location.href=url;};'
+            'btn.disabled=false;btn.innerHTML=' + _json.dumps(dl_btn) + ';btn.onclick=function(){location.href=url;};'
             'sub.textContent="Your portrait is ready.";});'
             'sh.onclick=function(){var t="Someone I love, made from our words — with Typortrait.";'
             'var mob=(window.matchMedia&&matchMedia("(pointer:coarse)").matches)||/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");'
