@@ -1071,6 +1071,50 @@ def gallery_page(request: Request) -> HTMLResponse:
     return HTMLResponse(html)
 
 
+def _sitemap_paths(host: str) -> list:
+    """URL paths for the sitemap: the gallery index + every crawlable per-item page.
+    A brand with its own domain (faithinwords) is limited to its allowed collections
+    so the sitemap can never surface a piece that brand hides."""
+    paths = ["/"]
+    if not GALLERY_ENABLED:
+        return paths
+    paths.append("/gallery")
+    allow = {"sacred"} if "faithinwords" in (host or "").lower() else None
+    try:
+        cat = json.loads((STATIC_DIR / "gallery" / "catalog.json").read_text(encoding="utf-8"))
+        for col in cat.get("collections", []):
+            if allow and col.get("id") not in allow:
+                continue
+            for sec in col.get("sections", []):
+                for it in sec.get("items", []):
+                    iid = it.get("id")
+                    if iid:
+                        paths.append(f"/gallery/{iid}")
+    except Exception:  # noqa: BLE001
+        pass
+    return list(dict.fromkeys(paths))   # dedupe, keep order
+
+
+@app.api_route("/sitemap.xml", methods=["GET", "HEAD"])
+def sitemap_xml(request: Request) -> Response:
+    """Crawlable sitemap so Google/Pinterest discover every per-item page (the grid
+    itself is JS-rendered, so bots can't find the links otherwise)."""
+    base = _req_base(request)
+    host = (request.headers.get("host", "") or "").split(":")[0].replace("www.", "").lower()
+    body = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            + "".join(f"  <url><loc>{base}{p}</loc></url>\n" for p in _sitemap_paths(host))
+            + "</urlset>\n")
+    return Response(content=body, media_type="application/xml")
+
+
+@app.api_route("/robots.txt", methods=["GET", "HEAD"])
+def robots_txt(request: Request) -> Response:
+    base = _req_base(request)
+    body = f"User-agent: *\nAllow: /\nSitemap: {base}/sitemap.xml\n"
+    return Response(content=body, media_type="text/plain")
+
+
 @app.post("/gallery/checkout")
 def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("digital"),
                      ref: str = Form("")) -> JSONResponse:
