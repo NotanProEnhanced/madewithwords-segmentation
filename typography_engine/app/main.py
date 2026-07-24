@@ -1702,6 +1702,219 @@ def gallery_download(item: str, session_id: str, fmt: str = "zip"):
     return FileResponse(str(path), media_type="image/png", filename=f"typortrait-{item}.png")
 
 
+# ---------------------------------------------------------------------------
+# Curated collection sets (multi-portrait digital bundles)
+# A "set" is several DIFFERENT gallery portraits sold together as one discounted
+# digital purchase (distinct from products.py bundle_items, which are multiple
+# PRINTS of ONE artwork). Sets are derived from the catalog sections so they stay
+# in sync, gated by the same brand collection allowlist, and fulfilled as a ZIP of
+# every included portrait's high-resolution PNG.
+# ---------------------------------------------------------------------------
+_BUNDLE_TIERS = {2: 4900, 3: 6900, 4: 8500, 5: 9900, 6: 11500, 7: 13500, 8: 14900}
+
+
+def _bundle_price_cents(n: int, complete: bool = False) -> Optional[int]:
+    """Set price for n portraits. Bigger sets are cheaper per portrait; the whole-
+    collection set is the flagship (~$10/portrait). None if too small to bundle."""
+    if n < 2:
+        return None
+    if complete:
+        return max(9900, n * 1000)
+    return _BUNDLE_TIERS.get(n, n * 1700)   # >8 sections: ~$17/portrait, stays below the complete-set rate
+
+
+def _item_digital_cents(it: Optional[dict]) -> int:
+    """A gallery item's individual digital price in cents (per-item override, else
+    the Sacred Collection digital price). Mirrors the item page."""
+    base = products.gallery_price_for(products.get("digital"))[0]
+    try:
+        p = float(str((it or {}).get("price") or "").strip())
+        if p > 0:
+            return int(round(p * 100))
+    except (TypeError, ValueError):
+        pass
+    return base
+
+
+def _build_bundle(col: dict, part: str) -> Optional[dict]:
+    """Resolve a set from a collection + part ('all' = whole collection, else a
+    section id). Only items whose art exists are counted. None if it can't form a
+    sensible set (sections need >=3; the whole-collection set needs >=6)."""
+    cid = str(col.get("id") or "")
+    complete = (part == "all")
+    if complete:
+        items = [i for sec in col.get("sections", []) for i in sec.get("items", [])]
+        ctitle = str(col.get("title") or "Collection")
+        title = f"The Complete {ctitle[4:]}" if ctitle.startswith("The ") else f"Complete {ctitle}"
+        subtitle = "Every portrait in the collection"
+    else:
+        sec = next((s for s in col.get("sections", []) if s.get("id") == part), None)
+        if not sec:
+            return None
+        items = sec.get("items", [])
+        stitle = str(sec.get("title") or "")
+        title = f"{stitle} — Complete Set"
+        subtitle = f"All of {stitle}"
+    ids = [i["id"] for i in items if i.get("id") and gallery_catalog.art_path(i["id"]) is not None]
+    n = len(ids)
+    if (complete and n < 6) or (not complete and n < 3):
+        return None
+    price = _bundle_price_cents(n, complete=complete)
+    if price is None:
+        return None
+    total = sum(_item_digital_cents(gallery_catalog.get(x)) for x in ids)
+    return {"id": f"{cid}--{part}", "collection_id": cid, "part": part, "complete": complete,
+            "title": title, "subtitle": subtitle, "item_ids": ids, "n": n,
+            "price_cents": price, "individual_cents": total, "save_cents": max(0, total - price)}
+
+
+def _gallery_bundles_for(collection_id: str) -> list:
+    """Every set offered for a collection: the whole-collection set (flagship, first)
+    then one set per eligible section, in catalog order."""
+    try:
+        cat = json.loads((STATIC_DIR / "gallery" / "catalog.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return []
+    col = next((c for c in cat.get("collections", []) if c.get("id") == collection_id), None)
+    if not col:
+        return []
+    out = []
+    whole = _build_bundle(col, "all")
+    if whole:
+        out.append(whole)
+    for sec in col.get("sections", []):
+        b = _build_bundle(col, str(sec.get("id") or ""))
+        if b:
+            out.append(b)
+    return out
+
+
+def _gallery_bundle(bundle_id: str) -> Optional[dict]:
+    """Resolve a single set by id ('{collection}--{part}')."""
+    if "--" not in (bundle_id or ""):
+        return None
+    cid, part = bundle_id.split("--", 1)
+    try:
+        cat = json.loads((STATIC_DIR / "gallery" / "catalog.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    col = next((c for c in cat.get("collections", []) if c.get("id") == cid), None)
+    return _build_bundle(col, part) if col else None
+
+
+def _bundle_set_readme(b: dict) -> str:
+    lines = "\n".join(f"  • {str((gallery_catalog.get(x) or {}).get('title') or x)}.png"
+                      for x in b["item_ids"])
+    return (f"{b['title']}\n{'='*len(b['title'])}\n\n"
+            f"Thank you. This set includes {b['n']} high-resolution word portraits, "
+            "each with no watermark — print them at home or at any photo lab, up to poster size:\n\n"
+            f"{lines}\n\n"
+            "Each file is a full-quality PNG. For personal use — not for resale or redistribution.\n\n"
+            "With gratitude,\nFaithInWords.com  ·  powered by Typortrait\n")
+
+
+def _ensure_bundle_zip(bundle_id: str) -> Optional[Path]:
+    """Build (once, cached) the ZIP for a set: every included portrait's high-res PNG
+    + a read-me. None if the set is unknown or no art could be added."""
+    b = _gallery_bundle(bundle_id)
+    if b is None:
+        return None
+    safe = re.sub(r"[^a-z0-9]+", "-", bundle_id.lower()).strip("-")
+    zip_path = PRIVATE_DIR / f"bundleset-{safe}.zip"
+    if zip_path.exists():
+        return zip_path
+    try:
+        import zipfile
+        tmp = zip_path.with_suffix(".zip.tmp")
+        added = 0
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+            for iid in b["item_ids"]:
+                mp = gallery_catalog.master_path(iid)
+                if mp is None:
+                    continue
+                it = gallery_catalog.get(iid) or {}
+                nm = re.sub(r"[^A-Za-z0-9 &-]", "", str(it.get("title") or iid)).strip() or iid
+                z.writestr(f"{nm}.png", Path(mp).read_bytes())
+                added += 1
+            z.writestr("Read Me.txt", _bundle_set_readme(b))
+        if added == 0:
+            tmp.unlink(missing_ok=True)
+            return None
+        tmp.replace(zip_path)
+        return zip_path
+    except Exception:  # noqa: BLE001
+        return None
+
+
+@app.post("/gallery/bundle/checkout")
+def gallery_bundle_checkout(request: Request, bundle: str = Form(...), ref: str = Form("")) -> JSONResponse:
+    """Create a Stripe Checkout session for a curated collection set (digital)."""
+    if not GALLERY_ENABLED:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    b = _gallery_bundle(bundle)
+    if not b:
+        return JSONResponse({"ok": False, "error": "unknown_bundle"}, status_code=404)
+    allow = _brand_collections(request.headers.get("host", ""))
+    if allow is not None and b["collection_id"] not in allow:
+        return JSONResponse({"ok": False, "error": "unknown_bundle"}, status_code=404)
+    if not STRIPE_SECRET_KEY:
+        return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
+    import stripe
+    stripe.api_key = STRIPE_SECRET_KEY
+    src = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40] or "gallery"
+    _bn = _site_brand(host=request.headers.get("host", "")).get("name", "Typortrait")
+    _desc = _stmt_desc(_bn)
+    order_id = uuid.uuid4().hex[:16]
+    line_items = [{
+        "quantity": 1,
+        "price_data": {"currency": CURRENCY, "unit_amount": b["price_cents"],
+                       "product_data": {"name": f"{_bn} — {b['title']} ({b['n']} digital portraits)"}},
+    }]
+    try:
+        session = _create_checkout(_desc,
+            mode="payment", line_items=line_items,
+            metadata={"bundle": b["id"], "sku": "digital", "order_id": order_id, "ref": src},
+            success_url=f"{_req_base(request)}/order/{order_id}?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{_req_base(request)}/collections/{b['collection_id']}?canceled=1",
+        )
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
+    try:
+        orders_db.create_pending(
+            order_id=order_id, stripe_session_id=session.id, job_id=f"bundle:{b['id']}",
+            sku="digital", size=None, variant_id=None, price_cents=b["price_cents"],
+            shipping_cents=0, currency=CURRENCY, ref=src,
+        )
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "order_persist_failed", "detail": str(e)}, status_code=500)
+    return JSONResponse({"ok": True, "url": session.url, "order_id": order_id})
+
+
+@app.get("/gallery/bundle/download")
+def gallery_bundle_download(bundle: str, session_id: str):
+    """Serve a paid collection set as a ZIP after verifying its Stripe session."""
+    if not GALLERY_ENABLED:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    if not STRIPE_SECRET_KEY:
+        return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
+    import stripe
+    stripe.api_key = STRIPE_SECRET_KEY
+    try:
+        sess = stripe.checkout.Session.retrieve(session_id)
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "bad_session"}, status_code=400)
+    paid = getattr(sess, "payment_status", None) == "paid"
+    meta = getattr(sess, "metadata", None)
+    meta_bundle = getattr(meta, "bundle", None) if meta is not None else None
+    if not paid or meta_bundle != bundle:
+        return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
+    z = _ensure_bundle_zip(bundle)
+    if z is None:
+        return JSONResponse({"ok": False, "error": "art_missing"}, status_code=404)
+    safe = re.sub(r"[^A-Za-z0-9]+", "-", bundle).strip("-")
+    return FileResponse(str(z), media_type="application/zip", filename=f"FaithInWords-{safe}.zip")
+
+
 _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>[[TITLE]] &mdash; Sacred Word Portrait &middot; [[BRAND]]</title>
@@ -1977,6 +2190,23 @@ _COLLECTION_PAGE = '''<!doctype html><html lang="en"><head>
  .card .cs{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);text-align:center;margin-top:2px}
  .colnav{border-top:1px solid var(--line);margin-top:40px;padding-top:20px;text-align:center;font-size:14px}
  .colnav a{margin:0 8px;color:var(--navy);text-decoration:none}.colnav b{color:var(--mut);margin-right:6px}
+ .sets{border-top:1px solid var(--line);margin-top:44px;padding-top:30px}
+ .sets .shdr{text-align:center;font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:26px;color:var(--navy);margin:0 0 4px}
+ .sets .ssub{text-align:center;color:var(--mut);margin:0 auto 24px;max-width:44em}
+ .setgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+ @media(max-width:820px){.setgrid{grid-template-columns:repeat(2,1fr)}}
+ @media(max-width:520px){.setgrid{grid-template-columns:1fr}}
+ .setcard{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:18px 18px 20px;display:flex;flex-direction:column;position:relative}
+ .setcard.flag{border-color:var(--gold);box-shadow:0 20px 40px -28px rgba(120,90,20,.5)}
+ .setcard .sname{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:19px;color:var(--ink);margin:0}
+ .setcard .smeta{font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:5px 0 12px}
+ .setcard .sprice{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:27px;color:var(--navy)}
+ .setcard .sprice s{font-size:16px;color:var(--mut);margin-left:8px;font-family:system-ui,sans-serif}
+ .setcard .ssave{display:inline-block;background:#f3ecda;color:#8a6a1e;font-size:12px;font-weight:700;border-radius:999px;padding:3px 10px;margin:8px 0 0;align-self:flex-start}
+ .setcard .sbadge{position:absolute;top:-11px;right:14px;background:var(--gold);color:#fff;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:3px 10px}
+ .setcard .setbuy{margin-top:16px;width:100%;background:var(--navy);color:#fff;border:none;border-radius:10px;padding:12px;font-size:15px;font-weight:600;cursor:pointer}
+ .setcard .setbuy:hover{background:#233a6b}.setcard .setbuy:disabled{opacity:.6;cursor:default}
+ .seterr{color:#b0331f;font-size:13.5px;text-align:center;min-height:18px;margin-top:12px}
  footer{border-top:1px solid var(--line);margin-top:26px;padding:24px 0 60px;color:var(--mut);font-size:13.5px;text-align:center}
  footer nav{margin-bottom:8px}footer nav a{margin:0 6px;color:var(--mut);text-decoration:none}footer nav a:hover{color:var(--navy)}
 </style></head><body>
@@ -1984,9 +2214,24 @@ _COLLECTION_PAGE = '''<!doctype html><html lang="en"><head>
  <header><a class="bm" href="/gallery">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Gallery</a></header>
  <div class="hero"><div class="eyebrow">[[EYEBROW]]</div><h1>[[TITLE]]</h1><p class="lead">[[BLURB]]</p></div>
  [[SECTIONS]]
+ [[BUNDLES]]
  [[COLNAV]]
  <footer><nav>[[TRUSTNAV]]</nav><a href="/gallery">Browse the whole gallery &rarr;</a></footer>
-</div></body></html>'''
+</div>
+<script>
+var BRANDREF=[[BRANDREF]];
+var SREF=((new URLSearchParams(location.search).get('ref')||'').replace(/[^A-Za-z0-9_-]/g,'').slice(0,40))||BRANDREF;
+document.querySelectorAll('.setbuy').forEach(function(b){b.onclick=async function(){
+ var o=b.textContent,e=document.getElementById('seterr');if(e)e.textContent='';
+ b.disabled=true;b.textContent='Opening secure checkout\\u2026';
+ try{var fd=new FormData();fd.append('bundle',b.dataset.bundle);fd.append('ref',SREF);
+  var r=await fetch('/gallery/bundle/checkout',{method:'POST',body:fd});var d=await r.json();
+  if(d.ok&&d.url){location.href=d.url;return;}
+  if(e)e.textContent=(d.error==='payments_unconfigured')?"Checkout isn't available here yet.":"Couldn't start checkout — please try again.";
+ }catch(_){if(e)e.textContent="Couldn't start checkout — please try again.";}
+ b.disabled=false;b.textContent=o;};});
+</script>
+</body></html>'''
 
 
 @app.api_route("/collections/{collection_id}", methods=["GET", "HEAD"], response_class=HTMLResponse)
@@ -2052,6 +2297,28 @@ def collection_page(collection_id: str, request: Request) -> HTMLResponse:
                         for c in others)
         colnav = f'<nav class="colnav"><b>More collections:</b>{links}</nav>'
 
+    # Curated sets for this collection (whole-collection flagship first, then sections).
+    bundles = _gallery_bundles_for(collection_id)
+    bundles_html = ""
+    if bundles:
+        cards = ""
+        for bd in bundles:
+            flag = " flag" if bd["complete"] else ""
+            badge = '<span class="sbadge">Best value</span>' if bd["complete"] else ""
+            strike = (f'<s>${bd["individual_cents"]/100:.0f}</s>'
+                      if bd["save_cents"] > 0 else "")
+            save = (f'<span class="ssave">Save ${bd["save_cents"]/100:.0f}</span>'
+                    if bd["save_cents"] > 0 else "")
+            cards += (f'<div class="setcard{flag}">{badge}'
+                      f'<p class="sname">{_h.escape(bd["title"])}</p>'
+                      f'<div class="smeta">{bd["n"]} digital portraits</div>'
+                      f'<div class="sprice">${bd["price_cents"]/100:.0f} {strike}</div>{save}'
+                      f'<button class="setbuy" data-bundle="{_h.escape(bd["id"])}">Get the set</button></div>')
+        bundles_html = (f'<section class="sets"><h2 class="shdr">Save with a collection set</h2>'
+                        f'<p class="ssub">Buy a whole theme as instant digital downloads &mdash; every portrait, '
+                        f'no watermark, at one discounted price.</p>'
+                        f'<div class="setgrid">{cards}</div><div class="seterr" id="seterr"></div></section>')
+
     desc = (f"{title} — {blurb}" if blurb else title)[:300]
     ld = _j.dumps({
         "@context": "https://schema.org", "@type": "CollectionPage",
@@ -2064,6 +2331,8 @@ def collection_page(collection_id: str, request: Request) -> HTMLResponse:
 
     html = (_COLLECTION_PAGE
             .replace("[[SECTIONS]]", sections_html)
+            .replace("[[BUNDLES]]", bundles_html)
+            .replace("[[BRANDREF]]", _j.dumps("faithinwords" if "faithinwords" in host else "gallery"))
             .replace("[[COLNAV]]", colnav)
             .replace("[[TRUSTNAV]]", _trust_nav())
             .replace("[[TITLE]]", _h.escape(title))
@@ -3469,8 +3738,10 @@ def order_status(request: Request, order_id: str, session_id: Optional[str] = No
     # Gallery orders carry a "gallery:<item>" sentinel job_id (fixed art, no recipe),
     # so the personalized download/reel/'make another' don't apply — swap them out.
     is_gallery = str(o["job_id"]).startswith("gallery:")
+    is_bundle = str(o["job_id"]).startswith("bundle:")            # curated collection set (digital ZIP)
     gallery_item = str(o["job_id"]).split(":", 1)[1] if is_gallery else ""
-    if is_gallery:
+    bundle_id = str(o["job_id"]).split(":", 1)[1] if is_bundle else ""
+    if is_gallery or is_bundle:
         studio_href, studio_label = ("/gallery", "Browse the gallery")
     else:
         studio_href, studio_label = _make_another(o["job_id"])   # 'make another' keeps the buyer's brand + name
@@ -3492,9 +3763,17 @@ def order_status(request: Request, order_id: str, session_id: Optional[str] = No
 
     download_html = ""
     if o["status"] in ("paid", "fulfilling", "shipped", "delivered") and session_id:
-        dl = (f'/gallery/download?item={gallery_item}&session_id={session_id}' if is_gallery
-              else f'/download?job={o["job_id"]}&fmt=png&session_id={session_id}')
-        if o["sku"] == "digital":
+        if is_bundle:
+            dl = f'/gallery/bundle/download?bundle={bundle_id}&session_id={session_id}'
+        elif is_gallery:
+            dl = f'/gallery/download?item={gallery_item}&session_id={session_id}'
+        else:
+            dl = f'/download?job={o["job_id"]}&fmt=png&session_id={session_id}'
+        if is_bundle:
+            download_html = (f'<p><a class="btn" href="{dl}">Download your collection (ZIP)</a></p>'
+                             '<p class="muted" style="margin-top:6px">Every portrait in the set, '
+                             'high-resolution and watermark-free.</p>')
+        elif o["sku"] == "digital":
             download_html = f'<p><a class="btn" href="{dl}">Download your PNG</a></p>'
         else:
             # Every print also comes with the high-res digital file — the same
