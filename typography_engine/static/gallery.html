@@ -80,6 +80,7 @@
 <body>
 <div class="wrap">
   <header>
+    <div class="wordmark" id="brandWordmark" style="display:none;font:700 13px/1 system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--gold,#b0863a);margin:0 0 10px">FaithInWords</div>
     <h1 id="brandTitle">The Typortrait Gallery</h1>
     <p class="lead" id="brandLead">Sacred figures and beloved moments, each portrait woven entirely from the words that belong to it.</p>
     <input id="search" placeholder="Search the collection…" autocomplete="off"
@@ -125,14 +126,19 @@ let CAT=null, PRODUCTS=null, DIGITAL_CENTS=1499, curCol=0, curSec=0, curItem=nul
 // must never surface secular pieces (Santa lives in the christmas collection).
 const BRANDS = {
   typortrait: {
+    wordmark: "", docTitle: "The Typortrait Gallery",
     title: "The Typortrait Gallery",
     lead: "Sacred figures and beloved moments, each portrait woven entirely from the words that belong to it.",
     showTool: true, theme: null,          // no allowlist -> every collection
   },
   faithinwords: {
-    title: "Faith in Words",
-    lead: "Sacred art woven from scripture — the Savior, His Mother, and the saints, each portrait made from the very words that belong to them.",
+    // FaithInWords leads; Typortrait is demoted to a quiet "powered by" in the footer.
+    wordmark: "FaithInWords",
+    docTitle: "FaithInWords — Christian Portraits Created From Words of Faith",
+    title: "Christian Portraits Created Entirely From Words of Faith",
+    lead: "Discover Jesus Christ, the Blessed Virgin Mary, angels, apostles and beloved saints — each portrait intricately composed from meaningful words of Scripture, devotion and tradition.",
     foot: "Every piece is rendered from public-domain scripture and verse.",
+    poweredBy: "Powered by Typortrait",
     showTool: false,
     collections: ["sacred"],              // devotional only -- never the secular christmas set
     theme: { "--navy":"#2f2b57", "--gold":"#b0863a", "--rose":"#b0863a",
@@ -147,12 +153,19 @@ function currentBrand(){
 }
 function applyBrand(){
   const b=BRANDS[currentBrand()]||BRANDS.typortrait;
-  document.title=b.title;
+  document.title=b.docTitle||b.title;
+  const wm=$("#brandWordmark"); if(wm){ wm.textContent=b.wordmark||""; wm.style.display=b.wordmark?"block":"none"; }
   const t=$("#brandTitle"); if(t) t.textContent=b.title;
   const l=$("#brandLead");  if(l) l.textContent=b.lead;
   if(b.theme){ for(const k in b.theme) document.documentElement.style.setProperty(k,b.theme[k]); }
   const fn=$("#footNote"); if(fn && b.foot) fn.textContent=b.foot;
-  const tl=$("#toolLink"); if(tl && b.showTool===false) tl.style.display="none";  // gate the generator
+  // Gate the generator: a gallery-only brand hides "make your own"; if it names a
+  // poweredBy, show that quietly instead so Typortrait is credited but demoted.
+  const tl=$("#toolLink");
+  if(tl && b.showTool===false){
+    if(b.poweredBy){ tl.innerHTML=' &nbsp;·&nbsp; <span style="opacity:.7">'+b.poweredBy+'</span>'; }
+    else { tl.style.display="none"; }
+  }
 }
 
 function money(c){ return "$"+(c/100).toFixed(2); }

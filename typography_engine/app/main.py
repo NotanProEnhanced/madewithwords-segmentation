@@ -1028,15 +1028,47 @@ def pricing() -> JSONResponse:
 
 
 @app.api_route("/gallery", methods=["GET", "HEAD"], response_class=HTMLResponse)
-def gallery_page() -> HTMLResponse:
-    """The storefront gallery of pre-made typortraits (Bible Collection, Holidays,
-    etc.). Static page; the catalog + art live under /static/gallery/."""
+def gallery_page(request: Request) -> HTMLResponse:
+    """The storefront gallery of pre-made typortraits. Static shell; the catalog + art
+    live under /static/gallery/. We inject brand-correct title / OG / H1 / lead for the
+    request host, because crawlers and social scrapers don't run the client brand JS —
+    so they'd otherwise see the Typortrait defaults on faithinwords.com."""
     if not GALLERY_ENABLED:
         raise HTTPException(status_code=404, detail="not found")
     page = STATIC_DIR / "gallery.html"
     if not page.exists():
         raise HTTPException(status_code=404, detail="gallery not found")
-    return HTMLResponse(page.read_text(encoding="utf-8"))
+    html = page.read_text(encoding="utf-8")
+    host = (request.headers.get("host", "") or "").split(":")[0].replace("www.", "").lower()
+    if "faithinwords" in host:
+        doctitle = "FaithInWords — Christian Portraits Created From Words of Faith"
+        headline = "Christian Portraits Created Entirely From Words of Faith"
+        lead = ("Discover Jesus Christ, the Blessed Virgin Mary, angels, apostles and beloved "
+                "saints — each portrait intricately composed from meaningful words of Scripture, "
+                "devotion and tradition.")
+        desc = ("Sacred Christian portraits created entirely from words of Scripture and faith — "
+                "digital downloads and fine-art prints of Jesus, Mary, angels and saints.")
+        img = "https://faithinwords.com/static/gallery/art/jesus-good-shepherd.png"
+        og = (f'<meta name="description" content="{desc}">'
+              f'<meta property="og:type" content="website">'
+              f'<meta property="og:site_name" content="FaithInWords">'
+              f'<meta property="og:title" content="{headline}">'
+              f'<meta property="og:description" content="{desc}">'
+              f'<meta property="og:url" content="https://faithinwords.com/gallery">'
+              f'<meta property="og:image" content="{img}">'
+              f'<meta name="twitter:card" content="summary_large_image">'
+              f'<meta name="twitter:title" content="{headline}">'
+              f'<meta name="twitter:description" content="{desc}">'
+              f'<meta name="twitter:image" content="{img}">')
+        html = html.replace("<title>The Typortrait Gallery</title>", f"<title>{doctitle}</title>{og}", 1)
+        html = html.replace('style="display:none;font:700 13px', 'style="display:block;font:700 13px', 1)
+        html = html.replace('<h1 id="brandTitle">The Typortrait Gallery</h1>',
+                            f'<h1 id="brandTitle">{headline}</h1>', 1)
+        html = html.replace("Sacred figures and beloved moments, each portrait woven entirely from the words that belong to it.",
+                            lead, 1)
+        html = html.replace('<a href="/static/index.html">Make your own from a photo →</a>',
+                            '<span style="opacity:.7">Powered by Typortrait</span>', 1)
+    return HTMLResponse(html)
 
 
 @app.post("/gallery/checkout")
