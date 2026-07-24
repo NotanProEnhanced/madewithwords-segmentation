@@ -188,6 +188,7 @@ def resolve_variant_id(product: Product, size: Optional[str]) -> Optional[int]:
 # price to absorb the 20-30% partner commission; SHIPPING is unchanged. SKUs not
 # listed keep their standard price. Bundles are memorial-only -> priced on the Product.
 _MEMORIAL_PRICE: Dict[str, int] = {
+    "digital":      2900,   # match EverLoved's $29 digital (and the gallery) -- do NOT undercut the partner
     "framed_16x20": 8900,
     "canvas_16x20": 6400,
     "poster_18x24": 3400,
