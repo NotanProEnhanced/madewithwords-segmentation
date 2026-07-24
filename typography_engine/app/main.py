@@ -1286,6 +1286,48 @@ def gallery_page(request: Request) -> HTMLResponse:
                             lead, 1)
         html = html.replace('<a href="/static/index.html">Make your own from a photo →</a>',
                             '<span style="opacity:.7">Powered by Typortrait</span>', 1)
+        # Marketing hero/story band above the grid: explains the "made of words" concept,
+        # the value, and how it works — so the storefront home isn't a bare product grid
+        # (helps conversion + gives AI/search real content). Server-rendered => crawlable.
+        _band = (
+            '<style>'
+            '.fiwhero{max-width:1000px;margin:8px auto 8px}'
+            '.fiwhero .fh-top{display:grid;grid-template-columns:1.12fr .88fr;gap:34px;align-items:center}'
+            '@media(max-width:760px){.fiwhero .fh-top{grid-template-columns:1fr;gap:18px}}'
+            '.fiwhero .fh-eyebrow{font:700 12px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#b0863a;margin:0 0 8px}'
+            '.fiwhero .fh-h{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(23px,3.1vw,31px);color:#2f2b57;margin:0 0 10px;line-height:1.16;text-align:left}'
+            '.fiwhero .fh-p{font-size:16px;line-height:1.62;color:#4a4638;margin:0 0 13px;text-align:left}'
+            '.fiwhero .fh-trust{font-size:13.5px;color:#7a7264;text-align:left}.fiwhero .fh-trust b{color:#2f2b57}'
+            '.fiwhero .fh-art img{width:100%;border-radius:12px;display:block;box-shadow:0 24px 44px -26px rgba(30,22,14,.5)}'
+            '.fiwhero .fh-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:24px 0 4px;border-top:1px solid #e6ded0;padding-top:18px}'
+            '@media(max-width:760px){.fiwhero .fh-steps{grid-template-columns:1fr;gap:12px}}'
+            '.fiwhero .fh-step b{display:block;font-family:"Palatino Linotype",Palatino,Georgia,serif;color:#2f2b57;font-size:15.5px;margin-bottom:3px}'
+            '.fiwhero .fh-step span{font-size:14px;color:#7a7264;line-height:1.5}'
+            '</style>'
+            '<section class="fiwhero">'
+            '<div class="fh-top">'
+            '<div class="fh-copy">'
+            '<div class="fh-eyebrow">Sacred Word Art</div>'
+            '<h2 class="fh-h">A face, revealed in the words that belong to it.</h2>'
+            '<p class="fh-p">Every portrait in the Sacred Collection is composed entirely of real, legible '
+            'words &mdash; the names, titles and Scripture of its subject. Step close and the likeness dissolves '
+            'into language; step back, and the face returns. Each piece is paired with a verse chosen for its subject.</p>'
+            '<div class="fh-trust"><b>From $29</b> &middot; No watermark &middot; Free phone &amp; desktop wallpapers '
+            '&middot; Archival prints &amp; framed</div>'
+            '</div>'
+            '<figure class="fh-art"><img src="/static/gallery/art/jesus-good-shepherd-loupe.jpg" '
+            'alt="A sacred word portrait magnified to reveal it is made of words" loading="lazy"></figure>'
+            '</div>'
+            '<div class="fh-steps">'
+            '<div class="fh-step"><b>1&nbsp;&middot;&nbsp;Choose a portrait</b><span>Jesus, the Blessed Mother, '
+            'angels, apostles and saints &mdash; browse the collection below.</span></div>'
+            '<div class="fh-step"><b>2&nbsp;&middot;&nbsp;Buy the download</b><span>A high-resolution file with no '
+            'watermark, plus free phone &amp; desktop wallpapers.</span></div>'
+            '<div class="fh-step"><b>3&nbsp;&middot;&nbsp;Print it anywhere</b><span>Print at home, or order '
+            'archival fine-art prints and framed keepsakes.</span></div>'
+            '</div>'
+            '</section>')
+        html = html.replace('<div class="tabs" id="tabs">', _band + '<div class="tabs" id="tabs">', 1)
     # Crawlable internal links to the collection landing pages (the grid itself is JS,
     # so bots can't follow the tabs). Brand-filtered, injected just above the trust nav.
     try:
