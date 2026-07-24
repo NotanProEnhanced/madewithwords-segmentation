@@ -1068,6 +1068,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
     src = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40] or "gallery"
     title = str(it.get("title") or "Typortrait")[:120]
     _bn = _site_brand(host=request.headers.get("host", "")).get("name", "Typortrait")   # brand for the Stripe line item
+    _desc = _stmt_desc(_bn)                                                              # brand card statement descriptor
     # Per-item digital price: the catalog item may carry a `price` (in dollars); use
     # it when present, else the gallery digital price. The value comes from the trusted
     # catalog on disk -- never from the request -- so a buyer cannot set their own price.
@@ -1082,7 +1083,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
     # --- Digital download ----------------------------------------------------
     if not product.physical:
         try:
-            session = stripe.checkout.Session.create(
+            session = _create_checkout(_desc,
                 mode="payment",
                 line_items=[{
                     "quantity": 1,
@@ -1125,7 +1126,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
                            "product_data": {"name": "Shipping (USA)"}},
         })
     try:
-        session = stripe.checkout.Session.create(
+        session = _create_checkout(_desc,
             mode="payment",
             line_items=line_items,
             metadata={"gallery_item": item, "sku": sku, "order_id": order_id, "ref": src},
@@ -1467,12 +1468,13 @@ def checkout(
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
     brand = _checkout_brand(ref)   # per-brand statement descriptor + line-item name
+    _desc = _stmt_desc(brand["name"])
     eff_price, eff_ship = products.price_for(product, products.is_memorial_channel(ref))   # memorial/EverLoved channel = commission-adjusted price
 
     # --- Digital download: unchanged from the live synchronous-verify flow ----
     if not product.physical:
         try:
-            session = stripe.checkout.Session.create(
+            session = _create_checkout(_desc,
                 mode="payment",
                 line_items=[{
                     "quantity": 1,
@@ -1523,7 +1525,7 @@ def checkout(
             },
         })
     try:
-        session = stripe.checkout.Session.create(
+        session = _create_checkout(_desc,
             mode="payment",
             line_items=line_items,
             metadata={"job": job, "sku": sku, "size": size or "", "order_id": order_id, "fmt": ext, "ref": ref},
@@ -2441,6 +2443,27 @@ def _recipe_brand(job: str) -> str:
         return str(json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("brand") or "")
     except Exception:  # noqa: BLE001
         return ""
+
+
+def _stmt_desc(brand_name: str) -> str:
+    """A Stripe card statement descriptor from a brand name (<=22 chars, letters/
+    digits/spaces) so a buyer's card statement shows the brand they bought from."""
+    d = re.sub(r"[^A-Za-z0-9 ]", "", (brand_name or "Typortrait")).strip().upper()
+    return d[:22] or "TYPORTRAIT"
+
+
+def _create_checkout(desc: str, **kwargs):
+    """Create a Stripe Checkout Session, tagging it with a brand statement descriptor
+    when the account permits it. If the account restricts custom descriptors, retry
+    once without so a purchase is never broken by this nicety."""
+    import stripe
+    if desc:
+        try:
+            return stripe.checkout.Session.create(
+                payment_intent_data={"statement_descriptor": desc}, **kwargs)
+        except stripe.error.InvalidRequestError:
+            pass
+    return stripe.checkout.Session.create(**kwargs)
 
 
 def _make_another(job: str) -> tuple:
