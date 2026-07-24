@@ -224,12 +224,170 @@ def _start_admin_services() -> None:
     admin_mod.start_scanner()
 
 
+def _liw_landing_html(request: Request) -> str:
+    """The Loved in Words marketing landing page (memorial brand). Grief-sensitive
+    hero + before/after + how-it-works + keepsake, driving to the studio ('Create a
+    tribute') and to /redeem ('Have a gift code?'). Server-rendered so it's crawlable
+    and social-shareable; images are the approved EverLoved demo pair."""
+    b = _trust_brand(request.headers.get("host", "") or "lovedinwords")
+    name = b["name"]                                   # "Loved in Words"
+    base = _req_base(request)
+    og = PUBLIC_BASE_URL.rstrip("/") or base
+    create = "/static/index.html?brand=lovedinwords"
+    hero_img = "/static/lovedinwords/keepsake-scene.jpg"
+    return f'''<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{name} &mdash; Memorial portraits made from the words you loved them by</title>
+<meta name="description" content="{name} turns a favourite photograph into a portrait made entirely of the words that describe someone you love — a lasting memorial keepsake. Digital download, archival prints and framed pieces.">
+<link rel="canonical" href="{base}/">
+{_fav_links(b["fav"])}
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="{name}">
+<meta property="og:title" content="{name} — remembered in their own words">
+<meta property="og:description" content="A favourite photograph, made into a portrait woven from the words that describe someone you love.">
+<meta property="og:image" content="{og}{hero_img}">
+<meta property="og:url" content="{base}/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{name} — remembered in their own words">
+<meta name="twitter:image" content="{og}{hero_img}">
+<style>
+ :root{{--bg:#f7f4ef;--card:#fff;--ink:#22283a;--mut:#6f6a5f;--line:#e6ddcf;--navy:#1b2340;--rose:#b25b56;--gold:#a9812f}}
+ *{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}}
+ .serif{{font-family:"Palatino Linotype","Book Antiqua",Palatino,Georgia,serif}}
+ a{{color:var(--navy)}}.wrap{{max-width:1120px;margin:0 auto;padding:0 22px}}
+ header{{display:flex;align-items:center;justify-content:space-between;padding:18px 0}}
+ .brand{{display:flex;align-items:center;gap:9px;text-decoration:none}}
+ .brand .nm{{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:21px;font-weight:600;color:var(--navy)}}
+ header nav a{{font-size:14px;color:var(--mut);text-decoration:none;margin-left:18px}}
+ header nav a:hover{{color:var(--navy)}}
+ .hero{{display:grid;grid-template-columns:1.05fr .95fr;gap:46px;align-items:center;padding:26px 0 44px}}
+ @media(max-width:820px){{.hero{{grid-template-columns:1fr;gap:26px;padding:8px 0 30px}}}}
+ .eyebrow{{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600}}
+ .hero h1{{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(32px,4.8vw,50px);line-height:1.08;margin:14px 0 14px;text-wrap:balance}}
+ .hero p.lead{{font-size:18.5px;line-height:1.6;color:#4a4638;margin:0 0 26px;max-width:33em}}
+ .cta{{display:flex;flex-wrap:wrap;gap:12px;align-items:center}}
+ .btn{{display:inline-block;background:var(--navy);color:#fff;text-decoration:none;border-radius:12px;padding:15px 26px;font-size:16px;font-weight:600}}
+ .btn:hover{{background:#26315c}}
+ .btn2{{display:inline-block;color:var(--navy);text-decoration:none;border:1px solid var(--line);border-radius:12px;padding:14px 22px;font-size:15px;font-weight:600;background:#fff}}
+ .btn2:hover{{border-color:var(--navy)}}
+ .reassure{{margin:16px 0 0;font-size:13.5px;color:var(--mut)}}
+ .heroart{{margin:0}}.heroart img{{width:100%;border-radius:12px;display:block;box-shadow:0 40px 70px -34px rgba(30,22,14,.55)}}
+ section.band{{border-top:1px solid var(--line);padding:44px 0}}
+ h2.sec{{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(24px,3.2vw,32px);text-align:center;margin:0 0 8px;color:var(--navy)}}
+ p.seclead{{text-align:center;color:var(--mut);max-width:44em;margin:0 auto 30px;font-size:16.5px}}
+ .ba{{display:grid;grid-template-columns:1fr auto 1fr;gap:22px;align-items:center;max-width:760px;margin:0 auto}}
+ @media(max-width:640px){{.ba{{grid-template-columns:1fr;gap:14px}}.ba .arrow{{transform:rotate(90deg)}}}}
+ .ba figure{{margin:0;text-align:center}}.ba img{{width:100%;border-radius:10px;display:block;box-shadow:0 24px 44px -26px rgba(30,22,14,.5)}}
+ .ba figcaption{{font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin-top:10px}}
+ .ba .arrow{{font-size:26px;color:var(--rose)}}
+ .ba-note{{text-align:center;color:#4a4638;font-style:italic;max-width:40em;margin:24px auto 0;font-size:17px}}
+ .steps{{display:grid;grid-template-columns:repeat(3,1fr);gap:26px;max-width:940px;margin:0 auto}}
+ @media(max-width:720px){{.steps{{grid-template-columns:1fr;gap:18px}}}}
+ .step{{text-align:center}}.step .n{{width:38px;height:38px;border-radius:50%;background:var(--navy);color:#fff;
+  font-weight:700;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:16px}}
+ .step h3{{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:20px;margin:0 0 6px;color:var(--ink)}}
+ .step p{{color:var(--mut);font-size:15px;margin:0}}
+ .keep{{display:grid;grid-template-columns:.9fr 1.1fr;gap:44px;align-items:center;max-width:1000px;margin:0 auto}}
+ @media(max-width:820px){{.keep{{grid-template-columns:1fr;gap:24px}}}}
+ .keep img{{width:100%;border-radius:12px;display:block;box-shadow:0 34px 60px -32px rgba(30,22,14,.5)}}
+ .keep ul{{list-style:none;padding:0;margin:14px 0 0}}.keep li{{padding:9px 0 9px 28px;position:relative;font-size:16.5px;border-bottom:1px solid var(--line)}}
+ .keep li:before{{content:"\\2665";position:absolute;left:0;color:var(--rose)}}
+ .closing{{text-align:center;padding:52px 0}}
+ .closing h2{{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(26px,3.4vw,36px);margin:0 0 10px;color:var(--navy)}}
+ .closing p{{color:var(--mut);margin:0 0 24px}}.closing .cta{{justify-content:center}}
+ footer{{border-top:1px solid var(--line);padding:26px 0 64px;color:var(--mut);font-size:13.5px;text-align:center}}
+ footer nav{{margin-bottom:8px}}footer nav a{{margin:0 6px;color:var(--mut);text-decoration:none}}footer nav a:hover{{color:var(--navy)}}
+ footer .op{{margin-top:8px;font-size:12.5px;opacity:.85}}
+</style></head><body>
+<div class="wrap">
+ <header>
+  <a class="brand" href="/">
+   <svg viewBox="0 0 64 64" width="26" height="26" fill="none" aria-hidden="true"><path d="M32 54s-1.2-1-3.3-2.7C16.8 41.7 8 34 8 23.8 8 16.6 13.4 11 20.4 11c4.3 0 8.5 2.2 11.6 6.1C35.1 13.2 39.3 11 43.6 11 50.6 11 56 16.6 56 23.8 56 34 47.2 41.7 35.3 51.3 33.2 53 32 54 32 54z" stroke="#b25b56" stroke-width="3.3" stroke-linejoin="round"/></svg>
+   <span class="nm">{name}</span>
+  </a>
+  <nav><a href="/about">About</a><a href="/faq">FAQ</a><a href="/redeem">Redeem a code</a></nav>
+ </header>
+
+ <div class="hero">
+  <div class="herotext">
+   <div class="eyebrow">A Lasting Tribute</div>
+   <h1>Someone you love, remembered in their own words.</h1>
+   <p class="lead">{name} turns a favourite photograph into a portrait made entirely of the words that
+    describe them &mdash; their name, the roles they filled, the qualities you&rsquo;ll always carry.</p>
+   <div class="cta">
+    <a class="btn" href="{create}">Create a tribute</a>
+    <a class="btn2" href="/redeem">Have a gift code? Redeem it</a>
+   </div>
+   <p class="reassure">Free preview &middot; Private &amp; secure &middot; No payment until you love the result</p>
+  </div>
+  <figure class="heroart"><img src="{hero_img}" alt="A memorial word portrait framed on a dresser"></figure>
+ </div>
+</div>
+
+<section class="band"><div class="wrap">
+ <h2 class="sec">From a photograph, to a portrait of who they were</h2>
+ <div class="ba">
+  <figure><img src="/static/lovedinwords/before.jpg" alt="A favourite photograph of a beloved grandmother"><figcaption>A favourite photograph</figcaption></figure>
+  <div class="arrow" aria-hidden="true">&rarr;</div>
+  <figure><img src="/static/lovedinwords/after.jpg" alt="The same face rendered entirely from words"><figcaption>Woven from words</figcaption></figure>
+ </div>
+ <p class="ba-note">Step close and the likeness dissolves into words &mdash; <i>grandmother, wise, gentle, beloved</i>.
+  Step back, and their face returns.</p>
+</div></section>
+
+<section class="band"><div class="wrap">
+ <h2 class="sec">How it works</h2>
+ <div class="steps">
+  <div class="step"><div class="n">1</div><h3>Share a photo</h3><p>A clear, front-facing photo of the one person you&rsquo;re remembering.</p></div>
+  <div class="step"><div class="n">2</div><h3>Choose the words</h3><p>Their name, roles and the qualities you loved. Have an obituary or eulogy? Paste it and we&rsquo;ll gently draw the words from it.</p></div>
+  <div class="step"><div class="n">3</div><h3>Receive your keepsake</h3><p>A high-resolution download with matching phone &amp; desktop wallpapers, free &mdash; plus archival prints and framed keepsakes.</p></div>
+ </div>
+</div></section>
+
+<section class="band"><div class="wrap">
+ <div class="keep">
+  <img src="{hero_img}" alt="A framed memorial word portrait at home">
+  <div>
+   <h2 class="sec" style="text-align:left">More than a picture &mdash; a keepsake to keep</h2>
+   <p class="serif" style="color:var(--mut);margin:0;font-size:17px">Something to hold, to hang, and to pass on.</p>
+   <ul>
+    <li>High-resolution digital download &mdash; no watermark</li>
+    <li>Matching phone &amp; desktop wallpapers, included free</li>
+    <li>Archival fine-art prints and framed keepsakes, delivered</li>
+    <li>Two styles &mdash; luminous colour or timeless monochrome</li>
+   </ul>
+  </div>
+ </div>
+</div></section>
+
+<section class="band"><div class="wrap closing">
+ <h2>Begin a tribute</h2>
+ <p>It takes only a photo and a few words. See a free preview before you decide.</p>
+ <div class="cta">
+  <a class="btn" href="{create}">Create a tribute</a>
+  <a class="btn2" href="/redeem">Redeem a gift code</a>
+ </div>
+</div></section>
+
+<footer><div class="wrap">
+ <nav>{_trust_nav()}</nav>
+ <div>&copy; 2026 {name}. Made with care.</div>
+ <div class="op">{name} is a brand operated by Typortrait.</div>
+</div></footer>
+</body></html>'''
+
+
 @app.get("/")
-def index(request: Request) -> RedirectResponse:
-    # This deployment (VPS / app.typortrait.com) is the studio app. The marketing
-    # landing page is served separately from a static host (typortrait.com).
-    # Forward the query string so the pretty URL (e.g. /?brand=lovedinwords)
-    # carries the brand through to the studio file instead of dropping it.
+def index(request: Request) -> Response:
+    # This deployment is the studio app; Typortrait's marketing lives on a separate
+    # static host. The memorial brand (Loved in Words) has NO separate host, so we
+    # serve its landing page here at the root; every other brand still forwards into
+    # the studio. Redemption links go straight to /redeem, bypassing this page.
+    host = (request.headers.get("host", "") or "").lower()
+    brand_q = (request.query_params.get("brand", "") or "").lower()
+    if "lovedinwords" in host or brand_q == "lovedinwords":
+        return HTMLResponse(_liw_landing_html(request))
     q = request.url.query
     return RedirectResponse(url="/static/index.html" + (f"?{q}" if q else ""))
 
