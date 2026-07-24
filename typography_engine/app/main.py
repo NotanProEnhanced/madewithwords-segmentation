@@ -1310,9 +1310,9 @@ def robots_txt(request: Request) -> Response:
 # host. Standard commerce trust surface — cross-linked in every footer, listed in
 # the sitemap — so shoppers (and Google) find the policies a real store must show.
 # ---------------------------------------------------------------------------
-_TRUST_SLUGS = ("about", "faq", "refunds", "terms", "privacy")
-_TRUST_LABELS = {"about": "About", "faq": "FAQ", "refunds": "Returns &amp; Refunds",
-                 "terms": "Terms", "privacy": "Privacy"}
+_TRUST_SLUGS = ("about", "faq", "partners", "refunds", "terms", "privacy")
+_TRUST_LABELS = {"about": "About", "faq": "FAQ", "partners": "Partners",
+                 "refunds": "Returns &amp; Refunds", "terms": "Terms", "privacy": "Privacy"}
 
 
 def _trust_brand(host: str = "") -> dict:
@@ -1476,6 +1476,34 @@ def _trust_doc(slug: str, b: dict) -> Optional[dict]:
                 "meta": f"Answers about {name} — what you receive, prints, delivery, wallpapers, returns and privacy.",
                 "body": body}
 
+    if slug == "partners":
+        partners_email = f"partners@{b['domain']}"
+        gift = ("memorial keepsakes" if kind == "memorial"
+                else "devotional gifts" if kind == "faith" else "word portraits")
+        body = f'''
+ <p class="lead">{name} portraits are made to be shared. Whether you have an audience, a storefront or a
+  platform of your own, there&rsquo;s a way to grow with us.</p>
+ <h2>Affiliate &amp; referral partners</h2>
+ <p>Have an audience that would love these {gift} &mdash; a blog, a Pinterest or Instagram following, a
+  newsletter, an online community? Share your personal referral link and earn a commission on every order it
+  brings in. <b>Up to 30%</b>, tracked automatically to your link. Digital downloads, prints, framed keepsakes
+  and multi-portrait collection sets all count.</p>
+ <p><a href="/partners/affiliate-program.pdf"><b>Download the affiliate one-pager (PDF)</b> &rarr;</a></p>
+ <h2>Wholesale &amp; gift shops</h2>
+ <p>Bookstores, gift shops, fundraisers and event organisers can offer our framed portraits at wholesale,
+  drop-shipped directly to the customer &mdash; no inventory to carry. Ask us for current wholesale pricing.</p>
+ <h2>Marketplaces &amp; platforms</h2>
+ <p>Run a platform your members would value this on? We offer white-label and prepaid gift-code fulfilment with
+  per-referral revenue share &mdash; the same model that powers our marketplace partnerships, ready to plug into
+  your checkout or memorial pages.</p>
+ <h2>Let&rsquo;s talk</h2>
+ <p>Tell us a little about your audience or business and we&rsquo;ll set you up. Email
+  <a href="mailto:{partners_email}">{partners_email}</a> &mdash; a real person will reply, usually within one
+  business day.</p>'''
+        return {"pt": "Partners", "eyebrow": "Partner Program", "h1": f"Partner with {name}",
+                "meta": f"Partner with {name} — affiliate & referral commissions, wholesale prints, and white-label / marketplace fulfilment.",
+                "body": body}
+
     return None
 
 
@@ -1510,6 +1538,93 @@ def about_page(request: Request) -> HTMLResponse:
 @app.api_route("/faq", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def faq_page(request: Request) -> HTMLResponse:
     return _render_trust("faq", request)
+
+
+@app.api_route("/partners", methods=["GET", "HEAD"], response_class=HTMLResponse)
+def partners_page(request: Request) -> HTMLResponse:
+    return _render_trust("partners", request)
+
+
+def _affiliate_pdf_bytes(b: dict) -> bytes:
+    """A one-page, brand-aware affiliate/referral program sheet (PDF, reportlab)."""
+    from io import BytesIO
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+
+    name, domain = b["name"], b["domain"]
+    partners_email = f"partners@{domain}"
+    NAVY = colors.HexColor("#1a2340")
+    GOLD = colors.HexColor("#a9812f")
+    LINE = colors.HexColor("#e6ddcf")
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter, topMargin=0.72 * inch, bottomMargin=0.6 * inch,
+                            leftMargin=0.85 * inch, rightMargin=0.85 * inch,
+                            title=f"{name} — Affiliate & Referral Program")
+    ss = getSampleStyleSheet()
+    EY = ParagraphStyle("EY", parent=ss["Normal"], fontSize=9.5, textColor=GOLD,
+                        fontName="Helvetica-Bold", leading=12, spaceAfter=3)
+    H1 = ParagraphStyle("H1", parent=ss["Title"], fontSize=22, leading=26, textColor=NAVY,
+                        alignment=TA_LEFT, fontName="Helvetica-Bold", spaceAfter=2)
+    H2 = ParagraphStyle("H2", parent=ss["Normal"], fontSize=12.5, leading=15, textColor=NAVY,
+                        fontName="Helvetica-Bold", spaceBefore=13, spaceAfter=3)
+    BODY = ParagraphStyle("BODY", parent=ss["Normal"], fontSize=10.5, leading=15,
+                          textColor=colors.HexColor("#2b2b33"))
+    LEAD = ParagraphStyle("LEAD", parent=ss["Normal"], fontSize=12, leading=16,
+                          textColor=colors.HexColor("#3a3640"), spaceAfter=4)
+    SMALL = ParagraphStyle("SMALL", parent=ss["Normal"], fontSize=8.5, leading=11,
+                           textColor=colors.HexColor("#6f6a5f"))
+    S = story = []
+    story.append(Paragraph("PARTNER PROGRAM", EY))
+    story.append(Paragraph(f"{name} &mdash; Affiliate &amp; Referral Program", H1))
+    story.append(HRFlowable(width="100%", thickness=1, color=LINE, spaceBefore=6, spaceAfter=10))
+    story.append(Paragraph(
+        f"{name} turns photographs into portraits made entirely of words &mdash; heartfelt, giftable and easy to "
+        "share, which makes them a natural fit for creators and communities. Share your link, and earn on every "
+        "order you send our way.", LEAD))
+    story.append(Paragraph("How it works", H2))
+    for t in [
+        "<b>1. Get your link.</b> We give you a personal referral link (it carries a unique <font face='Courier'>?ref</font> tag).",
+        "<b>2. Share it.</b> Post it, pin it, email it, or add it to your newsletter or link-in-bio.",
+        "<b>3. Earn.</b> Every purchase that arrives through your link is credited to you at checkout, and you&rsquo;re paid a commission.",
+    ]:
+        story.append(Paragraph(t, BODY))
+        story.append(Spacer(1, 3))
+    story.append(Paragraph("What you&rsquo;ll earn", H2))
+    story.append(Paragraph(
+        "<b>Up to 30% commission</b> on every order you refer &mdash; digital downloads, fine-art prints, framed "
+        "keepsakes and multi-portrait collection sets. Tracking is per-referral, so your sales are always "
+        "credited to you.", BODY))
+    story.append(Paragraph("Who it&rsquo;s for", H2))
+    story.append(Paragraph(
+        "Bloggers and writers, Pinterest &amp; Instagram creators, faith and memorial communities, parish and "
+        "school newsletters, gift guides &mdash; anyone whose audience would treasure a word portrait.", BODY))
+    story.append(Paragraph("Get started", H2))
+    story.append(Paragraph(
+        f"Tell us a little about your audience and we&rsquo;ll set up your link. Email <b>{partners_email}</b> "
+        "&mdash; a real person will reply, usually within one business day.", BODY))
+    story.append(Spacer(1, 18))
+    story.append(HRFlowable(width="100%", thickness=0.75, color=LINE, spaceAfter=6))
+    story.append(Paragraph(
+        f"{name} &nbsp;&middot;&nbsp; {domain} &nbsp;&middot;&nbsp; a brand operated by Typortrait", SMALL))
+    doc.build(S)
+    return buf.getvalue()
+
+
+@app.get("/partners/affiliate-program.pdf")
+def partners_affiliate_pdf(request: Request) -> Response:
+    """Brand-aware affiliate one-pager, generated on the fly."""
+    b = _trust_brand(request.headers.get("host", ""))
+    try:
+        pdf = _affiliate_pdf_bytes(b)
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="pdf_error")
+    slug = (b["domain"].split(".")[0] or "partner")
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{slug}-affiliate-program.pdf"'})
 
 
 # NOTE: /terms, /refunds and /privacy are served by the existing, legally-detailed
