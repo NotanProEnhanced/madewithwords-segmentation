@@ -1362,13 +1362,13 @@ _TRUST_TPL = '''<!doctype html><html lang="en"><head>
  footer nav a:hover{color:var(--navy)}
 </style></head><body>
 <div class="wrap">
- <header><a class="bm" href="[[HOME]]">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Collection</a></header>
+ <header><a class="bm" href="[[HOME]]">[[BRAND]]</a>[[BACK]]</header>
  <article class="doc">
   <div class="eyebrow">[[EYEBROW]]</div>
   <h1>[[H1]]</h1>
   [[BODY]]
  </article>
- <footer><nav>[[NAV]]</nav>&copy; [[YEAR]] [[BRAND]]. &nbsp;<a href="/gallery">Browse the collection &rarr;</a></footer>
+ <footer><nav>[[NAV]]</nav>&copy; [[YEAR]] [[BRAND]].[[FOOTLINK]]</footer>
 </div></body></html>'''
 
 
@@ -1515,6 +1515,17 @@ def _render_trust(slug: str, request: Request) -> HTMLResponse:
     if not doc:
         raise HTTPException(status_code=404, detail="not_found")
     url = f"{_req_base(request)}/{slug}"
+    # The gallery back-link / "Browse the collection" footer are only valid for brands
+    # that actually HAVE a gallery. The memorial brand (Loved in Words) has none, so
+    # those links would 404 there — send it home / to the studio instead.
+    has_gallery = GALLERY_ENABLED and b["kind"] != "memorial"
+    if has_gallery:
+        back = '<a class="back" href="/gallery">&larr; The Collection</a>'
+        footlink = ' &nbsp;<a href="/gallery">Browse the collection &rarr;</a>'
+    else:
+        back = f'<a class="back" href="/">&larr; Back to {b["name"]}</a>'
+        footlink = ('' if b["kind"] != "memorial"
+                    else ' &nbsp;<a href="/static/index.html?brand=lovedinwords">Create a tribute &rarr;</a>')
     html = (_TRUST_TPL
             .replace("[[BODY]]", doc["body"])          # body first: may itself contain no placeholders
             .replace("[[PT]]", doc["pt"])
@@ -1522,6 +1533,8 @@ def _render_trust(slug: str, request: Request) -> HTMLResponse:
             .replace("[[URL]]", url)
             .replace("[[FAV]]", _fav_links(b["fav"]))
             .replace("[[HOME]]", b["home"])
+            .replace("[[BACK]]", back)
+            .replace("[[FOOTLINK]]", footlink)
             .replace("[[EYEBROW]]", doc["eyebrow"])
             .replace("[[H1]]", doc["h1"])
             .replace("[[NAV]]", _trust_nav(active=slug))
