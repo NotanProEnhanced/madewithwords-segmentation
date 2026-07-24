@@ -3349,7 +3349,7 @@ html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sa
 </div>
 <div class="card" id="shop">
 <div class="t-lbl" id="shopLbl" style="text-align:center;margin-bottom:12px">Choose your keepsake</div>
-<div class="t-sub" id="shopSub">Every print comes with the high-res digital file, free &mdash; keep it, reprint it, share it.</div>
+<div class="t-sub" id="shopSub">Every keepsake comes with the high-res digital file &mdash; plus phone &amp; desktop wallpapers &mdash; free to keep, reprint, and share.</div>
 <div id="productList"></div>
 <div class="sizeRow" id="sizeRow"><label for="sizeSel" class="t-lbl">Size</label><select id="sizeSel"></select></div>
 <button class="btn" id="buy">Download</button>
