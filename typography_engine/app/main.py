@@ -1269,9 +1269,11 @@ def gallery_printful_fetch(item: str, exp: int, sig: str, a: float = _PRINT_ASPE
 
 
 @app.get("/gallery/download")
-def gallery_download(item: str, session_id: str):
-    """Serve a gallery item's master PNG only after verifying its paid Stripe
-    session. Mirrors /download but reads the fixed master (no compose step)."""
+def gallery_download(item: str, session_id: str, fmt: str = "zip"):
+    """Serve a paid gallery item after verifying its Stripe session. Default (fmt=zip)
+    is the full 'digital everywhere' bundle — master + phone/desktop/square wallpapers
+    + read-me; fmt=png is the single master. Falls back to the master if the bundle
+    can't be built."""
     if not GALLERY_ENABLED:
         return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
     if not STRIPE_SECRET_KEY:
@@ -1287,6 +1289,11 @@ def gallery_download(item: str, session_id: str):
     meta_item = getattr(meta, "gallery_item", None) if meta is not None else None
     if not paid or meta_item != item:
         return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
+    if fmt != "png":
+        bundle = _ensure_gallery_bundle(item)
+        if bundle is not None:
+            return FileResponse(str(bundle), media_type="application/zip",
+                                filename=f"FaithInWords-{item}.zip")
     path = gallery_catalog.master_path(item)
     if path is None:
         return JSONResponse({"ok": False, "error": "art_missing"}, status_code=404)
@@ -1377,12 +1384,13 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
    <p class="serif" style="color:var(--mut);margin:2px 0 0">A portrait woven entirely from the names and titles that belong to [[SUBJECT]].</p>
    [[SCRIPTUREBLOCK]]
    <div class="price">$[[PRICE]]</div>
-   <p class="pnote">High-resolution digital download &mdash; no watermark, print it anywhere.</p>
+   <p class="pnote">High-res download + free phone &amp; desktop wallpapers &mdash; no watermark, print it anywhere.</p>
    <button class="buy" id="buyDigital">Buy the digital download</button>
    <div class="err" id="err"></div>
    <div class="prints"><h3>Order it as a print</h3>[[PRINTS]][[SOON]]</div>
    <div class="receive"><h3>What you receive</h3><ul>
     <li>High-resolution PNG, about 3600&times;4500&nbsp;px &mdash; no watermark</li>
+    <li>Matching <b>phone &amp; desktop wallpapers</b> &mdash; included free</li>
     <li>Print at home or any lab, up to poster size</li>
     <li>Personal-use license &mdash; not for resale or redistribution</li>
    </ul></div>
@@ -1792,8 +1800,9 @@ def _bundle_label(job: str) -> str:
 
 
 def _bundle_readme(label: str) -> str:
-    signoff = ("With love,\nLovedInWords.com  ·  powered by Typortrait\n"
-               if label == "LovedInWords" else "Thank you,\nTyportrait.com\n")
+    site = {"LovedInWords": "LovedInWords.com", "FaithInWords": "FaithInWords.com"}.get(label, "Typortrait.com")
+    signoff = (f"With gratitude,\n{site}  ·  powered by Typortrait\n"
+               if label in ("LovedInWords", "FaithInWords") else f"Thank you,\n{site}\n")
     return (
         f"Your {label} Keepsake — Digital Files\n"
         "==========================================\n\n"
@@ -1837,6 +1846,36 @@ def _ensure_wallpaper_bundle(job: str) -> Optional[Path]:
         tmp.replace(zip_path)
         return zip_path
     except Exception:  # noqa: BLE001 — never break fulfilment; caller falls back to PNG
+        return None
+
+
+def _ensure_gallery_bundle(item: str) -> Optional[Path]:
+    """The 'digital everywhere' ZIP for a fixed gallery item: the high-res master +
+    phone/desktop/square wallpapers + read-me, built from the item's master. Cached on
+    disk. Returns None if the master is missing or the bundle can't be built (caller
+    then serves the single master PNG so a purchase is never broken by this value-add)."""
+    zip_path = PRIVATE_DIR / f"gallery-{item}.bundle.zip"
+    if zip_path.exists():
+        return zip_path
+    mp = gallery_catalog.master_path(item)
+    if mp is None:
+        return None
+    try:
+        import zipfile
+        from .wallpaper import build_wallpaper_set
+        label = "FaithInWords"
+        master_bytes = Path(mp).read_bytes()
+        wp = build_wallpaper_set(master_bytes)
+        tmp = zip_path.with_suffix(".zip.tmp")
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr(f"{label} - Print (high-resolution).png", master_bytes)
+            z.writestr(f"{label} - Phone Wallpaper.png", wp["phone"])
+            z.writestr(f"{label} - Desktop Wallpaper.png", wp["desktop"])
+            z.writestr(f"{label} - Square (for sharing).png", wp["square"])
+            z.writestr("Read Me.txt", _bundle_readme(label))
+        tmp.replace(zip_path)
+        return zip_path
+    except Exception:  # noqa: BLE001
         return None
 
 
