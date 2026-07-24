@@ -1068,24 +1068,53 @@ def gallery_page(request: Request) -> HTMLResponse:
                             lead, 1)
         html = html.replace('<a href="/static/index.html">Make your own from a photo →</a>',
                             '<span style="opacity:.7">Powered by Typortrait</span>', 1)
+    # Crawlable internal links to the collection landing pages (the grid itself is JS,
+    # so bots can't follow the tabs). Brand-filtered, injected just above the trust nav.
+    try:
+        allow = _brand_collections(host)
+        cat = json.loads((STATIC_DIR / "gallery" / "catalog.json").read_text(encoding="utf-8"))
+        links = "".join(
+            f'<a href="/collections/{c.get("id")}">{c.get("title")}</a>'
+            for c in cat.get("collections", [])
+            if c.get("id") and (allow is None or c.get("id") in allow))
+        if links:
+            nav = ('<nav class="colnav" style="text-align:center;margin:6px 0 0;font-size:13.5px">'
+                   '<span style="color:#8a8172">Collections:</span> ' + links + '</nav>'
+                   '<style>.colnav a{margin:0 7px;color:#3a3550;text-decoration:none}.colnav a:hover{text-decoration:underline}</style>')
+            html = html.replace('<nav class="trustnav"', nav + '<nav class="trustnav"', 1)
+    except Exception:  # noqa: BLE001
+        pass
     return HTMLResponse(html)
 
 
+def _brand_collections(host: str) -> Optional[set]:
+    """The collection ids a brand host may show, or None for 'all'. Mirrors the
+    client BRANDS allowlist (static/gallery.html): faithinwords is a devotional brand
+    and must NEVER surface the secular christmas set (Santa lives there). Brand-safety
+    gate, so both the sitemap and the /collections landing pages honour it."""
+    if "faithinwords" in (host or "").lower():
+        return {"sacred"}
+    return None
+
+
 def _sitemap_paths(host: str) -> list:
-    """URL paths for the sitemap: the gallery index + every crawlable per-item page.
-    A brand with its own domain (faithinwords) is limited to its allowed collections
-    so the sitemap can never surface a piece that brand hides."""
+    """URL paths for the sitemap: gallery index + each collection landing page + every
+    crawlable per-item page. A brand with its own domain (faithinwords) is limited to
+    its allowed collections so the sitemap can never surface a piece that brand hides."""
     paths = ["/"]
     paths += [f"/{s}" for s in _TRUST_SLUGS]     # About / FAQ / Refunds / Terms / Privacy
     if not GALLERY_ENABLED:
         return paths
     paths.append("/gallery")
-    allow = {"sacred"} if "faithinwords" in (host or "").lower() else None
+    allow = _brand_collections(host)
     try:
         cat = json.loads((STATIC_DIR / "gallery" / "catalog.json").read_text(encoding="utf-8"))
         for col in cat.get("collections", []):
-            if allow and col.get("id") not in allow:
+            cid = col.get("id")
+            if allow is not None and cid not in allow:
                 continue
+            if cid:
+                paths.append(f"/collections/{cid}")
             for sec in col.get("sections", []):
                 for it in sec.get("items", []):
                     iid = it.get("id")
@@ -1702,12 +1731,14 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
 
     # Product images (auto-generated from the master) + related portraits (same collection).
     art_base = f"/static/gallery/art/{item_id}"
-    related_html = ""
+    related_html, rel_col_id, rel_col_title = "", "", "the Collection"
     try:
         fullcat = _j.loads((STATIC_DIR / "gallery" / "catalog.json").read_text(encoding="utf-8"))
         for col in fullcat.get("collections", []):
             col_ids = [i["id"] for sec in col.get("sections", []) for i in sec.get("items", []) if i.get("id")]
             if item_id in col_ids:
+                rel_col_id = str(col.get("id") or "")
+                rel_col_title = str(col.get("title") or "the Collection")
                 k = col_ids.index(item_id)
                 for rid in (col_ids[k + 1:] + col_ids[:k])[:4]:
                     ri = gallery_catalog.get(rid)
@@ -1718,7 +1749,9 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
                 break
     except Exception:  # noqa: BLE001
         related_html = ""
-    related_section = (f'<section class="related"><h2>More from the Sacred Collection</h2>'
+    _rel_head = (f'<a href="/collections/{_h.escape(rel_col_id)}">More from {_h.escape(rel_col_title)} &rarr;</a>'
+                 if rel_col_id else f'More from {_h.escape(rel_col_title)}')
+    related_section = (f'<section class="related"><h2>{_rel_head}</h2>'
                        f'<div class="relgrid">{related_html}</div></section>') if related_html else ""
 
     html = (_ITEM_PAGE
@@ -1744,6 +1777,145 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
             .replace("[[LD]]", ld)
             .replace("[[BRANDREF]]", _j.dumps(brand_ref))
             .replace("[[ITEMJSON]]", _j.dumps(item_id)))
+    return HTMLResponse(html)
+
+
+_COLLECTION_PAGE = '''<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>[[TITLE]] &middot; [[BRAND]]</title>
+<meta name="description" content="[[DESC]]">
+<link rel="canonical" href="[[URL]]">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="[[BRAND]]">
+<meta property="og:title" content="[[TITLE]]">
+<meta property="og:description" content="[[DESC]]">
+<meta property="og:image" content="[[IMG]]">
+<meta property="og:url" content="[[URL]]">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="[[TITLE]]">
+<meta name="twitter:description" content="[[DESC]]">
+<meta name="twitter:image" content="[[IMG]]">
+<script type="application/ld+json">[[LD]]</script>
+<style>
+ :root{--bg:#f5f1e8;--card:#fff;--ink:#221d16;--mut:#736a58;--line:#e4ddce;--gold:#a9812f;--navy:#1a2b52}
+ *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+ a{color:var(--navy)}.wrap{max-width:1120px;margin:0 auto;padding:0 22px}
+ header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;border-bottom:1px solid var(--line)}
+ header .bm{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
+ header a.back{font-size:14px;color:var(--mut);text-decoration:none}
+ .hero{text-align:center;max-width:760px;margin:0 auto;padding:42px 0 8px}
+ .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600}
+ .hero h1{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(30px,4.6vw,46px);margin:10px 0 6px;text-wrap:balance;color:var(--ink)}
+ .hero .lead{font-family:"Palatino Linotype","Book Antiqua",Palatino,Georgia,serif;font-size:19px;line-height:1.55;color:var(--mut);margin:0}
+ .grp{margin:34px 0 6px}
+ .grp h2{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:24px;color:var(--navy);margin:0 0 16px;border-bottom:1px solid var(--line);padding-bottom:8px}
+ .cardgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+ @media(max-width:820px){.cardgrid{grid-template-columns:repeat(3,1fr)}}
+ @media(max-width:560px){.cardgrid{grid-template-columns:repeat(2,1fr)}}
+ .card{text-decoration:none;color:var(--ink)}
+ .card img{width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:8px;display:block;background:#0c1730;box-shadow:0 16px 30px -20px rgba(20,16,10,.55)}
+ .card .ct{display:block;font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:16px;margin-top:9px;text-align:center}
+ .card .cs{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);text-align:center;margin-top:2px}
+ .colnav{border-top:1px solid var(--line);margin-top:40px;padding-top:20px;text-align:center;font-size:14px}
+ .colnav a{margin:0 8px;color:var(--navy);text-decoration:none}.colnav b{color:var(--mut);margin-right:6px}
+ footer{border-top:1px solid var(--line);margin-top:26px;padding:24px 0 60px;color:var(--mut);font-size:13.5px;text-align:center}
+ footer nav{margin-bottom:8px}footer nav a{margin:0 6px;color:var(--mut);text-decoration:none}footer nav a:hover{color:var(--navy)}
+</style></head><body>
+<div class="wrap">
+ <header><a class="bm" href="/gallery">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Gallery</a></header>
+ <div class="hero"><div class="eyebrow">[[EYEBROW]]</div><h1>[[TITLE]]</h1><p class="lead">[[BLURB]]</p></div>
+ [[SECTIONS]]
+ [[COLNAV]]
+ <footer><nav>[[TRUSTNAV]]</nav><a href="/gallery">Browse the whole gallery &rarr;</a></footer>
+</div></body></html>'''
+
+
+@app.api_route("/collections/{collection_id}", methods=["GET", "HEAD"], response_class=HTMLResponse)
+def collection_page(collection_id: str, request: Request) -> HTMLResponse:
+    """A crawlable landing page for one collection: hero + every section as a grid of
+    item cards linking to the per-item pages. Brand-aware and gated by the same
+    collection allowlist as the gallery, so a devotional brand can never surface a
+    collection it hides. Strong internal-linking / SEO surface for category traffic."""
+    import html as _h
+    import json as _j
+    if not GALLERY_ENABLED:
+        raise HTTPException(status_code=404, detail="not_found")
+    try:
+        cat = _j.loads((STATIC_DIR / "gallery" / "catalog.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=404, detail="not_found")
+    cols = cat.get("collections", [])
+    col = next((c for c in cols if c.get("id") == collection_id), None)
+    host = (request.headers.get("host") or "").lower()
+    allow = _brand_collections(host)
+    if col is None or (allow is not None and collection_id not in allow):
+        raise HTTPException(status_code=404, detail="not_found")
+
+    brand = "Faith in Words" if "faithinwords" in host else "Typortrait"
+    base = _req_base(request)
+    og_base = PUBLIC_BASE_URL.rstrip("/")
+    page_url = f"{base}/collections/{collection_id}"
+    title = str(col.get("title") or "Collection")
+    blurb = str(col.get("blurb") or "").strip()
+
+    # Sections -> item cards (only items whose display art actually exists).
+    sections_html, list_items, hero_img, n = "", [], "", 0
+    for sec in col.get("sections", []):
+        cards = ""
+        for it in sec.get("items", []):
+            iid = it.get("id")
+            if not iid or gallery_catalog.art_path(iid) is None:
+                continue
+            n += 1
+            it_title = str(it.get("title") or iid)
+            it_subj = str(it.get("subject") or "").strip()
+            art = f"/static/gallery/art/{_h.escape(iid)}.png"
+            if not hero_img:
+                hero_img = f"{og_base}/static/gallery/art/{iid}.png"
+            subj_html = f'<span class="cs">{_h.escape(it_subj)}</span>' if it_subj else ""
+            cards += (f'<a class="card" href="/gallery/{_h.escape(iid)}">'
+                      f'<img src="{art}" alt="{_h.escape(it_title)} &mdash; word portrait" loading="lazy">'
+                      f'<span class="ct">{_h.escape(it_title)}</span>{subj_html}</a>')
+            list_items.append({"@type": "ListItem", "position": n,
+                               "url": f"{base}/gallery/{iid}", "name": it_title})
+        if cards:
+            sections_html += (f'<section class="grp"><h2>{_h.escape(str(sec.get("title") or ""))}</h2>'
+                              f'<div class="cardgrid">{cards}</div></section>')
+    if n == 0:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    # Cross-links to the brand's OTHER collections (brand-filtered).
+    others = [c for c in cols if c.get("id") != collection_id
+              and (allow is None or c.get("id") in allow)]
+    colnav = ""
+    if others:
+        links = "".join(f'<a href="/collections/{_h.escape(c.get("id"))}">{_h.escape(str(c.get("title") or ""))}</a>'
+                        for c in others)
+        colnav = f'<nav class="colnav"><b>More collections:</b>{links}</nav>'
+
+    desc = (f"{title} — {blurb}" if blurb else title)[:300]
+    ld = _j.dumps({
+        "@context": "https://schema.org", "@type": "CollectionPage",
+        "name": title, "description": desc, "url": page_url,
+        "isPartOf": {"@type": "WebSite", "name": brand, "url": base + "/"},
+        "mainEntity": {"@type": "ItemList", "numberOfItems": n, "itemListElement": list_items},
+    })
+    if not hero_img:
+        hero_img = f"{og_base}/static/gallery/art/jesus-good-shepherd.png"
+
+    html = (_COLLECTION_PAGE
+            .replace("[[SECTIONS]]", sections_html)
+            .replace("[[COLNAV]]", colnav)
+            .replace("[[TRUSTNAV]]", _trust_nav())
+            .replace("[[TITLE]]", _h.escape(title))
+            .replace("[[DESC]]", _h.escape(desc))
+            .replace("[[URL]]", _h.escape(page_url))
+            .replace("[[IMG]]", _h.escape(hero_img))
+            .replace("[[EYEBROW]]", _h.escape(brand if brand != "Typortrait" else "The Gallery"))
+            .replace("[[BLURB]]", _h.escape(blurb))
+            .replace("[[LD]]", ld)
+            .replace("[[BRAND]]", _h.escape(brand)))
     return HTMLResponse(html)
 
 
