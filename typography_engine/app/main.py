@@ -224,6 +224,36 @@ def _start_admin_services() -> None:
     admin_mod.start_scanner()
 
 
+def _brand_blurb(b: dict) -> str:
+    """One-line brand description reused for schema / OG / llms.txt."""
+    return {
+        "memorial": "Memorial portraits made entirely from the words that describe someone you love — a lasting keepsake made from a photograph.",
+        "faith": "Sacred Christian portraits created entirely from words of Scripture, devotion and tradition.",
+    }.get(b["kind"], "Portraits made entirely from the words that describe their subject, created from a photograph.")
+
+
+def _brand_og_image(base: str, b: dict) -> str:
+    """A representative absolute image URL for OG tags / schema logo."""
+    p = ("/static/lovedinwords/keepsake-scene.jpg" if b["kind"] == "memorial"
+         else "/static/gallery/art/jesus-good-shepherd.png")
+    return f"{base}{p}"
+
+
+def _org_website_schema(base: str, b: dict) -> list:
+    """Organization + WebSite JSON-LD nodes, shared across a brand's pages so AI
+    engines and search resolve the brand as a single entity."""
+    org = {
+        "@type": "Organization", "@id": f"{base}/#org",
+        "name": b["name"], "url": f"{base}/",
+        "description": _brand_blurb(b),
+        "email": b["support"], "logo": _brand_og_image(base, b),
+        "parentOrganization": {"@type": "Organization", "name": "Typortrait"},
+    }
+    web = {"@type": "WebSite", "@id": f"{base}/#website",
+           "name": b["name"], "url": f"{base}/", "publisher": {"@id": f"{base}/#org"}}
+    return [org, web]
+
+
 def _liw_landing_html(request: Request) -> str:
     """The Loved in Words marketing landing page (memorial brand). Grief-sensitive
     hero + before/after + how-it-works + keepsake, driving to the studio ('Create a
@@ -235,6 +265,34 @@ def _liw_landing_html(request: Request) -> str:
     og = PUBLIC_BASE_URL.rstrip("/") or base
     create = "/static/index.html?brand=lovedinwords"
     hero_img = "/static/lovedinwords/keepsake-scene.jpg"
+    # Structured data: Organization + WebSite + the memorial-portrait Product with its
+    # three price points (digital / framed / family), so search + AI engines can read
+    # the entity, the offering and the prices cleanly.
+    _dig = products.price_for(products.get("digital"), True)[0] / 100
+    _fr = products.price_for(products.get("framed_16x20"), True)[0] / 100
+    _fam = products.price_for(products.get("bundle_family"), True)[0] / 100
+    _graph = _org_website_schema(base, b)
+    _graph.append({
+        "@type": "Product",
+        "name": f"{name} — Memorial Word Portrait",
+        "description": _brand_blurb(b),
+        "brand": {"@id": f"{base}/#org"},
+        "image": f"{og}{hero_img}",
+        "offers": {
+            "@type": "AggregateOffer", "priceCurrency": "USD",
+            "lowPrice": f"{_dig:.2f}", "highPrice": f"{_fam:.2f}", "offerCount": 3,
+            "availability": "https://schema.org/InStock",
+            "offers": [
+                {"@type": "Offer", "name": "Digital download", "priceCurrency": "USD",
+                 "price": f"{_dig:.2f}", "availability": "https://schema.org/InStock", "url": f"{base}/"},
+                {"@type": "Offer", "name": "16x20 framed print", "priceCurrency": "USD",
+                 "price": f"{_fr:.2f}", "availability": "https://schema.org/InStock", "url": f"{base}/"},
+                {"@type": "Offer", "name": "Family set", "priceCurrency": "USD",
+                 "price": f"{_fam:.2f}", "availability": "https://schema.org/InStock", "url": f"{base}/"},
+            ],
+        },
+    })
+    schema_ld = json.dumps({"@context": "https://schema.org", "@graph": _graph})
     return f'''<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{name} &mdash; Memorial portraits made from the words you loved them by</title>
@@ -249,7 +307,9 @@ def _liw_landing_html(request: Request) -> str:
 <meta property="og:url" content="{base}/">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{name} — remembered in their own words">
+<meta name="twitter:description" content="A favourite photograph, made into a portrait woven from the words that describe someone you love.">
 <meta name="twitter:image" content="{og}{hero_img}">
+<script type="application/ld+json">{schema_ld}</script>
 <style>
  :root{{--bg:#f7f4ef;--card:#fff;--ink:#22283a;--mut:#6f6a5f;--line:#e6ddcf;--navy:#1b2340;--rose:#b25b56;--gold:#a9812f}}
  *{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--ink);
@@ -1299,8 +1359,65 @@ def sitemap_xml(request: Request) -> Response:
 @app.api_route("/robots.txt", methods=["GET", "HEAD"])
 def robots_txt(request: Request) -> Response:
     base = _req_base(request)
-    body = f"User-agent: *\nAllow: /\nSitemap: {base}/sitemap.xml\n"
+    body = (f"User-agent: *\nAllow: /\nSitemap: {base}/sitemap.xml\n"
+            f"# AI/LLM summary: {base}/llms.txt\n")
     return Response(content=body, media_type="text/plain")
+
+
+@app.api_route("/llms.txt", methods=["GET", "HEAD"])
+def llms_txt(request: Request) -> Response:
+    """A concise, plain-language brand + offering summary for AI answer engines
+    (the emerging llms.txt convention). Brand-aware; states what we are, what we
+    sell (with prices), how it works, and the key pages — so an LLM can quote us
+    accurately instead of guessing."""
+    b = _trust_brand(request.headers.get("host", ""))
+    base = _req_base(request)
+    name, kind, support = b["name"], b["kind"], b["support"]
+
+    if kind == "memorial":
+        dig = products.price_for(products.get("digital"), True)[0]
+        fr = products.price_for(products.get("framed_16x20"), True)[0]
+        offers = [f"- Digital memorial portrait — ${dig/100:.0f} (high-resolution download, no watermark, plus free phone & desktop wallpapers)",
+                  f"- 16x20 framed print — ${fr/100:.0f}",
+                  "- \"Keep them close\" family set (framed print + smaller prints) — $149",
+                  "- Gift codes, redeemable for a personalized portrait"]
+        how = ["1. Upload a favourite photograph of the person being remembered.",
+               "2. Choose the words — their name, the roles they filled, the qualities you loved (or paste an obituary and we draw the words from it).",
+               "3. Receive a keepsake: a high-resolution digital download with free wallpapers, plus optional archival prints and framed pieces."]
+        pages = [("Home", "/"), ("About", "/about"), ("FAQ", "/faq"),
+                 ("Returns & Refunds", "/refunds"), ("Privacy", "/privacy"), ("Partner program", "/partners")]
+    elif kind == "faith":
+        dig = products.gallery_price_for(products.get("digital"))[0]
+        fr = products.gallery_price_for(products.get("framed_16x20"))[0]
+        offers = [f"- Digital sacred word portrait — ${dig/100:.0f} (high-resolution download, no watermark, plus free phone & desktop wallpapers)",
+                  f"- Fine-art prints, gallery canvas and framed pieces — from ${fr/100:.0f}",
+                  "- Curated collection sets (multiple portraits at a discount) — from $69"]
+        how = ["1. Browse the Sacred Collection — Jesus Christ, the Blessed Virgin Mary, angels, apostles and saints.",
+               "2. Each portrait is composed entirely of the words that belong to its subject, paired with a verse of Scripture.",
+               "3. Buy the digital download (with free wallpapers) or order archival prints and framed pieces."]
+        pages = [("Home / Gallery", "/gallery"), ("The Sacred Collection", "/collections/sacred"),
+                 ("About", "/about"), ("FAQ", "/faq"), ("Returns & Refunds", "/refunds"),
+                 ("Privacy", "/privacy"), ("Partner program", "/partners")]
+    else:
+        dig = products.price_for(products.get("digital"), False)[0]
+        offers = [f"- Digital word portrait — ${dig/100:.2f} (high-resolution download, no watermark)",
+                  "- Fine-art prints, gallery canvas and framed pieces"]
+        how = ["1. Upload a photo and choose the words that matter.",
+               "2. We compose those words into a faithful likeness and render it at high resolution.",
+               "3. Download it or order archival prints and framed pieces."]
+        pages = [("Home / Studio", "/"), ("Gallery", "/gallery"), ("About", "/about"),
+                 ("FAQ", "/faq"), ("Returns & Refunds", "/refunds"), ("Privacy", "/privacy"),
+                 ("Partner program", "/partners")]
+
+    lines = [f"# {name}", "",
+             f"> {_brand_blurb(b)}", "",
+             f"{name} creates portraits composed entirely of words, made from a photograph. "
+             f"{name} is a brand operated by Typortrait.", "",
+             "## What we offer", *offers, "",
+             "## How it works", *how, "",
+             "## Key pages", *[f"- {t}: {base}{p}" for t, p in pages], "",
+             "## Contact", f"- Support: {support}", ""]
+    return Response(content="\n".join(lines), media_type="text/plain; charset=utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -1340,6 +1457,17 @@ _TRUST_TPL = '''<!doctype html><html lang="en"><head>
 <meta name="description" content="[[META]]">
 <link rel="canonical" href="[[URL]]">
 [[FAV]]
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="[[BRAND]]">
+<meta property="og:title" content="[[PT]] &middot; [[BRAND]]">
+<meta property="og:description" content="[[META]]">
+<meta property="og:url" content="[[URL]]">
+<meta property="og:image" content="[[OGIMAGE]]">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="[[PT]] &middot; [[BRAND]]">
+<meta name="twitter:description" content="[[META]]">
+<meta name="twitter:image" content="[[OGIMAGE]]">
+<script type="application/ld+json">[[SCHEMA]]</script>
 <style>
  :root{--bg:#f5f1e8;--card:#fff;--ink:#221d16;--mut:#736a58;--line:#e4ddce;--gold:#a9812f;--navy:#1a2b52}
  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
@@ -1474,7 +1602,7 @@ def _trust_doc(slug: str, b: dict) -> Optional[dict]:
         body = "\n".join(f" <h2>{q}</h2>\n <p>{a}</p>" for q, a in qs)
         return {"pt": "FAQ", "eyebrow": "Questions &amp; Answers", "h1": "Frequently Asked Questions",
                 "meta": f"Answers about {name} — what you receive, prints, delivery, wallpapers, returns and privacy.",
-                "body": body}
+                "body": body, "qs": qs}
 
     if slug == "partners":
         partners_email = f"partners@{b['domain']}"
@@ -1526,8 +1654,27 @@ def _render_trust(slug: str, request: Request) -> HTMLResponse:
         back = f'<a class="back" href="/">&larr; Back to {b["name"]}</a>'
         footlink = ('' if b["kind"] != "memorial"
                     else ' &nbsp;<a href="/static/index.html?brand=lovedinwords">Create a tribute &rarr;</a>')
+    # Structured data: Organization + WebSite (entity), a BreadcrumbList (Home > page),
+    # and — on /faq — a FAQPage built from the Q&A (rich results + GEO fuel).
+    base = _req_base(request)
+    og_image = _brand_og_image(base, b)
+    import html as _hh
+    graph = _org_website_schema(base, b)
+    graph.append({
+        "@type": "BreadcrumbList", "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": b["name"], "item": f"{base}/"},
+            {"@type": "ListItem", "position": 2, "name": doc["pt"], "item": url},
+        ]})
+    if slug == "faq" and doc.get("qs"):
+        graph.append({
+            "@type": "FAQPage", "mainEntity": [
+                {"@type": "Question", "name": _hh.unescape(re.sub("<[^>]+>", "", q)),
+                 "acceptedAnswer": {"@type": "Answer", "text": _hh.unescape(re.sub("<[^>]+>", "", a))}}
+                for q, a in doc["qs"]]})
+    schema_ld = json.dumps({"@context": "https://schema.org", "@graph": graph})
     html = (_TRUST_TPL
             .replace("[[BODY]]", doc["body"])          # body first: may itself contain no placeholders
+            .replace("[[SCHEMA]]", schema_ld)
             .replace("[[PT]]", doc["pt"])
             .replace("[[META]]", doc["meta"])
             .replace("[[URL]]", url)
@@ -1535,6 +1682,7 @@ def _render_trust(slug: str, request: Request) -> HTMLResponse:
             .replace("[[HOME]]", b["home"])
             .replace("[[BACK]]", back)
             .replace("[[FOOTLINK]]", footlink)
+            .replace("[[OGIMAGE]]", og_image)
             .replace("[[EYEBROW]]", doc["eyebrow"])
             .replace("[[H1]]", doc["h1"])
             .replace("[[NAV]]", _trust_nav(active=slug))
