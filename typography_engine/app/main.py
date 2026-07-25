@@ -402,6 +402,8 @@ def _liw_landing_html(request: Request) -> str:
  .keep img{{width:100%;border-radius:12px;display:block;box-shadow:0 34px 60px -32px rgba(30,22,14,.5)}}
  .keep ul{{list-style:none;padding:0;margin:14px 0 0}}.keep li{{padding:9px 0 9px 28px;position:relative;font-size:16.5px;border-bottom:1px solid var(--line)}}
  .keep li:before{{content:"\\2665";position:absolute;left:0;color:var(--rose)}}
+ .keep .kprice{{margin:20px 0 4px;font-size:16px;color:var(--ink)}}.keep .kprice b{{color:var(--navy);font-weight:600}}
+ .keep .knote{{margin:0;font-size:13.5px;color:var(--mut)}}
  .closing{{text-align:center;padding:52px 0}}
  .closing h2{{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(26px,3.4vw,36px);margin:0 0 10px;color:var(--navy)}}
  .closing p{{color:var(--mut);margin:0 0 24px}}.closing .cta{{justify-content:center}}
@@ -466,6 +468,8 @@ def _liw_landing_html(request: Request) -> str:
     <li>Archival fine-art prints and framed keepsakes, delivered</li>
     <li>Two styles &mdash; luminous colour or timeless monochrome</li>
    </ul>
+   <p class="kprice">Digital keepsake <b>${_dig:.0f}</b> &nbsp;&middot;&nbsp; Framed 16&times;20 <b>${_fr:.0f}</b> &nbsp;&middot;&nbsp; Family set <b>${_fam:.0f}</b></p>
+   <p class="knote">A free preview comes first &mdash; you only pay if it feels right.</p>
   </div>
  </div>
 </div></section>
