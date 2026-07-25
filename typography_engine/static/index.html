@@ -4,6 +4,19 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Typortrait — someone you love, made from your words</title>
+<!-- The studio is the TOOL, not a content page: noindex it so the generic studio
+     (whose title/brand the JS only swaps at runtime, invisibly to crawlers) never
+     competes in search with the brand landing pages, which carry their own OG. A
+     brand-neutral text share-card avoids a bare preview without leaking a brand name;
+     a per-brand OG image isn't possible on a static file served across hosts. -->
+<meta name="robots" content="noindex,follow" />
+<meta name="description" content="Turn a photo and a few words into a portrait made entirely of words — a keepsake you can preview free, then download and print." />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="A portrait made from your words" />
+<meta property="og:description" content="Turn a photo and the words that describe someone into a portrait made entirely of words." />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="A portrait made from your words" />
+<meta name="twitter:description" content="Turn a photo and the words that describe someone into a portrait made entirely of words." />
 <!-- Typographic-heart favicon. Default is the generic T; the brand script below
      swaps these to the brand's heart (L/K/E) when ?brand= is set. -->
 <link rel="icon" type="image/svg+xml" href="/static/favicons/typortrait/favicon.svg" />

@@ -18,6 +18,7 @@ from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -108,6 +109,54 @@ app = FastAPI(title="Typography Portrait Engine", version=__version__)
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+def _not_found_page(request: Request) -> str:
+    """A gentle, brand-aware HTML 404 (memorial brand gets softer wording + a home
+    link; gallery brands offer the collection). Only served to browsers."""
+    b = _trust_brand(request.headers.get("host", ""))
+    has_gallery = GALLERY_ENABLED and b["kind"] != "memorial"
+    if b["kind"] == "memorial":
+        msg = "The page you were looking for isn&rsquo;t here &mdash; a link may have changed or expired."
+        cta_href, cta = "/", f"Return to {b['name']}"
+    elif has_gallery:
+        msg = "The page you were looking for isn&rsquo;t here. It may have moved, or the link is out of date."
+        cta_href, cta = "/gallery", "Browse the collection"
+    else:
+        msg = "The page you were looking for isn&rsquo;t here. It may have moved, or the link is out of date."
+        cta_href, cta = b["home"], f"Go to {b['name']}"
+    return (
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<meta name='robots' content='noindex'>" + _fav_links(b["fav"]) +
+        f"<title>Page not found &middot; {b['name']}</title><style>"
+        "*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;"
+        "justify-content:center;background:#f5f1e8;color:#221d16;padding:24px;text-align:center;"
+        "font:16px/1.6 system-ui,-apple-system,'Segoe UI',sans-serif}.w{max-width:460px}"
+        ".bm{font-family:'Palatino Linotype',Palatino,Georgia,serif;font-size:22px;font-weight:600;color:#1a2b52;"
+        "text-decoration:none;display:inline-block;margin-bottom:26px}"
+        "h1{font-family:'Palatino Linotype',Palatino,Georgia,serif;font-weight:600;font-size:30px;margin:0 0 10px;color:#221d16}"
+        ".c{font-family:'Palatino Linotype',Palatino,Georgia,serif;font-size:13px;letter-spacing:.22em;"
+        "text-transform:uppercase;color:#a9812f;font-weight:600;margin:0 0 6px}"
+        "p{color:#5b5346;margin:0 0 26px}a.btn{display:inline-block;background:#1a2b52;color:#fff;text-decoration:none;"
+        "border-radius:10px;padding:13px 26px;font-weight:600}</style></head><body><div class='w'>"
+        f"<a class='bm' href='{b['home']}'>{b['name']}</a>"
+        "<p class='c'>Page not found</p><h1>This page isn&rsquo;t here.</h1>"
+        f"<p>{msg}</p><a class='btn' href='{cta_href}'>{cta} &rarr;</a>"
+        "</div></body></html>"
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Serve a branded HTML 404 to browsers; keep JSON for API/fetch clients and for
+    every other status, so existing programmatic error contracts are unchanged."""
+    if exc.status_code == 404 and "text/html" in (request.headers.get("accept", "") or "").lower():
+        try:
+            return HTMLResponse(_not_found_page(request), status_code=404)
+        except Exception:  # noqa: BLE001 — never let the error page itself error out
+            pass
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
 # Gather (crowd-sourced words) — ADDITIVE + FLAG-GATED. Mounted only when
 # TYPO_GATHER_ENABLED is on, so it is entirely inert in production by default and
@@ -1643,9 +1692,13 @@ def _trust_doc(slug: str, b: dict) -> Optional[dict]:
             ("What is your return policy?",
              f'See <a href="/refunds">Returns &amp; Refunds</a>. In short: if a print arrives damaged, defective or '
              f'wrong, we replace it or refund it.'),
-            ("How is my photo and information handled?",
-             f'Privately. Uploaded photos and generated files are kept only as long as needed to deliver your order '
-             f'and are then automatically deleted. See our <a href="/privacy">Privacy Policy</a>.'),
+            (("How is my information handled?" if kind == "faith"
+              else "How is my photo and information handled?"),
+             (f'Privately. Every portrait is pre-made, so we never ask for a photo. We collect only what we need to '
+              f'deliver your order and take payment (via Stripe). See our <a href="/privacy">Privacy Policy</a>.'
+              if kind == "faith" else
+              f'Privately. Uploaded photos and generated files are kept only as long as needed to deliver your order '
+              f'and are then automatically deleted. See our <a href="/privacy">Privacy Policy</a>.')),
             ("Still have a question?",
              f'We are happy to help &mdash; email <a href="mailto:{support}">{support}</a> and a real person will reply, '
              f'usually within one business day.'),
@@ -4868,6 +4921,23 @@ def _policy_page(title: str, blocks, b: Optional[dict] = None) -> HTMLResponse:
 
 @app.get("/terms", response_class=HTMLResponse)
 def terms(request: Request):
+    b = _trust_brand(request.headers.get("host", ""))
+    if b["kind"] == "faith":
+        # FaithInWords is a PRE-MADE storefront: no photo upload, no biometric
+        # processing. Use storefront-accurate Terms instead of the studio's upload copy.
+        blocks = [
+            ("1. Acceptance", "<p>By using Typortrait (the &ldquo;Service&rdquo;) you agree to these Terms of Use. If you do not agree, please do not use the Service.</p>"),
+            ("2. What we sell", "<p>Typortrait sells <b>ready-made</b> digital word-portrait artwork and fine-art prints. Each portrait is a finished piece composed entirely of words. You purchase and download the artwork, or order it as a print. There is <b>no photo upload</b> &mdash; nothing is created from images you provide.</p>"),
+            ("3. Your license", "<p>Your purchase grants you a license to use the artwork for <b>personal, non-commercial</b> purposes: display it, print it for yourself, and use any included wallpapers on your own devices. You may not resell, redistribute, or use the artwork commercially without our written permission.</p>"),
+            ("4. Intellectual property", "<p>All artwork, designs, imagery and text on the Service are owned by Typortrait and protected by copyright. Your purchase grants the license above; it does not transfer ownership of the underlying work.</p>"),
+            ("5. Orders &amp; payment", "<p>Prices are shown at checkout and processed securely by Stripe; we never see or store your full card details. Digital files are delivered immediately: by purchasing you agree to that immediate delivery and, where applicable, acknowledge that you waive your 14-day right of withdrawal once the download begins.</p>"),
+            ("6. Prints &amp; shipping", "<p>Physical prints and framed pieces are produced to order by our print-on-demand partner and shipped directly to you. Delivery times are estimates and depend on the carrier. Title and risk pass to you on delivery.</p>"),
+            ("7. Returns", "<p>If anything is wrong &mdash; a download problem, or a print that arrives damaged, defective or not as ordered &mdash; <b>we&rsquo;ll fix it or refund it.</b> See our <a href=\"/refunds\">Refund Policy</a>, which forms part of these Terms.</p>"),
+            ("8. Acceptable use", "<p>Do not resell or redistribute the artwork or the Service, attempt to disrupt it, or use it for any unlawful purpose.</p>"),
+            ("9. Disclaimer &amp; limitation of liability", "<p>The Service and artwork are provided &ldquo;as is&rdquo; without warranties of any kind. To the maximum extent permitted by law, Typortrait&rsquo;s total liability for any claim relating to an order will not exceed the amount you paid for that order. Nothing in these Terms limits rights you have under applicable consumer-protection law.</p>"),
+            ("10. Changes &amp; governing law", "<p>We may update these Terms; continued use means you accept the changes, and the current version is always posted here. These Terms are governed by the laws of New York State, United States of America.</p>"),
+        ]
+        return _policy_page("Terms of Use", blocks, b)
     blocks = [
         ("1. Acceptance", "<p>By using Typortrait (the &ldquo;Service&rdquo;) you agree to these Terms of Use. If you do not agree, please do not use the Service. You must be at least 13 years old to use the Service, and if you are under 18 you must have your parent or legal guardian&rsquo;s permission. The Service is not for children under 13.</p>"),
         ("2. The Service", "<p>Typortrait turns a photo and words you provide into a typographic portrait, offered as a free watermarked preview and a paid, watermark-free digital download.</p>"),
@@ -4889,7 +4959,7 @@ def terms(request: Request):
         ("9. Indemnification", "<p>You agree to indemnify Typortrait against claims arising from your content or your breach of these Terms.</p>"),
         ("10. Changes and governing law", "<p>We may update these Terms; continued use means you accept the changes. These Terms are governed by the laws of New York State, United States of America.</p>"),
     ]
-    return _policy_page("Terms of Use", blocks, _trust_brand(request.headers.get("host", "")))
+    return _policy_page("Terms of Use", blocks, b)
 
 
 @app.get("/refunds", response_class=HTMLResponse)
@@ -4906,6 +4976,34 @@ def refunds(request: Request):
 
 @app.get("/privacy", response_class=HTMLResponse)
 def privacy(request: Request):
+    b = _trust_brand(request.headers.get("host", ""))
+    if b["kind"] == "faith":
+        # Pre-made storefront: no photo upload, no facial geometry, no biometric data.
+        blocks = [
+            ("Overview", "<p>This Privacy Policy explains what Typortrait (&ldquo;we&rdquo;) collects, why, and your rights. Every portrait we sell is <b>pre-made</b> &mdash; we do <b>not</b> ask for or process any photo, and there is no facial-geometry or biometric processing. We collect only what we need to deliver your order.</p>"),
+            ("Who we are", f"<p>Typortrait is the organization responsible for, and the data controller of, the information described here. Contact us at <a href='mailto:{_POLICY_CONTACT}'>{_POLICY_CONTACT}</a> with any privacy question, to exercise your rights, or to raise a concern.</p>"),
+            ("What we collect", "<ul>"
+                "<li><b>Order and contact details</b> &mdash; your email, and (for prints) the shipping name and address you provide.</li>"
+                "<li><b>Payment information</b>, processed by Stripe. We do not see or store your full card details.</li>"
+                "<li><b>Basic technical data</b> (e.g., server logs, approximate region) needed to operate and secure the site.</li></ul>"
+                "<p>We do <b>not</b> collect photos, images, or biometric data of any kind.</p>"),
+            ("How we use it", "<p>Solely to process and deliver your order, provide support, take payment, and operate, secure and improve the site. We do not sell your personal information.</p>"),
+            ("Payments", "<p>Payments are handled by <b>Stripe</b>. Your card details go directly to Stripe over an encrypted connection &mdash; we never see or store them.</p>"),
+            ("Print fulfilment", "<p>For physical orders we share only what is needed &mdash; your shipping details and the artwork &mdash; with our print-on-demand partner (<b>Printful</b>) so they can produce and ship your item.</p>"),
+            ("Retention", "<p>We keep order, payment and transaction records only as long as needed to provide the service and to meet tax, accounting, and other legal obligations, then delete or anonymise them.</p>"),
+            ("Sharing and sub-processors", "<p>We share personal data only with the providers needed to run the store:</p><ul>"
+                "<li><b>Stripe</b> &mdash; payment processing.</li>"
+                "<li><b>Printful</b> &mdash; print-on-demand fulfilment, physical orders only (receives your shipping details).</li>"
+                "<li><b>IONOS</b> &mdash; hosting and infrastructure.</li>"
+                "<li><b>Umami</b> &mdash; privacy-first, cookieless analytics.</li></ul>"
+                "<p>We <b>do not sell or &ldquo;share&rdquo;</b> your personal information (as defined under U.S. state privacy laws), and we do not use it for cross-context behavioural advertising. We may disclose information if required by law.</p>"),
+            ("Cookies", "<p>We use only the essential cookies needed for checkout and to keep the site functioning. We do not run third-party advertising trackers.</p>"),
+            ("International transfers", "<p>We operate from the United States, so if you are outside the U.S. your information is transferred to and processed there. Where required, we rely on appropriate safeguards (such as the EU Standard Contractual Clauses).</p>"),
+            ("Your rights", "<p>Depending on where you live (including under the EU/UK GDPR, California&rsquo;s CCPA/CPRA, and Canada&rsquo;s PIPEDA), you may have rights to access, correct, delete, or port the personal information associated with your order, and to object to or restrict its processing. To exercise them, email <a href='mailto:{c}'>{c}</a>. We will not discriminate against you for exercising your rights.</p>".format(c=_POLICY_CONTACT)),
+            ("Security", "<p>We use reasonable technical and organisational measures to protect your data, but no method of transmission or storage is completely secure.</p>"),
+            ("Changes", "<p>We may update this policy; the &ldquo;last updated&rdquo; date above will change accordingly.</p>"),
+        ]
+        return _policy_page("Privacy Policy", blocks, b)
     blocks = [
         ("Overview", "<p>This Privacy Policy explains what Typortrait (&ldquo;we&rdquo;) collects, why, and your rights. We collect only what we need to create your portrait and process your order. For how we handle facial geometry specifically, see our <a href=\"/biometric-policy\">Biometric Data Policy</a>.</p>"),
         ("Who we are", f"<p>Typortrait (which also operates the <b>Loved in Words</b> memorial service) is the organization responsible for, and the data controller of, the information described here. Contact our privacy contact at <a href='mailto:{_POLICY_CONTACT}'>{_POLICY_CONTACT}</a> with any privacy question, to exercise your rights, or to raise a concern.</p>"),
@@ -4943,7 +5041,7 @@ def privacy(request: Request):
         ("Security", "<p>We use reasonable technical and organisational measures to protect your data, but no method of transmission or storage is completely secure.</p>"),
         ("Changes", "<p>We may update this policy; the &ldquo;last updated&rdquo; date above will change accordingly.</p>"),
     ]
-    return _policy_page("Privacy Policy", blocks, _trust_brand(request.headers.get("host", "")))
+    return _policy_page("Privacy Policy", blocks, b)
 
 
 @app.get("/biometric-policy", response_class=HTMLResponse)
