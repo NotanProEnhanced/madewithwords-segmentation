@@ -2495,7 +2495,9 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
                     ri = gallery_catalog.get(rid)
                     rt = str((ri or {}).get("title") or rid)
                     related_html += (f'<a class="relcard" href="/gallery/{_h.escape(rid)}">'
-                                     f'<img src="/static/gallery/art/{_h.escape(rid)}.png" alt="{_h.escape(rt)}" loading="lazy">'
+                                     f'<img src="/static/gallery/art/{_h.escape(rid)}-card.webp" '
+                                     f"onerror=\"this.onerror=null;this.src='/static/gallery/art/{_h.escape(rid)}.png'\" "
+                                     f'alt="{_h.escape(rt)}" loading="lazy" decoding="async">'
                                      f'<span>{_h.escape(rt)}</span></a>')
                 break
     except Exception:  # noqa: BLE001
@@ -2653,12 +2655,14 @@ def collection_page(collection_id: str, request: Request) -> HTMLResponse:
             n += 1
             it_title = str(it.get("title") or iid)
             it_subj = str(it.get("subject") or "").strip()
-            art = f"/static/gallery/art/{_h.escape(iid)}.png"
+            art = f"/static/gallery/art/{_h.escape(iid)}-card.webp"
+            art_png = f"/static/gallery/art/{_h.escape(iid)}.png"
             if not hero_img:
                 hero_img = f"{og_base}/static/gallery/art/{iid}.png"
             subj_html = f'<span class="cs">{_h.escape(it_subj)}</span>' if it_subj else ""
             cards += (f'<a class="card" href="/gallery/{_h.escape(iid)}">'
-                      f'<img src="{art}" alt="{_h.escape(it_title)} &mdash; word portrait" loading="lazy">'
+                      f'<img src="{art}" onerror="this.onerror=null;this.src=\'{art_png}\'" '
+                      f'alt="{_h.escape(it_title)} &mdash; word portrait" loading="lazy" decoding="async">'
                       f'<span class="ct">{_h.escape(it_title)}</span>{subj_html}</a>')
             list_items.append({"@type": "ListItem", "position": n,
                                "url": f"{base}/gallery/{iid}", "name": it_title})

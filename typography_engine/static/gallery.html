@@ -231,7 +231,7 @@ function renderGrid(){
     // Google/Pinterest and the destination for referral traffic.
     const card=document.createElement("a"); card.className="item";
     card.href="/gallery/"+encodeURIComponent(it.id); card.style.textDecoration="none";
-    card.innerHTML=`<img src="/static/gallery/art/${it.id}.png" alt="${it.title}" loading="lazy"/>
+    card.innerHTML=`<img src="/static/gallery/art/${it.id}-card.webp" onerror="this.onerror=null;this.src='/static/gallery/art/${it.id}.png'" alt="${it.title}" loading="lazy" decoding="async"/>
       <div class="meta"><p class="t">${it.title}</p><p class="w">${it.words}</p></div>`;
     g.appendChild(card);
   });
