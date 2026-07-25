@@ -29,6 +29,7 @@ from . import moderation
 from . import suggest
 from . import printful, products
 from . import gallery_catalog
+from . import content as gallery_content
 from .config import (
     BIOMETRIC_CONSENT_VERSION,
     BLOCKED_REGIONS,
@@ -1393,9 +1394,18 @@ def gallery_page(request: Request) -> HTMLResponse:
             f'<a href="/collections/{c.get("id")}">{c.get("title")}</a>'
             for c in cat.get("collections", [])
             if c.get("id") and (allow is None or c.get("id") in allow))
-        if links:
+        # Editorial pages (gift guides + the process story) — internal links so they
+        # aren't orphaned. Faith-brand only; the guides are devotional/Catholic content.
+        guide_links = ""
+        if "faithinwords" in host:
+            guide_links = "".join(
+                f'<a href="/guides/{s}">{gg["h1"]}</a>' for s, gg in gallery_content.GUIDES.items()
+            ) + '<a href="/how-its-made">How it&rsquo;s made</a>'
+        if links or guide_links:
             nav = ('<nav class="colnav" style="text-align:center;margin:6px 0 0;font-size:13.5px">'
-                   '<span style="color:#8a8172">Collections:</span> ' + links + '</nav>'
+                   + ('<span style="color:#8a8172">Collections:</span> ' + links if links else '')
+                   + ('<div style="margin-top:5px"><span style="color:#8a8172">Guides:</span> ' + guide_links + '</div>' if guide_links else '')
+                   + '</nav>'
                    '<style>.colnav a{margin:0 7px;color:#3a3550;text-decoration:none}.colnav a:hover{text-decoration:underline}</style>')
             html = html.replace('<nav class="trustnav"', nav + '<nav class="trustnav"', 1)
     except Exception:  # noqa: BLE001
@@ -1431,6 +1441,8 @@ def _sitemap_paths(host: str) -> list:
     if not GALLERY_ENABLED:
         return paths
     paths.append("/gallery")
+    paths.append("/how-its-made")                        # the process/story page
+    paths += [f"/guides/{s}" for s in gallery_content.GUIDES]   # intent/gift landing pages
     allow = _brand_collections(host)
     try:
         cat = json.loads((STATIC_DIR / "gallery" / "catalog.json").read_text(encoding="utf-8"))
@@ -1743,6 +1755,11 @@ def _trust_doc(slug: str, b: dict) -> Optional[dict]:
                 "meta": f"Partner with {name} — affiliate & referral commissions, wholesale prints, and white-label / marketplace fulfilment.",
                 "body": body}
 
+    if slug == "how-its-made":
+        s = gallery_content.STORY
+        return {"pt": "How It's Made", "eyebrow": s["eyebrow"], "h1": s["h1"],
+                "meta": s["meta"], "body": s["body"]}
+
     return None
 
 
@@ -1815,6 +1832,13 @@ def faq_page(request: Request) -> HTMLResponse:
 @app.api_route("/partners", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def partners_page(request: Request) -> HTMLResponse:
     return _render_trust("partners", request)
+
+
+@app.api_route("/how-its-made", methods=["GET", "HEAD"], response_class=HTMLResponse)
+def how_its_made_page(request: Request) -> HTMLResponse:
+    if not GALLERY_ENABLED:
+        raise HTTPException(status_code=404, detail="not_found")
+    return _render_trust("how-its-made", request)
 
 
 def _affiliate_pdf_bytes(b: dict) -> bytes:
@@ -2340,6 +2364,10 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
  .receive{border-top:1px solid var(--line);margin-top:20px;padding-top:16px}
  .receive h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:0 0 8px}
  .receive ul{margin:0;padding-left:18px;font-size:14px;line-height:1.7;color:var(--ink)}
+ .about{border-top:1px solid var(--line);margin-top:34px;padding-top:20px;max-width:70ch}
+ .about h2{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:22px;color:var(--navy);margin:0 0 10px}
+ .about p{font-size:16.5px;line-height:1.7;color:#3a342a;margin:0 0 12px}.about p:last-child{margin-bottom:0}
+ .about i{color:var(--navy);font-style:italic}
  .related{border-top:1px solid var(--line);margin-top:34px;padding-top:24px}
  .related h2{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:22px;color:var(--navy);margin:0 0 16px}
  .relgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
@@ -2399,6 +2427,7 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
    </ul></div>
   </div>
  </div>
+ [[ABOUT]]
  [[RELATEDSECTION]]
  <footer><nav>[[TRUSTNAV]]</nav>Each portrait is rendered entirely from the words that belong to its subject. &nbsp;&middot;&nbsp; <a href="/gallery">Browse the whole collection &rarr;</a></footer>
 </div>
@@ -2445,6 +2474,13 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
     cat = str(it.get("category") or "Sacred Figures")
     scrip = str(it.get("scripture") or "").strip()
     scrip_ref = str(it.get("scripture_ref") or "").strip()
+    # Editorial "publisher" content (pilot): a Douay-Rheims scripture override + an
+    # "About this portrait" block. Absent for items without an entry -> page unchanged.
+    _pc = gallery_content.PORTRAIT_CONTENT.get(item_id) or {}
+    if _pc.get("scripture"):
+        scrip, scrip_ref = _pc["scripture"], _pc["scripture_ref"]
+    about_block = (f'<section class="about"><h2>About this portrait</h2>{_pc["about"]}</section>'
+                   if _pc.get("about") else "")
     # Brand-aware: the same item page serves the general gallery AND FaithInWords.com,
     # so the wordmark/site name/schema brand follow the host the visitor is on.
     host = (request.headers.get("host") or "").lower()
@@ -2525,6 +2561,7 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
             .replace("[[LOUPE]]", _h.escape(f"{art_base}-loupe.jpg"))
             .replace("[[FRAMED]]", _h.escape(f"{art_base}-framed.jpg"))
             .replace("[[RELATEDSECTION]]", related_section)
+            .replace("[[ABOUT]]", about_block)
             .replace("[[TRUSTNAV]]", _trust_nav())
             .replace("[[CAT]]", _h.escape(cat))
             .replace("[[BRAND]]", _h.escape(brand))
@@ -2732,6 +2769,116 @@ def collection_page(collection_id: str, request: Request) -> HTMLResponse:
             .replace("[[IMG]]", _h.escape(hero_img))
             .replace("[[EYEBROW]]", _h.escape(brand if brand != "Typortrait" else "The Gallery"))
             .replace("[[BLURB]]", _h.escape(blurb))
+            .replace("[[LD]]", ld)
+            .replace("[[BRAND]]", _h.escape(brand)))
+    return HTMLResponse(html)
+
+
+_GUIDE_PAGE = '''<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>[[TITLE]]</title>
+<meta name="description" content="[[DESC]]">
+<link rel="canonical" href="[[URL]]">
+<meta property="og:type" content="website"><meta property="og:site_name" content="[[BRAND]]">
+<meta property="og:title" content="[[H1]]"><meta property="og:description" content="[[DESC]]">
+<meta property="og:image" content="[[IMG]]"><meta property="og:url" content="[[URL]]">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="[[H1]]">
+<meta name="twitter:description" content="[[DESC]]"><meta name="twitter:image" content="[[IMG]]">
+<script type="application/ld+json">[[LD]]</script>
+<style>
+ :root{--bg:#f5f1e8;--card:#fff;--ink:#221d16;--mut:#736a58;--line:#e4ddce;--gold:#a9812f;--navy:#1a2b52}
+ *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+ a{color:var(--navy)}.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+ header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;border-bottom:1px solid var(--line)}
+ header .bm{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
+ header a.back{font-size:14px;color:var(--mut);text-decoration:none}
+ .hero{max-width:70ch;margin:0 auto;padding:40px 0 6px}
+ .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600}
+ .hero h1{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(28px,4vw,42px);margin:10px 0 12px;text-wrap:balance;color:var(--ink)}
+ .hero .intro p{font-size:17.5px;line-height:1.66;color:#3a342a;margin:0 0 12px}.hero .intro b{color:var(--navy)}
+ .cardgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin:26px 0 6px}
+ @media(max-width:820px){.cardgrid{grid-template-columns:repeat(3,1fr)}}
+ @media(max-width:560px){.cardgrid{grid-template-columns:repeat(2,1fr)}}
+ .card{text-decoration:none;color:var(--ink)}
+ .card img{width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:8px;display:block;background:#0c1730;box-shadow:0 16px 30px -20px rgba(20,16,10,.55)}
+ .card .ct{display:block;font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:16px;margin-top:9px;text-align:center}
+ .card .cs{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);text-align:center;margin-top:2px}
+ .more{border-top:1px solid var(--line);margin-top:40px;padding-top:20px;text-align:center;font-size:14px}
+ .more b{color:var(--mut);margin-right:6px}.more a{margin:0 8px;color:var(--navy);text-decoration:none}
+ footer{border-top:1px solid var(--line);margin-top:26px;padding:24px 0 60px;color:var(--mut);font-size:13.5px;text-align:center}
+ footer nav{margin-bottom:8px}footer nav a{margin:0 6px;color:var(--mut);text-decoration:none}footer nav a:hover{color:var(--navy)}
+</style></head><body>
+<div class="wrap">
+ <header><a class="bm" href="/gallery">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Collection</a></header>
+ <div class="hero"><div class="eyebrow">[[EYEBROW]]</div><h1>[[H1]]</h1><div class="intro">[[INTRO]]</div></div>
+ <div class="cardgrid">[[CARDS]]</div>
+ [[MORE]]
+ <footer><nav>[[TRUSTNAV]]</nav><a href="/gallery">Browse the whole collection &rarr;</a></footer>
+</div></body></html>'''
+
+
+@app.api_route("/guides/{slug}", methods=["GET", "HEAD"], response_class=HTMLResponse)
+def guide_page(slug: str, request: Request) -> HTMLResponse:
+    """An editorial intent/gift landing page: a curated set of portraits with a
+    voice-led intro. Crawlable, schema-rich; the SEO/GEO discovery engine."""
+    import html as _h
+    import json as _j
+    if not GALLERY_ENABLED:
+        raise HTTPException(status_code=404, detail="not_found")
+    g = gallery_content.GUIDES.get(slug)
+    if not g:
+        raise HTTPException(status_code=404, detail="not_found")
+    base = _req_base(request)
+    og_base = PUBLIC_BASE_URL.rstrip("/")
+    page_url = f"{base}/guides/{slug}"
+    host = (request.headers.get("host") or "").lower()
+    brand = "Faith in Words" if "faithinwords" in host else "Typortrait"
+
+    cards, list_items, hero_img, n = "", [], "", 0
+    for iid in g["items"]:
+        it = gallery_catalog.get(iid)
+        if not it or gallery_catalog.art_path(iid) is None:
+            continue
+        n += 1
+        it_title = str(it.get("title") or iid)
+        it_subj = str(it.get("subject") or "").strip()
+        webp = f"/static/gallery/art/{_h.escape(iid)}-card.webp"
+        png = f"/static/gallery/art/{_h.escape(iid)}.png"
+        if not hero_img:
+            hero_img = f"{og_base}/static/gallery/art/{iid}.png"
+        subj = f'<span class="cs">{_h.escape(it_subj)}</span>' if it_subj else ""
+        cards += (f'<a class="card" href="/gallery/{_h.escape(iid)}">'
+                  f'<img src="{webp}" onerror="this.onerror=null;this.src=\'{png}\'" '
+                  f'alt="{_h.escape(it_title)} &mdash; word portrait" loading="lazy" decoding="async">'
+                  f'<span class="ct">{_h.escape(it_title)}</span>{subj}</a>')
+        list_items.append({"@type": "ListItem", "position": n,
+                           "url": f"{base}/gallery/{iid}", "name": it_title})
+    if n == 0:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    others = [(s, gg) for s, gg in gallery_content.GUIDES.items() if s != slug]
+    more = ""
+    if others:
+        links = "".join(f'<a href="/guides/{_h.escape(s)}">{_h.escape(gg["h1"])}</a>' for s, gg in others)
+        more = f'<nav class="more"><b>More guides:</b>{links}</nav>'
+
+    ld = _j.dumps({
+        "@context": "https://schema.org", "@type": "CollectionPage",
+        "name": g["h1"], "description": g["meta"], "url": page_url,
+        "isPartOf": {"@type": "WebSite", "name": brand, "url": base + "/"},
+        "mainEntity": {"@type": "ItemList", "numberOfItems": n, "itemListElement": list_items},
+    })
+    html = (_GUIDE_PAGE
+            .replace("[[INTRO]]", g["intro"])
+            .replace("[[CARDS]]", cards)
+            .replace("[[MORE]]", more)
+            .replace("[[TRUSTNAV]]", _trust_nav())
+            .replace("[[TITLE]]", _h.escape(g["title"]))
+            .replace("[[DESC]]", _h.escape(g["meta"]))
+            .replace("[[URL]]", _h.escape(page_url))
+            .replace("[[IMG]]", _h.escape(hero_img or f"{og_base}/static/gallery/art/jesus-good-shepherd.png"))
+            .replace("[[EYEBROW]]", _h.escape(g["eyebrow"]))
+            .replace("[[H1]]", _h.escape(g["h1"]))
             .replace("[[LD]]", ld)
             .replace("[[BRAND]]", _h.escape(brand)))
     return HTMLResponse(html)
