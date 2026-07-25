@@ -106,6 +106,9 @@ _REGION_COLORS = {
 
 app = FastAPI(title="Typography Portrait Engine", version=__version__)
 
+import mimetypes as _mimetypes
+_mimetypes.add_type("image/webp", ".webp")   # some hosts lack webp in the mimetypes DB -> served as octet-stream
+
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
