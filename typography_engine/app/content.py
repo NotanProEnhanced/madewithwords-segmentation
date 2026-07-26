@@ -74,6 +74,332 @@ PORTRAIT_CONTENT = {
             "whose throne was first a cross. Read closely, it is a coronation in words; seen whole, it "
             "is the face before whom every knee shall bend.</p>"),
     },
+
+    # --- The Blessed Mother -------------------------------------------------
+    "the-blessed-virgin-mary": {
+        "scripture": "Hail, full of grace, the Lord is with thee: blessed art thou among women.",
+        "scripture_ref": "Luke 1:28 (D-R)",
+        "about": (
+            "<p>Woven from the names the faithful have called her for two thousand years &mdash; "
+            "<i>Mother, Virgin, full of grace, Queen of Heaven, Intercessor</i> &mdash; this portrait "
+            "gathers Mary&rsquo;s titles into her likeness. Each is a prayer the Church has never stopped "
+            "praying.</p>"
+            "<p>&ldquo;Hail, full of grace, the Lord is with thee: blessed art thou among women&rdquo; "
+            "(Luke 1:28). From the Annunciation to the foot of the Cross she is the one who said <i>yes</i> "
+            "and never unsaid it. Read closely, it is a litany; seen whole, it is the Mother who points "
+            "always to her Son.</p>"),
+    },
+    "immaculate-heart-of-mary": {
+        "scripture": "But Mary kept all these words, pondering them in her heart.",
+        "scripture_ref": "Luke 2:19 (D-R)",
+        "about": (
+            "<p>Made from the movements of a mother&rsquo;s heart &mdash; <i>Love, Purity, Sorrow, Joy, "
+            "Compassion, Peace</i> &mdash; this portrait renders the Immaculate Heart the Church holds up "
+            "beside the Sacred Heart of her Son.</p>"
+            "<p>&ldquo;But Mary kept all these words, pondering them in her heart&rdquo; (Luke 2:19). Hers "
+            "is the heart that treasured every word about Jesus, that a sword would one day pierce, and "
+            "that the faithful entrust their own hearts to still. Close, it is devotion written out; far, "
+            "it is the face of a love wholly given.</p>"),
+    },
+    "our-lady-of-sorrows": {
+        "scripture": "And thy own soul a sword shall pierce.",
+        "scripture_ref": "Luke 2:35 (D-R)",
+        "about": (
+            "<p>Woven from the seven sorrows the Church has counted for centuries &mdash; <i>the prophecy "
+            "of Simeon, the flight into Egypt, the loss in the Temple, the meeting on the road to "
+            "Calvary, the Cross</i> &mdash; this portrait honours the Mother who stood by her Son to the "
+            "end.</p>"
+            "<p>Simeon foretold it in the Temple: &ldquo;And thy own soul a sword shall pierce&rdquo; "
+            "(Luke 2:35). She is <i>Mater Dolorosa</i>, the one who knows grief from the inside &mdash; "
+            "which is why the sorrowing have always turned to her. Close, it is a mother&rsquo;s suffering "
+            "written out; far, it is compassion that has been through the fire.</p>"),
+    },
+    "our-lady-of-guadalupe": {
+        "scripture": ("A woman clothed with the sun, and the moon under her feet, and on her head a crown "
+                      "of twelve stars."),
+        "scripture_ref": "Apocalypse 12:1 (D-R)",
+        "about": (
+            "<p>Woven from the tradition of Tepeyac &mdash; <i>Guadalupe, Juan Diego, the roses, the "
+            "tilma, Mother of Mercy</i> &mdash; this portrait honours the Virgin who, as the tradition "
+            "holds, appeared in 1531 as a <i>mestiza</i> to a poor convert and left her image on his "
+            "cloak.</p>"
+            "<p>The Church reads her in the sign of the Apocalypse: &ldquo;A woman clothed with the sun, "
+            "and the moon under her feet, and on her head a crown of twelve stars&rdquo; (Apocalypse "
+            "12:1). Patroness of the Americas, she is the Mother who came to the poorest and asked, "
+            "<i>Am I not here, I who am your Mother?</i></p>"),
+    },
+    "mary-queen-of-heaven": {
+        "scripture": "The queen stood on thy right hand, in gilded clothing; surrounded with variety.",
+        "scripture_ref": "Psalm 44:10 (D-R)",
+        "about": (
+            "<p>Made from the glory the Church ascribes to her &mdash; <i>Queen of Heaven, Immaculate "
+            "Conception, Assumption, perpetual Virgin</i> &mdash; this portrait crowns the Mother taken "
+            "up body and soul and seated beside her Son.</p>"
+            "<p>The psalmist sang of her long before: &ldquo;The queen stood on thy right hand, in gilded "
+            "clothing&rdquo; (Psalm 44:10). She reigns not by her own power but as the first of the "
+            "redeemed, the creature raised highest by grace. Close, it is a coronation in words; far, it "
+            "is the face the litanies hail as <i>Regina caeli</i>.</p>"),
+    },
+
+    # --- Angels -------------------------------------------------------------
+    "st-michael-the-archangel": {
+        "scripture": "And there was a great battle in heaven, Michael and his angels fought with the dragon.",
+        "scripture_ref": "Apocalypse 12:7 (D-R)",
+        "about": (
+            "<p>Built from the titles of heaven&rsquo;s captain &mdash; <i>Archangel, Defender, "
+            "Vanquisher of evil, Protector</i> &mdash; this portrait shows the prince of the heavenly "
+            "host, sword in hand, the one whose name means <i>Who is like God?</i></p>"
+            "<p>&ldquo;And there was a great battle in heaven, Michael and his angels fought with the "
+            "dragon&rdquo; (Apocalypse 12:7). The Church has prayed to him against evil for centuries "
+            "&mdash; <i>Saint Michael the Archangel, defend us in battle</i>. Close, it is spiritual "
+            "warfare in words; far, it is the face that stands between the faithful and the enemy.</p>"),
+    },
+    "st-raphael-the-archangel": {
+        "scripture": "I am the angel Raphael, one of the seven, who stand before the Lord.",
+        "scripture_ref": "Tobias 12:15 (D-R)",
+        "about": (
+            "<p>Woven from a mission of healing and companionship &mdash; <i>Healer, Divine messenger, "
+            "Companion</i> &mdash; this portrait honours the archangel whose name means <i>God heals</i>, "
+            "the guide of the Book of Tobit.</p>"
+            "<p>&ldquo;I am the angel Raphael, one of the seven, who stand before the Lord&rdquo; (Tobias "
+            "12:15). He walked the long road with young Tobias, restored a father&rsquo;s sight, and is "
+            "invoked still by travellers, the sick, and those seeking a holy spouse. Read closely, it is "
+            "healing named; seen whole, it is the face of a friend sent by God.</p>"),
+    },
+    "guardian-angel": {
+        "scripture": "For he hath given his angels charge over thee; to keep thee in all thy ways.",
+        "scripture_ref": "Psalm 90:11 (D-R)",
+        "about": (
+            "<p>Made from the quiet work of heaven &mdash; <i>Protector, Guide, Watchful care, Holy "
+            "presence</i> &mdash; this portrait honours the angel God gives each soul to walk beside it "
+            "from birth.</p>"
+            "<p>&ldquo;For he hath given his angels charge over thee; to keep thee in all thy ways&rdquo; "
+            "(Psalm 90:11). Our Lord said their angels always behold the face of the Father. Close, it is "
+            "watchfulness in words; far, it is the companion who has never once left your side.</p>"),
+    },
+
+    # --- Apostles & Prophets ------------------------------------------------
+    "st-peter": {
+        "scripture": "Thou art Peter; and upon this rock I will build my church.",
+        "scripture_ref": "Matthew 16:18 (D-R)",
+        "about": (
+            "<p>Built from the name Christ gave a fisherman &mdash; <i>Rock, Apostle, Keys of Heaven, "
+            "Martyr</i> &mdash; this portrait honours Simon whom the Lord renamed Peter, first among the "
+            "Twelve.</p>"
+            "<p>&ldquo;Thou art Peter; and upon this rock I will build my church&rdquo; (Matthew 16:18). "
+            "He walked on water and sank, denied his Lord and wept, and was handed the keys all the same "
+            "&mdash; then died on a cross in Rome, upside down. Close, it is a commission in words; far, "
+            "it is the face of the Church&rsquo;s first shepherd.</p>"),
+    },
+    "st-paul": {
+        "scripture": "I have fought a good fight, I have finished my course, I have kept the faith.",
+        "scripture_ref": "2 Timothy 4:7 (D-R)",
+        "about": (
+            "<p>Woven from the road that turned him around &mdash; <i>Apostle, Damascus, Letters to the "
+            "churches, Conversion</i> &mdash; this portrait honours the persecutor struck blind and made "
+            "the Church&rsquo;s greatest missionary.</p>"
+            "<p>At the end he could write: &ldquo;I have fought a good fight, I have finished my course, I "
+            "have kept the faith&rdquo; (2 Timothy 4:7). From a light on the Damascus road to letters "
+            "that still shape the faith, no one carried the Gospel farther. Read closely, it is a "
+            "life&rsquo;s labour in words; seen whole, it is the face of grace that overtakes a man.</p>"),
+    },
+    "st-john-the-baptist": {
+        "scripture": "Behold the Lamb of God, behold him who taketh away the sin of the world.",
+        "scripture_ref": "John 1:29 (D-R)",
+        "about": (
+            "<p>Made from his one great task &mdash; <i>Prophet, Wilderness preacher, Herald of the "
+            "Messiah, Baptism, Repentance</i> &mdash; this portrait honours the voice crying in the "
+            "desert, the last of the prophets and the forerunner of Christ.</p>"
+            "<p>Seeing Jesus approach, he said: &ldquo;Behold the Lamb of God, behold him who taketh away "
+            "the sin of the world&rdquo; (John 1:29). He baptised the Lord in the Jordan and then stepped "
+            "aside &mdash; <i>he must increase, but I must decrease</i>. Close, it is a herald&rsquo;s cry "
+            "in words; far, it is the face that pointed away from itself.</p>"),
+    },
+    "moses": {
+        "scripture": "And there arose no more a prophet in Israel like unto Moses, whom the Lord knew face to face.",
+        "scripture_ref": "Deuteronomy 34:10 (D-R)",
+        "about": (
+            "<p>Woven from the great deliverance &mdash; <i>Law-giver, Exodus, Ten Commandments, Red Sea, "
+            "the Burning Bush, Sinai, Covenant</i> &mdash; this portrait honours the prophet who led "
+            "Israel out of slavery and came down the mountain with the Law.</p>"
+            "<p>Scripture&rsquo;s own epitaph: &ldquo;And there arose no more a prophet in Israel like "
+            "unto Moses, whom the Lord knew face to face&rdquo; (Deuteronomy 34:10). He met God in fire, "
+            "parted the sea, and carried a people forty years toward a land he would see but not enter. "
+            "Read closely, it is a covenant in words; seen whole, it is the face that spoke with God as a "
+            "man speaks to his friend.</p>"),
+    },
+    "king-david": {
+        "scripture": "The Lord ruleth me: and I shall want nothing.",
+        "scripture_ref": "Psalm 22:1 (D-R)",
+        "about": (
+            "<p>Built from a shepherd&rsquo;s rise &mdash; <i>King of Israel, Psalmist, Goliath, "
+            "Bethlehem, the harp, Repentance, Covenant</i> &mdash; this portrait honours the boy who "
+            "felled a giant and the king from whose line the Messiah would come.</p>"
+            "<p>His most beloved psalm begins: &ldquo;The Lord ruleth me: and I shall want nothing&rdquo; "
+            "(Psalm 22:1). Shepherd and sinner, warrior and poet, he danced before the Ark and wept for "
+            "his sins &mdash; a man after God&rsquo;s own heart. Close, it is a psalm in words; far, it is "
+            "the face of Bethlehem&rsquo;s king.</p>"),
+    },
+    "st-mary-magdalene": {
+        "scripture": "Jesus saith to her: Mary. She turning, saith to him: Rabboni (which is to say, Master).",
+        "scripture_ref": "John 20:16 (D-R)",
+        "about": (
+            "<p>Woven from her faithfulness to the end and past it &mdash; <i>Disciple, Witness, "
+            "Resurrection, the spices, the empty tomb, Penitent, Love</i> &mdash; this portrait honours "
+            "the woman who stayed at the Cross and came first to the grave.</p>"
+            "<p>In the garden, mistaking him for the gardener, she heard him speak her name: &ldquo;Jesus "
+            "saith to her: Mary&rdquo; &mdash; and she turned and said, &ldquo;Rabboni&rdquo; (John "
+            "20:16). The first witness of the Resurrection, the <i>Apostle to the Apostles</i>. Close, it "
+            "is devotion in words; far, it is the face that love would not let leave the tomb.</p>"),
+    },
+
+    # --- Beloved Patron Saints ---------------------------------------------
+    "st-joseph": {
+        "scripture": "Joseph, son of David, fear not to take unto thee Mary thy wife.",
+        "scripture_ref": "Matthew 1:20 (D-R)",
+        "about": (
+            "<p>Made from a quiet, faithful strength &mdash; <i>Carpenter, Guardian, Holy Family, "
+            "Nazareth, Obedience</i> &mdash; this portrait honours the just man God trusted with his Son "
+            "and his Mother.</p>"
+            "<p>An angel told him in a dream: &ldquo;Joseph, son of David, fear not to take unto thee "
+            "Mary thy wife&rdquo; (Matthew 1:20). He never speaks a word in the Gospels; he only obeys "
+            "&mdash; and so became patron of the universal Church, of workers, and of a happy death. "
+            "Close, it is fidelity in words; far, it is the face of the man who guarded the Word made "
+            "flesh.</p>"),
+    },
+    "st-francis-of-assisi": {
+        "scripture": "Go, sell what thou hast, and give to the poor, and thou shalt have treasure in heaven.",
+        "scripture_ref": "Matthew 19:21 (D-R)",
+        "about": (
+            "<p>Woven from a joyful poverty &mdash; <i>Poverty, Humility, the birds, the stigmata, Assisi, "
+            "Brother Sun, rebuild my church</i> &mdash; this portrait honours the merchant&rsquo;s son "
+            "who gave away everything to follow Christ crucified.</p>"
+            "<p>He took the Gospel at its word: &ldquo;Go, sell what thou hast, and give to the "
+            "poor&rdquo; (Matthew 19:21). He preached to birds, wrote a canticle to creation, and bore "
+            "the wounds of Christ in his own flesh. Close, it is a life stripped bare in words; far, it "
+            "is the face of God&rsquo;s little poor man, <i>il Poverello</i>.</p>"),
+    },
+    "st-anthony-of-padua": {
+        "scripture": ("What woman having ten groats, if she lose one groat, doth not light a candle, and "
+                      "sweep the house, and seek diligently until she find it?"),
+        "scripture_ref": "Luke 15:8 (D-R)",
+        "about": (
+            "<p>Made from a preacher&rsquo;s fire and a people&rsquo;s affection &mdash; <i>Miracles, "
+            "lost things, Padua, the lily, the Child Jesus</i> &mdash; this portrait honours the "
+            "Franciscan whose sermons drew crowds and whose help the faithful still beg for what is "
+            "lost.</p>"
+            "<p>The Lord asked: &ldquo;What woman having ten groats, if she lose one, doth not light a "
+            "candle&hellip; and seek diligently until she find it?&rdquo; (Luke 15:8). A Doctor of the "
+            "Church loved most for the smallest of favours &mdash; <i>Tony, Tony, turn around</i>. Close, "
+            "it is a search rewarded in words; far, it is the face that holds the Christ Child close.</p>"),
+    },
+    "st-jude-thaddeus": {
+        "scripture": "Keep yourselves in the love of God, waiting for the mercy of our Lord Jesus Christ, unto life everlasting.",
+        "scripture_ref": "Jude 1:21 (D-R)",
+        "about": (
+            "<p>Woven from a stubborn hope &mdash; <i>Apostle, Hope, desperate cases, Miracles, "
+            "Martyrdom</i> &mdash; this portrait honours the apostle the faithful call on when every "
+            "other door has closed.</p>"
+            "<p>His own letter urges: &ldquo;Keep yourselves in the love of God, waiting for the mercy of "
+            "our Lord Jesus Christ&rdquo; (Jude 1:21). Long confused with Judas the betrayer, and so left "
+            "unasked, he became the patron of hopeless causes &mdash; the saint of last resort who has "
+            "never been a last resort in vain. Close, it is hope in words; far, it is the face turned "
+            "toward the impossible.</p>"),
+    },
+    "st-therese-of-lisieux": {
+        "scripture": "Unless you be converted, and become as little children, you shall not enter into the kingdom of heaven.",
+        "scripture_ref": "Matthew 18:3 (D-R)",
+        "about": (
+            "<p>Made from a small and radiant holiness &mdash; <i>the Little Way, Simplicity, Carmelite, "
+            "flowers, Prayer, Lisieux</i> &mdash; this portrait honours the young nun who found sanctity "
+            "not in great deeds but in little ones done with great love.</p>"
+            "<p>She built her whole life on one saying: &ldquo;Unless you be converted, and become as "
+            "little children, you shall not enter into the kingdom of heaven&rdquo; (Matthew 18:3). Dead "
+            "at twenty-four, she promised to spend her heaven doing good on earth, and to let fall a "
+            "shower of roses. A Doctor of the Church in the shape of a child. Close, it is the Little Way "
+            "in words; far, it is the face of love made simple.</p>"),
+    },
+    "st-christopher": {
+        "scripture": "When thou shalt pass through the waters, I will be with thee, and the rivers shall not cover thee.",
+        "scripture_ref": "Isaias 43:2 (D-R)",
+        "about": (
+            "<p>Woven from an old and beloved legend &mdash; <i>Traveller&rsquo;s patron, Martyr, who "
+            "carried the Christ Child, Strength, Protection</i> &mdash; this portrait honours the giant "
+            "who, as the tradition tells it, carried travellers across a river and one day bore a child "
+            "who grew heavier than the world.</p>"
+            "<p>The prophet&rsquo;s promise fits him: &ldquo;When thou shalt pass through the waters, I "
+            "will be with thee&rdquo; (Isaias 43:2). His name means <i>Christ-bearer</i>, and the child "
+            "he carried was Christ himself. Patron of travellers and drivers, kept close on many a "
+            "dashboard. Close, it is protection in words; far, it is the face that carried the weight of "
+            "the world across.</p>"),
+    },
+    "st-rita-of-cascia": {
+        "scripture": "With men this is impossible: but with God all things are possible.",
+        "scripture_ref": "Matthew 19:26 (D-R)",
+        "about": (
+            "<p>Made from a life that knew every state &mdash; <i>wife, mother, Augustinian nun, "
+            "forgiveness, impossible causes, the thorn wound</i> &mdash; this portrait honours the saint "
+            "who forgave her husband&rsquo;s murderers and became patroness of what cannot be done.</p>"
+            "<p>Her whole life answers the Lord&rsquo;s word: &ldquo;With men this is impossible: but with "
+            "God all things are possible&rdquo; (Matthew 19:26). Wife, widow, and at last the nun she had "
+            "longed to be, marked on her brow by a thorn from the Crucified. With Saint Jude she is "
+            "invoked for the hopeless. Close, it is impossible causes in words; far, it is the face of "
+            "peace won through forgiveness.</p>"),
+    },
+    "st-joan-of-arc": {
+        "scripture": "Take courage, and be strong. Fear not and be not dismayed: because the Lord thy God is with thee.",
+        "scripture_ref": "Josue 1:9 (D-R)",
+        "about": (
+            "<p>Woven from an impossible courage &mdash; <i>the Maid of Orl&eacute;ans, Warrior, Martyr, "
+            "Visionary, France, Armour</i> &mdash; this portrait honours the farm girl who heard the "
+            "voices of saints and led an army at seventeen.</p>"
+            "<p>The Lord&rsquo;s charge to Josue was hers: &ldquo;Take courage, and be strong&hellip; "
+            "because the Lord thy God is with thee&rdquo; (Josue 1:9). She crowned a king, was sold to "
+            "her enemies, and was burned at nineteen with the name of Jesus on her lips &mdash; condemned "
+            "by men and canonised by the Church. Close, it is courage in words; far, it is the face of a "
+            "saint in armour.</p>"),
+    },
+
+    # --- Doctors & Martyrs --------------------------------------------------
+    "st-augustine-of-hippo": {
+        "scripture": "Not in rioting and drunkenness… but put ye on the Lord Jesus Christ.",
+        "scripture_ref": "Romans 13:13–14 (D-R)",
+        "about": (
+            "<p>Made from a restless mind come home &mdash; <i>Bishop of Hippo, theologian, the "
+            "Confessions, grace, conversion, Doctor of the Church</i> &mdash; this portrait honours the "
+            "great sinner become the West&rsquo;s greatest teacher.</p>"
+            "<p>In a garden he heard a child sing <i>take up and read</i>, and his eyes fell on the "
+            "words: &ldquo;Not in rioting and drunkenness&hellip; but put ye on the Lord Jesus "
+            "Christ&rdquo; (Romans 13:13&ndash;14). It was the end of his long flight and the beginning "
+            "of the <i>Confessions</i>. <i>Late have I loved thee, Beauty ever ancient, ever new.</i> "
+            "Close, it is grace in words; far, it is the face of a heart restless until it rested in "
+            "God.</p>"),
+    },
+    "st-sebastian": {
+        "scripture": "Labour as a good soldier of Christ Jesus.",
+        "scripture_ref": "2 Timothy 2:3 (D-R)",
+        "about": (
+            "<p>Woven from a soldier&rsquo;s constancy &mdash; <i>Martyr, Roman soldier, the arrows, "
+            "Courage, Resilience, patron of athletes</i> &mdash; this portrait honours the guardsman who "
+            "kept his faith in Caesar&rsquo;s own household and paid for it with his life.</p>"
+            "<p>Saint Paul&rsquo;s charge was his: &ldquo;Labour as a good soldier of Christ Jesus&rdquo; "
+            "(2 Timothy 2:3). Shot through with arrows and left for dead, he survived to confront the "
+            "emperor a second time. Patron of soldiers, athletes, and the sick, invoked against plague. "
+            "Close, it is endurance in words; far, it is the face of a courage that would not break.</p>"),
+    },
+    "st-george": {
+        "scripture": "Put you on the armour of God, that you may be able to stand against the deceits of the devil.",
+        "scripture_ref": "Ephesians 6:11 (D-R)",
+        "about": (
+            "<p>Made from courage and legend both &mdash; <i>the dragon, Martyr, Knight, England, "
+            "Chivalry, Protector</i> &mdash; this portrait honours the soldier-saint whose slaying of the "
+            "dragon has stood for the conquest of evil ever since.</p>"
+            "<p>The apostle&rsquo;s summons is his: &ldquo;Put you on the armour of God, that you may be "
+            "able to stand against the deceits of the devil&rdquo; (Ephesians 6:11). A real martyr under "
+            "Diocletian, remembered in a legend where faith unhorses the dragon. Patron of England, "
+            "soldiers, and scouts. Close, it is spiritual armour in words; far, it is the face of the "
+            "knight who rode at evil and won.</p>"),
+    },
 }
 
 
