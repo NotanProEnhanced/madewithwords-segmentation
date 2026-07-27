@@ -2,13 +2,13 @@
   "_comment": "Typortrait gallery catalog. collections -> sections -> items. Each item: id (stable, used in checkout + art filename), title, words (the text the portrait is woven from), art (provenance of the base image), text (provenance of the words). Art masters live at /static/gallery/art/<id>.png.",
   "collections": [
     {
-      "id": "sacred",
-      "title": "The Sacred Collection",
-      "blurb": "Sacred figures, each woven entirely from the words that belong to them.",
+      "id": "portraits-of-christ",
+      "title": "Portraits of Christ",
+      "blurb": "The face of Christ, revealed in the names and titles that belong to him.",
       "sections": [
         {
-          "id": "life-of-christ",
-          "title": "Life of Christ",
+          "id": "portraits-of-christ",
+          "title": "",
           "items": [
             {
               "id": "jesus-compassionate-savior",
@@ -66,10 +66,17 @@
               "scripture_ref": "Revelation 19:16"
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "blessed-virgin-mary",
+      "title": "The Blessed Virgin Mary",
+      "blurb": "The Mother of God, woven from the titles the faithful have prayed for two thousand years.",
+      "sections": [
         {
-          "id": "the-blessed-mother",
-          "title": "The Blessed Mother",
+          "id": "blessed-virgin-mary",
+          "title": "",
           "items": [
             {
               "id": "the-blessed-virgin-mary",
@@ -127,10 +134,17 @@
               "scripture_ref": "Luke 1:49"
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "angels",
+      "title": "Angels",
+      "blurb": "The messengers and guardians of heaven, each made from the words of their mission.",
+      "sections": [
         {
           "id": "angels",
-          "title": "Angels",
+          "title": "",
           "items": [
             {
               "id": "st-michael-the-archangel",
@@ -166,10 +180,17 @@
               "scripture_ref": "Psalm 91:11"
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "apostles",
+      "title": "The Apostles",
+      "blurb": "The men Christ sent to the ends of the earth, woven from their names and callings.",
+      "sections": [
         {
-          "id": "apostles---prophets",
-          "title": "Apostles & Prophets",
+          "id": "apostles",
+          "title": "",
           "items": [
             {
               "id": "st-peter",
@@ -194,54 +215,28 @@
               "scripture_ref": "2 Timothy 4:7"
             },
             {
-              "id": "st-john-the-baptist",
-              "title": "St. John the Baptist",
-              "subject": "St. John the Baptist",
-              "words": "PROPHET JOHN BAPTIST WILDERNESS PREACHER HERALD OF MESSIAH BAPTISM REPENTANCE LAMB OF GOD",
+              "id": "st-jude-thaddeus",
+              "title": "St. Jude Thaddeus",
+              "subject": "Jude Thaddeus",
+              "words": "APOSTLE HOPE DESPERATE CASES PATRON MIRACLES FAITHFUL LABORER HOLY SPIRIT MARTYRDOM LETTER",
               "art": "original (AI-generated)",
               "text": "",
               "price": "29",
-              "scripture": "Behold, the Lamb of God, who takes away the sin of the world!",
-              "scripture_ref": "John 1:29"
-            },
-            {
-              "id": "moses",
-              "title": "Moses",
-              "subject": "Moses",
-              "words": "PROPHET LAW-GIVER EXODUS TEN COMMANDMENTS RED SEA BURNING BUSH SINAI COVENANT FAITH DELIVERANCE",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29",
-              "scripture": "The Lord would speak to Moses face to face, as one speaks to a friend.",
-              "scripture_ref": "Exodus 33:11"
-            },
-            {
-              "id": "king-david",
-              "title": "King David",
-              "subject": "David",
-              "words": "KING ISRAEL SHEPHERD PSALMIST GOLIATH BETHLEHEM ARK JERUSALEM HARP REPENTANCE COVENANT",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29",
-              "scripture": "The Lord is my shepherd; I shall not want.",
-              "scripture_ref": "Psalm 23:1"
-            },
-            {
-              "id": "st-mary-magdalene",
-              "title": "St. Mary Magdalene",
-              "subject": "Mary Magdalene",
-              "words": "DISCIPLE WITNESS RESURRECTION ANOINTING SPICES TOMB GOSPEL PENITENT LOVE DEVOTION FAITHFUL",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29",
-              "scripture": "She turned and said to him, 'Rabboni!' — which means Teacher.",
-              "scripture_ref": "John 20:16"
+              "scripture": "Hope does not disappoint us, because God's love has been poured into our hearts.",
+              "scripture_ref": "Romans 5:5"
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "great-saints",
+      "title": "Great Saints",
+      "blurb": "The saints the faithful love and invoke, each composed from the words that belong to them.",
+      "sections": [
         {
-          "id": "beloved-patron-saints",
-          "title": "Beloved Patron Saints",
+          "id": "great-saints",
+          "title": "",
           "items": [
             {
               "id": "st-joseph",
@@ -277,17 +272,6 @@
               "scripture_ref": "Luke 15:6"
             },
             {
-              "id": "st-jude-thaddeus",
-              "title": "St. Jude Thaddeus",
-              "subject": "Jude Thaddeus",
-              "words": "APOSTLE HOPE DESPERATE CASES PATRON MIRACLES FAITHFUL LABORER HOLY SPIRIT MARTYRDOM LETTER",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29",
-              "scripture": "Hope does not disappoint us, because God's love has been poured into our hearts.",
-              "scripture_ref": "Romans 5:5"
-            },
-            {
               "id": "st-therese-of-lisieux",
               "title": "St. Therese of Lisieux",
               "subject": "Therese of Lisieux",
@@ -299,26 +283,15 @@
               "scripture_ref": "Matthew 18:3"
             },
             {
-              "id": "st-christopher",
-              "title": "St. Christopher",
-              "subject": "St. Christopher",
-              "words": "CHRISTOPHER PATRON SAINT TRAVELERS MARTYR LEGENDARY CARRIED CHRIST CHILD BEARDED STRENGTH PROTECTION",
+              "id": "st-augustine-of-hippo",
+              "title": "St. Augustine of Hippo",
+              "subject": "St. Augustine of Hippo",
+              "words": "AUGUSTINE BISHOP HIPPO THEOLOGIAN CONFESSIONS GRACE CONVERSION LATIN CHURCH FATHER DOCTOR",
               "art": "original (AI-generated)",
               "text": "",
               "price": "29",
-              "scripture": "When you pass through the waters, I will be with you.",
-              "scripture_ref": "Isaiah 43:2"
-            },
-            {
-              "id": "st-rita-of-cascia",
-              "title": "St. Rita of Cascia",
-              "subject": "St. Rita of Cascia",
-              "words": "RITA AUGUSTINIAN NUN WIFE MOTHER FORGIVENESS IMPOSSIBLE CAUSES STIGMATA DEVOTION PEACE PRAYER",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29",
-              "scripture": "With God all things are possible.",
-              "scripture_ref": "Matthew 19:26"
+              "scripture": "Put on the Lord Jesus Christ, and make no provision for the flesh.",
+              "scripture_ref": "Romans 13:14"
             },
             {
               "id": "st-joan-of-arc",
@@ -330,23 +303,17 @@
               "price": "29",
               "scripture": "Be strong and courageous. Do not be afraid, for the Lord your God is with you.",
               "scripture_ref": "Joshua 1:9"
-            }
-          ]
-        },
-        {
-          "id": "doctors---martyrs",
-          "title": "Doctors & Martyrs",
-          "items": [
+            },
             {
-              "id": "st-augustine-of-hippo",
-              "title": "St. Augustine of Hippo",
-              "subject": "St. Augustine of Hippo",
-              "words": "AUGUSTINE BISHOP HIPPO THEOLOGIAN CONFESSIONS GRACE CONVERSION LATIN CHURCH FATHER DOCTOR",
+              "id": "st-rita-of-cascia",
+              "title": "St. Rita of Cascia",
+              "subject": "St. Rita of Cascia",
+              "words": "RITA AUGUSTINIAN NUN WIFE MOTHER FORGIVENESS IMPOSSIBLE CAUSES STIGMATA DEVOTION PEACE PRAYER",
               "art": "original (AI-generated)",
               "text": "",
               "price": "29",
-              "scripture": "Put on the Lord Jesus Christ, and make no provision for the flesh.",
-              "scripture_ref": "Romans 13:14"
+              "scripture": "With God all things are possible.",
+              "scripture_ref": "Matthew 19:26"
             },
             {
               "id": "st-sebastian",
@@ -369,6 +336,96 @@
               "price": "29",
               "scripture": "Put on the whole armor of God, that you may be able to stand against the schemes of the devil.",
               "scripture_ref": "Ephesians 6:11"
+            },
+            {
+              "id": "st-christopher",
+              "title": "St. Christopher",
+              "subject": "St. Christopher",
+              "words": "CHRISTOPHER PATRON SAINT TRAVELERS MARTYR LEGENDARY CARRIED CHRIST CHILD BEARDED STRENGTH PROTECTION",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "When you pass through the waters, I will be with you.",
+              "scripture_ref": "Isaiah 43:2"
+            },
+            {
+              "id": "st-nicholas-of-myra",
+              "title": "St. Nicholas of Myra",
+              "subject": "St. Nicholas",
+              "words": "NICHOLAS BISHOP MYRA WONDERWORKER GIVER GIFTS CHILDREN SAILORS GENEROSITY SECRET ALMS PATRON",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "prophets-old-testament",
+      "title": "Prophets & the Old Testament",
+      "blurb": "From Abraham to the forerunner — the prophets and patriarchs, made from the words of the covenant.",
+      "sections": [
+        {
+          "id": "prophets-old-testament",
+          "title": "",
+          "items": [
+            {
+              "id": "moses",
+              "title": "Moses",
+              "subject": "Moses",
+              "words": "PROPHET LAW-GIVER EXODUS TEN COMMANDMENTS RED SEA BURNING BUSH SINAI COVENANT FAITH DELIVERANCE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "The Lord would speak to Moses face to face, as one speaks to a friend.",
+              "scripture_ref": "Exodus 33:11"
+            },
+            {
+              "id": "king-david",
+              "title": "King David",
+              "subject": "David",
+              "words": "KING ISRAEL SHEPHERD PSALMIST GOLIATH BETHLEHEM ARK JERUSALEM HARP REPENTANCE COVENANT",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "The Lord is my shepherd; I shall not want.",
+              "scripture_ref": "Psalm 23:1"
+            },
+            {
+              "id": "st-john-the-baptist",
+              "title": "St. John the Baptist",
+              "subject": "St. John the Baptist",
+              "words": "PROPHET JOHN BAPTIST WILDERNESS PREACHER HERALD OF MESSIAH BAPTISM REPENTANCE LAMB OF GOD",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Behold, the Lamb of God, who takes away the sin of the world!",
+              "scripture_ref": "John 1:29"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "women-of-faith",
+      "title": "Women of Faith",
+      "blurb": "The women of Scripture and the Church, woven from the words of their faith.",
+      "sections": [
+        {
+          "id": "women-of-faith",
+          "title": "",
+          "items": [
+            {
+              "id": "st-mary-magdalene",
+              "title": "St. Mary Magdalene",
+              "subject": "Mary Magdalene",
+              "words": "DISCIPLE WITNESS RESURRECTION ANOINTING SPICES TOMB GOSPEL PENITENT LOVE DEVOTION FAITHFUL",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "She turned and said to him, 'Rabboni!' — which means Teacher.",
+              "scripture_ref": "John 20:16"
             }
           ]
         }
@@ -379,6 +436,30 @@
       "title": "The Christmas Collection",
       "blurb": "The Nativity, the Magi, and the gift-bringers — each woven entirely from the words that belong to them.",
       "sections": [
+        {
+          "id": "the-nativity",
+          "title": "The Nativity",
+          "items": [
+            {
+              "id": "christ-child",
+              "title": "The Christ Child",
+              "subject": "the Christ Child",
+              "words": "CHRIST CHILD EMMANUEL NATIVITY BETHLEHEM MANGER SWADDLING NEWBORN KING WONDER LIGHT HOPE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
+            {
+              "id": "herald-angel",
+              "title": "The Herald Angel",
+              "subject": "the Herald Angel",
+              "words": "GLORY TO GOD IN THE HIGHEST TIDINGS GREAT JOY HERALD SHEPHERDS PEACE GOODWILL BETHLEHEM",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            }
+          ]
+        },
         {
           "id": "the-magi",
           "title": "The Magi",
@@ -413,47 +494,14 @@
           ]
         },
         {
-          "id": "the-nativity",
-          "title": "The Nativity",
-          "items": [
-            {
-              "id": "christ-child",
-              "title": "The Christ Child",
-              "subject": "the Christ Child",
-              "words": "CHRIST CHILD EMMANUEL NATIVITY BETHLEHEM MANGER SWADDLING NEWBORN KING WONDER LIGHT HOPE",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29"
-            },
-            {
-              "id": "herald-angel",
-              "title": "The Herald Angel",
-              "subject": "the Herald Angel",
-              "words": "GLORY TO GOD IN THE HIGHEST TIDINGS GREAT JOY HERALD SHEPHERDS PEACE GOODWILL BETHLEHEM",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29"
-            }
-          ]
-        },
-        {
-          "id": "the-gift-bringers",
-          "title": "The Gift-Bringers",
+          "id": "saint-nicholas",
+          "title": "Saint Nicholas",
           "items": [
             {
               "id": "st-nicholas-of-myra",
               "title": "St. Nicholas of Myra",
               "subject": "St. Nicholas",
               "words": "NICHOLAS BISHOP MYRA WONDERWORKER GIVER GIFTS CHILDREN SAILORS GENEROSITY SECRET ALMS PATRON",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29"
-            },
-            {
-              "id": "santa-claus",
-              "title": "Santa Claus",
-              "subject": "Santa Claus",
-              "words": "SANTA CLAUS JOY WONDER BELIEVE GIVING CHRISTMAS EVE SLEIGH REINDEER CHIMNEY MAGIC GENEROSITY KINDNESS",
               "art": "original (AI-generated)",
               "text": "",
               "price": "29"
@@ -464,6 +512,15 @@
           "id": "santa-claus",
           "title": "Santa Claus",
           "items": [
+            {
+              "id": "santa-claus",
+              "title": "Santa Claus",
+              "subject": "Santa Claus",
+              "words": "SANTA CLAUS JOY WONDER BELIEVE GIVING CHRISTMAS EVE SLEIGH REINDEER CHIMNEY MAGIC GENEROSITY KINDNESS",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29"
+            },
             {
               "id": "santa-jolly-classic",
               "title": "The Jolly Classic",

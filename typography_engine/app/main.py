@@ -1423,12 +1423,10 @@ def gallery_page(request: Request) -> HTMLResponse:
 
 
 def _brand_collections(host: str) -> Optional[set]:
-    """The collection ids a brand host may show, or None for 'all'. Mirrors the
-    client BRANDS allowlist (static/gallery.html): faithinwords is a devotional brand
-    and must NEVER surface the secular christmas set (Santa lives there). Brand-safety
-    gate, so both the sitemap and the /collections landing pages honour it."""
-    if "faithinwords" in (host or "").lower():
-        return {"sacred"}
+    """The collection ids a brand host may show, or None for 'all'. The FaithInWords
+    catalog is now the full nine-collection devotional set (Christmas included), so no
+    brand currently restricts a collection. Kept as the hook if a future brand needs to
+    hide one."""
     return None
 
 
@@ -2125,13 +2123,11 @@ _BUNDLE_TIERS = {2: 4900, 3: 6900, 4: 8500, 5: 9900, 6: 11500, 7: 13500, 8: 1490
 
 
 def _bundle_price_cents(n: int, complete: bool = False) -> Optional[int]:
-    """Set price for n portraits. Bigger sets are cheaper per portrait; the whole-
-    collection set is the flagship (~$10/portrait). None if too small to bundle."""
-    if n < 2:
+    """Set price for n portraits — always a real discount vs buying singly. Tiered for
+    small sets, ~$17/portrait beyond the table. None if too small to bundle (<3)."""
+    if n < 3:
         return None
-    if complete:
-        return max(9900, n * 1000)
-    return _BUNDLE_TIERS.get(n, n * 1700)   # >8 sections: ~$17/portrait, stays below the complete-set rate
+    return _BUNDLE_TIERS.get(n, n * 1700)
 
 
 def _item_digital_cents(it: Optional[dict]) -> int:
@@ -2150,13 +2146,13 @@ def _item_digital_cents(it: Optional[dict]) -> int:
 def _build_bundle(col: dict, part: str) -> Optional[dict]:
     """Resolve a set from a collection + part ('all' = whole collection, else a
     section id). Only items whose art exists are counted. None if it can't form a
-    sensible set (sections need >=3; the whole-collection set needs >=6)."""
+    sensible set (needs >=3 portraits with art)."""
     cid = str(col.get("id") or "")
     complete = (part == "all")
     if complete:
         items = [i for sec in col.get("sections", []) for i in sec.get("items", [])]
         ctitle = str(col.get("title") or "Collection")
-        title = f"The Complete {ctitle[4:]}" if ctitle.startswith("The ") else f"Complete {ctitle}"
+        title = f"{ctitle} — Complete Set"
         subtitle = "Every portrait in the collection"
     else:
         sec = next((s for s in col.get("sections", []) if s.get("id") == part), None)
@@ -2168,7 +2164,7 @@ def _build_bundle(col: dict, part: str) -> Optional[dict]:
         subtitle = f"All of {stitle}"
     ids = [i["id"] for i in items if i.get("id") and gallery_catalog.art_path(i["id"]) is not None]
     n = len(ids)
-    if (complete and n < 6) or (not complete and n < 3):
+    if n < 3:
         return None
     price = _bundle_price_cents(n, complete=complete)
     if price is None:
@@ -2193,10 +2189,12 @@ def _gallery_bundles_for(collection_id: str) -> list:
     whole = _build_bundle(col, "all")
     if whole:
         out.append(whole)
-    for sec in col.get("sections", []):
-        b = _build_bundle(col, str(sec.get("id") or ""))
-        if b:
-            out.append(b)
+    secs = col.get("sections", [])
+    if len(secs) >= 2:   # single-section collection -> the whole-set already covers it
+        for sec in secs:
+            b = _build_bundle(col, str(sec.get("id") or ""))
+            if b:
+                out.append(b)
     return out
 
 
@@ -2670,6 +2668,8 @@ def collection_page(collection_id: str, request: Request) -> HTMLResponse:
     import json as _j
     if not GALLERY_ENABLED:
         raise HTTPException(status_code=404, detail="not_found")
+    if collection_id == "sacred":   # retired collection (split into the nine) -> keep old links alive
+        return RedirectResponse(url="/gallery", status_code=301)
     try:
         cat = _j.loads((STATIC_DIR / "gallery" / "catalog.json").read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
@@ -2711,8 +2711,9 @@ def collection_page(collection_id: str, request: Request) -> HTMLResponse:
             list_items.append({"@type": "ListItem", "position": n,
                                "url": f"{base}/gallery/{iid}", "name": it_title})
         if cards:
-            sections_html += (f'<section class="grp"><h2>{_h.escape(str(sec.get("title") or ""))}</h2>'
-                              f'<div class="cardgrid">{cards}</div></section>')
+            _st = str(sec.get("title") or "").strip()   # flat (single-section) collections carry no section title
+            _h2 = f'<h2>{_h.escape(_st)}</h2>' if _st else ''
+            sections_html += f'<section class="grp">{_h2}<div class="cardgrid">{cards}</div></section>'
     if n == 0:
         raise HTTPException(status_code=404, detail="not_found")
 
