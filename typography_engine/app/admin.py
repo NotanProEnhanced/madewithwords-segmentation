@@ -43,6 +43,10 @@ SMTP_HOST      = os.environ.get("TYPO_SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT      = int(os.environ.get("TYPO_SMTP_PORT", "587") or "587")
 SMTP_USER      = os.environ.get("TYPO_SMTP_USER", "")
 SMTP_PASS      = os.environ.get("TYPO_SMTP_PASS", "")
+# Optional brand display name for the From header (per-container), e.g. "Loved in
+# Words". Recipients then see 'Loved in Words <account@…>' instead of a bare
+# personal address — friendlier and less spam-prone. Unset => bare address (old behaviour).
+MAIL_FROM_NAME = os.environ.get("TYPO_MAIL_FROM_NAME", "").strip()
 COOKIE_SECURE  = PUBLIC_BASE_URL.lower().startswith("https://")
 
 REEL_STATES = ("queued", "approved", "posted", "rejected", "revoked")
@@ -436,6 +440,19 @@ def migrate_legacy_queue_markers() -> int:
 
 # --- Email --------------------------------------------------------------
 
+def _from_header() -> str:
+    """From header for outgoing mail. Prepends the brand display name
+    (TYPO_MAIL_FROM_NAME) when set, so recipients see 'Loved in Words <account@…>'
+    rather than a bare personal address; falls back to the bare address otherwise.
+    The Name in the pair is what mail clients show, without changing the SMTP account."""
+    if MAIL_FROM_NAME:
+        # Wrap the name in an EmailMessage-safe form; commas/specials in a display
+        # name must be quoted to stay RFC-5322 valid.
+        safe = MAIL_FROM_NAME.replace('"', "").replace("\\", "")
+        return f'"{safe}" <{SMTP_USER}>' if safe else SMTP_USER
+    return SMTP_USER
+
+
 def smtp_configured() -> bool:
     return bool(SMTP_HOST and SMTP_USER and SMTP_PASS and ADMIN_EMAIL and SECRET_KEY)
 
@@ -449,7 +466,7 @@ def send_email(to: str, subject: str, body_html: str, body_text: str) -> bool:
         return False
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = SMTP_USER
+    msg["From"] = _from_header()
     msg["To"] = to
     msg.set_content(body_text or " ")
     if body_html:
@@ -516,7 +533,7 @@ def send_sale_email(summary: dict) -> bool:
                  f"Customer: {summary.get('email')}\nOrder: {summary.get('order_id') or '-'}\n")
     msg = EmailMessage()
     msg["Subject"] = f"New sale · {summary.get('product') or 'Order'} · {summary.get('amount') or ''}"
-    msg["From"] = SMTP_USER
+    msg["From"] = _from_header()
     msg["To"] = ADMIN_EMAIL
     msg.set_content(body_text)
     msg.add_alternative(body_html, subtype="html")
@@ -563,7 +580,7 @@ def send_data_request_email(rec: dict) -> bool:
                  f"Job ID: {rec.get('job_id') or '-'} ({deleted} deleted)\nDetails: {rec.get('details') or '-'}\n")
     msg = EmailMessage()
     msg["Subject"] = f"Data request · {rec.get('type') or 'request'} · {rec.get('email') or ''}"
-    msg["From"] = SMTP_USER
+    msg["From"] = _from_header()
     msg["To"] = ADMIN_EMAIL
     msg.set_content(body_text)
     msg.add_alternative(body_html, subtype="html")
@@ -618,7 +635,7 @@ def send_review_email(job: str, words, consent: dict) -> bool:
     )
     msg = EmailMessage()
     msg["Subject"] = f"Typortrait reel awaiting review · {job}"
-    msg["From"] = SMTP_USER
+    msg["From"] = _from_header()
     msg["To"] = ADMIN_EMAIL
     msg.set_content(body_text)
     msg.add_alternative(body_html, subtype="html")
@@ -683,7 +700,7 @@ def send_save_link_email(job: str, to_email: str) -> bool:
     )
     msg = EmailMessage()
     msg["Subject"] = "Your Typortrait is saved — here's your link"
-    msg["From"] = SMTP_USER
+    msg["From"] = _from_header()
     msg["To"] = to_email
     msg.set_content(body_text)
     msg.add_alternative(body_html, subtype="html")
