@@ -317,9 +317,9 @@ def _ba_slider_html(before: str = "/static/lovedinwords/before.jpg",
     Drop into any server-rendered page; one instance per page is expected."""
     cap = f'<p class="bfa-cap">{caption}</p>' if caption else ""
     return f'''<style>
-.bfa{{position:relative;width:100%;max-width:440px;margin:0 auto;border-radius:12px;overflow:hidden;line-height:0;
+.bfa{{position:relative;width:100%;max-width:440px;margin:0 auto;aspect-ratio:4/5;border-radius:12px;overflow:hidden;line-height:0;
  box-shadow:0 24px 44px -26px rgba(30,22,14,.5);user-select:none;-webkit-user-select:none;background:#e9e2d6}}
-.bfa .bfa-base{{position:relative;width:100%;height:auto;display:block}}
+.bfa .bfa-base{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}}
 .bfa .bfa-top{{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;
  clip-path:inset(0 calc(100% - var(--p,50%)) 0 0)}}
 .bfa .bfa-line{{position:absolute;top:0;bottom:0;left:var(--p,50%);width:2px;margin-left:-1px;
