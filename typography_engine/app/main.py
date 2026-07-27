@@ -307,6 +307,59 @@ def _org_website_schema(base: str, b: dict) -> list:
     return [org, web]
 
 
+def _ba_slider_html(before: str = "/static/lovedinwords/before.jpg",
+                    after: str = "/static/lovedinwords/after.jpg",
+                    caption: str = "") -> str:
+    """Self-contained before/after drag-slider (HTML + CSS + JS, no libraries). The two
+    images are overlaid, so they must share an aspect ratio (the LiW pair is 4:5). A
+    full-cover, transparent range input drives the reveal — giving mouse, touch AND
+    keyboard control — and if JS is off it simply shows the finished 'after' portrait.
+    Drop into any server-rendered page; one instance per page is expected."""
+    cap = f'<p class="bfa-cap">{caption}</p>' if caption else ""
+    return f'''<style>
+.bfa{{position:relative;width:100%;max-width:440px;margin:0 auto;border-radius:12px;overflow:hidden;line-height:0;
+ box-shadow:0 24px 44px -26px rgba(30,22,14,.5);user-select:none;-webkit-user-select:none;background:#e9e2d6}}
+.bfa .bfa-base{{position:relative;width:100%;height:auto;display:block}}
+.bfa .bfa-top{{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;
+ clip-path:inset(0 calc(100% - var(--p,50%)) 0 0)}}
+.bfa .bfa-line{{position:absolute;top:0;bottom:0;left:var(--p,50%);width:2px;margin-left:-1px;
+ background:rgba(255,255,255,.92);box-shadow:0 0 8px rgba(0,0,0,.35);pointer-events:none}}
+.bfa .bfa-knob{{position:absolute;top:50%;left:var(--p,50%);width:42px;height:42px;margin:-21px 0 0 -21px;
+ border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;
+ box-shadow:0 3px 12px rgba(0,0,0,.4);pointer-events:none}}
+.bfa .bfa-tag{{position:absolute;bottom:12px;font:600 10.5px/1 system-ui,sans-serif;letter-spacing:.11em;
+ text-transform:uppercase;color:#fff;background:rgba(27,35,64,.72);padding:5px 10px;border-radius:20px;pointer-events:none}}
+.bfa .bfa-l{{left:12px}}
+.bfa .bfa-r{{right:12px}}
+.bfa .bfa-rng{{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:ew-resize;
+ -webkit-appearance:none;appearance:none;background:transparent}}
+.bfa .bfa-rng::-webkit-slider-thumb{{-webkit-appearance:none;appearance:none;width:46px;height:46px;cursor:ew-resize}}
+.bfa .bfa-rng::-moz-range-thumb{{width:46px;height:46px;border:none;opacity:0;cursor:ew-resize}}
+.bfa-cap{{text-align:center;color:#6f6a5f;font-size:13.5px;line-height:1.5;margin:12px auto 0;max-width:34em}}
+</style>
+<div class="bfa">
+ <img class="bfa-base" src="{after}" alt="The same face, formed entirely from the words that describe them">
+ <img class="bfa-top" src="{before}" alt="A favourite photograph">
+ <div class="bfa-line"></div>
+ <div class="bfa-knob"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M10 7 5 12l5 5M14 7l5 5-5 5" stroke="#1b2340" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+ <span class="bfa-tag bfa-l">Their photo</span>
+ <span class="bfa-tag bfa-r">In words</span>
+ <input class="bfa-rng" type="range" min="0" max="100" value="50" aria-label="Drag to reveal the word portrait">
+</div>
+{cap}
+<script>
+(function(){{
+ var s=document.querySelectorAll('.bfa');
+ for(var i=0;i<s.length;i++){{(function(el){{
+  if(el.dataset.bfaInit)return; el.dataset.bfaInit='1';
+  var r=el.querySelector('.bfa-rng');
+  var u=function(){{el.style.setProperty('--p', r.value+'%');}};
+  r.addEventListener('input',u); u();
+ }})(s[i]);}}
+}})();
+</script>'''
+
+
 def _liw_landing_html(request: Request) -> str:
     """The Loved in Words marketing landing page (memorial brand). Grief-sensitive
     hero + before/after + how-it-works + keepsake, driving to the studio ('Create a
@@ -442,11 +495,7 @@ def _liw_landing_html(request: Request) -> str:
 
 <section class="band"><div class="wrap">
  <h2 class="sec">From a photograph, to a portrait of who they were</h2>
- <div class="ba">
-  <figure><img src="/static/lovedinwords/before.jpg" alt="A favourite photograph of a beloved grandmother"><figcaption>A favourite photograph</figcaption></figure>
-  <div class="arrow" aria-hidden="true">&rarr;</div>
-  <figure><img src="/static/lovedinwords/after.jpg" alt="The same face rendered entirely from words"><figcaption>Woven from words</figcaption></figure>
- </div>
+ {_ba_slider_html()}
  <p class="ba-note">Step close and the likeness dissolves into words &mdash; <i>grandmother, wise, gentle, beloved</i>.
   Step back, and their face returns.</p>
 </div></section>
@@ -3591,6 +3640,7 @@ button:hover{{background:#b64f4b}}
     <p class="note">Your code works once and unlocks one keepsake. Keep it private &mdash;
      anyone with the code can redeem it.</p>
   </form>
+  {_ba_slider_html(caption="The keepsake you&rsquo;re about to make &mdash; drag to see the transformation.")}
   <p class="powered">Powered by <a href="https://typortrait.com" target="_blank" rel="noopener">Typortrait.com</a></p>
 </main></body></html>"""
     return HTMLResponse(body)
