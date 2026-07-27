@@ -39,6 +39,8 @@ services:
       - TYPO_SMTP_PORT=${TYPO_SMTP_PORT:-587}
       - TYPO_SMTP_USER=${TYPO_SMTP_USER:-}
       - TYPO_SMTP_PASS=${TYPO_SMTP_PASS:-}
+      # Branded From display name on outgoing mail (buyer code emails, admin alerts).
+      - TYPO_MAIL_FROM_NAME=${TYPO_MAIL_FROM_NAME:-Loved in Words}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
       - PRINTFUL_API_TOKEN=${PRINTFUL_API_TOKEN:-}
       - PRINTFUL_STORE_ID=${PRINTFUL_STORE_ID:-}
