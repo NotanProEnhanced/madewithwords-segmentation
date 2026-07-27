@@ -1366,7 +1366,7 @@ def gallery_page(request: Request) -> HTMLResponse:
             '<div class="fh-copy">'
             '<div class="fh-eyebrow">Sacred Word Art</div>'
             '<h2 class="fh-h">A face, revealed in the words that belong to it.</h2>'
-            '<p class="fh-p">Every portrait in the Sacred Collection is composed entirely of real, legible '
+            '<p class="fh-p">Every portrait in the collection is composed entirely of real, legible '
             'words &mdash; the names, titles and Scripture of its subject. Step close and the likeness dissolves '
             'into language; step back, and the face returns. Each piece is paired with a verse chosen for its subject.</p>'
             '<div class="fh-trust"><b>From $29</b> &middot; No watermark &middot; Free phone &amp; desktop wallpapers '
@@ -1509,10 +1509,10 @@ def llms_txt(request: Request) -> Response:
         offers = [f"- Digital sacred word portrait — ${dig/100:.0f} (high-resolution download, no watermark, plus free phone & desktop wallpapers)",
                   f"- Fine-art prints, gallery canvas and framed pieces — from ${fr/100:.0f}",
                   "- Curated collection sets (multiple portraits at a discount) — from $69"]
-        how = ["1. Browse the Sacred Collection — Jesus Christ, the Blessed Virgin Mary, angels, apostles and saints.",
+        how = ["1. Browse the collections — Jesus Christ, the Blessed Virgin Mary, angels, apostles, saints, prophets and women of faith.",
                "2. Each portrait is composed entirely of the words that belong to its subject, paired with a verse of Scripture.",
                "3. Buy the digital download (with free wallpapers) or order archival prints and framed pieces."]
-        pages = [("Home / Gallery", "/gallery"), ("The Sacred Collection", "/collections/sacred"),
+        pages = [("Home / Gallery", "/gallery"), ("Portraits of Christ", "/collections/portraits-of-christ"),
                  ("About", "/about"), ("FAQ", "/faq"), ("Returns & Refunds", "/refunds"),
                  ("Privacy", "/privacy"), ("Partner program", "/partners")]
     else:
@@ -2395,7 +2395,7 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
  footer nav{margin-bottom:9px}footer nav a{margin:0 6px;color:var(--mut);text-decoration:none}footer nav a:hover{color:var(--navy)}
 </style></head><body>
 <div class="wrap">
- <header><a class="bm" href="/gallery">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Sacred Collection</a></header>
+ <header><a class="bm" href="/gallery">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Collection</a></header>
  <div class="product">
   <div class="media">
    <div class="frame"><img id="mainart" src="[[ART]]" alt="[[TITLE]] &mdash; sacred word portrait"></div>
