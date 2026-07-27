@@ -716,6 +716,69 @@ def send_save_link_email(job: str, to_email: str) -> bool:
         return False
 
 
+def keepsake_code_email_bodies(code_fmt: str, link: str, product_name: str, name: str = ""):
+    """(html, text) for the buyer's 'here is your redemption code' email. The admin
+    Issue-code form uses this; tools/issue_code.py builds the same email for the CLI.
+    Keep the two in sync if the copy changes."""
+    nm = (name or "").strip()
+    hi = f"Hi {nm}," if nm else "Hello,"
+    hi_h = html.escape(hi)
+    pn = html.escape(product_name)
+    lk = html.escape(link)
+    cf = html.escape(code_fmt)
+    text = (
+        f"{hi}\n\n"
+        f"Thank you. Your keepsake — {product_name} — is ready to personalize.\n\n"
+        f"Your redemption code: {code_fmt}\n\n"
+        f"Open this link to add a favorite photo and the words that describe your loved one,\n"
+        f"see the portrait come together, and send it to us:\n\n"
+        f"    {link}\n\n"
+        f"Buying this as a gift? You can forward this email to the family — the link is\n"
+        f"theirs to personalize, whenever they're ready.\n\n"
+        f"Your code works once. Please keep it private — anyone with the code can redeem it.\n\n"
+        f"With care,\nLoved in Words\n"
+    )
+    body_html = f"""<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#2b2f36;max-width:520px;line-height:1.6">
+<p style="font-size:30px;line-height:1;color:#c85b57;margin:0 0 6px">&#9829;</p>
+<h2 style="font-family:Georgia,'Times New Roman',serif;color:#42525f;font-size:22px;margin:0 0 10px">Your keepsake is ready to personalize</h2>
+<p style="margin:0 0 4px">{hi_h}</p>
+<p style="margin:0 0 16px">Thank you. Your <b>{pn}</b> is ready. Add a favorite photo and the words that describe your loved one, watch their portrait take shape, and send it to us.</p>
+<p style="margin:0 0 6px;color:#7a756e;font-size:14px">Your redemption code</p>
+<p style="font-size:22px;letter-spacing:.08em;font-weight:700;color:#42525f;background:#f4efe8;border-radius:12px;padding:14px;text-align:center;margin:0 0 18px">{cf}</p>
+<p style="text-align:center;margin:0 0 18px">
+  <a href="{lk}" style="background:#c85b57;color:#fff;padding:13px 30px;border-radius:999px;text-decoration:none;display:inline-block;font-weight:700">Personalize my keepsake</a>
+</p>
+<p style="margin:0 0 16px;color:#7a756e;font-size:14px;font-style:italic">Buying this as a gift? Forward this email to the family &mdash; the link is theirs to personalize, whenever they&rsquo;re ready.</p>
+<p style="color:#9a948c;font-size:12.5px;margin:0">Your code works once. Please keep it private &mdash; anyone with the code can redeem it.</p>
+<p style="color:#a49e95;font-size:12px;margin:18px 0 0">With care, Loved in Words &middot; powered by Typortrait.com</p>
+</div>"""
+    return body_html, text
+
+
+def issue_redemption_code(sku: str, email: str, name: str = "", batch: Optional[str] = None) -> dict:
+    """Generate ONE redemption code for `sku` and email it to the buyer. The
+    programmatic twin of tools/issue_code.py, powering the /admin/issue form.
+    Returns {ok, code, link, emailed, product} or {ok: False, error}."""
+    from . import products, redemption
+    product = products.get(sku)
+    if not product:
+        return {"ok": False, "error": f"Unknown SKU: {sku}"}
+    email = (email or "").strip()
+    if "@" not in email or " " in email or "." not in email.rsplit("@", 1)[-1]:
+        return {"ok": False, "error": f"That doesn't look like a valid email address: {email!r}"}
+    try:
+        redemption.init_db()
+        code_fmt = redemption.generate(sku, 1, batch=(batch or None),
+                                       note=f"issued to {email} (admin form)")[0]
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"Could not generate a code: {e}"}
+    link = f"{PUBLIC_BASE_URL.rstrip('/')}/redeem?code={code_fmt}"
+    body_html, body_text = keepsake_code_email_bodies(code_fmt, link, product.name, name)
+    emailed = send_email(email, "Your keepsake is ready to personalize", body_html, body_text)
+    return {"ok": True, "code": code_fmt, "link": link, "emailed": emailed,
+            "product": product.name}
+
+
 def _log(msg: str) -> None:
     """Surface admin/scanner events to docker compose logs typortrait."""
     import sys
@@ -790,7 +853,8 @@ a{{color:#0d1b3a}}
 
 
 def _admin_nav(current: str = "all", stats_active: bool = False,
-               orders_active: bool = False, dr_active: bool = False) -> str:
+               orders_active: bool = False, dr_active: bool = False,
+               issue_active: bool = False) -> str:
     items = [
         ("all", "All", "/admin/reels"),
         ("queued", "Queued", "/admin/reels?filter=queued"),
@@ -799,7 +863,7 @@ def _admin_nav(current: str = "all", stats_active: bool = False,
         ("rejected", "Rejected", "/admin/reels?filter=rejected"),
         ("revoked", "Revoked", "/admin/reels?filter=revoked"),
     ]
-    active_elsewhere = stats_active or orders_active or dr_active
+    active_elsewhere = stats_active or orders_active or dr_active or issue_active
     bits = []
     for key, label, url in items:
         cls = ' class="cur"' if key == current and not active_elsewhere else ""
@@ -808,6 +872,8 @@ def _admin_nav(current: str = "all", stats_active: bool = False,
     bits.append(f'<a href="/admin/stats"{stats_cls}>Stats</a>')
     orders_cls = ' class="cur"' if orders_active else ""
     bits.append(f'<a href="/admin/orders"{orders_cls}>Orders</a>')
+    issue_cls = ' class="cur"' if issue_active else ""
+    bits.append(f'<a href="/admin/issue"{issue_cls}>Issue code</a>')
     dr_cls = ' class="cur"' if dr_active else ""
     bits.append(f'<a href="/admin/data-requests"{dr_cls}>Data requests</a>')
     bits.append('<span class="gap"></span>')
@@ -940,6 +1006,71 @@ def admin_orders(admin_session: Optional[str] = Cookie(None)):
              '<th>Email</th><th>Printful</th><th>Track</th><th>Error</th></tr>'
              + "".join(trs) + '</table>')
     return HTMLResponse(_admin_chrome("Orders", body))
+
+
+@router.get("/issue", response_class=HTMLResponse)
+def admin_issue_form(admin_session: Optional[str] = Cookie(None)):
+    """Point-and-click equivalent of tools/issue_code.py: pick a product, enter the
+    buyer's email, and issue + email a one-time redemption code."""
+    guard = _require_admin(admin_session)
+    if guard is not None:
+        return guard
+    from . import products
+    # EverLoved's three sellers first, then the rest of the catalog by name.
+    front = ["digital", "framed_16x20", "bundle_family"]
+    cat = sorted(products.CATALOG,
+                 key=lambda p: (front.index(p.sku) if p.sku in front else len(front), p.name))
+    opts = "".join(
+        f'<option value="{html.escape(p.sku)}">{html.escape(p.name)} ({html.escape(p.sku)})</option>'
+        for p in cat)
+    default_batch = "everloved-" + time.strftime("%Y-%m")
+    body = '<h1>Issue a redemption code</h1>'
+    body += _admin_nav(issue_active=True)
+    body += ('<p class="muted">From an EverLoved order: choose the product, enter the buyer&rsquo;s '
+             'email, and click the button. We generate a one-time code and email the buyer their '
+             'personalize link &mdash; no command line needed.</p>')
+    body += (f'<form method="post" action="/admin/issue" class="card" style="max-width:540px">'
+             f'<div class="field"><label>Product</label>'
+             f'<select name="sku">{opts}</select></div>'
+             f'<div class="field"><label>Buyer email</label>'
+             f'<input name="email" type="email" required placeholder="buyer@example.com"></div>'
+             f'<div class="field"><label>Buyer first name (optional)</label>'
+             f'<input name="name" placeholder="Jane"></div>'
+             f'<div class="field"><label>Batch label (optional)</label>'
+             f'<input name="batch" value="{html.escape(default_batch)}"></div>'
+             f'<button class="btn" type="submit">Issue &amp; email code</button></form>')
+    return HTMLResponse(_admin_chrome("Issue code", body))
+
+
+@router.post("/issue", response_class=HTMLResponse)
+def admin_issue_submit(sku: str = Form(...), email: str = Form(...),
+                       name: str = Form(""), batch: str = Form(""),
+                       admin_session: Optional[str] = Cookie(None)):
+    guard = _require_admin(admin_session)
+    if guard is not None:
+        return guard
+    result = issue_redemption_code(sku, email, name=name, batch=(batch.strip() or None))
+    body = '<h1>Issue a redemption code</h1>'
+    body += _admin_nav(issue_active=True)
+    if not result.get("ok"):
+        body += f'<div class="msg err">{html.escape(result.get("error") or "Could not issue the code.")}</div>'
+        body += '<p><a class="btn ghost" href="/admin/issue">Try again</a></p>'
+        return HTMLResponse(_admin_chrome("Issue code", body))
+    code = html.escape(result["code"])
+    link = html.escape(result["link"])
+    prod = html.escape(result["product"])
+    to = html.escape(email.strip())
+    if result["emailed"]:
+        body += f'<div class="msg ok">Code issued and emailed to <b>{to}</b>.</div>'
+    else:
+        body += ('<div class="msg err">Code issued, but the email failed to send (check SMTP). '
+                 'Copy the code and link below and send them to the buyer manually.</div>')
+    body += (f'<div class="card"><p><b>Product:</b> {prod}</p>'
+             f'<p><b>Code:</b> <span style="font-size:20px;letter-spacing:.06em;font-weight:700">{code}</span></p>'
+             f'<p><b>Redeem link:</b><br><a href="{link}">{link}</a></p></div>')
+    body += ('<p><a class="btn" href="/admin/issue">Issue another</a> '
+             '&nbsp;<a class="btn ghost" href="/admin/orders">View orders</a></p>')
+    return HTMLResponse(_admin_chrome("Issue code", body))
 
 
 _DR_TYPE_STYLE = {
