@@ -2757,11 +2757,11 @@ function fetchWithTimeout(url, opts, ms){
       .then(function(d){
         if(d && d.ok && d.kind==="digital" && d.download){
           buy.textContent="Downloading…"; window.location.href=d.download;
-          finish("Your keepsake is downloading — a zip with your print file plus phone &amp; desktop wallpapers. If it didn’t start, use the button below.", d.download);
+          finish("Your keepsake is downloading — a zip with your print file plus phone & desktop wallpapers. If it didn’t start, use the button below.", d.download);
         } else if(d && d.ok && d.kind==="physical"){
           finish("All set 🤍 Your keepsake is being made and ships to the address you gave"
                  + (d.order_id? " (order "+d.order_id+")":"")
-                 + ". Your free digital keepsake — print file plus phone &amp; desktop wallpapers — is ready below.", d.download);
+                 + ". Your free digital keepsake — print file plus phone & desktop wallpapers — is ready below.", d.download);
         } else {
           buy.disabled=false; buy.textContent=old;
           try{ buynote.textContent=errMsg(d && d.error); }catch(e){}
@@ -2786,8 +2786,78 @@ function fetchWithTimeout(url, opts, ms){
       }
       a.href=dl; a.setAttribute("download",""); a.textContent="Download your keepsake (print + wallpapers)";
     }
+    try{ if(REDEEM && REDEEM.kind==="digital") buildUpsell(); }catch(e){}
     closeModal();
     window.__redeemIntercept=function(){ return true; };   // no double-submit after success
+  }
+
+  // --- Memorial print upsell (post-redemption) -------------------------------
+  // Shown once, under the download button, only to DIGITAL redeemers. Reuses the
+  // studio's already-loaded CATALOG (so the shown price matches what /checkout
+  // charges) and posts to /checkout exactly like the normal buy button — a real
+  // purchase of the just-redeemed portrait (currentJob). If prints aren't
+  // configured (empty CATALOG), it silently renders nothing.
+  function _catP(sku){ return (typeof CATALOG!=="undefined"&&CATALOG||[]).find(function(x){return x.sku===sku;}); }
+  function ensureUpsellStyle(){
+    if(document.getElementById("liwUpStyle")) return;
+    var s=document.createElement("style"); s.id="liwUpStyle";
+    s.textContent="#liwUpsell{max-width:520px;margin:18px auto 0;text-align:center}"
+      +".liwup-rule{height:1px;background:#e7ded0;margin:22px 0 18px}"
+      +".liwup-h{font-family:Georgia,'Times New Roman',serif;color:#42525f;font-size:19px;margin:0 0 4px}"
+      +".liwup-s{color:#7a756e;font-size:13.5px;line-height:1.5;margin:0 0 14px}"
+      +".liwup-opts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:0}"
+      +"@media(max-width:460px){.liwup-opts{grid-template-columns:1fr}}"
+      +".liwup-opt{position:relative;border:1.5px solid #e2d9c9;border-radius:12px;padding:12px 8px 22px;background:#fff;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:5px}"
+      +".liwup-opt:hover{border-color:#c85b57}"
+      +".liwup-opt.b{border-color:#c85b57;box-shadow:0 0 0 2px rgba(200,91,87,.14)}"
+      +".liwup-t{font-size:12.5px;color:#42525f;font-weight:600;line-height:1.2;text-align:center}"
+      +".liwup-p{font-size:15px;color:#1b2340;font-weight:700}"
+      +".liwup-tag{position:absolute;bottom:7px;left:0;right:0;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#c85b57}"
+      +".liwup-note{color:#a12622;font-size:13px;margin:10px 0 0;min-height:1em}";
+    document.head.appendChild(s);
+  }
+  function buildUpsell(){
+    if(document.getElementById("liwUpsell")) return;
+    var picks=[["framed_8x10",""],["framed_16x20","Most loved"],["bundle_family",""]];
+    var cards="";
+    picks.forEach(function(pk){
+      var p=_catP(pk[0]); if(!p) return;
+      var tag = pk[1] ? '<span class="liwup-tag">'+esc(pk[1])+'</span>' : '';
+      cards += '<button type="button" class="liwup-opt'+(pk[1]?' b':'')+'" data-sku="'+esc(p.sku)+'">'
+             + '<span class="liwup-t">'+esc(p.name)+'</span>'
+             + '<span class="liwup-p">'+money(p.price_cents,p.currency)+'</span>'+tag+'</button>';
+    });
+    if(!cards) return;   // prints not configured -> no upsell
+    ensureUpsellStyle();
+    var box=document.createElement("div"); box.id="liwUpsell";
+    box.innerHTML='<div class="liwup-rule"></div>'
+      +'<h3 class="liwup-h">Keep them close — in something you can hold</h3>'
+      +'<p class="liwup-s">Your portrait is ready. Bring it into your home, or send one to everyone who loved them.</p>'
+      +'<div class="liwup-opts">'+cards+'</div>'
+      +'<p class="liwup-note" id="liwUpNote"></p>';
+    var anchor=document.getElementById("redeemDl")||buynote;
+    try{ anchor.parentNode.insertBefore(box, anchor.nextSibling); }catch(e){ document.body.appendChild(box); }
+    var btns=box.querySelectorAll(".liwup-opt");
+    for(var i=0;i<btns.length;i++){ (function(b){ b.addEventListener("click",function(){ upsellBuy(b.getAttribute("data-sku"), b); }); })(btns[i]); }
+  }
+  function upsellBuy(sku, btn){
+    if(!currentJob) return;
+    var note=document.getElementById("liwUpNote"); if(note) note.textContent="";
+    btn.disabled=true; btn.style.opacity=".55";
+    var fd=new FormData(); fd.append("job",currentJob);
+    fd.append("fmt",(typeof state!=="undefined"&&state&&state.fmt)?state.fmt:"png");
+    fd.append("sku",sku);
+    fetch("/checkout",{method:"POST",body:fd,credentials:"same-origin"})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(d && d.ok && d.url){ window.location.href=d.url; return; }
+        btn.disabled=false; btn.style.opacity="";
+        if(note) note.textContent=(d && d.error==="fulfillment_unconfigured")
+          ? "Prints aren't available right now — please try again later."
+          : "Couldn't open checkout — please try again.";
+      })
+      .catch(function(){ btn.disabled=false; btn.style.opacity="";
+        if(note) note.textContent="Network error — please try again."; });
   }
 
   function errMsg(code){
