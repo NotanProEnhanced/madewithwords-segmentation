@@ -82,19 +82,27 @@ def main(argv=None) -> int:
         print(f"error: {args.email!r} doesn't look like an email address", file=sys.stderr)
         return 2
 
-    redemption.init_db()
-    note = f"issued to {args.email.strip()}"
-    code_fmt = redemption.generate(args.sku, 1, batch=args.batch, note=note)[0]
     base = args.link_base.rstrip("/")
-    # The redeem page pre-fills ?code=, so the buyer just clicks Continue.
-    link = f"{base}/redeem?code={code_fmt}"
-    html, text = _email_bodies(code_fmt, link, product.name, args.name.strip())
     subject = "Your keepsake is ready to personalize"
 
     if args.dry_run:
-        print(f"[dry-run] code: {code_fmt}\n[dry-run] to: {args.email}\n[dry-run] link: {link}\n"
+        # Preview ONLY — never create a real code. A dry-run that persisted a live
+        # code would silently accumulate orphaned, redeemable codes in the DB, so we
+        # show a clearly-fake sample and leave the redemption DB untouched.
+        sample = "LIW-XXXX-XXXX-XXXX"
+        link = f"{base}/redeem?code={sample}"
+        _, text = _email_bodies(sample, link, product.name, args.name.strip())
+        print(f"[dry-run] no code created (sample shown below)\n"
+              f"[dry-run] to: {args.email}\n[dry-run] link: {link}\n"
               f"[dry-run] subject: {subject}\n---- text body ----\n{text}")
         return 0
+
+    redemption.init_db()
+    note = f"issued to {args.email.strip()}"
+    code_fmt = redemption.generate(args.sku, 1, batch=args.batch, note=note)[0]
+    # The redeem page pre-fills ?code=, so the buyer just clicks Continue.
+    link = f"{base}/redeem?code={code_fmt}"
+    html, text = _email_bodies(code_fmt, link, product.name, args.name.strip())
 
     ok = admin_mod.send_email(args.email.strip(), subject, html, text)
     if ok:

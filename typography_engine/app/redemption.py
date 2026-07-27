@@ -213,6 +213,24 @@ def release(code: str) -> None:
         )
 
 
+def void(code: str) -> bool:
+    """Permanently retire a code so it can never be redeemed — for an orphaned or
+    mistakenly-issued code. Only touches a code that hasn't been consumed yet
+    ('unused' or 'redeeming'); a 'used' code is left alone (its redemption is
+    history). 'void' is a terminal status that `is_redeemable`/`begin_redeem` never
+    accept. Returns True if a code was voided."""
+    canonical = _normalize(code)
+    if not canonical:
+        return False
+    with _LOCK, _conn() as c:
+        cur = c.execute(
+            "UPDATE codes SET status='void', redeeming_at=NULL "
+            "WHERE code=? AND status IN ('unused', 'redeeming')",
+            (canonical,),
+        )
+        return cur.rowcount == 1
+
+
 # --- Reporting ------------------------------------------------------------
 
 def stats(batch: Optional[str] = None) -> Dict[str, int]:
