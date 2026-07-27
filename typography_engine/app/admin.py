@@ -716,19 +716,21 @@ def send_save_link_email(job: str, to_email: str) -> bool:
         return False
 
 
-def keepsake_code_email_bodies(code_fmt: str, link: str, product_name: str, name: str = ""):
-    """(html, text) for the buyer's 'here is your redemption code' email. The admin
-    Issue-code form uses this; tools/issue_code.py builds the same email for the CLI.
-    Keep the two in sync if the copy changes."""
+def keepsake_code_email_bodies(code_fmt: str, link: str, product_name: str = "", name: str = ""):
+    """(html, text) for the buyer's 'here is your redemption code' email. SINGLE
+    source of truth — the /admin/issue form and the CLI (tools/issue_code.py) both
+    call this, so the email can never drift. `product_name` is accepted for call
+    compatibility but not shown: technical SKU names ('High-res digital download')
+    clash with the warm voice, so the copy says 'word portrait' for every product."""
     nm = (name or "").strip()
     hi = f"Hi {nm}," if nm else "Hello,"
     hi_h = html.escape(hi)
-    pn = html.escape(product_name)
     lk = html.escape(link)
     cf = html.escape(code_fmt)
+    img = f"{PUBLIC_BASE_URL.rstrip('/')}/static/lovedinwords/after.jpg"
     text = (
         f"{hi}\n\n"
-        f"Thank you. Your keepsake — {product_name} — is ready to personalize.\n\n"
+        f"Thank you. Your word portrait is ready to personalize.\n\n"
         f"Your redemption code: {code_fmt}\n\n"
         f"Open this link to add a favorite photo and the words that describe your loved one,\n"
         f"see the portrait come together, and send it to us:\n\n"
@@ -740,9 +742,12 @@ def keepsake_code_email_bodies(code_fmt: str, link: str, product_name: str, name
     )
     body_html = f"""<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#2b2f36;max-width:520px;line-height:1.6">
 <p style="font-size:30px;line-height:1;color:#c85b57;margin:0 0 6px">&#9829;</p>
-<h2 style="font-family:Georgia,'Times New Roman',serif;color:#42525f;font-size:22px;margin:0 0 10px">Your keepsake is ready to personalize</h2>
+<h2 style="font-family:Georgia,'Times New Roman',serif;color:#42525f;font-size:22px;margin:0 0 12px">Your keepsake is ready to personalize</h2>
+<p style="text-align:center;margin:0 0 18px">
+  <img src="{img}" width="360" alt="A word portrait — a loved one's likeness formed from the words that describe them" style="width:100%;max-width:360px;height:auto;border-radius:14px;display:inline-block">
+</p>
 <p style="margin:0 0 4px">{hi_h}</p>
-<p style="margin:0 0 16px">Thank you. Your <b>{pn}</b> is ready. Add a favorite photo and the words that describe your loved one, watch their portrait take shape, and send it to us.</p>
+<p style="margin:0 0 16px">Thank you. Your <b>word portrait</b> is ready. Add a favorite photo and the words that describe your loved one, watch their portrait take shape, and send it to us.</p>
 <p style="margin:0 0 6px;color:#7a756e;font-size:14px">Your redemption code</p>
 <p style="font-size:22px;letter-spacing:.08em;font-weight:700;color:#42525f;background:#f4efe8;border-radius:12px;padding:14px;text-align:center;margin:0 0 18px">{cf}</p>
 <p style="text-align:center;margin:0 0 18px">

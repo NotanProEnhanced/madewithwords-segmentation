@@ -32,34 +32,9 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _email_bodies(code_fmt: str, link: str, product_name: str, name: str):
-    hi = f"Hi {name}," if name else "Hello,"
-    text = (
-        f"{hi}\n\n"
-        f"Thank you. Your keepsake — {product_name} — is ready to personalize.\n\n"
-        f"Your redemption code: {code_fmt}\n\n"
-        f"Open this link to add a favorite photo and the words that describe your loved one,\n"
-        f"see the portrait come together, and send it to us:\n\n"
-        f"    {link}\n\n"
-        f"Buying this as a gift? You can forward this email to the family — the link is\n"
-        f"theirs to personalize, whenever they're ready.\n\n"
-        f"Your code works once. Please keep it private — anyone with the code can redeem it.\n\n"
-        f"With care,\nLoved in Words\n"
-    )
-    html = f"""<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#2b2f36;max-width:520px;line-height:1.6">
-<p style="font-size:30px;line-height:1;color:#c85b57;margin:0 0 6px">&#9829;</p>
-<h2 style="font-family:Georgia,'Times New Roman',serif;color:#42525f;font-size:22px;margin:0 0 10px">Your keepsake is ready to personalize</h2>
-<p style="margin:0 0 4px">{hi}</p>
-<p style="margin:0 0 16px">Thank you. Your <b>{product_name}</b> is ready. Add a favorite photo and the words that describe your loved one, watch their portrait take shape, and send it to us.</p>
-<p style="margin:0 0 6px;color:#7a756e;font-size:14px">Your redemption code</p>
-<p style="font-size:22px;letter-spacing:.08em;font-weight:700;color:#42525f;background:#f4efe8;border-radius:12px;padding:14px;text-align:center;margin:0 0 18px">{code_fmt}</p>
-<p style="text-align:center;margin:0 0 18px">
-  <a href="{link}" style="background:#c85b57;color:#fff;padding:13px 30px;border-radius:999px;text-decoration:none;display:inline-block;font-weight:700">Personalize my keepsake</a>
-</p>
-<p style="margin:0 0 16px;color:#7a756e;font-size:14px;font-style:italic">Buying this as a gift? Forward this email to the family &mdash; the link is theirs to personalize, whenever they&rsquo;re ready.</p>
-<p style="color:#9a948c;font-size:12.5px;margin:0">Your code works once. Please keep it private &mdash; anyone with the code can redeem it.</p>
-<p style="color:#a49e95;font-size:12px;margin:18px 0 0">With care, Loved in Words &middot; powered by Typortrait.com</p>
-</div>"""
-    return html, text
+    # Single source of truth lives in app/admin.py (keepsake_code_email_bodies) so the
+    # CLI and the /admin/issue form always send the identical email — no drift.
+    return admin_mod.keepsake_code_email_bodies(code_fmt, link, product_name, name)
 
 
 def main(argv=None) -> int:
