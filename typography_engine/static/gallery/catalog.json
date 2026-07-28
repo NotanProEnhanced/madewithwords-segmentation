@@ -64,6 +64,105 @@
               "price": "29",
               "scripture": "On his robe and on his thigh he has a name written: King of kings and Lord of lords.",
               "scripture_ref": "Revelation 19:16"
+            },
+            {
+              "id": "sacred-heart-of-jesus",
+              "title": "Sacred Heart",
+              "subject": "Jesus Christ",
+              "words": "SACRED HEART LOVE MERCY DEVOTION FLAME THORNS COMPASSION BURNING PIERCED REFUGE GRACE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Learn of me, because I am meek, and humble of heart: and you shall find rest to your souls.",
+              "scripture_ref": "Matthew 11:29"
+            },
+            {
+              "id": "christ-the-teacher",
+              "title": "Christ the Teacher",
+              "subject": "Jesus Christ",
+              "words": "CHRIST TEACHER RABBI WISDOM PARABLES BEATITUDES SERMON TRUTH WORD DISCIPLES LIGHT",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "You call me Master, and Lord; and you say well, for so I am.",
+              "scripture_ref": "John 13:13"
+            },
+            {
+              "id": "christ-in-prayer",
+              "title": "Christ in Prayer",
+              "subject": "Jesus Christ",
+              "words": "CHRIST PRAYER GETHSEMANE FATHER SURRENDER COMMUNION VIGIL SILENCE WATCH WILL TRUST",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Father, if thou wilt, remove this chalice from me: but yet not my will, but thine be done.",
+              "scripture_ref": "Luke 22:42"
+            },
+            {
+              "id": "christ-the-healer",
+              "title": "Christ the Healer",
+              "subject": "Jesus Christ",
+              "words": "CHRIST HEALER TOUCH MERCY FAITH RESTORE WHOLENESS BLIND LAME LEPER COMPASSION",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "And Jesus stretching forth his hand, touched him, saying: I will. Be thou made clean.",
+              "scripture_ref": "Matthew 8:3"
+            },
+            {
+              "id": "christ-the-carpenter",
+              "title": "Christ the Carpenter",
+              "subject": "Jesus Christ",
+              "words": "CHRIST CARPENTER NAZARETH LABOR HANDS HUMILITY HIDDEN WORKMAN WOOD YOKE TRADE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Is not this the carpenter, the son of Mary, the brother of James, and Joseph?",
+              "scripture_ref": "Mark 6:3"
+            },
+            {
+              "id": "christ-the-bridegroom",
+              "title": "The Bridegroom",
+              "subject": "Jesus Christ",
+              "words": "CHRIST BRIDEGROOM COVENANT LOVE CHURCH FEAST JOY UNION FAITHFUL PROMISE AWAITING",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "He that hath the bride, is the bridegroom: but the friend of the bridegroom rejoiceth with joy.",
+              "scripture_ref": "John 3:29"
+            },
+            {
+              "id": "bread-of-life",
+              "title": "Bread of Life",
+              "subject": "Jesus Christ",
+              "words": "CHRIST BREAD LIFE MANNA EUCHARIST NOURISH HUNGER GIVEN BROKEN BODY SUSTAIN",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "I am the bread of life: he that cometh to me shall not hunger.",
+              "scripture_ref": "John 6:35"
+            },
+            {
+              "id": "living-water",
+              "title": "Living Water",
+              "subject": "Jesus Christ",
+              "words": "CHRIST LIVING WATER WELL THIRST SPRING SPIRIT CLEANSE FLOW ETERNAL SAMARITAN",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "The water that I will give him, shall become in him a fountain of water, springing up into life everlasting.",
+              "scripture_ref": "John 4:14"
+            },
+            {
+              "id": "alpha-and-omega",
+              "title": "Alpha and Omega",
+              "subject": "Jesus Christ",
+              "words": "CHRIST ALPHA OMEGA BEGINNING END ETERNAL FIRST LAST ALMIGHTY WAS IS",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "I am Alpha and Omega, the beginning and the end, saith the Lord God.",
+              "scripture_ref": "Apocalypse 1:8"
             }
           ]
         }
@@ -132,6 +231,61 @@
               "price": "29",
               "scripture": "The Mighty One has done great things for me, and holy is his name.",
               "scripture_ref": "Luke 1:49"
+            },
+            {
+              "id": "our-lady-of-grace",
+              "title": "Our Lady of Grace",
+              "subject": "The Blessed Virgin Mary",
+              "words": "MARY GRACE MOTHER MERCY MIRACULOUS MEDAL BLESSING HANDS RAYS HUMBLE FAVOR",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Hail, full of grace, the Lord is with thee: blessed art thou among women.",
+              "scripture_ref": "Luke 1:28"
+            },
+            {
+              "id": "our-lady-of-the-rosary",
+              "title": "Our Lady of the Rosary",
+              "subject": "The Blessed Virgin Mary",
+              "words": "MARY ROSARY MYSTERIES PRAYER BEADS HAIL FULL GRACE MEDITATION VICTORY PEACE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Blessed art thou among women, and blessed is the fruit of thy womb.",
+              "scripture_ref": "Luke 1:42"
+            },
+            {
+              "id": "our-lady-of-mount-carmel",
+              "title": "Our Lady of Mount Carmel",
+              "subject": "The Blessed Virgin Mary",
+              "words": "MARY CARMEL SCAPULAR PROTECTION MOTHER PROMISE DEVOTION MOUNTAIN FLOWER GRACE REFUGE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "I am the mother of fair love, and of fear, and of knowledge, and of holy hope.",
+              "scripture_ref": "Ecclesiasticus 24:24"
+            },
+            {
+              "id": "our-lady-of-lourdes",
+              "title": "Our Lady of Lourdes",
+              "subject": "The Blessed Virgin Mary",
+              "words": "MARY LOURDES IMMACULATE SPRING HEALING BERNADETTE APPARITION PRAYER FAITH GROTTO MERCY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "He that is mighty, hath done great things to me; and holy is his name.",
+              "scripture_ref": "Luke 1:49"
+            },
+            {
+              "id": "our-lady-of-fatima",
+              "title": "Our Lady of Fatima",
+              "subject": "The Blessed Virgin Mary",
+              "words": "MARY FATIMA ROSARY PENANCE PEACE APPARITION SHEPHERDS CONVERSION HEART IMMACULATE HOPE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Behold from henceforth all generations shall call me blessed.",
+              "scripture_ref": "Luke 1:48"
             }
           ]
         }
@@ -601,6 +755,74 @@
               "art": "original (AI-generated)",
               "text": "",
               "price": "29"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "easter",
+      "title": "The Easter Collection",
+      "blurb": "The Passion and the Resurrection — the days on which everything turns.",
+      "sections": [
+        {
+          "id": "easter",
+          "title": "",
+          "items": [
+            {
+              "id": "risen-christ",
+              "title": "Risen Christ",
+              "subject": "Jesus Christ",
+              "words": "CHRIST RISEN RESURRECTION VICTORY LIFE TOMB EMPTY ALLELUIA LIGHT DEATH CONQUERED",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "I am the resurrection and the life: he that believeth in me, although he be dead, shall live.",
+              "scripture_ref": "John 11:25"
+            },
+            {
+              "id": "christ-crowned-with-thorns",
+              "title": "Christ Crowned with Thorns",
+              "subject": "Jesus Christ",
+              "words": "CHRIST THORNS CROWN PASSION SUFFERING KING MOCKED SORROW SILENT SACRIFICE LOVE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Jesus therefore came forth, bearing the crown of thorns and the purple garment. And he saith to them: Behold the Man.",
+              "scripture_ref": "John 19:5"
+            },
+            {
+              "id": "christ-before-the-cross",
+              "title": "Christ Before the Cross",
+              "subject": "Jesus Christ",
+              "words": "CHRIST CROSS SURRENDER OBEDIENCE SACRIFICE LOVE WEIGHT REDEMPTION SILENT OFFERING FATHER",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "And bearing his own cross, he went forth to that place which is called Calvary.",
+              "scripture_ref": "John 19:17"
+            },
+            {
+              "id": "resurrection-morning",
+              "title": "Resurrection Morning",
+              "subject": "Jesus Christ",
+              "words": "CHRIST RESURRECTION MORNING DAWN GARDEN RISEN GLORY HOPE NEW LIFE FIRSTBORN",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "He is not here, for he is risen, as he said. Come, and see the place where the Lord was laid.",
+              "scripture_ref": "Matthew 28:6"
+            },
+            {
+              "id": "christ-triumphant",
+              "title": "Christ Triumphant",
+              "subject": "Jesus Christ",
+              "words": "CHRIST TRIUMPHANT KING GLORY VICTORY REIGN MAJESTY CONQUEROR THRONE EXALTED LORD",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "I am the First and the Last; and alive, and was dead, and behold I am living for ever and ever.",
+              "scripture_ref": "Apocalypse 1:18"
             }
           ]
         }
