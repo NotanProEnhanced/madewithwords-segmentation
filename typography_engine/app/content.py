@@ -11,6 +11,158 @@ here when a page has an entry below.
 
 # id -> {scripture (D-R), scripture_ref, about (HTML)}
 PORTRAIT_CONTENT = {
+    "sacred-heart-of-jesus": {
+        "scripture": "Learn of me, because I am meek, and humble of heart: and you shall find rest to your souls.",
+        "scripture_ref": "Matthew 11:29 (D-R)",
+        "about": (
+            "<p>The oldest devotion to the tender Christ, gathered here into his own face &mdash; <i>Sacred, Heart, Love, Mercy, Flame, Pierced, Refuge</i>. It is the heart opened on the Cross, the furnace of charity the saints could never stop speaking of.</p>"
+            "<p>&ldquo;Learn of me, because I am meek, and humble of heart&rdquo; (Matthew 11:29). The words that form him are the very warmth he offers &mdash; a refuge for anyone who will come.</p>"
+        ),
+    },
+    "christ-the-teacher": {
+        "scripture": "You call me Master, and Lord; and you say well, for so I am.",
+        "scripture_ref": "John 13:13 (D-R)",
+        "about": (
+            "<p>The Rabbi of Galilee, drawn from the words of his teaching &mdash; <i>Wisdom, Parables, Beatitudes, Sermon, Truth</i>. On the mountain and by the sea he spoke as no one had before, and the crowds knew it.</p>"
+            "<p>&ldquo;You call me Master, and Lord; and you say well, for so I am&rdquo; (John 13:13). Seen whole, his face is made of the very lessons that still teach the world.</p>"
+        ),
+    },
+    "christ-in-prayer": {
+        "scripture": "Father, if thou wilt, remove this chalice from me: but yet not my will, but thine be done.",
+        "scripture_ref": "Luke 22:42 (D-R)",
+        "about": (
+            "<p>Christ at prayer in the garden, his face woven from the night of Gethsemane &mdash; <i>Prayer, Surrender, Vigil, Silence, Trust</i>. Here the Son turns wholly to the Father in the hour of dread.</p>"
+            "<p>&ldquo;Father, if thou wilt, remove this chalice from me: but yet not my will, but thine be done&rdquo; (Luke 22:42). His surrender is the pattern of every prayer that has ever cost something.</p>"
+        ),
+    },
+    "christ-the-healer": {
+        "scripture": "And Jesus stretching forth his hand, touched him, saying: I will. Be thou made clean.",
+        "scripture_ref": "Matthew 8:3 (D-R)",
+        "about": (
+            "<p>The Lord who touched what no one else would touch, formed from the works of his mercy &mdash; <i>Healer, Touch, Faith, Restore, Wholeness</i>. The blind saw, the lame walked, the leper was made clean.</p>"
+            "<p>&ldquo;I will. Be thou made clean&rdquo; (Matthew 8:3). His face here is the compassion that stoops to the wound.</p>"
+        ),
+    },
+    "christ-the-carpenter": {
+        "scripture": "Is not this the carpenter, the son of Mary, the brother of James, and Joseph?",
+        "scripture_ref": "Mark 6:3 (D-R)",
+        "about": (
+            "<p>The hidden years at Nazareth, gathered into the face of the workman &mdash; <i>Carpenter, Labor, Hands, Humility, Trade</i>. Before the miracles came thirty years of ordinary, sanctified work.</p>"
+            "<p>&ldquo;Is not this the carpenter, the son of Mary?&rdquo; (Mark 6:3). A portrait for everyone who offers their daily labor to God.</p>"
+        ),
+    },
+    "christ-the-bridegroom": {
+        "scripture": "He that hath the bride, is the bridegroom: but the friend of the bridegroom rejoiceth with joy.",
+        "scripture_ref": "John 3:29 (D-R)",
+        "about": (
+            "<p>Christ the Bridegroom, drawn from the covenant of love between the Lord and his people &mdash; <i>Bridegroom, Covenant, Church, Feast, Faithful</i>. Scripture ends not in a courtroom but at a wedding.</p>"
+            "<p>&ldquo;He that hath the bride, is the bridegroom&rdquo; (John 3:29). His face is the joy that waits for the soul.</p>"
+        ),
+    },
+    "bread-of-life": {
+        "scripture": "I am the bread of life: he that cometh to me shall not hunger.",
+        "scripture_ref": "John 6:35 (D-R)",
+        "about": (
+            "<p>The Bread of Life, formed from the words of the great discourse at Capernaum &mdash; <i>Bread, Manna, Eucharist, Nourish, Given, Body</i>. What Israel received in the desert, he gives forever.</p>"
+            "<p>&ldquo;I am the bread of life: he that cometh to me shall not hunger&rdquo; (John 6:35). His face is the gift that feeds the soul.</p>"
+        ),
+    },
+    "living-water": {
+        "scripture": "The water that I will give him, shall become in him a fountain of water, springing up into life everlasting.",
+        "scripture_ref": "John 4:14 (D-R)",
+        "about": (
+            "<p>The Living Water promised at the well, drawn from the words he spoke to the Samaritan woman &mdash; <i>Water, Well, Thirst, Spring, Spirit, Eternal</i>. He asked her for a drink and offered her a fountain.</p>"
+            "<p>&ldquo;The water that I will give him, shall become in him a fountain of water, springing up into life everlasting&rdquo; (John 4:14).</p>"
+        ),
+    },
+    "alpha-and-omega": {
+        "scripture": "I am Alpha and Omega, the beginning and the end, saith the Lord God.",
+        "scripture_ref": "Apocalypse 1:8 (D-R)",
+        "about": (
+            "<p>The eternal Christ of the Apocalypse, gathered into a face beyond time &mdash; <i>Alpha, Omega, Beginning, End, First, Last, Almighty</i>. Before all things and after all things, he is.</p>"
+            "<p>&ldquo;I am Alpha and Omega, the beginning and the end, saith the Lord God&rdquo; (Apocalypse 1:8).</p>"
+        ),
+    },
+    "risen-christ": {
+        "scripture": "I am the resurrection and the life: he that believeth in me, although he be dead, shall live.",
+        "scripture_ref": "John 11:25 (D-R)",
+        "about": (
+            "<p>The Lord risen from the tomb, his face woven from the triumph of Easter &mdash; <i>Risen, Resurrection, Victory, Life, Empty, Alleluia, Conquered</i>. Death did its worst and could not hold him.</p>"
+            "<p>&ldquo;I am the resurrection and the life: he that believeth in me, although he be dead, shall live&rdquo; (John 11:25).</p>"
+        ),
+    },
+    "christ-crowned-with-thorns": {
+        "scripture": "Jesus therefore came forth, bearing the crown of thorns and the purple garment. And he saith to them: Behold the Man.",
+        "scripture_ref": "John 19:5 (D-R)",
+        "about": (
+            "<p><i>Ecce Homo</i> &mdash; the King crowned in mockery, drawn from the words of the Passion &mdash; <i>Thorns, Crown, Suffering, Mocked, Silent, Sacrifice, Love</i>. He was wounded, and he was silent.</p>"
+            "<p>&ldquo;And he saith to them: Behold the Man&rdquo; (John 19:5). The crown of shame is, to faith, the crown of love.</p>"
+        ),
+    },
+    "christ-before-the-cross": {
+        "scripture": "And bearing his own cross, he went forth to that place which is called Calvary.",
+        "scripture_ref": "John 19:17 (D-R)",
+        "about": (
+            "<p>Christ bearing his Cross to Calvary, his face formed from the weight of that road &mdash; <i>Cross, Surrender, Obedience, Sacrifice, Redemption, Offering</i>. He carried what was ours.</p>"
+            "<p>&ldquo;And bearing his own cross, he went forth to that place which is called Calvary&rdquo; (John 19:17).</p>"
+        ),
+    },
+    "resurrection-morning": {
+        "scripture": "He is not here, for he is risen, as he said. Come, and see the place where the Lord was laid.",
+        "scripture_ref": "Matthew 28:6 (D-R)",
+        "about": (
+            "<p>The first light of Easter morning, gathered into the face of the risen Lord &mdash; <i>Morning, Dawn, Garden, Risen, Glory, Hope, New Life</i>. The stone was rolled back and the world began again.</p>"
+            "<p>&ldquo;He is not here, for he is risen, as he said&rdquo; (Matthew 28:6).</p>"
+        ),
+    },
+    "christ-triumphant": {
+        "scripture": "I am the First and the Last; and alive, and was dead, and behold I am living for ever and ever.",
+        "scripture_ref": "Apocalypse 1:18 (D-R)",
+        "about": (
+            "<p>Christ reigning in glory, his face woven from his victory over death &mdash; <i>Triumphant, King, Glory, Victory, Reign, Conqueror, Exalted</i>. The one who died now lives and reigns forever.</p>"
+            "<p>&ldquo;I am the First and the Last; and alive, and was dead, and behold I am living for ever and ever&rdquo; (Apocalypse 1:18).</p>"
+        ),
+    },
+    "our-lady-of-grace": {
+        "scripture": "Hail, full of grace, the Lord is with thee: blessed art thou among women.",
+        "scripture_ref": "Luke 1:28 (D-R)",
+        "about": (
+            "<p>Our Lady of Grace, her face formed from the angel&rsquo;s greeting &mdash; <i>Grace, Mother, Mercy, Blessing, Favor</i>. From her open hands the graces of God are poured out upon her children.</p>"
+            "<p>&ldquo;Hail, full of grace, the Lord is with thee&rdquo; (Luke 1:28). The whole of Marian devotion begins in that word, <i>full of grace</i>.</p>"
+        ),
+    },
+    "our-lady-of-the-rosary": {
+        "scripture": "Blessed art thou among women, and blessed is the fruit of thy womb.",
+        "scripture_ref": "Luke 1:42 (D-R)",
+        "about": (
+            "<p>Our Lady of the Rosary, drawn from the prayer the whole Church prays with her &mdash; <i>Rosary, Mysteries, Prayer, Beads, Meditation, Peace</i>. Bead by bead, the life of Christ is remembered at her side.</p>"
+            "<p>&ldquo;Blessed art thou among women, and blessed is the fruit of thy womb&rdquo; (Luke 1:42).</p>"
+        ),
+    },
+    "our-lady-of-mount-carmel": {
+        "scripture": "I am the mother of fair love, and of fear, and of knowledge, and of holy hope.",
+        "scripture_ref": "Ecclesiasticus 24:24 (D-R)",
+        "about": (
+            "<p>Our Lady of Mount Carmel, her face woven with the promise of the scapular &mdash; <i>Carmel, Scapular, Protection, Mother, Promise, Refuge</i>. She is the mother who covers her children with her care.</p>"
+            "<p>&ldquo;I am the mother of fair love, and of fear, and of knowledge, and of holy hope&rdquo; (Ecclesiasticus 24:24).</p>"
+        ),
+    },
+    "our-lady-of-lourdes": {
+        "scripture": "He that is mighty, hath done great things to me; and holy is his name.",
+        "scripture_ref": "Luke 1:49 (D-R)",
+        "about": (
+            "<p>Our Lady of Lourdes, gathered from the grace of the grotto &mdash; <i>Lourdes, Immaculate, Spring, Healing, Prayer, Grotto</i>. To a poor girl she opened a spring that has not stopped healing since.</p>"
+            "<p>&ldquo;He that is mighty, hath done great things to me; and holy is his name&rdquo; (Luke 1:49).</p>"
+        ),
+    },
+    "our-lady-of-fatima": {
+        "scripture": "Behold from henceforth all generations shall call me blessed.",
+        "scripture_ref": "Luke 1:48 (D-R)",
+        "about": (
+            "<p>Our Lady of Fatima, her face formed from her call to prayer and peace &mdash; <i>Fatima, Rosary, Penance, Peace, Conversion, Hope</i>. To three shepherd children she asked the world to pray.</p>"
+            "<p>&ldquo;Behold from henceforth all generations shall call me blessed&rdquo; (Luke 1:48).</p>"
+        ),
+    },
     "jesus-compassionate-savior": {
         "scripture": "Come to me, all you that labour, and are burdened, and I will refresh you.",
         "scripture_ref": "Matthew 11:28 (D-R)",
