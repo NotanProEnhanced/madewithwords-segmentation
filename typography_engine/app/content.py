@@ -11,6 +11,86 @@ here when a page has an entry below.
 
 # id -> {scripture (D-R), scripture_ref, about (HTML)}
 PORTRAIT_CONTENT = {
+    "st-patrick": {
+        "scripture": "Going therefore, teach ye all nations; baptizing them in the name of the Father, and of the Son, and of the Holy Ghost.",
+        "scripture_ref": "Matthew 28:19 (D-R)",
+        "about": (
+            "<p>The apostle of Ireland, drawn from the words of his mission &mdash; <i>Bishop, Ireland, Apostle, Shamrock, Trinity, Missionary</i>. A captive shepherd who returned to convert the island that had enslaved him.</p>"
+            "<p>&ldquo;Going therefore, teach ye all nations; baptizing them in the name of the Father, and of the Son, and of the Holy Ghost&rdquo; (Matthew 28:19).</p>"
+        ),
+    },
+    "st-benedict": {
+        "scripture": "Seek ye therefore first the kingdom of God, and his justice.",
+        "scripture_ref": "Matthew 6:33 (D-R)",
+        "about": (
+            "<p>The father of Western monasticism, drawn from the words of his Rule &mdash; <i>Abbot, Monk, Rule, Ora, Labora, Monastery, Peace</i>. From a cave at Subiaco he taught Europe to pray and to work.</p>"
+            "<p>&ldquo;Seek ye therefore first the kingdom of God, and his justice&rdquo; (Matthew 6:33).</p>"
+        ),
+    },
+    "st-clare-of-assisi": {
+        "scripture": "Blessed are the clean of heart: for they shall see God.",
+        "scripture_ref": "Matthew 5:8 (D-R)",
+        "about": (
+            "<p>The follower of Francis and foundress of the Poor Clares, drawn from the words of her poverty and light &mdash; <i>Clare, Assisi, Poor, Poverty, Light, Monstrance</i>. She held up the Blessed Sacrament and turned an army away.</p>"
+            "<p>&ldquo;Blessed are the clean of heart: for they shall see God&rdquo; (Matthew 5:8).</p>"
+        ),
+    },
+    "st-bernadette": {
+        "scripture": "Thou hast hid these things from the wise and prudent, and hast revealed them to little ones.",
+        "scripture_ref": "Luke 10:21 (D-R)",
+        "about": (
+            "<p>The humble shepherd girl of Lourdes to whom Our Lady appeared, drawn from the words of the grotto &mdash; <i>Bernadette, Lourdes, Visionary, Immaculate, Spring, Rosary</i>. To a poor child heaven opened a healing spring.</p>"
+            "<p>&ldquo;Thou hast hid these things from the wise and prudent, and hast revealed them to little ones&rdquo; (Luke 10:21).</p>"
+        ),
+    },
+    "st-catherine-of-siena": {
+        "scripture": "Thou shalt love the Lord thy God with thy whole heart.",
+        "scripture_ref": "Matthew 22:37 (D-R)",
+        "about": (
+            "<p>The Dominican mystic and Doctor of the Church who counseled popes, drawn from the words of her love &mdash; <i>Catherine, Siena, Mystic, Doctor, Dialogue, Reform</i>. A young woman whose burning charity reshaped her age.</p>"
+            "<p>&ldquo;Thou shalt love the Lord thy God with thy whole heart&rdquo; (Matthew 22:37).</p>"
+        ),
+    },
+    "st-dominic": {
+        "scripture": "Preach the word: be instant in season, out of season.",
+        "scripture_ref": "2 Timothy 4:2 (D-R)",
+        "about": (
+            "<p>The founder of the Order of Preachers, drawn from the words of his mission &mdash; <i>Dominic, Preacher, Rosary, Order, Truth, Friar</i>. He gave the Church a family of preachers and, it is told, the Rosary itself.</p>"
+            "<p>&ldquo;Preach the word: be instant in season, out of season&rdquo; (2 Timothy 4:2).</p>"
+        ),
+    },
+    "st-ignatius-of-loyola": {
+        "scripture": "Whatsoever else you do, do all to the glory of God.",
+        "scripture_ref": "1 Corinthians 10:31 (D-R)",
+        "about": (
+            "<p>The soldier turned founder of the Society of Jesus, drawn from the words of his vision &mdash; <i>Ignatius, Loyola, Jesuits, Exercises, Discernment, Service</i>. A wounded knight who learned to fight for God alone.</p>"
+            "<p>&ldquo;Whatsoever else you do, do all to the glory of God&rdquo; (1 Corinthians 10:31).</p>"
+        ),
+    },
+    "st-kateri-tekakwitha": {
+        "scripture": "As the lily among thorns, so is my love among the daughters.",
+        "scripture_ref": "Canticle of Canticles 2:2 (D-R)",
+        "about": (
+            "<p>The Lily of the Mohawks, the first Native American saint, drawn from the words of her purity and faith &mdash; <i>Kateri, Tekakwitha, Lily, Mohawk, Virgin, Purity</i>. A young convert who kept her faith against every cost.</p>"
+            "<p>&ldquo;As the lily among thorns, so is my love among the daughters&rdquo; (Canticle of Canticles 2:2).</p>"
+        ),
+    },
+    "st-faustina": {
+        "scripture": "Praise the Lord, for he is good: for his mercy endureth for ever.",
+        "scripture_ref": "Psalm 135:1 (D-R)",
+        "about": (
+            "<p>The apostle of Divine Mercy, drawn from the words of her mission &mdash; <i>Faustina, Divine, Mercy, Trust, Jesus, Diary</i>. A humble Polish sister to whom the Lord entrusted the message of his mercy.</p>"
+            "<p>&ldquo;Praise the Lord, for he is good: for his mercy endureth for ever&rdquo; (Psalm 135:1).</p>"
+        ),
+    },
+    "st-maximilian-kolbe": {
+        "scripture": "Greater love than this no man hath, that a man lay down his life for his friends.",
+        "scripture_ref": "John 15:13 (D-R)",
+        "about": (
+            "<p>The Franciscan martyr of charity who gave his life in another man's place at Auschwitz, drawn from the words of his sacrifice &mdash; <i>Maximilian, Kolbe, Martyr, Charity, Franciscan, Sacrifice</i>.</p>"
+            "<p>&ldquo;Greater love than this no man hath, that a man lay down his life for his friends&rdquo; (John 15:13).</p>"
+        ),
+    },
     "st-john-the-apostle": {
         "scripture": "Now there was leaning on Jesus' bosom one of his disciples, whom Jesus loved.",
         "scripture_ref": "John 13:23 (D-R)",

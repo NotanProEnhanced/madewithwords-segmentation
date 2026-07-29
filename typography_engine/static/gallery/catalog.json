@@ -653,6 +653,116 @@
               "art": "original (AI-generated)",
               "text": "",
               "price": "29"
+            },
+            {
+              "id": "st-patrick",
+              "title": "St. Patrick",
+              "subject": "St. Patrick",
+              "words": "SAINT PATRICK BISHOP IRELAND APOSTLE SHAMROCK TRINITY MISSIONARY CONVERT FAITH CROZIER",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Going therefore, teach ye all nations; baptizing them in the name of the Father, and of the Son, and of the Holy Ghost.",
+              "scripture_ref": "Matthew 28:19"
+            },
+            {
+              "id": "st-benedict",
+              "title": "St. Benedict",
+              "subject": "St. Benedict",
+              "words": "SAINT BENEDICT ABBOT MONK RULE ORA LABORA MONASTERY ORDER PEACE PRAYER WORK",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Seek ye therefore first the kingdom of God, and his justice.",
+              "scripture_ref": "Matthew 6:33"
+            },
+            {
+              "id": "st-clare-of-assisi",
+              "title": "St. Clare of Assisi",
+              "subject": "St. Clare of Assisi",
+              "words": "SAINT CLARE ASSISI POOR CLARES POVERTY LIGHT MONSTRANCE DEVOTION HUMILITY FAITH JOY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Blessed are the clean of heart: for they shall see God.",
+              "scripture_ref": "Matthew 5:8"
+            },
+            {
+              "id": "st-bernadette",
+              "title": "St. Bernadette",
+              "subject": "St. Bernadette",
+              "words": "SAINT BERNADETTE LOURDES VISIONARY IMMACULATE SPRING HUMBLE ROSARY GROTTO FAITH MERCY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Thou hast hid these things from the wise and prudent, and hast revealed them to little ones.",
+              "scripture_ref": "Luke 10:21"
+            },
+            {
+              "id": "st-catherine-of-siena",
+              "title": "St. Catherine of Siena",
+              "subject": "St. Catherine of Siena",
+              "words": "SAINT CATHERINE SIENA MYSTIC DOCTOR DOMINICAN DIALOGUE REFORM PRAYER WISDOM LOVE ZEAL",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Thou shalt love the Lord thy God with thy whole heart.",
+              "scripture_ref": "Matthew 22:37"
+            },
+            {
+              "id": "st-dominic",
+              "title": "St. Dominic",
+              "subject": "St. Dominic",
+              "words": "SAINT DOMINIC PREACHER ROSARY ORDER TRUTH FRIAR ZEAL LIGHT PREACHING FAITH LOVE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Preach the word: be instant in season, out of season.",
+              "scripture_ref": "2 Timothy 4:2"
+            },
+            {
+              "id": "st-ignatius-of-loyola",
+              "title": "St. Ignatius of Loyola",
+              "subject": "St. Ignatius of Loyola",
+              "words": "SAINT IGNATIUS LOYOLA JESUITS SOCIETY EXERCISES DISCERNMENT CONVERSION GLORY GOD SERVICE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Whatsoever else you do, do all to the glory of God.",
+              "scripture_ref": "1 Corinthians 10:31"
+            },
+            {
+              "id": "st-kateri-tekakwitha",
+              "title": "St. Kateri Tekakwitha",
+              "subject": "St. Kateri Tekakwitha",
+              "words": "SAINT KATERI TEKAKWITHA LILY MOHAWK VIRGIN PURITY FAITH NATIVE CONVERT PRAYER CROSS",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "As the lily among thorns, so is my love among the daughters.",
+              "scripture_ref": "Canticle of Canticles 2:2"
+            },
+            {
+              "id": "st-faustina",
+              "title": "St. Faustina",
+              "subject": "St. Faustina",
+              "words": "SAINT FAUSTINA DIVINE MERCY TRUST JESUS APOSTLE DIARY SISTER POLAND HUMILITY LOVE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Praise the Lord, for he is good: for his mercy endureth for ever.",
+              "scripture_ref": "Psalm 135:1"
+            },
+            {
+              "id": "st-maximilian-kolbe",
+              "title": "St. Maximilian Kolbe",
+              "subject": "St. Maximilian Kolbe",
+              "words": "SAINT MAXIMILIAN KOLBE MARTYR CHARITY FRANCISCAN IMMACULATA SACRIFICE LOVE FAITH MERCY HOPE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Greater love than this no man hath, that a man lay down his life for his friends.",
+              "scripture_ref": "John 15:13"
             }
           ]
         }
