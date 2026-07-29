@@ -422,6 +422,105 @@
               "price": "29",
               "scripture": "Hope does not disappoint us, because God's love has been poured into our hearts.",
               "scripture_ref": "Romans 5:5"
+            },
+            {
+              "id": "st-john-the-apostle",
+              "title": "St. John the Apostle",
+              "subject": "St. John",
+              "words": "APOSTLE JOHN BELOVED DISCIPLE EVANGELIST GOSPEL LOVE EAGLE REVELATION WORD LIGHT",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Now there was leaning on Jesus' bosom one of his disciples, whom Jesus loved.",
+              "scripture_ref": "John 13:23"
+            },
+            {
+              "id": "st-james-the-greater",
+              "title": "St. James the Greater",
+              "subject": "St. James the Greater",
+              "words": "APOSTLE JAMES GREATER FISHERMAN PILGRIM SANTIAGO ZEBEDEE THUNDER STAFF SHELL WITNESS",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "And they forthwith left their nets and father, and followed him.",
+              "scripture_ref": "Matthew 4:22"
+            },
+            {
+              "id": "st-andrew",
+              "title": "St. Andrew",
+              "subject": "St. Andrew",
+              "words": "APOSTLE ANDREW FISHERMAN FIRST CALLED SALTIRE CROSS BROTHER PETER NETS MISSION FAITH",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "He findeth first his brother Simon, and saith to him: We have found the Messias.",
+              "scripture_ref": "John 1:41"
+            },
+            {
+              "id": "st-thomas",
+              "title": "St. Thomas",
+              "subject": "St. Thomas",
+              "words": "APOSTLE THOMAS TWIN DOUBT BELIEF MY LORD GOD INDIA SEARCH FAITH WOUNDS",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Thomas answered, and said to him: My Lord, and my God.",
+              "scripture_ref": "John 20:28"
+            },
+            {
+              "id": "st-philip",
+              "title": "St. Philip",
+              "subject": "St. Philip",
+              "words": "APOSTLE PHILIP BETHSAIDA FOLLOW COME SEE SEEKER WITNESS FAITH CROSS BREAD GENTLE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Philip saith to him: Come and see.",
+              "scripture_ref": "John 1:46"
+            },
+            {
+              "id": "st-matthew",
+              "title": "St. Matthew",
+              "subject": "St. Matthew",
+              "words": "APOSTLE MATTHEW EVANGELIST GOSPEL TAX COLLECTOR CALLED SCRIBE PEN LEVI FOLLOW WITNESS",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "He saith to him: Follow me. And he rose up and followed him.",
+              "scripture_ref": "Matthew 9:9"
+            },
+            {
+              "id": "st-bartholomew",
+              "title": "St. Bartholomew",
+              "subject": "St. Bartholomew",
+              "words": "APOSTLE BARTHOLOMEW NATHANAEL GUILELESS ISRAELITE TRUTH HONEST STEADFAST WITNESS MISSION FAITH",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Behold an Israelite indeed, in whom there is no guile.",
+              "scripture_ref": "John 1:47"
+            },
+            {
+              "id": "st-simon",
+              "title": "St. Simon",
+              "subject": "St. Simon",
+              "words": "APOSTLE SIMON ZEALOT ZEAL DEVOTION FERVOR FAITHFUL MISSION COURAGE WITNESS FIRE LOVE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "For the zeal of thy house hath eaten me up.",
+              "scripture_ref": "Psalm 68:10"
+            },
+            {
+              "id": "st-james-the-less",
+              "title": "St. James the Less",
+              "subject": "St. James the Less",
+              "words": "APOSTLE JAMES LESS HUMBLE RIGHTEOUS JERUSALEM MEEK QUIET FAITHFUL WITNESS MISSION HOPE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "But be ye doers of the word, and not hearers only.",
+              "scripture_ref": "James 1:22"
             }
           ]
         }

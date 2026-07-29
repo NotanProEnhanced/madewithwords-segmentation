@@ -11,6 +11,78 @@ here when a page has an entry below.
 
 # id -> {scripture (D-R), scripture_ref, about (HTML)}
 PORTRAIT_CONTENT = {
+    "st-john-the-apostle": {
+        "scripture": "Now there was leaning on Jesus' bosom one of his disciples, whom Jesus loved.",
+        "scripture_ref": "John 13:23 (D-R)",
+        "about": (
+            "<p>The beloved disciple and evangelist, drawn from the words of the Gospel he gave us &mdash; <i>Beloved, Disciple, Gospel, Love, Word, Light</i>. The youngest apostle, who leaned on the Lord at the Supper and stood beneath the Cross.</p>"
+            "<p>&ldquo;Now there was leaning on Jesus' bosom one of his disciples, whom Jesus loved&rdquo; (John 13:23).</p>"
+        ),
+    },
+    "st-james-the-greater": {
+        "scripture": "And they forthwith left their nets and father, and followed him.",
+        "scripture_ref": "Matthew 4:22 (D-R)",
+        "about": (
+            "<p>The fisherman son of Zebedee, first of the apostles to die for the faith, drawn from the words of his calling and his pilgrimage &mdash; <i>Fisherman, Pilgrim, Zebedee, Staff, Shell, Witness</i>.</p>"
+            "<p>&ldquo;And they forthwith left their nets and father, and followed him&rdquo; (Matthew 4:22).</p>"
+        ),
+    },
+    "st-andrew": {
+        "scripture": "He findeth first his brother Simon, and saith to him: We have found the Messias.",
+        "scripture_ref": "John 1:41 (D-R)",
+        "about": (
+            "<p>The first-called apostle, the fisherman who brought his own brother Peter to Christ &mdash; <i>Andrew, Fisherman, First Called, Brother, Nets, Mission</i>. He is honored on the X-shaped cross of his martyrdom.</p>"
+            "<p>&ldquo;He findeth first his brother Simon, and saith to him: We have found the Messias&rdquo; (John 1:41).</p>"
+        ),
+    },
+    "st-thomas": {
+        "scripture": "Thomas answered, and said to him: My Lord, and my God.",
+        "scripture_ref": "John 20:28 (D-R)",
+        "about": (
+            "<p>The apostle who doubted and then believed, drawn from the words of his confession &mdash; <i>Thomas, Doubt, Belief, My Lord, God, Faith</i>. His honest questioning became the Church's boldest profession of faith.</p>"
+            "<p>&ldquo;Thomas answered, and said to him: My Lord, and my God&rdquo; (John 20:28).</p>"
+        ),
+    },
+    "st-philip": {
+        "scripture": "Philip saith to him: Come and see.",
+        "scripture_ref": "John 1:46 (D-R)",
+        "about": (
+            "<p>The apostle of Bethsaida who called others to Christ, drawn from the words of his witness &mdash; <i>Philip, Follow, Come, See, Seeker, Faith</i>. To every doubt he had one gentle answer.</p>"
+            "<p>&ldquo;Philip saith to him: Come and see&rdquo; (John 1:46).</p>"
+        ),
+    },
+    "st-matthew": {
+        "scripture": "He saith to him: Follow me. And he rose up and followed him.",
+        "scripture_ref": "Matthew 9:9 (D-R)",
+        "about": (
+            "<p>The tax collector called from his table to become an evangelist, drawn from the words of the Gospel he wrote &mdash; <i>Matthew, Evangelist, Gospel, Called, Scribe, Pen</i>. He left everything at a single word.</p>"
+            "<p>&ldquo;He saith to him: Follow me. And he rose up and followed him&rdquo; (Matthew 9:9).</p>"
+        ),
+    },
+    "st-bartholomew": {
+        "scripture": "Behold an Israelite indeed, in whom there is no guile.",
+        "scripture_ref": "John 1:47 (D-R)",
+        "about": (
+            "<p>The apostle Nathanael, praised by the Lord himself for his honest heart, drawn from the words of that praise &mdash; <i>Bartholomew, Nathanael, Guileless, Israelite, Truth, Steadfast</i>.</p>"
+            "<p>&ldquo;Behold an Israelite indeed, in whom there is no guile&rdquo; (John 1:47).</p>"
+        ),
+    },
+    "st-simon": {
+        "scripture": "For the zeal of thy house hath eaten me up.",
+        "scripture_ref": "Psalm 68:10 (D-R)",
+        "about": (
+            "<p>Simon called the Zealot, the apostle of burning devotion, drawn from the words of his fervor &mdash; <i>Simon, Zealot, Zeal, Devotion, Fervor, Faithful</i>. His whole heart was given to God.</p>"
+            "<p>&ldquo;For the zeal of thy house hath eaten me up&rdquo; (Psalm 68:10).</p>"
+        ),
+    },
+    "st-james-the-less": {
+        "scripture": "But be ye doers of the word, and not hearers only.",
+        "scripture_ref": "James 1:22 (D-R)",
+        "about": (
+            "<p>The quiet, righteous apostle, drawn from the plain and practical wisdom of the letter that bears his name &mdash; <i>James, Humble, Righteous, Meek, Faithful, Witness</i>.</p>"
+            "<p>&ldquo;But be ye doers of the word, and not hearers only&rdquo; (James 1:22).</p>"
+        ),
+    },
     "st-gabriel-the-archangel": {
         "scripture": "I am Gabriel, who stand before God: and am sent to speak to thee, and to bring thee these good tidings.",
         "scripture_ref": "Luke 1:19 (D-R)",
