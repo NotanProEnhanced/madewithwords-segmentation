@@ -11,6 +11,38 @@ here when a page has an entry below.
 
 # id -> {scripture (D-R), scripture_ref, about (HTML)}
 PORTRAIT_CONTENT = {
+    "st-gabriel-the-archangel": {
+        "scripture": "I am Gabriel, who stand before God: and am sent to speak to thee, and to bring thee these good tidings.",
+        "scripture_ref": "Luke 1:19 (D-R)",
+        "about": (
+            "<p>The archangel of the Annunciation, drawn from the words of his mission &mdash; <i>Messenger, Annunciation, Herald, Favor, Tidings</i>. It was Gabriel who stood before Mary and before Zachary with news that changed the world.</p>"
+            "<p>&ldquo;I am Gabriel, who stand before God: and am sent to speak to thee, and to bring thee these good tidings&rdquo; (Luke 1:19).</p>"
+        ),
+    },
+    "angel-of-hope": {
+        "scripture": "For he hath given his angels charge over thee; to keep thee in all thy ways.",
+        "scripture_ref": "Psalm 90:11 (D-R)",
+        "about": (
+            "<p>An angel of hope, his face woven from the promise the heavens keep &mdash; <i>Hope, Light, Dawn, Promise, Faith, Trust</i>. A companion for every soul waiting on a better morning.</p>"
+            "<p>&ldquo;For he hath given his angels charge over thee; to keep thee in all thy ways&rdquo; (Psalm 90:11).</p>"
+        ),
+    },
+    "angel-of-peace": {
+        "scripture": "Glory to God in the highest; and on earth peace to men of good will.",
+        "scripture_ref": "Luke 2:14 (D-R)",
+        "about": (
+            "<p>An angel of peace, gathered from the stillness he brings &mdash; <i>Peace, Calm, Serenity, Rest, Harmony, Goodwill</i>. The peace the angels sang over Bethlehem, resting in a single face.</p>"
+            "<p>&ldquo;Glory to God in the highest; and on earth peace to men of good will&rdquo; (Luke 2:14).</p>"
+        ),
+    },
+    "angel-of-comfort": {
+        "scripture": "And there appeared to him an angel from heaven, strengthening him.",
+        "scripture_ref": "Luke 22:43 (D-R)",
+        "about": (
+            "<p>An angel of comfort, drawn from the consolation heaven sends in sorrow &mdash; <i>Comfort, Consolation, Solace, Tender, Mercy, Healing</i>. Even Christ in his agony was strengthened by an angel; so too are we.</p>"
+            "<p>&ldquo;And there appeared to him an angel from heaven, strengthening him&rdquo; (Luke 22:43).</p>"
+        ),
+    },
     "sacred-heart-of-jesus": {
         "scripture": "Learn of me, because I am meek, and humble of heart: and you shall find rest to your souls.",
         "scripture_ref": "Matthew 11:29 (D-R)",

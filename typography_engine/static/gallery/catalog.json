@@ -332,6 +332,50 @@
               "price": "29",
               "scripture": "For he will command his angels concerning you to guard you in all your ways.",
               "scripture_ref": "Psalm 91:11"
+            },
+            {
+              "id": "st-gabriel-the-archangel",
+              "title": "St. Gabriel the Archangel",
+              "subject": "St. Gabriel",
+              "words": "ARCHANGEL GABRIEL MESSENGER ANNUNCIATION HERALD FAVOR TIDINGS STRENGTH GLAD LILY GOD",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "I am Gabriel, who stand before God: and am sent to speak to thee, and to bring thee these good tidings.",
+              "scripture_ref": "Luke 1:19"
+            },
+            {
+              "id": "angel-of-hope",
+              "title": "Angel of Hope",
+              "subject": "the Angel of Hope",
+              "words": "ANGEL HOPE LIGHT DAWN PROMISE FAITH TRUST COMFORT TOMORROW WINGS PEACE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "For he hath given his angels charge over thee; to keep thee in all thy ways.",
+              "scripture_ref": "Psalm 90:11"
+            },
+            {
+              "id": "angel-of-peace",
+              "title": "Angel of Peace",
+              "subject": "the Angel of Peace",
+              "words": "ANGEL PEACE CALM STILLNESS SERENITY REST GENTLE QUIET GRACE HARMONY GOODWILL",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "Glory to God in the highest; and on earth peace to men of good will.",
+              "scripture_ref": "Luke 2:14"
+            },
+            {
+              "id": "angel-of-comfort",
+              "title": "Angel of Comfort",
+              "subject": "the Angel of Comfort",
+              "words": "ANGEL COMFORT CONSOLATION SOLACE TENDER PRESENCE MERCY GRIEF HEALING REST EMBRACE",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "scripture": "And there appeared to him an angel from heaven, strengthening him.",
+              "scripture_ref": "Luke 22:43"
             }
           ]
         }
