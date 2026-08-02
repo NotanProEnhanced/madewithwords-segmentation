@@ -1,6 +1,7 @@
 """Image loading and normalization (OpenCV)."""
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 import cv2
@@ -92,6 +93,30 @@ def _auto_expose(bgr: np.ndarray, warns: WarningCollector) -> np.ndarray:
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
+def _auto_levels(bgr: np.ndarray, warns: WarningCollector) -> np.ndarray:
+    """Recover LOW-CONTRAST / washed-out photos that ``_auto_expose`` misses -- it gates
+    on mean brightness, so a flat-but-not-dark photo (hazy, underexposed-looking, low
+    dynamic range) slips past it untouched. Gate on dynamic RANGE instead: below ~95 of
+    255, apply a per-channel black/white-point stretch plus a median-normalising gamma,
+    so contrast, midtones AND colour saturation come back (the engine's internal luma
+    stretch alone can't restore colour). Well-exposed, full-range photos are a near-no-op,
+    so this is safe even when enabled. Opt-in via the TYPO_AUTOLEVELS env flag."""
+    g = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    p2, p50, p98 = (float(x) for x in np.percentile(g, [2.0, 50.0, 98.0]))
+    if p98 - p2 >= 95.0:                              # enough contrast already -> untouched
+        return bgr
+    denom = max(1.0, p98 - p2)
+    norm = min(0.98, max(0.02, (p50 - p2) / denom))
+    gamma = float(np.clip(np.log(0.5) / np.log(norm), 0.6, 1.6))
+    out = np.clip((bgr.astype(np.float32) - p2) / denom, 0.0, 1.0)
+    out = np.power(out, gamma) * 255.0
+    if p98 - p2 < 70.0:
+        warns.warn("preprocess", "flat_photo",
+                   "This photo is very low-contrast; we've enhanced it, but a crisper "
+                   "photo will render sharper.")
+    return np.clip(out, 0.0, 255.0).astype(np.uint8)
+
+
 # Vibrance: a post-render "give it life" pass — clarity (local contrast) + a soft
 # highlight glow + a saturation nudge. Applied to the FINISHED render, so the words
 # are already placed (typography untouched) and the dark ground stays dark (the glow
@@ -148,6 +173,8 @@ def load_and_normalize(img_bytes: bytes, max_dim: int, warns: WarningCollector) 
         )
 
     bgr = _auto_expose(bgr, warns)   # lift dark photos; well-lit ones untouched
+    if os.environ.get("TYPO_AUTOLEVELS", "").strip().lower() in ("1", "true", "on", "yes"):
+        bgr = _auto_levels(bgr, warns)   # recover flat/low-contrast photos (opt-in; range-gated no-op on good ones)
 
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
