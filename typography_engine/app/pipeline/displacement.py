@@ -15,6 +15,7 @@ Validated across diverse faces; see docs/displacement-style-findings.md.
 from __future__ import annotations
 
 import glob
+import os
 import random
 from functools import lru_cache
 from typing import List, Optional, Sequence, Tuple
@@ -222,6 +223,10 @@ def render_displacement_portrait(
     discovery: Optional[Sequence[str]] = None,  # opt-in Phase-1: hide a small cross + these tiny
                                   # marks (e.g. ["IHS", "JN 8:12"]) for close-inspection 'discovery'.
                                   # None => nothing drawn (default).
+    graduate: bool = True,        # graduate the type OUTSIDE the face -- body (below chin) and hair
+                                  # (above face) step down from the largest tier -- plus a hair
+                                  # local-contrast 'sculpt'. Default ON; env TYPO_GRADUATE_BODY=0
+                                  # reverts with no code change.
 ) -> bytes:
     """Render a displacement typographic portrait to PNG bytes.
 
@@ -439,6 +444,25 @@ def render_displacement_portrait(
     feat_union = mask_of(_GROUPS.keys(), int(fw * 0.04), fw * 0.24)
     feat_norm = np.clip(feat_union / (feat_union.max() + 1e-6), 0, 1)
     df = np.clip(0.52 * face_norm + 0.70 * feat_norm, 0, 1)
+    # === Graduate body + hair type (default ON; TYPO_GRADUATE_BODY=0 reverts) =========
+    # Beyond the face the detail field falls to ~0, so the neck/clothing AND the crown of
+    # the hair render at the LARGEST tier (giant words). Ramp df UP with distance away from
+    # the face -- below the chin and above the face-top -- so the body and hair step DOWN
+    # continuously toward the hem/crown. Gated to OUTSIDE the face (the face is unchanged).
+    _grad_on = graduate and os.environ.get("TYPO_GRADUATE_BODY", "1").strip().lower() not in ("0", "false", "off", "no", "")
+    if _grad_on:
+        _gyv = np.arange(H, dtype=np.float32)[:, None]
+        _rows_on = np.where(mask01.max(axis=1) > 0)[0]
+        _notface = 1.0 - face_norm
+        _chin_y = float(pts[:, 1].max())
+        _bottom_y = float(_rows_on.max()) if _rows_on.size else float(H)
+        _below = np.clip((_gyv - _chin_y) / max(1.0, (_bottom_y - _chin_y)), 0.0, 1.0)
+        df = np.clip(df + 0.30 * _notface * (_gyv > _chin_y).astype(np.float32) + 0.55 * _below * _notface, 0, 1)
+        _face_top_y = float(pts[:, 1].min())
+        _top_y = float(_rows_on.min()) if _rows_on.size else 0.0
+        _above = np.clip((_face_top_y - _gyv) / max(1.0, (_face_top_y - _top_y)), 0.0, 1.0)
+        df = np.clip(df + 0.30 * _notface * (_gyv < _face_top_y).astype(np.float32) + 0.55 * _above * _notface, 0, 1)
+    # =================================================================================
     # #1 Forehead is a big smooth plane that large letters dominate -> push the type
     # finer above the brow line so it stops shouting.
     brows = [pts[i] for grp in ("Lbrow", "Rbrow") for i in _GROUPS[grp] if i < len(pts)]
@@ -497,6 +521,15 @@ def render_displacement_portrait(
     hp2 = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.022))
     hp2 /= (np.std(hp2[mask01 > 0]) + 1e-6)
     ink_field = np.clip(ink_field + 0.32 * sign * np.clip(hp2, -2.0, 2.0) * feat_norm, 0, 1)
+    # Sculpt the hair (same TYPO_GRADUATE_BODY gate): boost mid-scale local contrast in the
+    # hair region (subject, above the chin, outside the face) so strand clumps, volume and
+    # highlights MODEL instead of reading as a flat text field.
+    if _grad_on:
+        _hph = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.030))
+        _hph /= (np.std(_hph[mask01 > 0]) + 1e-6)
+        _hair_reg = ((mask01 > 0) & (yy < float(pts[:, 1].max()))).astype(np.float32) * (1.0 - face_norm)
+        _hair_reg = cv2.GaussianBlur(_hair_reg, (0, 0), sigmaX=max(2.0, fw * 0.03))
+        ink_field = np.clip(ink_field + 0.60 * sign * np.clip(_hph, -2.0, 2.0) * _hair_reg, 0, 1)
     # #4 Quiet the clothing: below the chin, compress contrast toward the local mean
     # so patterned clothes stop competing with the face (hair untouched).
     chin_y = float(pts[:, 1].max())
