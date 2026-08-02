@@ -160,6 +160,46 @@ def _normalize_words(words: Sequence[str], uppercase: bool = True) -> List[str]:
     return out or (["LOVE"] if uppercase else ["love"])
 
 
+def _add_discovery(out, pts, fw, H, W, marks):
+    """Opt-in 'discovery layer': a small Latin cross plus a few tiny text marks
+    (e.g. ["IHS", "JN 8:12"]) placed off the landmarks at low contrast, so they are
+    legible only on close inspection -- a detail collectors find over time. ``marks``
+    is a sequence of short strings; an empty/None sequence draws only the cross. Drawn
+    from geometry/ASCII so it never depends on a glyph the font lacks."""
+    marks = [str(m).strip() for m in (marks or []) if str(m).strip()]
+    from PIL import Image as _I, ImageDraw as _D
+    ov = _I.new("L", (W, H), 0)
+    dr = _D.Draw(ov)
+    cx = float(np.mean(pts[:, 0]))
+    chin = float(pts[:, 1].max())
+    f = _font(max(8, int(fw * 0.05)))
+
+    def place(txt, x, y):
+        w = dr.textlength(txt, font=f)
+        dr.text((x - w / 2.0, y), txt, font=f, fill=255)
+
+    # Latin cross on the chest, below the chin (drawn from lines -> glyph-independent).
+    ccx, ccy = cx, min(H - 1.0, chin + fw * 0.85)
+    ch = fw * 0.15
+    cw = ch * 0.60
+    t = max(1, int(fw * 0.012))
+    dr.line([(ccx, ccy - ch * 0.5), (ccx, ccy + ch * 0.5)], fill=255, width=t)
+    dr.line([(ccx - cw * 0.5, ccy - ch * 0.16), (ccx + cw * 0.5, ccy - ch * 0.16)], fill=255, width=t)
+    # Marks: the first sits under the cross; extras spread to a few set spots.
+    spots = [(ccx, ccy + ch * 0.55),
+             (cx - fw * 0.40, chin - fw * 0.12),
+             (cx + fw * 0.34, chin - fw * 0.02),
+             (ccx, min(H - 1.0, ccy + ch * 1.15))]
+    for i, m in enumerate(marks):
+        sx, sy = spots[i % len(spots)]
+        place(m, sx, sy)
+
+    ovf = cv2.GaussianBlur(np.asarray(ov).astype(np.float32) / 255.0, (0, 0), 0.6)
+    col = np.array((150.0, 158.0, 170.0), np.float32)   # muted warm light (BGR)
+    al = (ovf * 0.50)[..., None]
+    return out * (1.0 - al) + col * al
+
+
 def render_displacement_portrait(
     an: Analysis,
     words: Sequence[str],
@@ -176,6 +216,12 @@ def render_displacement_portrait(
     variety: float = 0.0,         # 0 = current importance skew (leading words repeat up to
                                   # ~3x, so the portrait is built mostly OF them); ->1 flattens
                                   # the skew so a varied word list reads as varied, not name-dominated.
+    breathe: bool = False,        # opt-in Phase-1: tonal 'breathing' -- deep-shadow negative
+                                  # space + crisp specular highlight relief, compressing the type
+                                  # into the midtones for more sculptural depth. Default OFF.
+    discovery: Optional[Sequence[str]] = None,  # opt-in Phase-1: hide a small cross + these tiny
+                                  # marks (e.g. ["IHS", "JN 8:12"]) for close-inspection 'discovery'.
+                                  # None => nothing drawn (default).
 ) -> bytes:
     """Render a displacement typographic portrait to PNG bytes.
 
@@ -571,6 +617,32 @@ def render_displacement_portrait(
         edge = cv2.GaussianBlur(edge, (0, 0), max(0.6, 0.8 * _ssn))
         ink_amt = np.clip(dark * _PAPER_DARK_GAIN + edge * _PAPER_EDGE_GAIN + _PAPER_INK_FLOOR, 0.0, 1.0)
         a = a * ink_amt
+    # === Phase-1 (opt-in): tonal breathing =================================
+    # Compress the typography into the MIDTONES so the tonal extremes rest, the way a
+    # charcoal portrait reads as 3-D: let the ground show through the deepest facial
+    # shadows (negative space), and give the brightest specular skin clean relief.
+    # Restricted to the face plane (hair/robe untouched); eyes+lips excluded so the
+    # catchlight/anchors are preserved. Default OFF -> when ``breathe`` is False this
+    # block is skipped and the output is byte-identical to before.
+    _hl = None
+    if breathe:
+        _face_reg = np.clip(face_norm, 0.0, 1.0)
+        _eyeblock = np.zeros((H, W), np.float32)
+        for _k in ("Leye", "Reye", "lips"):
+            _p = np.array([pts[i] for i in _GROUPS[_k] if i < len(pts)], np.int32)
+            if len(_p) >= 3:
+                cv2.fillConvexPoly(_eyeblock, cv2.convexHull(_p), 1.0)
+        _eyeblock = cv2.dilate(_eyeblock, np.ones((9, 9), np.uint8), 1)
+        _eyeblock = np.clip(cv2.GaussianBlur(_eyeblock, (0, 0), sigmaX=max(1.0, fw * 0.02)), 0, 1)
+        _skin = _face_reg * (1.0 - _eyeblock)
+        _shadow = np.clip((0.33 - lum) / 0.33, 0.0, 1.0) * _skin      # deepest facial shadow
+        a = a * (1.0 - 0.66 * _shadow)
+        _hl = np.clip((lum - 0.88) / 0.12, 0.0, 1.0) * _skin          # brightest specular skin
+        _hl = np.power(_hl, 1.4)                                       # roll off -> only true peaks
+        _hl = cv2.GaussianBlur(_hl, (0, 0), sigmaX=max(1.0, fw * 0.009))
+        a = a * (1.0 - 0.32 * _hl)
+    # =======================================================================
+
     al = a[..., None]
     if ink == "photo":
         # Words take the photo's OWN colours, draped over the form, on the ground.
@@ -678,6 +750,15 @@ def render_displacement_portrait(
             grayed = out * 0.22 + lum * 0.78         # pull the eye toward the ink's monochrome
             em3 = eye_a[..., None]
             out = out * (1.0 - em3) + grayed * em3
+    # === Phase-1 (opt-in): highlight glaze + discovery layer ===============
+    if breathe and _hl is not None:
+        _glz = (0.34 * _hl)[..., None]                          # crisp specular relief, not fog
+        _bright = np.array((232.0, 236.0, 240.0), np.float32)   # warm near-white (BGR)
+        out = out * (1.0 - _glz) + _bright * _glz
+    if discovery:
+        out = _add_discovery(out, pts, fw, H, W, discovery)
+    # =======================================================================
+
     oh = max(1, int(out_width * h0 / w0))
     out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
     # Standard print canvas (4:5 = 16x20), padded with the ground BEFORE vibrance

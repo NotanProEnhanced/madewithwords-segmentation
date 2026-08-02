@@ -52,7 +52,19 @@ def main() -> None:
     ap.add_argument("--supersample", type=int, default=2, help="displacement quality (2 = print)")
     ap.add_argument("--aspect", type=float, default=0.8, help="print canvas width/height (default 4:5)")
     ap.add_argument("--allow-unlisted", action="store_true")
+    ap.add_argument("--breathe", action="store_true",
+                    help="Phase-1 tonal 'breathing': deep-shadow negative space + specular relief (displacement only)")
+    ap.add_argument("--discovery", action="store_true",
+                    help="Phase-1 discovery layer: hide a small cross + IHS for close-inspection detail (displacement only)")
+    ap.add_argument("--discovery-ref", default=None,
+                    help="optional tiny scripture ref to hide too, e.g. 'JN 8:12' (implies --discovery)")
     a = ap.parse_args()
+
+    discovery = None
+    if a.discovery or a.discovery_ref:
+        discovery = ["IHS"]
+        if a.discovery_ref:
+            discovery.append(a.discovery_ref)
 
     words = _load_words(a.item_id, a.words)
     img_bytes = Path(a.base).read_bytes()
@@ -68,7 +80,8 @@ def main() -> None:
         from app.pipeline.displacement import render_displacement_portrait
         png = render_displacement_portrait(
             an, words, ground=a.ground, out_width=a.out_width,
-            supersample=a.supersample, ink=a.ink, print_aspect=a.aspect)
+            supersample=a.supersample, ink=a.ink, print_aspect=a.aspect,
+            breathe=a.breathe, discovery=discovery)
     else:
         from app.pipeline.tonal import render_layered_png
         png, _runs, _g, _svg = render_layered_png(
