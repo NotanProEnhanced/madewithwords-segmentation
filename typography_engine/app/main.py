@@ -5098,7 +5098,7 @@ def _policy_page(title: str, blocks, b: Optional[dict] = None) -> HTMLResponse:
     bn = b.get("name") or "Typortrait"
     sup = b.get("support") or _POLICY_CONTACT
     body = "".join((f"<h2>{h}</h2>{p}" if h else p) for h, p in blocks)
-    back_href, back_lbl, note = "/static/index.html", "Back to Typortrait&trade;", ""
+    back_href, back_lbl, note = "https://typortrait.com/", "Back to Typortrait&trade;", ""
     if bn != "Typortrait":
         # Full rebrand of customer-facing copy; the LEGAL entity stays Typortrait, so
         # controller/liability/indemnity clauses still name the real operating company.
@@ -5378,7 +5378,7 @@ async def data_request_submit(
     body = (f"<h2>Thank you</h2><p>{msg} We will action your request and contact you at the email "
             "you provided if anything further is needed. Most requests are completed within 30 days "
             "(sooner where the law requires).</p>"
-            "<p><a href='/static/index.html'>&larr; Back to Typortrait</a></p>")
+            "<p><a href='https://typortrait.com/'>&larr; Back to Typortrait</a></p>")
     return _policy_page("Data request received", [("", body)],
                         _trust_brand(request.headers.get("host", "")))
 
