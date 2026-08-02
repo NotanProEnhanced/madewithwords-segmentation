@@ -535,9 +535,17 @@ def render_displacement_portrait(
     chin_y = float(pts[:, 1].max())
     cloth = ((mask01 > 0) & (yy > chin_y)).astype(np.float32)
     cloth = cv2.GaussianBlur(cloth, (0, 0), sigmaX=max(2.0, fw * 0.05))
+    # When graduating (same gate), quiet the clothing a bit LESS so some drape shows,
+    # then add a gentle fold-scale sculpt -> plain garments gain fold depth while
+    # patterned clothes are only mildly livelier (they stay quieter than the face).
+    _cq = 0.40 if _grad_on else 0.55
     cm = ink_field[cloth > 0.5]
     if cm.size > 50:
-        ink_field = ink_field * (1.0 - 0.55 * cloth) + float(cm.mean()) * (0.55 * cloth)
+        ink_field = ink_field * (1.0 - _cq * cloth) + float(cm.mean()) * (_cq * cloth)
+    if _grad_on:
+        _hpc = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.045))
+        _hpc /= (np.std(_hpc[mask01 > 0]) + 1e-6)
+        ink_field = np.clip(ink_field + 0.30 * sign * np.clip(_hpc, -2.0, 2.0) * cloth, 0, 1)
 
     # Progressive density: thicken text where ink is strongest.
     b1 = cv2.dilate(warped, np.ones((2, 2), np.uint8), 1)
