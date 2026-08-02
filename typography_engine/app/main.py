@@ -40,6 +40,7 @@ from .config import (
     REDEEM_ENABLED,
     REDEEM_BRAND,
     WORD_VARIETY,
+    STUDIO_BREATHE,
     RENDER_CONCURRENCY,
     DATA_DIR,
     DOWNLOAD_PNG_WIDTH,
@@ -1190,6 +1191,9 @@ async def render(
                 render_displacement_portrait, an, disp_words, ground=ground_choice,
                 out_width=max(320, preview_w), supersample=disp_ss, flow=disp_flow,
                 uppercase=uppercase, ink=("photo" if ink_choice in ("custom", "photo_paper") else ink_choice),
+                # Phase-1 realism 'breathe' pass (env kill-switch STUDIO_BREATHE). MUST match
+                # the paid render in _ensure_clean_png below, or the preview would misrepresent it.
+                breathe=STUDIO_BREATHE,
                 # Env-driven word-variety dial (0.0 = original engine). MUST match the
                 # paid render in _ensure_clean_png or the preview would misrepresent it.
                 variety=WORD_VARIETY)
@@ -3155,8 +3159,9 @@ def _ensure_clean_png(job: str, aspect: float = _PRINT_ASPECT) -> Optional[Path]
                 uppercase=bool(r.get("uppercase", True)), flow=bool(r.get("flow")),
                 ink=("photo" if r.get("ink") == "custom" else r.get("ink")),
                 print_aspect=aspect,
-                # Same dial as the preview render -- the paid file must match what
-                # the buyer approved on screen.
+                # Same passes as the preview render -- the paid file must match what the
+                # buyer approved on screen (breathe kill-switch + word-variety dial).
+                breathe=STUDIO_BREATHE,
                 variety=WORD_VARIETY)
             if not png_bytes:
                 return None

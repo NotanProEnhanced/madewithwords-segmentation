@@ -95,6 +95,16 @@ PORT = env_int("TYPO_PORT", 8077)
 # Applied to BOTH the preview and the paid file, so what a buyer sees is what they get.
 WORD_VARIETY = env_float("TYPO_WORD_VARIETY", 0.0)
 
+# Phase-1 realism: apply the displacement 'breathe' pass (deep-shadow negative space +
+# crisp specular relief -> more sculptural depth) to the LIVE studio renders. Applied to
+# BOTH the preview and the paid file so what a buyer approves is what they get. Defaults
+# ON, so the upgrade is live once this build is deployed. REVERT two ways, no code change:
+# set TYPO_STUDIO_BREATHE=0 for an instant kill-switch (restart, no redeploy), or git-revert
+# the commit. Each brand is its own container, so this env can be set PER BRAND (e.g. on for
+# faithinwords, off for the memorial/prod container) via that brand's compose environment.
+# Only affects the Lifelike (displacement) style; other styles are untouched.
+STUDIO_BREATHE = os.environ.get("TYPO_STUDIO_BREATHE", "1").strip().lower() not in ("0", "false", "off", "no", "")
+
 # Largest upload we accept. Normal phone photos are a few MB; this caps the
 # pathological (40MP+ files) that would slow a render or exhaust memory on the
 # single worker. The frontend rejects oversize before upload; the server
