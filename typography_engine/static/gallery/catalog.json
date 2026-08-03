@@ -1080,6 +1080,124 @@
           ]
         }
       ]
+    },
+    {
+      "id": "sacred-portraits-old-masters",
+      "title": "Sacred Portraits — Old Masters",
+      "blurb": "The faces of Christ and his Mother from the old masters, each woven from the very words of Scripture.",
+      "sections": [
+        {
+          "id": "old-masters-mary",
+          "title": "The Blessed Virgin Mary",
+          "items": [
+            {
+              "id": "madonna-della-seggiola",
+              "title": "Madonna della Seggiola",
+              "subject": "The Blessed Virgin Mary",
+              "words": "But Mary kept all these things, and pondered them in her heart",
+              "art": "Raphael, Madonna della Seggiola, c.1513-14 (Palazzo Pitti, Florence). Public domain.",
+              "text": "King James Version (public domain)",
+              "price": "29",
+              "scripture": "But Mary kept all these things, and pondered them in her heart",
+              "scripture_ref": "Luke 2:19"
+            },
+            {
+              "id": "madonna-raphael",
+              "title": "Madonna and Child",
+              "subject": "The Blessed Virgin Mary",
+              "words": "My soul doth magnify the Lord, and my spirit hath rejoiced in God my Saviour",
+              "art": "Italian Renaissance Madonna and Child (old master). Public domain.",
+              "text": "King James Version (public domain)",
+              "price": "29",
+              "scripture": "My soul doth magnify the Lord, and my spirit hath rejoiced in God my Saviour",
+              "scripture_ref": "Luke 1:46-47"
+            },
+            {
+              "id": "salus-populi-romani",
+              "title": "Salus Populi Romani",
+              "subject": "The Blessed Virgin Mary",
+              "words": "Hail, thou that art highly favoured, the Lord is with thee: blessed art thou among women",
+              "art": "Salus Populi Romani, Byzantine icon (Basilica di Santa Maria Maggiore, Rome). Public domain.",
+              "text": "King James Version (public domain)",
+              "price": "29",
+              "scripture": "Hail, thou that art highly favoured, the Lord is with thee: blessed art thou among women",
+              "scripture_ref": "Luke 1:28"
+            },
+            {
+              "id": "ognissanti-madonna",
+              "title": "Ognissanti Madonna",
+              "subject": "The Blessed Virgin Mary",
+              "words": "For he that is mighty hath done to me great things; and holy is his name",
+              "art": "Giotto, Ognissanti Madonna (Maesta), c.1310 (Uffizi, Florence). Public domain.",
+              "text": "King James Version (public domain)",
+              "price": "29",
+              "scripture": "For he that is mighty hath done to me great things; and holy is his name",
+              "scripture_ref": "Luke 1:49"
+            },
+            {
+              "id": "theotokos-vladimir",
+              "title": "Theotokos of Vladimir",
+              "subject": "The Blessed Virgin Mary",
+              "words": "From henceforth all generations shall call me blessed",
+              "art": "Our Lady of Vladimir, Byzantine icon, 12th c. (Tretyakov Gallery, Moscow). Public domain.",
+              "text": "King James Version (public domain)",
+              "price": "29",
+              "scripture": "From henceforth all generations shall call me blessed",
+              "scripture_ref": "Luke 1:48"
+            }
+          ]
+        },
+        {
+          "id": "old-masters-christ",
+          "title": "Portraits of Christ",
+          "items": [
+            {
+              "id": "salvator-mundi-leonardo",
+              "title": "Salvator Mundi",
+              "subject": "Jesus Christ",
+              "words": "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish",
+              "art": "Leonardo da Vinci (attributed), Salvator Mundi, c.1500. Public domain.",
+              "text": "King James Version (public domain)",
+              "price": "29",
+              "scripture": "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish",
+              "scripture_ref": "John 3:16"
+            },
+            {
+              "id": "holy-face-van-eyck",
+              "title": "The Holy Face",
+              "subject": "Jesus Christ",
+              "words": "KING OF KINGS, AND LORD OF LORDS",
+              "art": "Jan van Eyck (workshop), Holy Face / Vera Icon, 1438 (Gemaeldegalerie, Berlin). Public domain.",
+              "text": "King James Version (public domain)",
+              "price": "29",
+              "scripture": "KING OF KINGS, AND LORD OF LORDS",
+              "scripture_ref": "Revelation 19:16"
+            },
+            {
+              "id": "christ-saviour-el-greco",
+              "title": "Christ the Saviour",
+              "subject": "Jesus Christ",
+              "words": "I am the light of the world: he that followeth me shall not walk in darkness, but shall have the light of life",
+              "art": "El Greco, Christ Blessing (The Saviour of the World), c.1600 (National Galleries of Scotland). Public domain.",
+              "text": "King James Version (public domain)",
+              "price": "29",
+              "scripture": "I am the light of the world: he that followeth me shall not walk in darkness, but shall have the light of life",
+              "scripture_ref": "John 8:12"
+            },
+            {
+              "id": "christ-blessing-memling",
+              "title": "Christ Giving His Blessing",
+              "subject": "Jesus Christ",
+              "words": "Peace I leave with you, my peace I give unto you: not as the world giveth, give I unto you",
+              "art": "Hans Memling, Christ Giving His Blessing, 1478 (Norton Simon Museum, Pasadena). Public domain.",
+              "text": "King James Version (public domain)",
+              "price": "29",
+              "scripture": "Peace I leave with you, my peace I give unto you: not as the world giveth, give I unto you",
+              "scripture_ref": "John 14:27"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
