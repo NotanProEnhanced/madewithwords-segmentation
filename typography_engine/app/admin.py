@@ -859,7 +859,7 @@ a{{color:#0d1b3a}}
 
 def _admin_nav(current: str = "all", stats_active: bool = False,
                orders_active: bool = False, dr_active: bool = False,
-               issue_active: bool = False) -> str:
+               issue_active: bool = False, studio_active: bool = False) -> str:
     items = [
         ("all", "All", "/admin/reels"),
         ("queued", "Queued", "/admin/reels?filter=queued"),
@@ -868,7 +868,8 @@ def _admin_nav(current: str = "all", stats_active: bool = False,
         ("rejected", "Rejected", "/admin/reels?filter=rejected"),
         ("revoked", "Revoked", "/admin/reels?filter=revoked"),
     ]
-    active_elsewhere = stats_active or orders_active or dr_active or issue_active
+    active_elsewhere = (stats_active or orders_active or dr_active or issue_active
+                        or studio_active)
     bits = []
     for key, label, url in items:
         cls = ' class="cur"' if key == current and not active_elsewhere else ""
@@ -879,6 +880,8 @@ def _admin_nav(current: str = "all", stats_active: bool = False,
     bits.append(f'<a href="/admin/orders"{orders_cls}>Orders</a>')
     issue_cls = ' class="cur"' if issue_active else ""
     bits.append(f'<a href="/admin/issue"{issue_cls}>Issue code</a>')
+    studio_cls = ' class="cur"' if studio_active else ""
+    bits.append(f'<a href="/admin/studio"{studio_cls}>Studio</a>')
     dr_cls = ' class="cur"' if dr_active else ""
     bits.append(f'<a href="/admin/data-requests"{dr_cls}>Data requests</a>')
     bits.append('<span class="gap"></span>')

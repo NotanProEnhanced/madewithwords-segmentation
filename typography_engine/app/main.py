@@ -16,7 +16,7 @@ import uuid
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import Cookie, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.staticfiles import StaticFiles
@@ -808,6 +808,259 @@ async def _bounded_to_thread(fn, *args, **kwargs):
     finally:
         _render_inflight -= 1
         _render_sem.release()
+
+
+# --- Admin render studio (fine-tune gallery portraits) -----------------------
+# Password-gated web UI around the gallery_render pipeline: pick an item that has a
+# stored base source, adjust words/ground/ink/breathe/sculpt, render a preview, then
+# publish (draft -> live master + preview) with the recipe recorded onto the item.
+# Auth + chrome are reused from admin_mod; renders go through _bounded_to_thread so
+# they queue with customer renders instead of thrashing the single CPU.
+from .config import PRIVATE_DIR, STATIC_DIR  # noqa: E402
+
+_STUDIO_GROUNDS = ("navy", "paper", "black")
+_STUDIO_INKS = (
+    ("photo", "Lifelike (photo)"), ("mono", "Noir"), ("navy", "Navy"),
+    ("sepia", "Sepia"), ("burgundy", "Rose"), ("forest", "Sage"), ("gold_noir", "Ember"),
+)
+_STUDIO_DRAFT_DIR = PRIVATE_DIR / "gallery" / "_draft"
+_STUDIO_BACKUP_DIR = PRIVATE_DIR / "gallery" / "_backup"
+_STUDIO_PRINT_CACHE = PRIVATE_DIR / "gallery" / "_print"
+
+
+def _studio_render_png(base_bytes: bytes, words: list, ground: str, ink: str,
+                       breathe: bool, graduate: bool):
+    """Blocking: analyze the base image + render a displacement portrait at publish
+    quality (1600px / ss2). Returns (png_bytes, warnings). Raises
+    ValueError('displacement_needs_face') when the base has no detectable face."""
+    from .config import RenderConfig
+    from .pipeline.warnings import WarningCollector
+    from .pipeline.displacement import render_displacement_portrait
+    warns = WarningCollector()
+    an = analyze_image(base_bytes, RenderConfig(), warns)
+    png = render_displacement_portrait(
+        an, words, ground=ground, out_width=1600, supersample=2,
+        ink=ink, print_aspect=0.8, breathe=breathe, graduate=graduate)
+    return png, warns.as_list()
+
+
+def _studio_publish(item_id: str, png_bytes: bytes) -> None:
+    """Promote a finished PNG to the live master + public 900px preview, backing up
+    the previous master first and clearing the per-aspect print cache."""
+    import io as _io
+    import shutil as _shutil
+    import time as _time
+    from PIL import Image as _PILImage
+    master_dir = PRIVATE_DIR / "gallery"
+    art_dir = STATIC_DIR / "gallery" / "art"
+    master_dir.mkdir(parents=True, exist_ok=True)
+    art_dir.mkdir(parents=True, exist_ok=True)
+    _STUDIO_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    master = master_dir / f"{item_id}.png"
+    if master.exists():   # keep an undo copy of the previous live master
+        _shutil.copy2(master, _STUDIO_BACKUP_DIR / f"{item_id}.{int(_time.time())}.png")
+    master.write_bytes(png_bytes)
+    img = _PILImage.open(_io.BytesIO(png_bytes)).convert("RGB")
+    w, h = img.size
+    if w > 900:
+        img = img.resize((900, round(h * 900 / w)), _PILImage.LANCZOS)
+    img.save(art_dir / f"{item_id}.png", "PNG")
+    if _STUDIO_PRINT_CACHE.exists():
+        for f in _STUDIO_PRINT_CACHE.glob(f"{item_id}_*.png"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
+
+def _studio_form_params(item_id, words, ground, ink, breathe, sculpt):
+    """Normalise + validate submitted studio params. Returns (item, words_list,
+    params_dict, error_message). error_message is non-empty on any validation fail."""
+    item = gallery_catalog.get(item_id)
+    if not item or not gallery_catalog.base_path(item_id):
+        return None, None, None, "Unknown item, or it has no stored base source to re-render."
+    ground = (ground or "navy").strip()
+    ink = (ink or "photo").strip()
+    if ground not in _STUDIO_GROUNDS:
+        return None, None, None, f"Invalid ground '{ground}'."
+    if ink not in {k for k, _ in _STUDIO_INKS}:
+        return None, None, None, f"Invalid ink '{ink}'."
+    words_list = [w for w in (words or "").replace("\n", " ").split() if w]
+    if not words_list:
+        return None, None, None, "Words / scripture cannot be empty."
+    params = {"words": (words or "").strip(), "ground": ground, "ink": ink,
+              "breathe": bool(breathe), "sculpt": bool(sculpt)}
+    return item, words_list, params, ""
+
+
+@app.get("/admin/studio", response_class=HTMLResponse)
+def admin_studio(admin_session: Optional[str] = Cookie(None)):
+    guard = admin_mod._require_admin(admin_session)
+    if guard:
+        return guard
+    import html as _html
+    items = gallery_catalog._load_items()
+    tunable = [(iid, it) for iid, it in items.items() if gallery_catalog.base_path(iid)]
+    tunable.sort(key=lambda kv: (str(kv[1].get("subject", "")), str(kv[1].get("title", ""))))
+    seed = {}
+    opts = []
+    for iid, it in tunable:
+        rp = it.get("render_params") or {}
+        seed[iid] = {
+            "title": it.get("title", iid),
+            "words": rp.get("words") or it.get("words") or it.get("scripture") or "",
+            "ground": rp.get("ground", "navy"),
+            "ink": rp.get("ink", "photo"),
+            "breathe": bool(rp.get("breathe", False)),
+            "sculpt": bool(rp.get("sculpt", True)),
+        }
+        opts.append(f'<option value="{_html.escape(iid)}">{_html.escape(str(it.get("title", iid)))}'
+                    f' — {_html.escape(str(it.get("subject", "")))}</option>')
+    ground_opts = "".join(f'<option value="{g}">{g.title()}</option>' for g in _STUDIO_GROUNDS)
+    ink_opts = "".join(f'<option value="{k}">{_html.escape(lbl)}</option>' for k, lbl in _STUDIO_INKS)
+    if not tunable:
+        body = (admin_mod._admin_nav(studio_active=True)
+                + "<h1>Render studio</h1><div class='msg err'>No items have a stored base "
+                  "source yet (static/gallery/base/&lt;id&gt;.png). Seed one to enable tuning.</div>")
+        return HTMLResponse(admin_mod._admin_chrome("Render studio", body))
+    body = admin_mod._admin_nav(studio_active=True) + f"""
+<h1>Render studio</h1>
+<p class="muted">Re-render a gallery portrait, preview it, and publish it live. Renders take ~30s and queue behind customer renders. Only items with a stored base source appear here.</p>
+<div style="display:grid;grid-template-columns:340px 1fr;gap:22px;align-items:start">
+  <div class="card">
+    <div class="field"><label>Portrait</label><select id="item">{''.join(opts)}</select></div>
+    <div class="field"><label>Words / scripture</label><textarea id="words" rows="4" style="width:100%"></textarea></div>
+    <div class="field"><label>Ground</label><select id="ground">{ground_opts}</select></div>
+    <div class="field"><label>Ink</label><select id="ink">{ink_opts}</select></div>
+    <div class="field"><label><input type="checkbox" id="breathe"> Breathe (sculptural depth)</label></div>
+    <div class="field"><label><input type="checkbox" id="sculpt"> Sculpt body/hair/cloth</label></div>
+    <button class="btn" id="prevBtn" type="button">Render preview</button>
+    <button class="btn ghost" id="pubBtn" type="button" disabled>Publish to live</button>
+    <p class="muted" id="note" style="margin-top:10px"></p>
+  </div>
+  <div class="card">
+    <div id="warn"></div>
+    <img id="prev" alt="preview" style="max-width:100%;border-radius:10px;display:none">
+    <p class="muted" id="prevhint">Pick a portrait and click <b>Render preview</b>.</p>
+  </div>
+</div>
+<script>
+const SEED = {json.dumps(seed)};
+const $ = id => document.getElementById(id);
+let previewed = null;   // item id that currently has a fresh preview
+function load(){{
+  const s = SEED[$('item').value] || {{}};
+  $('words').value = s.words||''; $('ground').value = s.ground||'navy';
+  $('ink').value = s.ink||'photo'; $('breathe').checked = !!s.breathe; $('sculpt').checked = !!s.sculpt;
+  $('prev').style.display='none'; $('warn').innerHTML=''; $('pubBtn').disabled=true;
+  $('prevhint').style.display=''; $('note').textContent='';
+  previewed=null;
+}}
+function fd(){{
+  const f = new FormData();
+  f.append('item_id', $('item').value); f.append('words', $('words').value);
+  f.append('ground', $('ground').value); f.append('ink', $('ink').value);
+  if($('breathe').checked) f.append('breathe','on');
+  if($('sculpt').checked) f.append('sculpt','on');
+  return f;
+}}
+async function preview(){{
+  $('prevBtn').disabled=true; $('note').textContent='Rendering… ~30s'; $('warn').innerHTML='';
+  try{{
+    const r = await fetch('/admin/studio/preview', {{method:'POST', body:fd()}});
+    const j = await r.json();
+    if(!j.ok){{ $('note').textContent=''; $('warn').innerHTML='<div class="msg err">'+(j.error||'Render failed')+'</div>'; return; }}
+    $('prev').src=j.draft_url; $('prev').style.display=''; $('prevhint').style.display='none';
+    if(j.warnings && j.warnings.length) $('warn').innerHTML='<div class="msg err">'+j.warnings.map(w=>w).join('<br>')+'</div>';
+    previewed=$('item').value; $('pubBtn').disabled=false; $('note').textContent='Preview ready. Publish when it looks right.';
+  }}catch(e){{ $('note').textContent=''; $('warn').innerHTML='<div class="msg err">'+e+'</div>'; }}
+  finally{{ $('prevBtn').disabled=false; }}
+}}
+async function publish(){{
+  if($('item').value!==previewed){{ alert('Render a preview of the current settings first.'); return; }}
+  if(!confirm('Publish this render? It replaces the LIVE image for this portrait immediately.')) return;
+  $('pubBtn').disabled=true; $('note').textContent='Publishing…';
+  try{{
+    const r = await fetch('/admin/studio/publish', {{method:'POST', body:fd()}});
+    const j = await r.json();
+    if(j.ok){{ $('note').innerHTML='<span style="color:#065f46">✓ Published — live now.</span>'; }}
+    else {{ $('note').textContent=''; $('warn').innerHTML='<div class="msg err">'+(j.error||'Publish failed')+'</div>'; $('pubBtn').disabled=false; }}
+  }}catch(e){{ $('note').textContent=''; $('warn').innerHTML='<div class="msg err">'+e+'</div>'; $('pubBtn').disabled=false; }}
+}}
+$('item').addEventListener('change', load);
+$('prevBtn').addEventListener('click', preview);
+$('pubBtn').addEventListener('click', publish);
+load();
+</script>"""
+    return HTMLResponse(admin_mod._admin_chrome("Render studio", body))
+
+
+@app.post("/admin/studio/preview")
+async def admin_studio_preview(admin_session: Optional[str] = Cookie(None),
+                               item_id: str = Form(...), words: str = Form(""),
+                               ground: str = Form("navy"), ink: str = Form("photo"),
+                               breathe: str = Form(""), sculpt: str = Form("")):
+    guard = admin_mod._require_admin(admin_session)
+    if guard:
+        return JSONResponse({"ok": False, "error": "auth"}, status_code=401)
+    item, words_list, params, err = _studio_form_params(
+        item_id, words, ground, ink, breathe == "on", sculpt == "on")
+    if err:
+        return JSONResponse({"ok": False, "error": err}, status_code=400)
+    base_bytes = gallery_catalog.base_path(item_id).read_bytes()
+    try:
+        png, warnings = await _bounded_to_thread(
+            _studio_render_png, base_bytes, words_list, params["ground"],
+            params["ink"], params["breathe"], params["sculpt"])
+    except ValueError as e:
+        msg = ("No face detected in the base image — this portrait can't be re-rendered "
+               "in Lifelike style (crop tooling comes in v2)." if "displacement_needs_face" in str(e)
+               else f"Render error: {e}")
+        return JSONResponse({"ok": False, "error": msg}, status_code=422)
+    _STUDIO_DRAFT_DIR.mkdir(parents=True, exist_ok=True)
+    (_STUDIO_DRAFT_DIR / f"{item_id}.png").write_bytes(png)
+    import time as _time
+    return JSONResponse({"ok": True,
+                         "draft_url": f"/admin/studio/draft/{item_id}.png?t={int(_time.time())}",
+                         "warnings": warnings})
+
+
+@app.get("/admin/studio/draft/{item_id}.png")
+def admin_studio_draft(item_id: str, admin_session: Optional[str] = Cookie(None)):
+    guard = admin_mod._require_admin(admin_session)
+    if guard:
+        return guard
+    if gallery_catalog.get(item_id) is None:   # only known ids -> no path traversal
+        raise HTTPException(status_code=404, detail="not found")
+    p = _STUDIO_DRAFT_DIR / f"{item_id}.png"
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="no draft")
+    return FileResponse(str(p), media_type="image/png",
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.post("/admin/studio/publish")
+async def admin_studio_publish(admin_session: Optional[str] = Cookie(None),
+                               item_id: str = Form(...), words: str = Form(""),
+                               ground: str = Form("navy"), ink: str = Form("photo"),
+                               breathe: str = Form(""), sculpt: str = Form("")):
+    guard = admin_mod._require_admin(admin_session)
+    if guard:
+        return JSONResponse({"ok": False, "error": "auth"}, status_code=401)
+    item, words_list, params, err = _studio_form_params(
+        item_id, words, ground, ink, breathe == "on", sculpt == "on")
+    if err:
+        return JSONResponse({"ok": False, "error": err}, status_code=400)
+    base_bytes = gallery_catalog.base_path(item_id).read_bytes()
+    try:   # re-render from the submitted params so the live master matches exactly
+        png, _warns = await _bounded_to_thread(
+            _studio_render_png, base_bytes, words_list, params["ground"],
+            params["ink"], params["breathe"], params["sculpt"])
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": f"Render error: {e}"}, status_code=422)
+    _studio_publish(item_id, png)
+    gallery_catalog.set_render_params(item_id, params)
+    return JSONResponse({"ok": True})
 
 
 # --- Per-photo analysis cache ------------------------------------------------
