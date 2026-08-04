@@ -1032,9 +1032,13 @@ async def admin_studio_preview(admin_session: Optional[str] = Cookie(None),
     _STUDIO_DRAFT_DIR.mkdir(parents=True, exist_ok=True)
     (_STUDIO_DRAFT_DIR / f"{item_id}.png").write_bytes(png)
     import time as _time
+    # warns.as_list() yields {stage,code,message,severity} dicts; surface only the
+    # real warning/error messages as plain strings (info is benign -> no red flash).
+    warn_msgs = [str(w.get("message", "")) for w in warnings
+                 if isinstance(w, dict) and w.get("severity") in ("warning", "error") and w.get("message")]
     return JSONResponse({"ok": True,
                          "draft_url": f"/admin/studio/draft/{item_id}.png?t={int(_time.time())}",
-                         "warnings": warnings})
+                         "warnings": warn_msgs})
 
 
 @app.get("/admin/studio/draft/{item_id}.png")
