@@ -940,8 +940,17 @@ def admin_studio(admin_session: Optional[str] = Cookie(None)):
   </div>
   <div class="card">
     <div id="warn"></div>
-    <img id="prev" alt="preview" style="max-width:100%;border-radius:10px;display:none">
-    <p class="muted" id="prevhint">Pick a portrait and click <b>Render preview</b>.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start">
+      <figure style="margin:0">
+        <img id="src" alt="source painting" style="width:100%;border-radius:10px;display:block;background:#f5f3ee">
+        <figcaption class="muted" style="margin-top:6px">Source painting</figcaption>
+      </figure>
+      <figure style="margin:0">
+        <img id="prev" alt="rendered" style="width:100%;border-radius:10px;display:block;background:#0d1b3a">
+        <figcaption class="muted" id="prevcap" style="margin-top:6px">Current live render</figcaption>
+      </figure>
+    </div>
+    <p class="muted" id="prevhint" style="margin-top:10px">The right image updates when you <b>Render preview</b>.</p>
   </div>
 </div>
 <script>
@@ -949,11 +958,14 @@ const SEED = {json.dumps(seed)};
 const $ = id => document.getElementById(id);
 let previewed = null;   // item id that currently has a fresh preview
 function load(){{
-  const s = SEED[$('item').value] || {{}};
+  const iid = $('item').value; const s = SEED[iid] || {{}};
   $('words').value = s.words||''; $('ground').value = s.ground||'navy';
   $('ink').value = s.ink||'photo'; $('breathe').checked = !!s.breathe; $('sculpt').checked = !!s.sculpt;
-  $('prev').style.display='none'; $('warn').innerHTML=''; $('pubBtn').disabled=true;
-  $('prevhint').style.display=''; $('note').textContent='';
+  const v = Date.now();
+  $('src').src = '/static/gallery/base/'+iid+'.png?v='+v;
+  $('prev').src = '/static/gallery/art/'+iid+'.png?v='+v;
+  $('prevcap').textContent = 'Current live render';
+  $('warn').innerHTML=''; $('pubBtn').disabled=true; $('note').textContent='';
   previewed=null;
 }}
 function fd(){{
@@ -970,7 +982,7 @@ async function preview(){{
     const r = await fetch('/admin/studio/preview', {{method:'POST', body:fd()}});
     const j = await r.json();
     if(!j.ok){{ $('note').textContent=''; $('warn').innerHTML='<div class="msg err">'+(j.error||'Render failed')+'</div>'; return; }}
-    $('prev').src=j.draft_url; $('prev').style.display=''; $('prevhint').style.display='none';
+    $('prev').src=j.draft_url; $('prevcap').textContent='New preview — not yet published';
     if(j.warnings && j.warnings.length) $('warn').innerHTML='<div class="msg err">'+j.warnings.map(w=>w).join('<br>')+'</div>';
     previewed=$('item').value; $('pubBtn').disabled=false; $('note').textContent='Preview ready. Publish when it looks right.';
   }}catch(e){{ $('note').textContent=''; $('warn').innerHTML='<div class="msg err">'+e+'</div>'; }}
@@ -983,7 +995,7 @@ async function publish(){{
   try{{
     const r = await fetch('/admin/studio/publish', {{method:'POST', body:fd()}});
     const j = await r.json();
-    if(j.ok){{ $('note').innerHTML='<span style="color:#065f46">✓ Published — live now.</span>'; }}
+    if(j.ok){{ $('note').innerHTML='<span style="color:#065f46">✓ Published — live now.</span>'; $('prevcap').textContent='Live'; }}
     else {{ $('note').textContent=''; $('warn').innerHTML='<div class="msg err">'+(j.error||'Publish failed')+'</div>'; $('pubBtn').disabled=false; }}
   }}catch(e){{ $('note').textContent=''; $('warn').innerHTML='<div class="msg err">'+e+'</div>'; $('pubBtn').disabled=false; }}
 }}
