@@ -86,28 +86,35 @@ def base_path(item_id: str) -> Optional[Path]:
     return p if p.exists() else None
 
 
+# Studio render recipes are stored in a WRITABLE side-file (not catalog.json, which
+# lives under the read-only /app/static mount in prod). Persists across rebuilds via
+# the ./data/private bind mount; used to prefill the studio form on the next visit.
+_PARAMS_PATH = PRIVATE_DIR / "gallery" / "_render_params.json"
+
+
+def _load_params() -> Dict[str, dict]:
+    try:
+        return json.loads(_PARAMS_PATH.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 -- missing/invalid => no overrides
+        return {}
+
+
+def get_render_params(item_id: str) -> Optional[dict]:
+    """The last studio-published render recipe for an item, or None."""
+    return _load_params().get((item_id or "").strip())
+
+
 def set_render_params(item_id: str, params: dict) -> bool:
-    """Persist the render recipe (words/ground/ink/breathe/sculpt) onto the item in
-    catalog.json so a render is reproducible later. Atomic write (temp + os.replace);
-    _load_items() reads fresh each call so there is no cache to invalidate. Returns
-    True if the item was found and written."""
+    """Persist the render recipe (words/ground/ink/breathe/sculpt) to the writable
+    side-file so a render is reproducible and the studio form prefills to it. Atomic
+    write (temp + os.replace). Returns True on success."""
     iid = (item_id or "").strip()
     if not iid:
         return False
-    try:
-        data = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        return False
-    found = False
-    for col in data.get("collections", []):
-        for sec in col.get("sections", []):
-            for it in sec.get("items", []):
-                if str(it.get("id") or "").strip() == iid:
-                    it["render_params"] = params
-                    found = True
-    if not found:
-        return False
-    tmp = _CATALOG_PATH.with_name(_CATALOG_PATH.name + ".tmp")
+    data = _load_params()
+    data[iid] = params
+    _PARAMS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _PARAMS_PATH.with_name(_PARAMS_PATH.name + ".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    os.replace(tmp, _CATALOG_PATH)
+    os.replace(tmp, _PARAMS_PATH)
     return True

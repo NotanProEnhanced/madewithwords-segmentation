@@ -111,6 +111,24 @@ app = FastAPI(title="Typography Portrait Engine", version=__version__)
 import mimetypes as _mimetypes
 _mimetypes.add_type("image/webp", ".webp")   # some hosts lack webp in the mimetypes DB -> served as octet-stream
 
+# Gallery card art with a WRITABLE override. /app/static is mounted read-only in
+# prod (art ships baked into the image), so the admin Studio publishes a new preview
+# to /app/private (writable) instead. This route is registered BEFORE the /static
+# mount so it intercepts these specific files: an item with a studio override serves
+# it (live, no rebuild); everything else falls through to the baked-in static file.
+@app.get("/static/gallery/art/{item_id}.png")
+def _gallery_art_override(item_id: str):
+    from .config import PRIVATE_DIR as _PRIV
+    if ".." in item_id or "/" in item_id:
+        raise HTTPException(status_code=404, detail="not found")
+    override = _PRIV / "gallery" / "_preview" / f"{item_id}.png"
+    baked = STATIC_DIR / "gallery" / "art" / f"{item_id}.png"
+    target = override if override.exists() else baked
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="not found")
+    return FileResponse(str(target), media_type="image/png")
+
+
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -852,9 +870,11 @@ def _studio_publish(item_id: str, png_bytes: bytes) -> None:
     import time as _time
     from PIL import Image as _PILImage
     master_dir = PRIVATE_DIR / "gallery"
-    art_dir = STATIC_DIR / "gallery" / "art"
+    # Public preview goes to a WRITABLE override dir (not /app/static, which is ro in
+    # prod); the /static/gallery/art/<id>.png route serves this override when present.
+    preview_dir = PRIVATE_DIR / "gallery" / "_preview"
     master_dir.mkdir(parents=True, exist_ok=True)
-    art_dir.mkdir(parents=True, exist_ok=True)
+    preview_dir.mkdir(parents=True, exist_ok=True)
     _STUDIO_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     master = master_dir / f"{item_id}.png"
     if master.exists():   # keep an undo copy of the previous live master
@@ -864,7 +884,7 @@ def _studio_publish(item_id: str, png_bytes: bytes) -> None:
     w, h = img.size
     if w > 900:
         img = img.resize((900, round(h * 900 / w)), _PILImage.LANCZOS)
-    img.save(art_dir / f"{item_id}.png", "PNG")
+    img.save(preview_dir / f"{item_id}.png", "PNG")
     if _STUDIO_PRINT_CACHE.exists():
         for f in _STUDIO_PRINT_CACHE.glob(f"{item_id}_*.png"):
             try:
@@ -905,7 +925,7 @@ def admin_studio(admin_session: Optional[str] = Cookie(None)):
     seed = {}
     opts = []
     for iid, it in tunable:
-        rp = it.get("render_params") or {}
+        rp = gallery_catalog.get_render_params(iid) or it.get("render_params") or {}
         seed[iid] = {
             "title": it.get("title", iid),
             "words": rp.get("words") or it.get("words") or it.get("scripture") or "",
@@ -1029,8 +1049,13 @@ async def admin_studio_preview(admin_session: Optional[str] = Cookie(None),
                "in Lifelike style (crop tooling comes in v2)." if "displacement_needs_face" in str(e)
                else f"Render error: {e}")
         return JSONResponse({"ok": False, "error": msg}, status_code=422)
-    _STUDIO_DRAFT_DIR.mkdir(parents=True, exist_ok=True)
-    (_STUDIO_DRAFT_DIR / f"{item_id}.png").write_bytes(png)
+    except Exception as e:  # noqa: BLE001 -- surface any failure as JSON, never a raw 500
+        return JSONResponse({"ok": False, "error": f"Render failed: {type(e).__name__}: {e}"}, status_code=500)
+    try:
+        _STUDIO_DRAFT_DIR.mkdir(parents=True, exist_ok=True)
+        (_STUDIO_DRAFT_DIR / f"{item_id}.png").write_bytes(png)
+    except OSError as e:
+        return JSONResponse({"ok": False, "error": f"Could not save draft: {e}"}, status_code=500)
     import time as _time
     # warns.as_list() yields {stage,code,message,severity} dicts; surface only the
     # real warning/error messages as plain strings (info is benign -> no red flash).
@@ -1074,8 +1099,13 @@ async def admin_studio_publish(admin_session: Optional[str] = Cookie(None),
             params["ink"], params["breathe"], params["sculpt"])
     except ValueError as e:
         return JSONResponse({"ok": False, "error": f"Render error: {e}"}, status_code=422)
-    _studio_publish(item_id, png)
-    gallery_catalog.set_render_params(item_id, params)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": f"Render failed: {type(e).__name__}: {e}"}, status_code=500)
+    try:
+        _studio_publish(item_id, png)
+        gallery_catalog.set_render_params(item_id, params)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": f"Publish failed: {type(e).__name__}: {e}"}, status_code=500)
     return JSONResponse({"ok": True})
 
 
