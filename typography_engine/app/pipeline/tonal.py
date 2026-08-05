@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 import re
 from typing import List, Optional, Sequence, Tuple
 
@@ -1832,6 +1833,25 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         fsc0 = W / float(an.img.gray.shape[1])
         eyes_e = _eye_ellipses(an, fsc0)
         iris_c = _iris_circles(an, fsc0)
+        # Dark-lens (sunglasses) guard -- mirrors the Lifelike path: a tinted lens has no
+        # bright sclera (p90 < 95 vs 134-193 for real eyes), so suppress the fabricated /
+        # see-through eye and paint an opaque lens below. Gated by env TYPO_DARKLENS (ON).
+        _dl_on = os.environ.get("TYPO_DARKLENS", "1").strip().lower() not in ("0", "false", "off", "no", "")
+        _dark_lens = False
+        if _dl_on and iris_c:
+            _glum = (photo[..., 0] * 0.299 + photo[..., 1] * 0.587 + photo[..., 2] * 0.114)
+            _sc = []
+            for _icx, _icy, _irr in iris_c:
+                _y0, _y1 = max(0, int(_icy - _irr * 2.4)), int(_icy + _irr * 2.4)
+                _x0, _x1 = max(0, int(_icx - _irr * 2.4)), int(_icx + _irr * 2.4)
+                _reg = _glum[_y0:_y1, _x0:_x1]
+                if _reg.size >= 16:
+                    _sc.append(float(np.percentile(_reg, 90)))
+            _dark_lens = bool(_sc) and min(_sc) < 95.0
+        _lens_eyes = list(eyes_e) if _dark_lens else []
+        if _dark_lens:
+            eyes_e = []                             # skip all eye rendering (no fabricated / see-through eye)
+            iris_c = []
         # Eye-white + teeth fill. In Photo ink the photo's OWN pixels can carry a
         # warm cast (warm light + warm ink), so take mostly LUMINANCE + a trace of
         # colour -> natural neutral whites. Other inks keep the tinted photo (it
@@ -1915,6 +1935,16 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             grayed = of * (1.0 - _desat) + lum * _desat
             em3 = eye_a[..., None]
             out = (of * (1.0 - em3) + grayed * em3).clip(0, 255).astype(np.uint8)
+        # Opaque dark lens: with the eye suppressed above, paint the lens region toward the
+        # ground so it reads as a solid dark lens instead of the word-face showing through.
+        if _dark_lens and _lens_eyes:
+            _lm = np.zeros((H, W), np.float32)
+            for _ex, _ey, _erx, _ery in _lens_eyes:
+                cv2.circle(_lm, (int(round(_ex)), int(round(_ey))),
+                           max(2, int(round(max(_erx, _ery) * 1.9))), 1.0, -1, cv2.LINE_AA)
+            _mr = float(np.mean([max(rx, ry) for _, _, rx, ry in _lens_eyes]))
+            _lm = np.clip(cv2.GaussianBlur(_lm, (0, 0), sigmaX=max(1.0, _mr * 0.30)), 0, 1)[..., None]
+            out = (out.astype(np.float32) * (1.0 - 0.90 * _lm) + ground * (0.90 * _lm)).clip(0, 255).astype(np.uint8)
     # (photo_paper paints NO compose-level eye/teeth patch -- that read as a sticker
     # glued on the typography. Its eyes + smile are formed by the WORDS themselves,
     # deepened in the tonal field in _tint_photo so the features emerge from type.)
