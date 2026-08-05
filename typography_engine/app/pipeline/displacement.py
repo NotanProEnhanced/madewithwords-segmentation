@@ -61,6 +61,12 @@ _EYE_OPEN_EAR = 0.15
 # dark pupil) sits far higher. Above this there's no real eye -> suppress instead of
 # fabricating one. Threshold keeps a wide margin so light irises are never dropped.
 _EYE_OPEN_IRIS_MAX = 0.40
+# Dark-lens (sunglasses) guard. A real open eye has a BRIGHT sclera (p90 measured 134-193
+# across many faces); a tinted lens darkens the whole eye region (sunglasses measured
+# 39-73). Below this there's no real sclera to model -> suppress the fabricated eye and
+# render the lens as a solid dark lens, instead of a glowing catchlight/iris or the real
+# eye bleeding through the shades. Gated by env TYPO_DARKLENS (default ON; =0 reverts).
+_EYE_SCLERA_MIN = 95.0
 
 # Sculpted ink colours: the WORD colour (BGR) draped on the dark ground. These are
 # light/bright tints (mirroring the studio's ink swatches) so they read on navy.
@@ -326,8 +332,12 @@ def render_displacement_portrait(
     # was falsely read as "no eye" (the eye then rendered as a grey socket). Every
     # real open eye -- any iris colour -- still has a near-black pupil, so its p10
     # stays low; a closed lid or glare has no dark pupil and its p10 stays bright.
+    _dl_on = os.environ.get("TYPO_DARKLENS", "1").strip().lower() not in ("0", "false", "off", "no", "")
+    _dark_lens_active = False
+    _dark_lens_eyes = []
     if irises:
         ratios = []
+        scleras = []
         for icx, icy, ir in irises:
             y0, y1 = max(0, int(icy - ir * 2.4)), int(icy + ir * 2.4)
             x0, x1 = max(0, int(icx - ir * 2.4)), int(icx + ir * 2.4)
@@ -337,9 +347,14 @@ def render_displacement_portrait(
             inner = np.zeros((H, W), np.uint8)
             cv2.circle(inner, (int(round(icx)), int(round(icy))), max(1, int(ir * 0.45)), 1, -1)
             sclera = max(float(np.percentile(reg, 90)), 1.0)
+            scleras.append(sclera)
             ratios.append(float(np.percentile(gray[inner > 0], 10)) / sclera)
-        if len(ratios) >= 2 and min(ratios) > _EYE_OPEN_IRIS_MAX:
-            irises = []                                # no dark pupil -> not a real eye
+        _dark_lens = _dl_on and bool(scleras) and min(scleras) < _EYE_SCLERA_MIN
+        if _dark_lens:
+            _dark_lens_active = True
+            _dark_lens_eyes = list(irises)             # remember the lens positions for the opaque fill
+        if (len(ratios) >= 2 and min(ratios) > _EYE_OPEN_IRIS_MAX) or _dark_lens:
+            irises = []                                # no dark pupil / no bright sclera (shades) -> not a real eye
 
     # Glare clean-up: when the eyes are SUPPRESSED (closed / glare) AND the photo has a
     # blown-out specular reflection over the eye (e.g. glasses glare), tone it down
@@ -364,6 +379,16 @@ def render_displacement_portrait(
             gm = cv2.GaussianBlur(spec.astype(np.float32), (0, 0), max(2.0, _ssn * 4.0))
             gray = gray * (1.0 - gm) + skin * gm        # density/displacement sees no glare
             _eye_deglare = (gm, float(skin))            # reused on the colour source below
+
+    # Dark-lens gray fill: darken the lens region so the density/displacement field stays
+    # low there (helps the lens read as an opaque dark surface). Alpha is cleared below too.
+    if _dark_lens_eyes:
+        _dlm = np.zeros((H, W), np.float32)
+        for icx, icy, ir in _dark_lens_eyes:
+            cv2.circle(_dlm, (int(round(icx)), int(round(icy))), int(round(ir * 2.5)), 1.0, -1, cv2.LINE_AA)
+        _dlr = float(np.mean([r for *_c, r in _dark_lens_eyes]))
+        _dlm = np.clip(cv2.GaussianBlur(_dlm, (0, 0), sigmaX=max(1.0, _dlr * 0.30)), 0, 1)
+        gray = gray * (1.0 - 0.90 * _dlm)
 
     def rows(fs: float) -> np.ndarray:
         f = _font(fs)
@@ -625,6 +650,21 @@ def render_displacement_portrait(
         else:                                     # dark ink on light paper
             a = np.clip(a + 0.80 * pup, 0, 1)     # pupil: round dark ink
             a = a * (1.0 - 0.85 * glint)          # catchlight: paper shows
+
+    # Opaque dark lens: clear the typography inside a detected tinted lens (eyelid hull,
+    # dilated to the lens where reflections sit) so it reads as a solid dark lens instead
+    # of a see-through eye. The fabricated-eye pass (iris/catchlight/sclera) is already
+    # suppressed above; this removes the words too.
+    if _dark_lens_active:
+        _lens = np.zeros((H, W), np.uint8)
+        for k in ("Leye", "Reye"):
+            p = np.array([pts[i] for i in _GROUPS[k] if i < len(pts)], np.int32)
+            if len(p) >= 3:
+                cv2.fillConvexPoly(_lens, cv2.convexHull(p), 1)
+        _dk = max(3, int(fw * 0.075)) | 1
+        _lensf = cv2.dilate(_lens, np.ones((_dk, _dk), np.uint8), 1).astype(np.float32)
+        _lensf = np.clip(cv2.GaussianBlur(_lensf, (0, 0), sigmaX=max(1.0, fw * 0.010)), 0, 1)
+        a = a * (1.0 - 0.97 * _lensf)
 
     # Teeth carry NO typography. Where the mouth is open, suppress ink across the
     # inner mouth (both tones); on a dark ground the cleared teeth get a soft
