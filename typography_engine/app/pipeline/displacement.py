@@ -599,16 +599,28 @@ def render_displacement_portrait(
     # Feature anchoring: eye rings + lip seam + pupils + nostrils.
     anchor = np.zeros((H, W), np.float32)
     th = max(1, int(fw * 0.006))
+    # Lips seam is drawn for every face; the eye rings + legacy eye blob are skipped on
+    # SHADED (sunglasses) faces only. Drawing an eye ring/blob over an opaque lens stamps
+    # a dark outline onto it ("black dots"), so a shaded face gets a lips anchor but no eye
+    # anchor. Every other face (real eyes, closed eyes, low-res faces whose irises never
+    # resolved) keeps its eye rings exactly as before.
+    _shaded_ids = {id(_fp) for _fp in _dark_lens_face_pts}
+    _eye_anchor_pts = [_fp for _fp in all_pts if id(_fp) not in _shaded_ids]
     for _fp in all_pts:
-        for k in ["Leye", "Reye", "lips"]:
+        p = np.array([_fp[i] for i in _GROUPS["lips"] if i < len(_fp)], np.int32)
+        if len(p) >= 3:
+            cv2.polylines(anchor, [cv2.convexHull(p)], True, 1.0, th, cv2.LINE_AA)
+    for _fp in _eye_anchor_pts:
+        for k in ["Leye", "Reye"]:
             p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
             if len(p) >= 3:
                 cv2.polylines(anchor, [cv2.convexHull(p)], True, 1.0, th, cv2.LINE_AA)
     if not irises:
         # Legacy eye presence: an ink blob at the lid centroid. Only used when the
         # iris landmarks can't resolve -- with real irises the round pupil and
-        # catchlight below model the eye properly instead.
-        for _fp in all_pts:
+        # catchlight below model the eye properly instead. Skipped on shaded faces so a
+        # lens never gets a dark blob.
+        for _fp in _eye_anchor_pts:
             for k in ["Leye", "Reye"]:
                 c = np.mean([_fp[i] for i in _GROUPS[k]], 0).astype(int)
                 cv2.circle(anchor, tuple(c), max(2, int(fw * 0.020)), 1.0, -1, cv2.LINE_AA)
@@ -636,8 +648,17 @@ def render_displacement_portrait(
         # Catchlight: deterministic, consistent between both eyes (the classic
         # upper diagonal on the lit side) -- shared helper, working coords -> xSS.
         from .tonal import _catchlight_points
+        # _catchlight_points covers EVERY detected face independently, but the eyes of some
+        # faces are suppressed here (sunglasses, no dark pupil, closed). Only paint a glint
+        # on a face whose eyes are ACTUALLY rendered (_eye_face_pts); otherwise a stray white
+        # dot lands on an opaque lens / occluded eye.
+        _eye_boxes = [(_p[:, 0].min(), _p[:, 1].min(), _p[:, 0].max(), _p[:, 1].max())
+                      for _p in _eye_face_pts]
         for gx, gy, gr in _catchlight_points(an):
-            cv2.circle(glint, (int(round(gx * SS)), int(round(gy * SS))),
+            _gx, _gy = gx * SS, gy * SS
+            if not any(_a <= _gx <= _c and _b <= _gy <= _d for (_a, _b, _c, _d) in _eye_boxes):
+                continue
+            cv2.circle(glint, (int(round(_gx)), int(round(_gy))),
                        max(1, int(round(gr * SS))), 1.0, -1, cv2.LINE_AA)
         ir_mean = float(np.mean([r for _, _, r in irises]))
         pup = np.clip(cv2.GaussianBlur(pup, (0, 0), sigmaX=max(1.0, ir_mean * 0.10)), 0, 1)
