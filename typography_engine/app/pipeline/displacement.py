@@ -283,6 +283,9 @@ def render_displacement_portrait(
     gray = cv2.resize(g0, (W, H), interpolation=cv2.INTER_CUBIC)
     mask01 = cv2.resize(m0, (W, H), interpolation=cv2.INTER_LINEAR)
     pts = pts0 * SS
+    # Every detected face's landmarks (primary first), so eyes + facial-feature
+    # typography are rendered identically for EVERY subject, not just the largest.
+    all_pts = [np.asarray(f.points) * SS for f in (an.faces or [an.landmarks])]
     fbb = an.face_bbox
     fw = (fbb[2] * SS) if fbb else W * 0.55
     face_frac = (fbb[2] / w0) if fbb else 0.55
@@ -293,52 +296,43 @@ def render_displacement_portrait(
     # an iris-scaled text tier, a real catchlight, and -- separately gated -- the
     # person's true eye colour. Both irises must resolve large enough to carry
     # structure; otherwise every step below falls back to the legacy behavior.
-    irises: List[Tuple[float, float, float]] = []
-    if len(pts) >= 478:
-        for ic, ring in ((468, (469, 470, 471, 472)), (473, (474, 475, 476, 477))):
-            icx, icy = float(pts[ic][0]), float(pts[ic][1])
-            ir = float(np.mean([np.hypot(pts[i][0] - icx, pts[i][1] - icy) for i in ring]))
-            if ir >= 8.0:
-                irises.append((icx, icy, ir))
-    if len(irises) < 2:
-        irises = []
-    eye_centers = list(irises)   # remember detected eyes; reused for glare clean-up if gated off
-    # Eye-OPENNESS gate. MediaPipe places an iris even on a CLOSED eye (glasses make
-    # it worse), so the living-eye treatment would paint synthetic OPEN eyes onto a
-    # peaceful, closed-eye photo -- unacceptable, especially for a memorial. Only
-    # keep the synthetic eyes when BOTH eyes read as open via the eye-aspect-ratio
-    # (lid aperture / eye width) from the eyelid landmarks; otherwise the eye region
-    # renders as plain words (a naturally closed eye).
-    if irises and len(pts) >= 478:
-        def _ear(p1, p2, p3, p4, p5, p6):
-            horiz = float(np.hypot(pts[p1][0] - pts[p4][0], pts[p1][1] - pts[p4][1]))
-            if horiz < 1e-3:
-                return 0.0
-            v = (float(np.hypot(pts[p2][0] - pts[p6][0], pts[p2][1] - pts[p6][1]))
-                 + float(np.hypot(pts[p3][0] - pts[p5][0], pts[p3][1] - pts[p5][1])))
-            return v / (2.0 * horiz)
-        ear_r = _ear(33, 160, 158, 133, 153, 144)     # subject's right eye
-        ear_l = _ear(362, 385, 387, 263, 373, 380)    # subject's left eye
-        if min(ear_r, ear_l) < _EYE_OPEN_EAR:
-            irises = []                                # closed -> no fabricated eyes
-    # Appearance backstop: a real open eye has a DARK PUPIL at its centre in a
-    # brighter sclera. If there's no dark pupil -- because it's eyelid skin (closed)
-    # or a glasses GLARE filling the lens -- there's no eye to model, so suppress
-    # rather than fabricate one. Catches the cases MediaPipe's geometry/blendshapes
-    # get wrong (closed eyes it still reports as open).
-    #
-    # Key on the pupil's DARKEST pixels (10th percentile of the central disc), NOT
-    # the mean of the inner iris: a light amber/hazel/blue iris raises the mean and
-    # was falsely read as "no eye" (the eye then rendered as a grey socket). Every
-    # real open eye -- any iris colour -- still has a near-black pupil, so its p10
-    # stays low; a closed lid or glare has no dark pupil and its p10 stays bright.
+    # Collect open, unshaded eyes across EVERY face (primary + secondary) so a group
+    # portrait renders identical eyes on all subjects. Each face runs the SAME gates:
+    # openness (eye-aspect-ratio), dark-pupil backstop, and dark-lens (sunglasses). A
+    # face that fails a gate renders as plain words there; the other faces are
+    # unaffected. Single-subject renders reproduce the previous behaviour exactly.
     _dl_on = os.environ.get("TYPO_DARKLENS", "1").strip().lower() not in ("0", "false", "off", "no", "")
+    irises: List[Tuple[float, float, float]] = []
+    eye_centers: List[Tuple[float, float, float]] = []
+    _eye_face_pts = []            # faces whose eyes ARE rendered (drive the sclera/anchor hulls)
     _dark_lens_active = False
     _dark_lens_eyes = []
-    if irises:
-        ratios = []
-        scleras = []
-        for icx, icy, ir in irises:
+    _dark_lens_face_pts = []      # shaded faces (drive the opaque-lens fill)
+    for _fp in all_pts:
+        if len(_fp) < 478:
+            continue
+        _fi = []
+        for ic, ring in ((468, (469, 470, 471, 472)), (473, (474, 475, 476, 477))):
+            icx, icy = float(_fp[ic][0]), float(_fp[ic][1])
+            ir = float(np.mean([np.hypot(_fp[i][0] - icx, _fp[i][1] - icy) for i in ring]))
+            if ir >= 8.0:
+                _fi.append((icx, icy, ir))
+        if len(_fi) < 2:
+            continue
+        eye_centers.extend(_fi)
+        # Openness gate (both eyes must read open) -- else plain words for this face.
+        def _ear(p1, p2, p3, p4, p5, p6, _p=_fp):
+            horiz = float(np.hypot(_p[p1][0] - _p[p4][0], _p[p1][1] - _p[p4][1]))
+            if horiz < 1e-3:
+                return 0.0
+            v = (float(np.hypot(_p[p2][0] - _p[p6][0], _p[p2][1] - _p[p6][1]))
+                 + float(np.hypot(_p[p3][0] - _p[p5][0], _p[p3][1] - _p[p5][1])))
+            return v / (2.0 * horiz)
+        if min(_ear(33, 160, 158, 133, 153, 144), _ear(362, 385, 387, 263, 373, 380)) < _EYE_OPEN_EAR:
+            continue
+        # Dark-pupil backstop + dark-lens (sunglasses) gate for THIS face.
+        ratios, scleras = [], []
+        for icx, icy, ir in _fi:
             y0, y1 = max(0, int(icy - ir * 2.4)), int(icy + ir * 2.4)
             x0, x1 = max(0, int(icx - ir * 2.4)), int(icx + ir * 2.4)
             reg = gray[y0:y1, x0:x1]
@@ -349,12 +343,15 @@ def render_displacement_portrait(
             sclera = max(float(np.percentile(reg, 90)), 1.0)
             scleras.append(sclera)
             ratios.append(float(np.percentile(gray[inner > 0], 10)) / sclera)
-        _dark_lens = _dl_on and bool(scleras) and min(scleras) < _EYE_SCLERA_MIN
-        if _dark_lens:
-            _dark_lens_active = True
-            _dark_lens_eyes = list(irises)             # remember the lens positions for the opaque fill
-        if (len(ratios) >= 2 and min(ratios) > _EYE_OPEN_IRIS_MAX) or _dark_lens:
-            irises = []                                # no dark pupil / no bright sclera (shades) -> not a real eye
+        if _dl_on and scleras and min(scleras) < _EYE_SCLERA_MIN:
+            _dark_lens_active = True                   # shades on this face
+            _dark_lens_eyes.extend(_fi)
+            _dark_lens_face_pts.append(_fp)
+            continue
+        if len(ratios) >= 2 and min(ratios) > _EYE_OPEN_IRIS_MAX:
+            continue                                   # no dark pupil -> not a real eye
+        irises.extend(_fi)
+        _eye_face_pts.append(_fp)
 
     # Glare clean-up: when the eyes are SUPPRESSED (closed / glare) AND the photo has a
     # blown-out specular reflection over the eye (e.g. glasses glare), tone it down
@@ -441,10 +438,11 @@ def render_displacement_portrait(
 
     def mask_of(keys, dil, sig) -> np.ndarray:
         mm = np.zeros((H, W), np.uint8)
-        for k in keys:
-            p = np.array([pts[i] for i in _GROUPS[k] if i < len(pts)], np.int32)
-            if len(p) >= 3:
-                cv2.fillConvexPoly(mm, cv2.convexHull(p), 1)
+        for _fp in all_pts:
+            for k in keys:
+                p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
+                if len(p) >= 3:
+                    cv2.fillConvexPoly(mm, cv2.convexHull(p), 1)
         if dil > 0:
             mm = cv2.dilate(mm, np.ones((dil | 1, dil | 1), np.uint8), 1)
         return np.clip(cv2.GaussianBlur(mm.astype(np.float32), (0, 0), sigmaX=max(1.0, sig)), 0, 1)
@@ -452,7 +450,8 @@ def render_displacement_portrait(
     feat_damp = mask_of(_GROUPS.keys(), int(fw * 0.06), fw * 0.045)
 
     fmh = np.zeros((H, W), np.uint8)
-    cv2.fillConvexPoly(fmh, cv2.convexHull(pts.astype(np.int32)), 1)
+    for _fp in all_pts:
+        cv2.fillConvexPoly(fmh, cv2.convexHull(_fp.astype(np.int32)), 1)
     # FACE-relative feathering (not image-relative): on a tight crop the face fills
     # the frame, so an image-relative blur transitions over too thin a band and the
     # type SNAPS large->small. Scaling the blur to the face width keeps the size
@@ -479,18 +478,18 @@ def render_displacement_portrait(
         _gyv = np.arange(H, dtype=np.float32)[:, None]
         _rows_on = np.where(mask01.max(axis=1) > 0)[0]
         _notface = 1.0 - face_norm
-        _chin_y = float(pts[:, 1].max())
+        _chin_y = max(float(_p[:, 1].max()) for _p in all_pts)
         _bottom_y = float(_rows_on.max()) if _rows_on.size else float(H)
         _below = np.clip((_gyv - _chin_y) / max(1.0, (_bottom_y - _chin_y)), 0.0, 1.0)
         df = np.clip(df + 0.30 * _notface * (_gyv > _chin_y).astype(np.float32) + 0.55 * _below * _notface, 0, 1)
-        _face_top_y = float(pts[:, 1].min())
+        _face_top_y = min(float(_p[:, 1].min()) for _p in all_pts)
         _top_y = float(_rows_on.min()) if _rows_on.size else 0.0
         _above = np.clip((_face_top_y - _gyv) / max(1.0, (_face_top_y - _top_y)), 0.0, 1.0)
         df = np.clip(df + 0.30 * _notface * (_gyv < _face_top_y).astype(np.float32) + 0.55 * _above * _notface, 0, 1)
     # =================================================================================
     # #1 Forehead is a big smooth plane that large letters dominate -> push the type
     # finer above the brow line so it stops shouting.
-    brows = [pts[i] for grp in ("Lbrow", "Rbrow") for i in _GROUPS[grp] if i < len(pts)]
+    brows = [_p[i] for _p in all_pts for grp in ("Lbrow", "Rbrow") for i in _GROUPS[grp] if i < len(_p)]
     if brows:
         brow_y = float(np.mean([b[1] for b in brows]))
         _yy = np.arange(H, dtype=np.float32)[:, None]
@@ -552,12 +551,12 @@ def render_displacement_portrait(
     if _grad_on:
         _hph = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.030))
         _hph /= (np.std(_hph[mask01 > 0]) + 1e-6)
-        _hair_reg = ((mask01 > 0) & (yy < float(pts[:, 1].max()))).astype(np.float32) * (1.0 - face_norm)
+        _hair_reg = ((mask01 > 0) & (yy < max(float(_p[:, 1].max()) for _p in all_pts))).astype(np.float32) * (1.0 - face_norm)
         _hair_reg = cv2.GaussianBlur(_hair_reg, (0, 0), sigmaX=max(2.0, fw * 0.03))
         ink_field = np.clip(ink_field + 0.60 * sign * np.clip(_hph, -2.0, 2.0) * _hair_reg, 0, 1)
     # #4 Quiet the clothing: below the chin, compress contrast toward the local mean
     # so patterned clothes stop competing with the face (hair untouched).
-    chin_y = float(pts[:, 1].max())
+    chin_y = max(float(_p[:, 1].max()) for _p in all_pts)
     cloth = ((mask01 > 0) & (yy > chin_y)).astype(np.float32)
     cloth = cv2.GaussianBlur(cloth, (0, 0), sigmaX=max(2.0, fw * 0.05))
     # When graduating (same gate), quiet the clothing a bit LESS so some drape shows,
@@ -585,20 +584,23 @@ def render_displacement_portrait(
     # Feature anchoring: eye rings + lip seam + pupils + nostrils.
     anchor = np.zeros((H, W), np.float32)
     th = max(1, int(fw * 0.006))
-    for k in ["Leye", "Reye", "lips"]:
-        p = np.array([pts[i] for i in _GROUPS[k] if i < len(pts)], np.int32)
-        if len(p) >= 3:
-            cv2.polylines(anchor, [cv2.convexHull(p)], True, 1.0, th, cv2.LINE_AA)
+    for _fp in all_pts:
+        for k in ["Leye", "Reye", "lips"]:
+            p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
+            if len(p) >= 3:
+                cv2.polylines(anchor, [cv2.convexHull(p)], True, 1.0, th, cv2.LINE_AA)
     if not irises:
         # Legacy eye presence: an ink blob at the lid centroid. Only used when the
         # iris landmarks can't resolve -- with real irises the round pupil and
         # catchlight below model the eye properly instead.
-        for k in ["Leye", "Reye"]:
-            c = np.mean([pts[i] for i in _GROUPS[k]], 0).astype(int)
-            cv2.circle(anchor, tuple(c), max(2, int(fw * 0.020)), 1.0, -1, cv2.LINE_AA)
-    for i in (98, 327, 2):
-        if i < len(pts):
-            cv2.circle(anchor, (int(pts[i][0]), int(pts[i][1])), max(1, int(fw * 0.012)), 1.0, -1, cv2.LINE_AA)
+        for _fp in all_pts:
+            for k in ["Leye", "Reye"]:
+                c = np.mean([_fp[i] for i in _GROUPS[k]], 0).astype(int)
+                cv2.circle(anchor, tuple(c), max(2, int(fw * 0.020)), 1.0, -1, cv2.LINE_AA)
+    for _fp in all_pts:
+        for i in (98, 327, 2):
+            if i < len(_fp):
+                cv2.circle(anchor, (int(_fp[i][0]), int(_fp[i][1])), max(1, int(fw * 0.012)), 1.0, -1, cv2.LINE_AA)
     anchor = cv2.GaussianBlur(anchor, (0, 0), sigmaX=max(1.0, fw * 0.004))
     anchor = np.clip(anchor, 0, 1)
     if g["tone"] == "light":
@@ -629,10 +631,11 @@ def render_displacement_portrait(
         # iris, ink is suppressed entirely -- the eye reads as anatomy (clean
         # sclera, typed iris, round pupil, glint), not as text.
         scl = np.zeros((H, W), np.float32)
-        for k in ("Leye", "Reye"):
-            p = np.array([pts[i] for i in _GROUPS[k] if i < len(pts)], np.int32)
-            if len(p) >= 3:
-                cv2.fillConvexPoly(scl, cv2.convexHull(p), 1.0)
+        for _fp in _eye_face_pts:
+            for k in ("Leye", "Reye"):
+                p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
+                if len(p) >= 3:
+                    cv2.fillConvexPoly(scl, cv2.convexHull(p), 1.0)
         iris_full = np.zeros((H, W), np.float32)
         limbal = np.zeros((H, W), np.float32)      # dark rim at the iris edge
         for icx, icy, ir in irises:
@@ -657,10 +660,11 @@ def render_displacement_portrait(
     # suppressed above; this removes the words too.
     if _dark_lens_active:
         _lens = np.zeros((H, W), np.uint8)
-        for k in ("Leye", "Reye"):
-            p = np.array([pts[i] for i in _GROUPS[k] if i < len(pts)], np.int32)
-            if len(p) >= 3:
-                cv2.fillConvexPoly(_lens, cv2.convexHull(p), 1)
+        for _fp in _dark_lens_face_pts:
+            for k in ("Leye", "Reye"):
+                p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
+                if len(p) >= 3:
+                    cv2.fillConvexPoly(_lens, cv2.convexHull(p), 1)
         _dk = max(3, int(fw * 0.075)) | 1
         _lensf = cv2.dilate(_lens, np.ones((_dk, _dk), np.uint8), 1).astype(np.float32)
         _lensf = np.clip(cv2.GaussianBlur(_lensf, (0, 0), sigmaX=max(1.0, fw * 0.010)), 0, 1)
@@ -671,7 +675,11 @@ def render_displacement_portrait(
     # light wash below, on light paper the paper already reads as teeth. A closed
     # mouth yields no mask and is left untouched.
     from .tonal import _teeth_mask
-    teeth = _teeth_mask(pts, H, W)
+    teeth = None                       # union every subject's open-mouth teeth region
+    for _fp in all_pts:
+        _tm = _teeth_mask(_fp, H, W)
+        if _tm is not None:
+            teeth = _tm if teeth is None else np.maximum(teeth, _tm)
     if teeth is not None:
         # Appearance gate (parallels the eyes): the mesh mis-reads a resting/closed
         # mouth on a tilted or lying-down photo as "open". A REAL open mouth has a
