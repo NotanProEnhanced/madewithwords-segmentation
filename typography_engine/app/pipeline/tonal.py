@@ -1901,8 +1901,16 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         # tinted face -- realistic structure, no glow, no colour clash.
         if eyes_e:
             bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
-            ep = _faces_of(an)[0].points * fsc0
-            eye_bgr, eye_a = _photo_eye_overlay(bgr_eye, ep, (_EYE_L, _EYE_R), H, W)
+            # Photographic eye overlay for EVERY subject (primary + all secondary), so a
+            # group portrait renders identical real eyes on each person -- not just the
+            # largest face. Each face's eyes are disjoint; keep the strongest alpha per px.
+            eye_bgr = bgr_eye.copy()
+            eye_a = np.zeros((H, W), np.float32)
+            for _f in _faces_of(an):
+                _ebgr, _ea = _photo_eye_overlay(bgr_eye, _f.points * fsc0, (_EYE_L, _EYE_R), H, W)
+                _take = _ea > eye_a
+                eye_a = np.where(_take, _ea, eye_a)
+                eye_bgr[_take] = _ebgr[_take]
             # THE Mosaic/Passage "blue glowing eyes" -- the actual root cause (reproduced &
             # measured on the user's photo): a CHANNEL SWAP. `_photo_eye_overlay` returns the
             # eye in its input order (BGR, from an.img.bgr), but in this compose path `out`/
