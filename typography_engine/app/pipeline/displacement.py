@@ -67,6 +67,12 @@ _EYE_OPEN_IRIS_MAX = 0.40
 # render the lens as a solid dark lens, instead of a glowing catchlight/iris or the real
 # eye bleeding through the shades. Gated by env TYPO_DARKLENS (default ON; =0 reverts).
 _EYE_SCLERA_MIN = 95.0
+# Reflective / mirrored sunglasses aren't DARK -- a broad lens reflection reads bright,
+# fooling the dark-sclera test. But a real eye's sclera is broken by a dark iris/pupil,
+# so its BULK brightness (p75 of the eye window) stays moderate (measured <=146 across
+# real eyes), whereas a reflective lens stays broadly bright (measured >=178). Above this
+# the eye region is too uniformly bright to be a real eye -> treat as a tinted lens.
+_EYE_REFLECTIVE_MAX = 165.0
 
 # Sculpted ink colours: the WORD colour (BGR) draped on the dark ground. These are
 # light/bright tints (mirroring the studio's ink swatches) so they read on navy.
@@ -334,7 +340,7 @@ def render_displacement_portrait(
         if min(_ear(33, 160, 158, 133, 153, 144), _ear(362, 385, 387, 263, 373, 380)) < _EYE_OPEN_EAR:
             continue
         # Dark-pupil backstop + dark-lens (sunglasses) gate for THIS face.
-        ratios, scleras = [], []
+        ratios, scleras, bulk = [], [], []
         for icx, icy, ir in _fi:
             y0, y1 = max(0, int(icy - ir * 2.4)), int(icy + ir * 2.4)
             x0, x1 = max(0, int(icx - ir * 2.4)), int(icx + ir * 2.4)
@@ -345,11 +351,14 @@ def render_displacement_portrait(
             cv2.circle(inner, (int(round(icx)), int(round(icy))), max(1, int(ir * 0.45)), 1, -1)
             sclera = max(float(np.percentile(reg, 90)), 1.0)
             scleras.append(sclera)
+            bulk.append(float(np.percentile(reg, 75)))
             ratios.append(float(np.percentile(gray[inner > 0], 10)) / sclera)
-        # Sunglasses darken BOTH eyes (measured p90 39-73); require the BRIGHTER eye to
-        # be dark too (max, not min), so a single shadowed/side-lit real eye -- common on
-        # darker-toned or three-quarter-lit faces -- isn't mistaken for a tinted lens.
-        if _dl_on and scleras and max(scleras) < _EYE_SCLERA_MIN:
+        # Tinted lenses two ways: DARK sunglasses darken both eyes (max p90 < 95; require
+        # the brighter eye dark too so a single shadowed/side-lit real eye isn't mistaken),
+        # or REFLECTIVE/mirrored lenses read broadly bright (max p75 > 165 -- too uniform to
+        # be a real eye, whose sclera is broken by a dark iris/pupil).
+        if _dl_on and ((scleras and max(scleras) < _EYE_SCLERA_MIN)
+                       or (bulk and max(bulk) > _EYE_REFLECTIVE_MAX)):
             _dark_lens_active = True                   # shades on this face
             _dark_lens_eyes.extend(_fi)
             _dark_lens_face_pts.append(_fp)

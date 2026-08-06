@@ -1858,20 +1858,23 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         # everyone else's eyes. Every eye/iris inside a shaded face is suppressed + lens-filled.
         if _dl_on and iris_c:
             _glum = (photo[..., 0] * 0.299 + photo[..., 1] * 0.587 + photo[..., 2] * 0.114)
-            def _sp90(_c):
+            def _spct(_c):
                 _icx, _icy, _irr = _c
                 _y0, _y1 = max(0, int(_icy - _irr * 2.4)), int(_icy + _irr * 2.4)
                 _x0, _x1 = max(0, int(_icx - _irr * 2.4)), int(_icx + _irr * 2.4)
                 _reg = _glum[_y0:_y1, _x0:_x1]
-                return float(np.percentile(_reg, 90)) if _reg.size >= 16 else None
+                return ((float(np.percentile(_reg, 90)), float(np.percentile(_reg, 75)))
+                        if _reg.size >= 16 else None)
             _shaded = []                                 # bboxes of faces wearing tinted lenses
             for _face in _faces_of(an):
                 _fp = _face.points * fsc0
                 _fx0, _fy0 = float(_fp[:, 0].min()), float(_fp[:, 1].min())
                 _fx1, _fy1 = float(_fp[:, 0].max()), float(_fp[:, 1].max())
                 _fi = [c for c in iris_c if _fx0 <= c[0] <= _fx1 and _fy0 <= c[1] <= _fy1]
-                _ps = [p for p in (_sp90(c) for c in _fi) if p is not None]
-                if len(_ps) >= 2 and max(_ps) < 95.0:
+                _pp = [p for p in (_spct(c) for c in _fi) if p is not None]
+                # DARK tinted lens (max p90 < 95) OR REFLECTIVE/mirrored lens (max p75 > 165:
+                # too broadly bright to be a real eye, whose sclera is broken by a dark pupil).
+                if len(_pp) >= 2 and (max(p[0] for p in _pp) < 95.0 or max(p[1] for p in _pp) > 165.0):
                     _shaded.append((_fx0, _fy0, _fx1, _fy1))
             if _shaded:
                 def _in_shaded(_cx, _cy):
