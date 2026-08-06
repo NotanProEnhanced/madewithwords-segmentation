@@ -86,31 +86,70 @@ def detect_faces(img: LoadedImage, warns: WarningCollector) -> List[FaceLandmark
     landmarker = _get_landmarker(warns)
     if landmarker is None:
         return []
-    try:
-        import mediapipe as mp
-        import cv2
+    import cv2
+    import mediapipe as mp
+    h, w = img.bgr.shape[:2]
 
-        rgb = cv2.cvtColor(img.bgr, cv2.COLOR_BGR2RGB)
-        mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        result = landmarker.detect(mp_img)
-    except Exception as e:
-        warns.warn("landmarks", "detect_failed", f"Landmark detection error: {e}")
-        return []
+    def _detect_pts(bgr):
+        """Run the landmarker on a BGR (sub-)image; return landmark arrays in that
+        image's own pixel coords ([] on error / no face)."""
+        try:
+            rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+            res = landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
+        except Exception as e:  # noqa: BLE001
+            warns.warn("landmarks", "detect_failed", f"Landmark detection error: {e}")
+            return []
+        bh, bw = bgr.shape[:2]
+        return [np.array([[lm.x * bw, lm.y * bh] for lm in lms], dtype=np.float32)
+                for lms in (res.face_landmarks or [])]
 
-    if not result.face_landmarks:
+    all_pts = _detect_pts(img.bgr)                      # full frame
+    # A busy group / wide photo can hide a face from the full-frame detector even
+    # though it resolves fine in a tighter crop (measured: a 4-person shot detected
+    # 3, missing the 2nd-from-right; a tile crop found it). Recover missed faces by
+    # re-detecting over overlapping horizontal tiles and merging (deduped below).
+    # Skipped for the common single-subject portrait to avoid the extra passes.
+    if len(all_pts) >= 2 or w > int(h * 1.2):
+        i = 0
+        while i * 0.30 < 1.0:
+            x0 = int(i * 0.30 * w)
+            x1 = int(min(1.0, i * 0.30 + 0.44) * w)
+            if x1 - x0 >= 48:
+                for pts in _detect_pts(img.bgr[:, x0:x1]):
+                    pts = pts.copy()
+                    pts[:, 0] += x0                     # tile-local -> full-frame coords
+                    all_pts.append(pts)
+            i += 1
+
+    if not all_pts:
         warns.warn("landmarks", "no_face", "No face detected by MediaPipe.")
         return []
 
-    h, w = img.bgr.shape[:2]
     faces: List[FaceLandmarks] = []
-    for lms in result.face_landmarks:
-        pts = np.array([[lm.x * w, lm.y * h] for lm in lms], dtype=np.float32)
-        x0, y0 = pts[:, 0].min(), pts[:, 1].min()
-        x1, y1 = pts[:, 0].max(), pts[:, 1].max()
-        bbox = (float(x0), float(y0), float(x1 - x0), float(y1 - y0))
-        faces.append(FaceLandmarks(points=pts, image_w=w, image_h=h, bbox=bbox))
+    for pts in all_pts:
+        x0, y0 = float(pts[:, 0].min()), float(pts[:, 1].min())
+        x1, y1 = float(pts[:, 0].max()), float(pts[:, 1].max())
+        faces.append(FaceLandmarks(points=pts, image_w=w, image_h=h,
+                                   bbox=(x0, y0, x1 - x0, y1 - y0)))
     faces.sort(key=lambda f: f.bbox[2] * f.bbox[3], reverse=True)
-    return faces
+
+    # Deduplicate overlapping detections: a face at a tile seam appears in two tiles,
+    # and MediaPipe can double-box one face. Keep the largest; drop later boxes that
+    # overlap it (IoU) so each person is represented exactly once.
+    def _iou(a, b):
+        ax0, ay0, aw, ah = a
+        bx0, by0, bw2, bh2 = b
+        ix0, iy0 = max(ax0, bx0), max(ay0, by0)
+        ix1, iy1 = min(ax0 + aw, bx0 + bw2), min(ay0 + ah, by0 + bh2)
+        iw, ih = max(0.0, ix1 - ix0), max(0.0, iy1 - iy0)
+        inter = iw * ih
+        return inter / (aw * ah + bw2 * bh2 - inter) if inter > 0 else 0.0
+
+    kept: List[FaceLandmarks] = []
+    for f in faces:
+        if all(_iou(f.bbox, k.bbox) < 0.45 for k in kept):
+            kept.append(f)
+    return kept
 
 
 def detect_landmarks(img: LoadedImage, warns: WarningCollector) -> Optional[FaceLandmarks]:
