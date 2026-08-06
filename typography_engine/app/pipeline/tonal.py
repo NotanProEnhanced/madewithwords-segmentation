@@ -1837,21 +1837,31 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         # bright sclera (p90 < 95 vs 134-193 for real eyes), so suppress the fabricated /
         # see-through eye and paint an opaque lens below. Gated by env TYPO_DARKLENS (ON).
         _dl_on = os.environ.get("TYPO_DARKLENS", "1").strip().lower() not in ("0", "false", "off", "no", "")
-        _dark_lens = False
-        if _dl_on and iris_c:
+        _lens_eyes = []
+        # Dark-lens (sunglasses) guard, PER FACE: a face reads as tinted lenses only when
+        # BOTH its eyes are dark (max sclera p90 < 95; real sunglasses measure 39-73). So a
+        # single shadowed/side-lit real eye must NOT suppress the face, and one person's
+        # shades must NOT suppress everyone else's eyes in a group. iris_c/eyes_e are
+        # 2-per-face in the same order; only shaded faces are suppressed + lens-filled.
+        if _dl_on and iris_c and len(iris_c) == len(eyes_e):
             _glum = (photo[..., 0] * 0.299 + photo[..., 1] * 0.587 + photo[..., 2] * 0.114)
-            _sc = []
-            for _icx, _icy, _irr in iris_c:
+            def _sp90(_c):
+                _icx, _icy, _irr = _c
                 _y0, _y1 = max(0, int(_icy - _irr * 2.4)), int(_icy + _irr * 2.4)
                 _x0, _x1 = max(0, int(_icx - _irr * 2.4)), int(_icx + _irr * 2.4)
                 _reg = _glum[_y0:_y1, _x0:_x1]
-                if _reg.size >= 16:
-                    _sc.append(float(np.percentile(_reg, 90)))
-            _dark_lens = bool(_sc) and min(_sc) < 95.0
-        _lens_eyes = list(eyes_e) if _dark_lens else []
-        if _dark_lens:
-            eyes_e = []                             # skip all eye rendering (no fabricated / see-through eye)
-            iris_c = []
+                return float(np.percentile(_reg, 90)) if _reg.size >= 16 else None
+            _keep_e, _keep_i = [], []
+            for _k in range(0, len(iris_c), 2):
+                _pair_i, _pair_e = iris_c[_k:_k + 2], eyes_e[_k:_k + 2]
+                _ps = [p for p in (_sp90(_c) for _c in _pair_i) if p is not None]
+                if len(_ps) >= 2 and max(_ps) < 95.0:
+                    _lens_eyes.extend(_pair_e)          # shaded face -> opaque lens fill
+                else:
+                    _keep_i.extend(_pair_i)
+                    _keep_e.extend(_pair_e)
+            eyes_e, iris_c = _keep_e, _keep_i
+        _dark_lens = bool(_lens_eyes)
         # Eye-white + teeth fill. In Photo ink the photo's OWN pixels can carry a
         # warm cast (warm light + warm ink), so take mostly LUMINANCE + a trace of
         # colour -> natural neutral whites. Other inks keep the tinted photo (it
