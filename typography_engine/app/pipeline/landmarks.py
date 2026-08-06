@@ -109,7 +109,11 @@ def detect_faces(img: LoadedImage, warns: WarningCollector) -> List[FaceLandmark
     # 3, missing the 2nd-from-right; a tile crop found it). Recover missed faces by
     # re-detecting over overlapping horizontal tiles and merging (deduped below).
     # Skipped for the common single-subject portrait to avoid the extra passes.
-    if len(all_pts) >= 2 or w > int(h * 1.2):
+    # Tile when it's a group (>=2), a wide image, OR the full frame found NOTHING --
+    # a single subject the busy full-frame pass missed often resolves in a tile, so we
+    # recover it before the input-quality gate wrongly rejects the photo as "no face".
+    # The clean single-face portrait (exactly 1 found, not wide) skips the extra passes.
+    if len(all_pts) != 1 or w > int(h * 1.2):
         i = 0
         while i * 0.30 < 1.0:
             x0 = int(i * 0.30 * w)
