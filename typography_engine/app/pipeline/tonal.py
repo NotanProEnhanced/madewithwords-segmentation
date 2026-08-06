@@ -486,6 +486,17 @@ def _teeth_mask(pts, h: int, w: int):
     return cv2.GaussianBlur(mm, (0, 0), max(1.0, pw * 0.03))
 
 
+def _teeth_mask_all(faces, scale: float, h: int, w: int):
+    """Union of EVERY subject's open-mouth teeth region (None if all mouths are
+    closed), so teeth carry no typography for every face -- not just the primary."""
+    tm = None
+    for face in faces:
+        m = _teeth_mask(face.points * scale, h, w)
+        if m is not None:
+            tm = m if tm is None else np.maximum(tm, m)
+    return tm
+
+
 def _catchlight_points(an) -> List[Tuple[float, float, float]]:
     """Catchlight positions, one per iris, in WORKING coords: (gx, gy, glint_r).
     Deterministic and consistent between the two eyes -- the classic upper
@@ -1671,7 +1682,7 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
                 cv2.ellipse(sel, (int(round(cx)), int(round(cy))),
                             (max(2, int(round(rx * 0.45))), max(2, int(round(ry * 0.40)))), 0, 0, 360, 1.0, -1)
         if an.landmarks is not None:
-            tmask = _teeth_mask(an.landmarks.points * fscale, H, W)   # inner mouth (None if closed)
+            tmask = _teeth_mask_all(_faces_of(an), fscale, H, W)   # inner mouth of EVERY face (None if all closed)
             if tmask is not None:
                 # Teeth are bright AND neutral; the lip is bright but SATURATED (pink).
                 # Gate on both so only teeth take colour, never the lip.
@@ -1894,7 +1905,7 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         # tinted source the rest of the portrait is built from, so the teeth keep
         # their real ivory and shading and match the face, never an invented white.
         # A closed mouth yields no mask, so it is left exactly as composed.
-        tm = _teeth_mask(_faces_of(an)[0].points * fsc0 if _faces_of(an) else None, H, W)
+        tm = _teeth_mask_all(_faces_of(an), fsc0, H, W)
         if tm is not None:
             # The mouth is a small source region scaled up, so the bare photo reads
             # soft against the crisp type. Unsharp-mask the fill so the tooth edges
