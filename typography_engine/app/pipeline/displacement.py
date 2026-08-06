@@ -93,40 +93,43 @@ _GROUPS = {
 }
 
 
-def _sclera_value(gray, pts, scl, floor=0.60):
-    """Per-eye contrast-stretched sclera shading. Real sclera is not a flat disc:
-    the upper lid shadows its top, it falls off toward the inner/outer corners, and
-    it curves away at the edges. Stretching each eye's OWN luminance restores that
-    natural gradient, while normalising PER EYE keeps even a shaded eye bright (so
-    the dark-merge fix holds without the artificial, uniform-value look)."""
+def _sclera_value(gray, all_face_pts, scl, floor=0.60):
+    """Per-eye contrast-stretched sclera shading for EVERY subject's eyes. Real sclera
+    is not a flat disc: the upper lid shadows its top, it falls off toward the inner/
+    outer corners, and it curves away at the edges. Stretching each eye's OWN luminance
+    restores that natural gradient, while normalising PER EYE keeps even a shaded eye
+    bright (so the dark-merge fix holds without the artificial, uniform-value look).
+    `all_face_pts` is a list of per-face landmark arrays; a one-face list reproduces the
+    single-subject result exactly (each eye's pixels are set directly, never clamped)."""
     H, W = gray.shape
     val = np.full((H, W), floor, np.float32)
     gb = cv2.GaussianBlur(gray, (0, 0), sigmaX=1.0)
     yy = np.arange(H, dtype=np.float32)[:, None]
-    for k in ("Leye", "Reye"):
-        p = np.array([pts[i] for i in _GROUPS[k] if i < len(pts)], np.int32)
-        if len(p) < 3:
-            continue
-        em = np.zeros((H, W), np.uint8)
-        cv2.fillConvexPoly(em, cv2.convexHull(p), 1)
-        m = (em > 0) & (scl > 0.05)
-        if int(m.sum()) < 12:
-            continue
-        # 1) Per-eye luminance stretch -> the photo's own sclera gradient, bright.
-        gp = gb[m]
-        lo, hi = np.percentile(gp, [12, 94])
-        if hi - lo < 6.0:
-            hi = lo + 6.0
-        v = np.clip((gb - lo) / (hi - lo), 0.0, 1.0)
-        base = floor + (1.0 - floor) * v
-        # 2) Upper-lid shadow: the dominant natural cue -- the top of the sclera (just
-        # under the lid/lashes) is markedly darker, easing to full toward the exposed
-        # lower sclera. Synthesised from the eye's own vertical extent so it's reliable
-        # even when the photo's tiny sclera is too flat to carry it.
-        y0, y1 = float(p[:, 1].min()), float(p[:, 1].max())
-        vy = np.clip((yy - y0) / max(8.0, (y1 - y0)), 0.0, 1.0)        # 0 top -> 1 bottom
-        lid = 0.52 + 0.48 * np.clip((vy - 0.08) / 0.55, 0.0, 1.0)      # darker top, full lower
-        val[m] = np.clip(base * np.broadcast_to(lid, (H, W)), 0.0, 1.0)[m]
+    for pts in all_face_pts:
+        for k in ("Leye", "Reye"):
+            p = np.array([pts[i] for i in _GROUPS[k] if i < len(pts)], np.int32)
+            if len(p) < 3:
+                continue
+            em = np.zeros((H, W), np.uint8)
+            cv2.fillConvexPoly(em, cv2.convexHull(p), 1)
+            m = (em > 0) & (scl > 0.05)
+            if int(m.sum()) < 12:
+                continue
+            # 1) Per-eye luminance stretch -> the photo's own sclera gradient, bright.
+            gp = gb[m]
+            lo, hi = np.percentile(gp, [12, 94])
+            if hi - lo < 6.0:
+                hi = lo + 6.0
+            v = np.clip((gb - lo) / (hi - lo), 0.0, 1.0)
+            base = floor + (1.0 - floor) * v
+            # 2) Upper-lid shadow: the dominant natural cue -- the top of the sclera (just
+            # under the lid/lashes) is markedly darker, easing to full toward the exposed
+            # lower sclera. Synthesised from the eye's own vertical extent so it's reliable
+            # even when the photo's tiny sclera is too flat to carry it.
+            y0, y1 = float(p[:, 1].min()), float(p[:, 1].max())
+            vy = np.clip((yy - y0) / max(8.0, (y1 - y0)), 0.0, 1.0)        # 0 top -> 1 bottom
+            lid = 0.52 + 0.48 * np.clip((vy - 0.08) / 0.55, 0.0, 1.0)      # darker top, full lower
+            val[m] = np.clip(base * np.broadcast_to(lid, (H, W)), 0.0, 1.0)[m]
     return val
 
 
@@ -343,7 +346,10 @@ def render_displacement_portrait(
             sclera = max(float(np.percentile(reg, 90)), 1.0)
             scleras.append(sclera)
             ratios.append(float(np.percentile(gray[inner > 0], 10)) / sclera)
-        if _dl_on and scleras and min(scleras) < _EYE_SCLERA_MIN:
+        # Sunglasses darken BOTH eyes (measured p90 39-73); require the BRIGHTER eye to
+        # be dark too (max, not min), so a single shadowed/side-lit real eye -- common on
+        # darker-toned or three-quarter-lit faces -- isn't mistaken for a tinted lens.
+        if _dl_on and scleras and max(scleras) < _EYE_SCLERA_MIN:
             _dark_lens_active = True                   # shades on this face
             _dark_lens_eyes.extend(_fi)
             _dark_lens_face_pts.append(_fp)
@@ -811,7 +817,7 @@ def render_displacement_portrait(
             # shaded eye bright (preserving the dark-merge fix without the uniform,
             # artificial look). A faint warm-neutral tint reads more like sclera than
             # a cool grey.
-            scl_val = _sclera_value(gray, pts, scl, floor=(0.70 if paper_feat else 0.58))
+            scl_val = _sclera_value(gray, _eye_face_pts, scl, floor=(0.70 if paper_feat else 0.58))
             sw = (scl * scl_val * s_str)[..., None]
             out = out * (1.0 - sw) + np.array(s_col, np.float32) * sw
         if teeth is not None:
@@ -831,7 +837,15 @@ def render_displacement_portrait(
     if irises and g["tone"] == "light":
         from .tonal import _photo_eye_overlay
         bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
-        eye_bgr, eye_a = _photo_eye_overlay(bgr_eye, pts, (_GROUPS["Leye"], _GROUPS["Reye"]), H, W)
+        # Composite the REAL photo eye for EVERY subject's eyes (this is what makes an
+        # eye read as real vs. a synthetic dark disc) -- not just the primary face.
+        eye_bgr = bgr_eye.copy()
+        eye_a = np.zeros((H, W), np.float32)
+        for _fp in _eye_face_pts:
+            _eb, _ea = _photo_eye_overlay(bgr_eye, _fp, (_GROUPS["Leye"], _GROUPS["Reye"]), H, W)
+            _tk = _ea > eye_a
+            eye_a = np.where(_tk, _ea, eye_a)
+            eye_bgr[_tk] = _eb[_tk]
         a3 = (eye_a * 0.94)[..., None]
         out = out * (1.0 - a3) + eye_bgr * a3
         if ink != "photo":
