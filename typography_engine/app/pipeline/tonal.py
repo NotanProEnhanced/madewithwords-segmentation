@@ -1968,7 +1968,31 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         _gm = _fit_print_canvas(np.repeat((_eg[..., None] * 255.0).clip(0, 255).astype(np.uint8), 3, axis=2),
                                 (0, 0, 0), print_aspect)
         _eye_guard = _gm[..., 0].astype(np.float32) / 255.0
-    out = _fit_print_canvas(out, ground, print_aspect)
+    # Background lightening: render the image background LIGHTER than the subject's
+    # ground, so the worded subject (on its dark navy/black ground) sits against a
+    # lighter backdrop. The subject's OWN ground is untouched -- only pixels outside
+    # the silhouette are lifted. Gated by env TYPO_BG_LIGHTEN (0..1; 0 = off, current
+    # behaviour: background == ground). The lift is a fraction of the way from the
+    # ground toward white, so it tracks whatever ink/ground is in use.
+    try:
+        _bg_lift = float(os.environ.get("TYPO_BG_LIGHTEN", "0"))
+    except ValueError:
+        _bg_lift = 0.0
+    _bg_lift = min(max(_bg_lift, 0.0), 1.0)
+    _pad_col = ground
+    if remove_bg and not light and _bg_lift > 0.0:
+        _silm = an.silhouette.mask
+        if _silm.shape[:2] != (H, W):
+            _silm = cv2.resize(_silm, (W, H), interpolation=cv2.INTER_NEAREST)
+        _bg_light = ground + (255.0 - ground) * _bg_lift
+        # Soft boundary so the subject-ground -> lighter-background transition is a
+        # gentle halo, not a jagged hard cut. Feather stays outside the subject.
+        _outside = cv2.GaussianBlur((_silm <= 127).astype(np.float32), (0, 0),
+                                    sigmaX=max(1.0, W * 0.002))[..., None]
+        out = (out.astype(np.float32) * (1.0 - _outside)
+               + _bg_light * _outside).clip(0, 255).astype(np.uint8)
+        _pad_col = _bg_light                       # print band matches the lighter background
+    out = _fit_print_canvas(out, _pad_col, print_aspect)
     if boost and boost > 0.0:        # lift dark Message renders (shadows/midtones)
         f = (out.astype(np.float32) / 255.0) ** (1.0 / (1.0 + float(boost)))
         out = (f * 255.0).clip(0, 255).astype(np.uint8)

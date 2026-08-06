@@ -842,10 +842,31 @@ def render_displacement_portrait(
 
     oh = max(1, int(out_width * h0 / w0))
     out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
+    # Background lightening (Sculpt): lift the region OUTSIDE the silhouette toward
+    # white so the sculpted subject (on its dark ground) sits against a lighter
+    # backdrop. The subject's own ground is untouched -- only pixels outside the
+    # silhouette move. Env TYPO_BG_LIGHTEN (0..1; 0 = off). Dark grounds only; the
+    # light "paper" ground is skipped (it's already bright).
+    try:
+        _bg_lift = float(os.environ.get("TYPO_BG_LIGHTEN", "0"))
+    except ValueError:
+        _bg_lift = 0.0
+    _bg_lift = min(max(_bg_lift, 0.0), 1.0)
+    _pad_bg = g["bg"]
+    if _bg_lift > 0.0 and ground != "paper":
+        _ow = int(out_width)
+        _sil = cv2.resize((an.silhouette.mask > 127).astype(np.uint8) * 255, (_ow, oh),
+                          interpolation=cv2.INTER_NEAREST)
+        _bgc = np.array(g["bg"], np.float32)
+        _bg_light = _bgc + (255.0 - _bgc) * _bg_lift
+        _outside = cv2.GaussianBlur((_sil <= 127).astype(np.float32), (0, 0),
+                                    sigmaX=max(1.0, _ow * 0.002))[..., None]
+        out = out.astype(np.float32) * (1.0 - _outside) + _bg_light * _outside
+        _pad_bg = tuple(float(c) for c in _bg_light)
     # Standard print canvas (4:5 = 16x20), padded with the ground BEFORE vibrance
     # so the band is processed identically to the interior ground (no seam).
     from .tonal import _fit_print_canvas
-    out = _fit_print_canvas(out, g["bg"], print_aspect)
+    out = _fit_print_canvas(out, _pad_bg, print_aspect)
     from .preprocess import apply_vibrance
     out = apply_vibrance(out, strength=0.34, bgr=True)   # gentle life (clarity); restrained so colour stays natural and the sclera isn't glow-brightened
     ok, buf = cv2.imencode(".png", np.clip(out, 0, 255).astype(np.uint8))

@@ -84,6 +84,9 @@ services:
       - TYPO_CONSENT_RETENTION_DAYS=${TYPO_CONSENT_RETENTION_DAYS:-}
       - TYPO_ENABLE_DEBUG=${TYPO_ENABLE_DEBUG:-}
       - TYPO_REQUIRE_CAIROSVG=${TYPO_REQUIRE_CAIROSVG:-}
+      # Background lightening: render the image background lighter than the subject's
+      # dark ground (0..1, fraction toward white; 0 = off, background == ground).
+      - TYPO_BG_LIGHTEN=${TYPO_BG_LIGHTEN:-0}
       - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}
       # SVG->PNG backend: auto (CairoSVG, full fidelity, slower) | resvg (much
       # faster; identical output for the current solid-fill SVGs) | cairosvg.
