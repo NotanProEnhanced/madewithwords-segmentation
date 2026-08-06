@@ -1124,9 +1124,19 @@ function layoutStage(){
   cropStage.style.width=stageW+"px"; cropStage.style.height=stageH+"px";
 }
 // Place the 4:5 box: head-and-shoulders around the face (fractions), else centred.
-function initCropBox(fb){
+function initCropBox(fb, multi){
   let cw,ch,cx,cy;
-  if(fb){
+  if(fb && multi){
+    // GROUP: size the 4:5 box to CONTAIN every face (with margin), centred on the group.
+    // A wide row makes the box full-width (taller 4:5 with headroom); a tight cluster
+    // stays snug. The user can still drag/resize afterwards.
+    const fx=fb[0]*stageW, fy=fb[1]*stageH, fw=fb[2]*stageW, fh=fb[3]*stageH;
+    const needW=fw*1.14, needH=fh*1.5;                     // margin around the group
+    ch=Math.max(needH, needW/CROP_AR); cw=ch*CROP_AR;
+    if(cw>stageW){ cw=stageW; ch=cw/CROP_AR; }
+    if(ch>stageH){ ch=stageH; cw=ch*CROP_AR; }
+    cx=(fx+fw/2)-cw/2; cy=(fy+fh/2)-ch/2;                  // centred on the group
+  } else if(fb){
     const fx=fb[0]*stageW, fy=fb[1]*stageH, fw=fb[2]*stageW, fh=fb[3]*stageH;
     ch=Math.min(stageH, fh*3.0); cw=ch*CROP_AR;            // face ~ a third of the height
     if(cw>stageW){ cw=stageW; ch=cw/CROP_AR; }
@@ -1147,7 +1157,12 @@ function drawBox(){ cropBox.style.left=cropRect.x+"px"; cropBox.style.top=cropRe
 async function measureFaceBox(f){
   try{ const fd=new FormData(); fd.append("image",f); fd.append("biometric_consent", bioOK()?"on":"");
     const d=await (await fetch("/measure",{method:"POST",body:fd})).json();
-    if(d && d.ok && d.face_box && cropModal.classList.contains("on")) initCropBox(d.face_box);
+    if(d && d.ok && cropModal.classList.contains("on")){
+      // Group photo -> frame the 4:5 box around ALL faces so nobody is cropped out
+      // (wide/landscape sources included). Single subject -> head-and-shoulders as before.
+      if(d.faces>=2 && d.faces_box) initCropBox(d.faces_box, true);
+      else if(d.face_box) initCropBox(d.face_box);
+    }
   }catch(e){}
 }
 function cropXY(e){ const r=cropStage.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }

@@ -1255,11 +1255,26 @@ async def measure(request: Request, image: UploadFile = File(...), crop: Optiona
                      round(float(bbox[2]) / w, 4), round(float(bbox[3]) / h, 4)]
                     if bbox else None)
         n_faces = len(faces)            # 0/1 via haar fallback; >=2 only when MediaPipe sees a group
+        # Union bounding box of ALL detected faces (fractions), so the crop editor can
+        # auto-frame a WIDE / group photo to include EVERYONE -- not just the primary
+        # face, whose 4:5 box would crop the others out. Falls back to the single face
+        # box when only one (or none) is found.
+        if faces:
+            _ux0 = min(float(f.bbox[0]) for f in faces)
+            _uy0 = min(float(f.bbox[1]) for f in faces)
+            _ux1 = max(float(f.bbox[0]) + float(f.bbox[2]) for f in faces)
+            _uy1 = max(float(f.bbox[1]) + float(f.bbox[3]) for f in faces)
+            faces_box = [round(_ux0 / w, 4), round(_uy0 / h, 4),
+                         round((_ux1 - _ux0) / w, 4), round((_uy1 - _uy0) / h, 4)]
+        else:
+            faces_box = face_box
     except Exception as e:  # noqa: BLE001
         # On any failure, allow all sizes (the renderer's floor still protects).
         return JSONResponse({"ok": True, "face_frac": None, "faces": 0, "face_box": None,
+                             "faces_box": None,
                              "sizes": _allowed_size_mf(None), "default": _recommended_size_mf(None)})
     return JSONResponse({"ok": True, "face_frac": face_frac, "faces": n_faces, "face_box": face_box,
+                         "faces_box": faces_box,
                          "sizes": _allowed_size_mf(face_frac), "default": _recommended_size_mf(face_frac)})
 
 
