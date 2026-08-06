@@ -482,7 +482,10 @@
   .crop-card{background:var(--card);border-radius:18px;box-shadow:0 24px 70px rgba(0,0,0,.4);
     padding:18px;max-width:520px;width:100%;max-height:94vh;overflow:auto}
   .crop-h1{font-weight:800;font-size:20px;color:var(--navy);letter-spacing:-.02em;text-align:center}
-  .crop-p{color:var(--muted);font-size:13.5px;text-align:center;margin:6px 0 14px;line-height:1.5}
+  .crop-p{color:var(--muted);font-size:13.5px;text-align:center;margin:6px 0 12px;line-height:1.5}
+  .crop-orient{display:flex;gap:8px;justify-content:center;margin:0 0 12px}
+  .crop-ar{font:600 13px/1 inherit;padding:8px 15px;border-radius:20px;border:1.5px solid #d9d6cf;background:#fff;color:var(--navy,#1b2340);cursor:pointer}
+  .crop-ar.on{background:var(--navy,#1b2340);color:#fff;border-color:var(--navy,#1b2340)}
   .crop-stage{position:relative;margin:0 auto;touch-action:none;user-select:none;-webkit-user-select:none;
     line-height:0;border-radius:8px;overflow:hidden;background:#0d0d0f}
   .crop-stage img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
@@ -543,7 +546,12 @@
     <div id="cropModal" class="crop-modal" aria-hidden="true">
       <div class="crop-card">
         <div class="crop-h1">Frame the portrait</div>
-        <div class="crop-p">Drag to move, pull a corner to resize. The box is the 16×20 print — what's inside becomes the portrait.</div>
+        <div class="crop-p">Drag to move, pull a corner to resize. What's inside becomes the portrait.</div>
+        <div class="crop-orient">
+          <button type="button" class="crop-ar on" data-ar="0.8" onclick="setAspect(0.8)">Portrait</button>
+          <button type="button" class="crop-ar" data-ar="1" onclick="setAspect(1)">Square</button>
+          <button type="button" class="crop-ar" data-ar="1.25" onclick="setAspect(1.25)">Landscape</button>
+        </div>
         <div id="cropStage" class="crop-stage">
           <img id="cropImg" alt="" draggable="false" />
           <div id="cropBox" class="crop-box">
@@ -1094,7 +1102,19 @@ if(sizeSeg){ sizeSeg.addEventListener("click", e=>{
 // adjustable with mouse, touch, or stylus (Pointer Events cover pen natively).
 const cropModal=$("#cropModal"), cropStage=$("#cropStage"), cropImg=$("#cropImg"),
       cropBox=$("#cropBox"), cropApplyBtn=$("#cropApply"), cropCancelBtn=$("#cropCancel");
-const CROP_AR=0.8;                      // width/height = 4:5, matching the print canvas
+let CROP_AR=0.8;                        // output width/height: 0.8 portrait (4:5) | 1.0 square | 1.25 landscape
+// Orientation picker: reshape the crop box to a new output aspect, keeping its centre,
+// so a wide/landscape group can fill a landscape frame instead of a narrow 4:5 slice.
+function setAspect(ar){
+  CROP_AR=+ar;
+  document.querySelectorAll(".crop-ar").forEach(b=>b.classList.toggle("on", +b.dataset.ar===CROP_AR));
+  if(!stageW||!stageH) return;
+  const cx=cropRect.x+cropRect.w/2, cy=cropRect.y+cropRect.h/2;
+  let w=cropRect.w||stageW, h=w/CROP_AR;
+  if(h>stageH){ h=stageH; w=h*CROP_AR; }
+  if(w>stageW){ w=stageW; h=w/CROP_AR; }
+  cropRect={x:cx-w/2, y:cy-h/2, w, h}; clampRect(); drawBox();
+}
 let cropPending=null, cropRect={x:0,y:0,w:0,h:0}, stageW=0, stageH=0, cropDrag=null;
 let cropReopen=false, _origUrl=null, _cropUrl=null, _showingOrig=false;   // re-crop + cropped/original toggle
 // `restore` (a stored crop string) reopens the cropper on the SAME photo with the
@@ -1366,7 +1386,7 @@ function setPhotoNote(msg){
 }
 function measureSubject(f){
   applySizes(null);                          // optimistic: all enabled while measuring
-  const fd=new FormData(); fd.append("image",f); if(state.crop) fd.append("crop",state.crop); fd.append("biometric_consent", bioOK()?"on":"");
+  const fd=new FormData(); fd.append("image",f); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("biometric_consent", bioOK()?"on":"");
   fetch("/measure",{method:"POST",body:fd}).then(r=>r.json())
     .then(d=>{ if(d&&d.ok){
         applySizes(d.sizes, d.default);
@@ -1523,7 +1543,7 @@ async function renderSizeThumb(mf){
   if(!state.file) return;
   const myGen=gen;
   const fd=new FormData();
-  fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim());
+  fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
   const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(mf));
@@ -1578,7 +1598,7 @@ function resetReco(){
 }
 function recoFd(style, coarse){
   const fd=new FormData();
-  fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim()); fd.append("message",words.value.trim());
+  fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim()); fd.append("message",words.value.trim());
   let ink=state.ink||"photo";
   if(style==="displacement" && (ink==="spectrum"||ink==="aurora")) ink="photo";  // gradients don't drape
   fd.append("ink",ink); fd.append("style",style); fd.append("ground","navy");
@@ -2133,7 +2153,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   const myGen=gen;
   if(!background && !thumb) showBusy(animate);
   const fd=new FormData();
-  fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("words",words.value.trim());
+  fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
   const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(state.minFont||20));

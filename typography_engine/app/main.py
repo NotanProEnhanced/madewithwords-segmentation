@@ -1373,12 +1373,21 @@ async def render(
     crop: Optional[str] = Form(None),
     biometric_consent: str = Form(""),
     mask: Optional[str] = Form(None),
+    aspect: float = Form(0.8),          # output width/height: 0.8 portrait (4:5) | 1.0 square | 1.25 landscape
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
     gate = _compliance_gate(request, biometric_consent)   # geo-block + biometric consent BEFORE any face processing
     if gate is not None:
         return gate
+    # Output aspect (width/height): portrait 4:5=0.8 (default), square 1.0, landscape 5:4=1.25.
+    # Clamped so a bad value can't produce a degenerate canvas; stored in the recipe so
+    # the paid/digital download recomposes at the SAME shape the buyer previewed.
+    try:
+        aspect_choice = float(aspect)
+    except (TypeError, ValueError):
+        aspect_choice = 0.8
+    aspect_choice = min(2.0, max(0.5, aspect_choice))
     ref_clean = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40]     # referral/source tag (persists)
     brand_clean = re.sub(r"[^A-Za-z0-9_-]", "", brand or "")[:40]  # ACTIVE brand skin (gates brand UX)
     img_bytes = await image.read()
@@ -1510,14 +1519,14 @@ async def render(
                 breathe=STUDIO_BREATHE,
                 # Env-driven word-variety dial (0.0 = original engine). MUST match the
                 # paid render in _ensure_clean_png or the preview would misrepresent it.
-                variety=WORD_VARIETY)
+                variety=WORD_VARIETY, print_aspect=aspect_choice)
             runs, ground_hex, mask_svg = [], None, None
         else:
             png_bytes, runs, ground_hex, mask_svg = await _bounded_to_thread(
                 render_layered_png, an, text, style_choice, cfg, warns,
                 ink=ink_choice, remove_bg=remove_bg, light=light,
                 out_width=max(320, preview_w), render_w=render_w_eff, uppercase=uppercase,
-                custom=custom_tuple)
+                custom=custom_tuple, print_aspect=aspect_choice)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
     except Exception as e:  # noqa: BLE001
@@ -1604,6 +1613,7 @@ async def render(
             "min_font_px": float(cfg.min_font_px), "ground": ground_choice,
             "ink_hex": ink_hex if ink_choice == "custom" else None,   # rebuild the custom colour at download
             "flow": bool(disp_flow),   # displacement message-flow -> paid recompose must match
+            "aspect": aspect_choice,   # output shape (w/h) -> digital download recomposes to match
             "ref": ref_clean, "brand": brand_clean,
         }), encoding="utf-8")
 
@@ -3426,7 +3436,7 @@ def _stripe_to_dict(obj):
         return {}
 
 
-def _ensure_clean_png(job: str, aspect: float = _PRINT_ASPECT) -> Optional[Path]:
+def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path]:
     """Compose (once) and return the path to the clean print-resolution PNG for
     `job`, or None if the job's inputs are missing or composition fails.
 
@@ -3444,6 +3454,13 @@ def _ensure_clean_png(job: str, aspect: float = _PRINT_ASPECT) -> Optional[Path]
     src_path = PRIVATE_DIR / f"{job}.src"
     if not recipe_path.exists() or not src_path.exists():
         return None
+    # Digital download / on-screen proof (aspect=None) recomposes at the shape the buyer
+    # chose in the studio (stored in the recipe); a physical order passes its product aspect.
+    if aspect is None:
+        try:
+            aspect = float(json.loads(recipe_path.read_text(encoding="utf-8")).get("aspect", _PRINT_ASPECT))
+        except Exception:  # noqa: BLE001
+            aspect = _PRINT_ASPECT
     tag = "" if abs(aspect - _PRINT_ASPECT) < 0.005 else f".a{int(round(aspect * 1000))}"
     path = PRIVATE_DIR / f"{job}{tag}.png"
     if path.exists():
