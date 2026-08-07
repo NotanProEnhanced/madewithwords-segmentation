@@ -679,6 +679,19 @@ def render_displacement_portrait(
 
     a = np.clip(w2 * (0.04 + 0.96 * np.power(ink_field, 0.62)), 0, 1)
     a = a * np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0, 1)   # feathered edge
+    # Highlight wash (light-ground only): a BRIGHT subject region -- silver/white hair, pale
+    # skin, specular highlights -- otherwise reads DARK because the navy ground shows through
+    # the gaps BETWEEN glyphs. Lift a gentle light floor under the type in the brightest areas
+    # so the region reads light (a real highlight) while the glyphs still texture it -- silver
+    # hair stays silver instead of collapsing to the ground. Only the brightest ~40% lifts, it
+    # stays inside the subject mask, and it fills only the gaps (a += w*(1-a)) so glyph edges
+    # keep their crispness. Default 0.0 -> byte-identical; TYPO_HILIGHT_WASH tunes the strength.
+    if g["tone"] == "light":
+        _hw = float(os.environ.get("TYPO_HILIGHT_WASH", "0.0") or 0.0)
+        if _hw > 0.0:
+            _hi = np.clip((ink_field - 0.60) / 0.40, 0.0, 1.0)
+            _mk = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0, 1)
+            a = np.clip(a + _hw * _hi * _mk * (1.0 - a), 0, 1)
 
     # Feature anchoring: eye rings + lip seam + pupils + nostrils.
     anchor = np.zeros((H, W), np.float32)
