@@ -520,6 +520,7 @@
   <section id="input" class="card">
     <div id="drop" class="drop">
       <div class="ico">Photo</div><div class="big">Add a photo</div>
+      <div class="small" id="dropSmall"></div>
       <div class="small" id="dropTips">Best results: front-facing &middot; face fills the frame &middot; no sunglasses &middot; no profile.</div>
     </div>
     <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="origToggle" class="change toggle" type="button" style="display:none">See full photo</button><button id="adjustCrop" class="change adjust" type="button" style="display:none">Adjust crop</button><button id="changePhoto" class="change">Change photo</button></div>
@@ -1291,11 +1292,15 @@ const MAX_UPLOAD_BYTES=25*1024*1024;   // keep in step with TYPO_MAX_UPLOAD_BYTE
 function bioOK(){ var b=document.getElementById("bioConsent"); return !!(b && b.checked); }
 // Lock the photo drop zone until biometric consent is given, so the requirement
 // is obvious up front instead of surfacing as an error after a file is picked.
+var _dropSmall=document.getElementById("dropSmall");
 function nudgeBio(){ var r=document.getElementById("bioConsentRow"); if(r){ r.scrollIntoView({block:"center",behavior:"smooth"}); r.classList.add("flash"); setTimeout(function(){r.classList.remove("flash");},1400); } }
 function syncBioLock(){
   if(window.__regionBlocked) return;            // region block owns the drop zone
   var ok=bioOK();
-  if(drop) drop.classList.toggle("locked", !ok);  // still gates upload until consent; clicking a locked drop flashes the consent box (nudgeBio)
+  if(drop) drop.classList.toggle("locked", !ok);
+  // Prompt to consent when unticked; once ticked show nothing (the old descriptive
+  // photo sentence was removed as too burdensome -- only the tips line remains).
+  if(_dropSmall) _dropSmall.textContent = ok ? "" : "First, tick the consent box above — then add your photo.";
 }
 (function(){ var b=document.getElementById("bioConsent"); if(b) b.addEventListener("change", syncBioLock); syncBioLock(); })();
 // Toggle the collapsible full biometric notice (the summary + checkbox stay visible).
