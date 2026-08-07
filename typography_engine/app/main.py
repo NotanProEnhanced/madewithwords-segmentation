@@ -1374,6 +1374,7 @@ async def render(
     biometric_consent: str = Form(""),
     mask: Optional[str] = Form(None),
     aspect: float = Form(0.8),          # output width/height: 0.8 portrait (4:5) | 1.0 square | 1.25 landscape
+    sunglasses: str = Form(""),         # "1"/"true" => subject wears sunglasses: render opaque lenses (no fabricated eyes)
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
@@ -1388,6 +1389,7 @@ async def render(
     except (TypeError, ValueError):
         aspect_choice = 0.8
     aspect_choice = min(2.0, max(0.5, aspect_choice))
+    sunglasses_on = str(sunglasses or "").strip().lower() in ("1", "true", "yes", "on")  # manual opaque-lens flag
     ref_clean = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40]     # referral/source tag (persists)
     brand_clean = re.sub(r"[^A-Za-z0-9_-]", "", brand or "")[:40]  # ACTIVE brand skin (gates brand UX)
     img_bytes = await image.read()
@@ -1519,14 +1521,14 @@ async def render(
                 breathe=STUDIO_BREATHE,
                 # Env-driven word-variety dial (0.0 = original engine). MUST match the
                 # paid render in _ensure_clean_png or the preview would misrepresent it.
-                variety=WORD_VARIETY, print_aspect=aspect_choice)
+                variety=WORD_VARIETY, print_aspect=aspect_choice, sunglasses=sunglasses_on)
             runs, ground_hex, mask_svg = [], None, None
         else:
             png_bytes, runs, ground_hex, mask_svg = await _bounded_to_thread(
                 render_layered_png, an, text, style_choice, cfg, warns,
                 ink=ink_choice, remove_bg=remove_bg, light=light,
                 out_width=max(320, preview_w), render_w=render_w_eff, uppercase=uppercase,
-                custom=custom_tuple, print_aspect=aspect_choice)
+                custom=custom_tuple, print_aspect=aspect_choice, sunglasses=sunglasses_on)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
     except Exception as e:  # noqa: BLE001
@@ -1614,6 +1616,7 @@ async def render(
             "ink_hex": ink_hex if ink_choice == "custom" else None,   # rebuild the custom colour at download
             "flow": bool(disp_flow),   # displacement message-flow -> paid recompose must match
             "aspect": aspect_choice,   # output shape (w/h) -> digital download recomposes to match
+            "sunglasses": bool(sunglasses_on),   # manual opaque-lens flag -> paid recompose must match
             "ref": ref_clean, "brand": brand_clean,
         }), encoding="utf-8")
 
@@ -3471,6 +3474,7 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
         # Rebuild the user-picked colour for a "custom" ink so the paid file matches
         # the preview.
         dl_custom = custom_poster(r.get("ink_hex")) if (r.get("ink") == "custom" and r.get("ink_hex")) else None
+        dl_sun = bool(r.get("sunglasses"))     # manual opaque-lens flag -> match the preview
         warns2 = WarningCollector()
         _bgmask = None
         _bgm_path = PRIVATE_DIR / f"{job}.bgmask.png"
@@ -3493,7 +3497,7 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
                 # Same passes as the preview render -- the paid file must match what the
                 # buyer approved on screen (breathe kill-switch + word-variety dial).
                 breathe=STUDIO_BREATHE,
-                variety=WORD_VARIETY)
+                variety=WORD_VARIETY, sunglasses=dl_sun)
             if not png_bytes:
                 return None
             path.write_bytes(png_bytes)
@@ -3506,7 +3510,7 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
                 mask_path.read_text(encoding="utf-8"), an,
                 r.get("ink", "navy"), bool(r.get("remove_bg", True)), DOWNLOAD_PNG_WIDTH,
                 light=bool(r.get("light", False)), boost=dl_boost, print_aspect=aspect,
-                custom=dl_custom)
+                custom=dl_custom, sunglasses=dl_sun)
         else:  # no stored mask (e.g. light/engraving renders) or older jobs:
             # recompose at print size. Reuse the chosen word size so the paid
             # download matches the preview (light mode has no baked mask).
@@ -3520,7 +3524,8 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
                 an, r["text"], r.get("style", "words"), cfg2, warns2,
                 ink=r.get("ink", "navy"), remove_bg=bool(r.get("remove_bg", True)),
                 light=bool(r.get("light", False)), out_width=DOWNLOAD_PNG_WIDTH, render_w=2600,
-                uppercase=bool(r.get("uppercase", True)), print_aspect=aspect, custom=dl_custom)
+                uppercase=bool(r.get("uppercase", True)), print_aspect=aspect, custom=dl_custom,
+                sunglasses=dl_sun)
         if not png_bytes:
             return None
         path.write_bytes(png_bytes)

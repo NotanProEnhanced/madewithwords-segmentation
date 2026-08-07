@@ -245,6 +245,12 @@ def render_displacement_portrait(
                                   # (above face) step down from the largest tier -- plus a hair
                                   # local-contrast 'sculpt'. Default ON; env TYPO_GRADUATE_BODY=0
                                   # reverts with no code change.
+    sunglasses: bool = False,     # MANUAL sunglasses control. Pixels cannot reliably tell a
+                                  # tinted/reflective lens from a real eye (a dark sclera and a
+                                  # mirror lens look identical), so opacity is caller-driven:
+                                  # False (default) => NO face is ever dark-lensed, real eyes are
+                                  # never blacked out; True => every detected face's eye region is
+                                  # rendered as an opaque lens.
     _diag: Optional[dict] = None,  # test hook: if a dict is passed, the per-face eye
                                   # classification counts are recorded into it (no effect on
                                   # output). Lets a regression test assert e.g. that a bright
@@ -317,7 +323,11 @@ def render_displacement_portrait(
     # openness (eye-aspect-ratio), dark-pupil backstop, and dark-lens (sunglasses). A
     # face that fails a gate renders as plain words there; the other faces are
     # unaffected. Single-subject renders reproduce the previous behaviour exactly.
-    _dl_on = os.environ.get("TYPO_DARKLENS", "1").strip().lower() not in ("0", "false", "off", "no", "")
+    # Opacity is MANUAL now (the `sunglasses` flag), not auto-detected: brightness/pupil
+    # heuristics cannot separate a tinted lens from a real eye and kept mis-firing (black
+    # holes on real eyes, or fabricated eyes on real sunglasses). TYPO_DARKLENS stays only
+    # as a hard kill-switch that can force it off even if a caller passes True.
+    _dl_on = bool(sunglasses) and os.environ.get("TYPO_DARKLENS", "1").strip().lower() not in ("0", "false", "off", "no", "")
     irises: List[Tuple[float, float, float]] = []
     eye_centers: List[Tuple[float, float, float]] = []
     _eye_face_pts = []            # faces whose eyes ARE rendered (drive the sclera/anchor hulls)
@@ -368,8 +378,19 @@ def render_displacement_portrait(
             return v / (2.0 * horiz)
         if min(_ear(33, 160, 158, 133, 153, 144), _ear(362, 385, 387, 263, 373, 380)) < _EYE_OPEN_EAR:
             continue
-        # Dark-pupil backstop + dark-lens (sunglasses) gate for THIS face.
-        ratios, scleras, bulk = [], [], []
+        # MANUAL sunglasses: the caller flagged this render as having tinted lenses. Pixels
+        # can't reliably tell a lens from a real eye, so honour the flag -- render this face's
+        # eye region as an opaque lens. Off (default) => this never runs, so a real eye can
+        # never be blacked out by a mis-detection.
+        if _dl_on:
+            _dark_lens_active = True
+            _dark_lens_eyes.extend(_fi)
+            _dark_lens_face_pts.append(_fp)
+            continue
+        # Dark-pupil backstop: a real open eye has a dark pupil in a lighter iris. If the
+        # centre isn't darker than the surround the mesh isn't sitting on an eye -- render
+        # plain words there rather than fabricate an eyeball.
+        ratios = []
         for icx, icy, ir in _fi:
             y0, y1 = max(0, int(icy - ir * 2.4)), int(icy + ir * 2.4)
             x0, x1 = max(0, int(icx - ir * 2.4)), int(icx + ir * 2.4)
@@ -379,24 +400,7 @@ def render_displacement_portrait(
             inner = np.zeros((H, W), np.uint8)
             cv2.circle(inner, (int(round(icx)), int(round(icy))), max(1, int(ir * 0.45)), 1, -1)
             sclera = max(float(np.percentile(reg, 90)), 1.0)
-            scleras.append(sclera)
-            bulk.append(float(np.percentile(reg, 75)))
             ratios.append(float(np.percentile(gray[inner > 0], 10)) / sclera)
-        # Tinted lenses two ways: DARK sunglasses darken both eyes (max p90 < 95; require
-        # the brighter eye dark too so a single shadowed/side-lit real eye isn't mistaken),
-        # or a REFLECTIVE/mirrored lens reads broadly bright AND has NO dark pupil. Brightness
-        # ALONE cannot tell a mirror lens from a brightly-lit real face -- a sunlit face's eye
-        # region is just as bright -- so the reflective branch also requires the pupil backstop
-        # to fail (no dark centre): a real eye, however bright, always has a dark pupil, so it
-        # is never mistaken for a lens.  Without the pupil requirement this fired on ordinary
-        # sunlit portraits and blacked their eyes out.
-        _no_pupil = len(ratios) >= 2 and min(ratios) > _EYE_OPEN_IRIS_MAX
-        if _dl_on and ((scleras and max(scleras) < _EYE_SCLERA_MIN)
-                       or (_no_pupil and len(bulk) >= 2 and min(bulk) > _EYE_REFLECTIVE_BOTH)):
-            _dark_lens_active = True                   # shades on this face
-            _dark_lens_eyes.extend(_fi)
-            _dark_lens_face_pts.append(_fp)
-            continue
         if len(ratios) >= 2 and min(ratios) > _EYE_OPEN_IRIS_MAX:
             continue                                   # no dark pupil -> not a real eye
         irises.extend(_fi)

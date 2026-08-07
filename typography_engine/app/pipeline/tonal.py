@@ -1731,9 +1731,13 @@ def _ground_hex(ink: str, light: bool, custom=None) -> str:
 def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: WarningCollector,
                        ink: str = "mono", remove_bg: bool = True, light: bool = False,
                        out_width: int = 1400, render_w: int = 2200, tone_density: float = 0.6,
-                       uppercase: bool = True, print_aspect: float = _PRINT_ASPECT, custom=None):
+                       uppercase: bool = True, print_aspect: float = _PRINT_ASPECT, custom=None,
+                       sunglasses: bool = False):
     """Layered portrait -> PNG bytes. style='message' = poster rows; else Words
-    (mosaic) layout. Returns (png_bytes, runs, ground_hex, mask_svg)."""
+    (mosaic) layout. Returns (png_bytes, runs, ground_hex, mask_svg).
+
+    `sunglasses` (manual): when True every detected face's eye region is rendered as an
+    opaque tinted lens; when False (default) no eye is ever lens-filled."""
     # --- Dedicated light/engraving renderer (Words style) --------------------
     # On white paper, compositing the photo through a text mask washes out or
     # jumbles. Instead, draw the tonally-shaded words DIRECTLY on the paper: each
@@ -1807,13 +1811,14 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
     mask_svg = _mask_svg(colored)
     boost = _MSG_BOOST if style == "message" else 0.0
     png = compose_layered(mask_svg, an, ink, remove_bg, out_width, light=light, boost=boost,
-                          print_aspect=print_aspect, custom=custom)
+                          print_aspect=print_aspect, custom=custom, sunglasses=sunglasses)
     return png, runs, ground_hex, mask_svg
 
 
 def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int,
                     light: bool = False, boost: float = 0.0,
-                    print_aspect: float = _PRINT_ASPECT, custom=None) -> bytes:
+                    print_aspect: float = _PRINT_ASPECT, custom=None,
+                    sunglasses: bool = False) -> bytes:
     """Composite the tinted photo through a prebuilt white-text mask SVG. Reused
     at download from the stored mask, so the costly layout build runs only once
     (at render), not again per sale. `boost` (>0) gamma-lifts the finished
@@ -1871,58 +1876,25 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
                 return any(a <= _cx <= c and b <= _cy <= d for (a, b, c, d) in _misfit_boxes)
             eyes_e = [e for e in eyes_e if not _in_misfit(e[0], e[1])]
             iris_c = [c for c in iris_c if not _in_misfit(c[0], c[1])]
-        # Dark-lens (sunglasses) guard -- mirrors the Lifelike path: a tinted lens has no
-        # bright sclera (p90 < 95 vs 134-193 for real eyes), so suppress the fabricated /
-        # see-through eye and paint an opaque lens below. Gated by env TYPO_DARKLENS (ON).
-        _dl_on = os.environ.get("TYPO_DARKLENS", "1").strip().lower() not in ("0", "false", "off", "no", "")
+        # MANUAL sunglasses (mirrors the Lifelike path): whether an eye region is a tinted
+        # lens or a real eye can't be told from pixels (a dark sclera and a mirror lens look
+        # identical), so the caller decides. When `sunglasses` is set, every detected face's
+        # eye region is shaded to an opaque lens; when not (default), nothing is shaded and a
+        # real eye can never be blacked out by a mis-detection. TYPO_DARKLENS stays as a hard
+        # kill-switch.
+        _dl_on = bool(sunglasses) and os.environ.get("TYPO_DARKLENS", "1").strip().lower() not in ("0", "false", "off", "no", "")
         _lens_eyes = []
-        # Dark-lens (sunglasses) guard, PER FACE by SPATIAL containment: group the irises
-        # inside each face's bbox (robust when eyes_e/iris_c counts differ per face -- the
-        # old index-pairing skipped the whole guard on any mismatch, e.g. a group where one
-        # face resolves a single eye). A face reads as tinted lenses only when BOTH its
-        # eyes are dark (max sclera p90 < 95; real sunglasses measure 39-73), so a single
-        # shadowed real eye never suppresses a face and one person's shades never suppress
-        # everyone else's eyes. Every eye/iris inside a shaded face is suppressed + lens-filled.
         if _dl_on and iris_c:
-            _glum = (photo[..., 0] * 0.299 + photo[..., 1] * 0.587 + photo[..., 2] * 0.114)
-            _gh, _gw = _glum.shape
-            def _spct(_c):
-                _icx, _icy, _irr = _c
-                _y0, _y1 = max(0, int(_icy - _irr * 2.4)), int(_icy + _irr * 2.4)
-                _x0, _x1 = max(0, int(_icx - _irr * 2.4)), int(_icx + _irr * 2.4)
-                _reg = _glum[_y0:_y1, _x0:_x1]
-                if _reg.size < 16:
-                    return None
-                _p90 = max(float(np.percentile(_reg, 90)), 1.0)
-                # Pupil ratio: darkest 10% of the iris centre / sclera. A real eye has a dark
-                # pupil (low ratio); a lens does not. Returned so the reflective branch can
-                # demand "no dark pupil" and never black out a brightly-lit real eye.
-                _inr = np.zeros((_gh, _gw), np.uint8)
-                cv2.circle(_inr, (int(round(_icx)), int(round(_icy))), max(1, int(_irr * 0.45)), 1, -1)
-                _inpx = _glum[_inr > 0]
-                _ratio = float(np.percentile(_inpx, 10)) / _p90 if _inpx.size else 1.0
-                return (_p90, float(np.percentile(_reg, 75)), _ratio)
-            _shaded = []                                 # bboxes of faces wearing tinted lenses
+            _shaded = []
             for _face in _faces_of(an):
                 _fp = _face.points * fsc0
-                _fx0, _fy0 = float(_fp[:, 0].min()), float(_fp[:, 1].min())
-                _fx1, _fy1 = float(_fp[:, 0].max()), float(_fp[:, 1].max())
-                _fi = [c for c in iris_c if _fx0 <= c[0] <= _fx1 and _fy0 <= c[1] <= _fy1]
-                _pp = [p for p in (_spct(c) for c in _fi) if p is not None]
-                # DARK tinted lens (max p90 < 95) OR a REFLECTIVE/mirrored lens (both eyes
-                # broadly bright AND neither has a dark pupil). Brightness alone can't tell a
-                # mirror lens from a sunlit face -- both are bright -- so the reflective branch
-                # also demands the pupil backstop fail (min ratio > 0.40, no dark centre). A
-                # real eye, however bright, always has a dark pupil, so it is never blacked out.
-                _refl = (min(p[1] for p in _pp) > 135.0 and min(p[2] for p in _pp) > 0.40)
-                if len(_pp) >= 2 and (max(p[0] for p in _pp) < 95.0 or _refl):
-                    _shaded.append((_fx0, _fy0, _fx1, _fy1))
-            if _shaded:
-                def _in_shaded(_cx, _cy):
-                    return any(a <= _cx <= c and b <= _cy <= d for (a, b, c, d) in _shaded)
-                _lens_eyes = [e for e in eyes_e if _in_shaded(e[0], e[1])]
-                eyes_e = [e for e in eyes_e if not _in_shaded(e[0], e[1])]
-                iris_c = [c for c in iris_c if not _in_shaded(c[0], c[1])]
+                _shaded.append((float(_fp[:, 0].min()), float(_fp[:, 1].min()),
+                                float(_fp[:, 0].max()), float(_fp[:, 1].max())))
+            def _in_shaded(_cx, _cy):
+                return any(a <= _cx <= c and b <= _cy <= d for (a, b, c, d) in _shaded)
+            _lens_eyes = [e for e in eyes_e if _in_shaded(e[0], e[1])]
+            eyes_e = [e for e in eyes_e if not _in_shaded(e[0], e[1])]
+            iris_c = [c for c in iris_c if not _in_shaded(c[0], c[1])]
         _dark_lens = bool(_lens_eyes)
         # Eye-white + teeth fill. In Photo ink the photo's OWN pixels can carry a
         # warm cast (warm light + warm ink), so take mostly LUMINANCE + a trace of
