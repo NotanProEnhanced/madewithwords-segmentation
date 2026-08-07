@@ -420,11 +420,21 @@ def render_displacement_portrait(
 
     # Dark-lens gray fill: darken the lens region so the density/displacement field stays
     # low there (helps the lens read as an opaque dark surface). Alpha is cleared below too.
+    # Anchor it to the EYELID hull (Leye/Reye) -- the reliable lens position -- NOT the iris
+    # centres: behind sunglasses MediaPipe frequently guesses the iris landmarks and can drop
+    # them onto the brow, so an iris-centred fill paints stray dark circles on the forehead
+    # above the lenses. The eyelid hull is where the opaque alpha fill lands too, so the two
+    # stay registered on the actual lens.
     if _dark_lens_eyes:
-        _dlm = np.zeros((H, W), np.float32)
-        for icx, icy, ir in _dark_lens_eyes:
-            cv2.circle(_dlm, (int(round(icx)), int(round(icy))), int(round(ir * 2.5)), 1.0, -1, cv2.LINE_AA)
         _dlr = float(np.mean([r for *_c, r in _dark_lens_eyes]))
+        _dlm = np.zeros((H, W), np.float32)
+        for _fp in _dark_lens_face_pts:
+            for k in ("Leye", "Reye"):
+                p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
+                if len(p) >= 3:
+                    cv2.fillConvexPoly(_dlm, cv2.convexHull(p), 1.0)
+        _dk = max(3, int(round(_dlr * 2.0))) | 1        # grow past the lid opening onto the lens
+        _dlm = cv2.dilate(_dlm, np.ones((_dk, _dk), np.uint8), 1)
         _dlm = np.clip(cv2.GaussianBlur(_dlm, (0, 0), sigmaX=max(1.0, _dlr * 0.30)), 0, 1)
         gray = gray * (1.0 - 0.90 * _dlm)
 
