@@ -2884,7 +2884,8 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
                        f'<cite>{_h.escape(scrip_ref)}</cite></blockquote>') if scrip else ""
 
     prints = [p for p in products.public_catalog(gallery=True)
-              if p["physical"] and not p["memorial_only"] and not p["sizes"]]
+              if p["physical"] and not p["memorial_only"] and not p["sizes"]
+              and p["orientation"] == "portrait"]   # gallery masters are 4:5 portrait -> portrait prints only
     live = bool(PRINTFUL_API_TOKEN)
     prints_html = "".join(
         f'<button class="opt" data-sku="{_h.escape(p["sku"])}"{"" if live else " disabled"}>'

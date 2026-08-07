@@ -122,6 +122,66 @@ CATALOG: List[Product] = [
         print_aspect=0.714,         # 5/7 ≈ 0.714 -- render the print file to match
         printful_variant_id=16364,  # Enhanced Matte Paper Poster (in) 5×7 (product 1) — base $5.39
     ),
+    # --- Square prints (1:1). Shown only for a SQUARE render. Variant IDs verified via the
+    # Printful catalog API 2026-08-07 (matte poster p1, canvas p3, framed poster p2 Black).
+    Product(
+        sku="framed_16x16", name="16×16 framed print",
+        blurb="Solid wood frame, museum-grade matte paper. Ready to hang.",
+        price_cents=6900, shipping_cents=1500, physical=True,
+        print_aspect=1.0, printful_variant_id=4655, tag="Best gift",
+    ),
+    Product(
+        sku="canvas_16x16", name="16×16 gallery canvas",
+        blurb="1.25\" stretched canvas, gallery-wrapped edges.",
+        price_cents=4900, shipping_cents=1200, physical=True,
+        print_aspect=1.0, printful_variant_id=824,
+    ),
+    Product(
+        sku="poster_16x16", name="16×16 archival poster",
+        blurb="Heavy matte paper, true colors. Frame separately.",
+        price_cents=2900, shipping_cents=800, physical=True,
+        print_aspect=1.0, printful_variant_id=4465,
+    ),
+    Product(
+        sku="framed_10x10", name="10×10 framed keepsake",
+        blurb="A smaller framed square — for a desk, a shelf, or to give.",
+        price_cents=3900, shipping_cents=900, physical=True,
+        print_aspect=1.0, printful_variant_id=4652,
+    ),
+    Product(
+        sku="canvas_10x10", name="10×10 gallery canvas",
+        blurb="A small gallery-wrapped square — ready to stand or hang.",
+        price_cents=3400, shipping_cents=900, physical=True,
+        print_aspect=1.0, printful_variant_id=19296,
+    ),
+    Product(
+        sku="poster_10x10", name="10×10 archival print",
+        blurb="Heavy matte paper, desk-sized. Frame separately.",
+        price_cents=1900, shipping_cents=600, physical=True,
+        print_aspect=1.0, printful_variant_id=6239,
+    ),
+    # --- Landscape prints (5:4 = 20×16 = 1.25, matching the studio's landscape option).
+    # Framed and canvas reuse the SAME variant as their 16×20 portrait twin -- Printful
+    # orients from the landscape print file, not a separate variant. Poster uses the 16×20
+    # matte-poster variant (3877) so its landscape is 20×16 = 1.25 (not the 18×24 -> 24×18).
+    Product(
+        sku="framed_20x16", name="20×16 framed print",
+        blurb="Solid wood frame, landscape. Ready to hang.",
+        price_cents=6900, shipping_cents=1500, physical=True,
+        print_aspect=1.25, printful_variant_id=4399, tag="Best gift",
+    ),
+    Product(
+        sku="canvas_20x16", name="20×16 gallery canvas",
+        blurb="1.25\" stretched canvas, landscape, gallery-wrapped edges.",
+        price_cents=4900, shipping_cents=1200, physical=True,
+        print_aspect=1.25, printful_variant_id=6,
+    ),
+    Product(
+        sku="poster_20x16", name="20×16 archival poster",
+        blurb="Heavy matte paper, landscape. Frame separately.",
+        price_cents=2900, shipping_cents=800, physical=True,
+        print_aspect=1.25, printful_variant_id=3877,
+    ),
     # --- Bundles (memorial brand only). Single-aspect, so one render fulfils every
     # item; variant IDs are the same verified Printful catalog IDs used above.
     Product(
@@ -175,6 +235,17 @@ def get(sku: str) -> Optional[Product]:
     return _BY_SKU.get(sku)
 
 
+def orientation(aspect: float) -> str:
+    """Classify a width/height aspect as 'portrait' (<0.95), 'square' (~1), or
+    'landscape' (>1.10). Used to match a print's shape to the rendered composition so a
+    landscape render is only offered landscape prints, etc."""
+    if aspect < 0.95:
+        return "portrait"
+    if aspect > 1.10:
+        return "landscape"
+    return "square"
+
+
 def resolve_variant_id(product: Product, size: Optional[str]) -> Optional[int]:
     """Return the Printful variant ID for a product + optional size choice."""
     if product.size_variants:
@@ -196,6 +267,10 @@ _MEMORIAL_PRICE: Dict[str, int] = {
     "canvas_8x10":  3900,
     "poster_8x10":  2300,
     "print_5x7":    1600,
+    # Square + landscape mirror the closest portrait SKU's memorial price.
+    "framed_16x16": 8900, "canvas_16x16": 6400, "poster_16x16": 3400,
+    "framed_10x10": 4900, "canvas_10x10": 3900, "poster_10x10": 2300,
+    "framed_20x16": 8900, "canvas_20x16": 6400, "poster_20x16": 3400,
 }
 _MEMORIAL_REFS = {"lovedinwords", "everloved", "keepsake"}   # keepsake = LiW redemption skin
 
@@ -257,6 +332,8 @@ def public_catalog(memorial: bool = False, gallery: bool = False) -> List[dict]:
             "price_cents": price,
             "shipping_cents": ship,
             "physical": p.physical,
+            "print_aspect": p.print_aspect,          # so the UI shows only prints matching the render's shape
+            "orientation": orientation(p.print_aspect),
             "sizes": list(p.size_variants.keys()) if p.size_variants else [],
             "tag": p.tag,
             "memorial_only": p.memorial_only,

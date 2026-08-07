@@ -1702,6 +1702,7 @@ function applyKeepsake(prelim){
   resultView.classList.toggle("kp-desk", portrait);
   resultView.classList.toggle("kp-leaf", !portrait);
   if(!portrait) resultView.style.setProperty("--kp-ar", String(CROP_AR));  // stage holds the render's shape (compose slot + fit)
+  if(typeof buildPicker==="function") buildPicker();   // offer only prints matching this render's orientation
 }
 buy.addEventListener("click", async ()=>{
   // Redemption mode (gift/partner/pre-need code) claims the keepsake via /redeem
@@ -1778,7 +1779,11 @@ function _sizeName(p){
   const kind=p.sku.startsWith("framed")?" framed":p.sku.startsWith("canvas")?" canvas":" print";
   return sz+kind;
 }
-function renderProducts(data){
+let _pdata=null;
+function orientOf(ar){ return ar<0.95?"portrait":(ar>1.10?"landscape":"square"); }
+function renderProducts(data){ _pdata=data; buildPicker(); }   // store; (re)build per current orientation
+function buildPicker(){
+  const data=_pdata; if(!data) return;
   const cur = data.currency || "usd";
   CATALOG = (data.products||[]).map(p=>({...p, currency:cur}));
   if(!data.fulfillment_configured) return;               // stay digital-only
@@ -1786,6 +1791,10 @@ function renderProducts(data){
   let items = CATALOG.slice();
   if(isMem) items = items.filter(p=>!String(p.sku).startsWith("tshirt"));   // no apparel of someone who has passed
   else items = items.filter(p=>!p.memorial_only);                          // grief-framed bundles: memorial only
+  // Only offer prints whose shape matches the rendered composition (a landscape render gets
+  // landscape prints, a square render square prints, etc.); digital always shows.
+  const _wantOri = orientOf(CROP_AR);
+  items = items.filter(p=> !p.physical || p.orientation===_wantOri);
   // Group by format; sort each group's options cheapest-first.
   const groups={};
   items.forEach(p=>{ const f=_fmtOf(p.sku); (groups[f]=groups[f]||[]).push(p); });
