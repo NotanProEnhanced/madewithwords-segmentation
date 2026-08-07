@@ -1035,7 +1035,7 @@ def render_displacement_portrait(
     # orange-boosted skin highlights -- compress toward a natural ceiling while ordinary skin
     # keeps its colour. Only saturation ABOVE the cap is compressed (35% slope), so nothing
     # below it is touched. TYPO_SAT_CAP=0 disables. Default 170 (gentle).
-    _scap = float(os.environ.get("TYPO_SAT_CAP", "170") or 170)
+    _scap = float(os.environ.get("TYPO_SAT_CAP", "150") or 150)
     if _scap > 0:
         _hh = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
         _s = _hh[..., 1]

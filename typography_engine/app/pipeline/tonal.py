@@ -689,6 +689,13 @@ def _iris_tint(an):
     # eye lightness: pale blue / light-brown irises render lighter than deep
     # brown, so the rendered eye colour is honest to the person, not uniform.
     hsv = np.mean(hsvs, 0)
+    # Plausibility guard: a real iris is brown/amber (hue ~2-25), hazel/green (~25-90) or
+    # blue/gray (~90-135) -- never magenta/pink/violet. A sample landing on a lid, lash-line
+    # or lipstick reads in that band (OpenCV hue ~140-176; measured 167 on one photo), which
+    # is never an eye colour, so drop the tint and render a neutral eye instead of a bright
+    # magenta iris. The warm-red end (<4) is LEFT alone -- deep brown eyes live there.
+    if 140.0 <= float(hsv[0]) <= 176.0:
+        return None
     hsv[1] = min(255.0, hsv[1] * 1.25)
     hsv[2] = float(np.interp(hsv[2], [30.0, 160.0], [140.0, 235.0]))
     rgb = cv2.cvtColor(np.clip(hsv, 0, 255).astype(np.uint8).reshape(1, 1, 3),

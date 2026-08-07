@@ -97,7 +97,7 @@ services:
       # and word-ink saturation multiplier. Lower vibrance / cap => less orange skin,
       # less magenta lips. Defaults tuned for natural skin.
       - TYPO_VIBRANCE=${TYPO_VIBRANCE:-0.22}
-      - TYPO_SAT_CAP=${TYPO_SAT_CAP:-170}
+      - TYPO_SAT_CAP=${TYPO_SAT_CAP:-150}
       - TYPO_INK_SAT=${TYPO_INK_SAT:-1.02}
       - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}
       # SVG->PNG backend: auto (CairoSVG, full fidelity, slower) | resvg (much
