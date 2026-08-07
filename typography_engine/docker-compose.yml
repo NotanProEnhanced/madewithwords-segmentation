@@ -83,6 +83,9 @@ services:
       # Highlight wash: keep bright features (silver hair, pale skin) light on the dark
       # ground so they don't collapse to the ground (0..1; 0 disables). Default 0.5.
       - TYPO_HILIGHT_WASH=${TYPO_HILIGHT_WASH:-0.5}
+      # Shadow lift: preserve modelled detail in a face's shaded side instead of crushing
+      # it to the near-black ground (0..1; 0 disables). Default 0.18.
+      - TYPO_SHADOW_LIFT=${TYPO_SHADOW_LIFT:-0.18}
       - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}
       # SVG->PNG backend: auto (CairoSVG, full fidelity, slower) | resvg (much
       # faster; identical output for the current solid-fill SVGs) | cairosvg.

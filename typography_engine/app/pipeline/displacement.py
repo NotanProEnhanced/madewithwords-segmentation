@@ -692,6 +692,18 @@ def render_displacement_portrait(
             _hi = np.clip((ink_field - 0.60) / 0.40, 0.0, 1.0)
             _mk = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0, 1)
             a = np.clip(a + _hw * _hi * _mk * (1.0 - a), 0, 1)
+    # Shadow lift (light-ground only): the counterpart to the highlight wash. Deep shadow on
+    # the subject otherwise crushes to the near-black ground, so the shaded side of a face
+    # becomes a detail-less void and the portrait reads harsh. Lift a gentle floor in the
+    # shadow-to-low-midtone band, gated to the FACE (face_norm) so the body + background keep
+    # their drama, filling only the gaps (a += w*(1-a)) so the glyph texture and the deepest
+    # pockets still read dark -- the shaded cheek/jaw keep MODELLED form instead of collapsing.
+    # Default 0.0 -> byte-identical; TYPO_SHADOW_LIFT tunes the strength.
+    if g["tone"] == "light":
+        _sl = float(os.environ.get("TYPO_SHADOW_LIFT", "0.18") or 0.18)   # default ON; 0 disables
+        if _sl > 0.0:
+            _lo = np.clip((0.50 - ink_field) / 0.50, 0.0, 1.0)   # 1 at black -> 0 at mid(0.5)
+            a = np.clip(a + _sl * _lo * np.clip(face_norm, 0, 1) * (1.0 - a), 0, 1)
 
     # Feature anchoring: eye rings + lip seam + pupils + nostrils.
     anchor = np.zeros((H, W), np.float32)
