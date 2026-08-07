@@ -529,14 +529,46 @@ def render_displacement_portrait(
         _gyv = np.arange(H, dtype=np.float32)[:, None]
         _rows_on = np.where(mask01.max(axis=1) > 0)[0]
         _notface = 1.0 - face_norm
-        _chin_y = max(float(_p[:, 1].max()) for _p in all_pts)
         _bottom_y = float(_rows_on.max()) if _rows_on.size else float(H)
-        _below = np.clip((_gyv - _chin_y) / max(1.0, (_bottom_y - _chin_y)), 0.0, 1.0)
-        df = np.clip(df + 0.30 * _notface * (_gyv > _chin_y).astype(np.float32) + 0.55 * _below * _notface, 0, 1)
-        _face_top_y = min(float(_p[:, 1].min()) for _p in all_pts)
         _top_y = float(_rows_on.min()) if _rows_on.size else 0.0
-        _above = np.clip((_face_top_y - _gyv) / max(1.0, (_face_top_y - _top_y)), 0.0, 1.0)
-        df = np.clip(df + 0.30 * _notface * (_gyv < _face_top_y).astype(np.float32) + 0.55 * _above * _notface, 0, 1)
+        if len(all_pts) <= 1:
+            # Single subject: unchanged (protects the memorial single-portrait product).
+            _chin_y = max(float(_p[:, 1].max()) for _p in all_pts)
+            _below = np.clip((_gyv - _chin_y) / max(1.0, (_bottom_y - _chin_y)), 0.0, 1.0)
+            df = np.clip(df + 0.30 * _notface * (_gyv > _chin_y).astype(np.float32) + 0.55 * _below * _notface, 0, 1)
+            _face_top_y = min(float(_p[:, 1].min()) for _p in all_pts)
+            _above = np.clip((_face_top_y - _gyv) / max(1.0, (_face_top_y - _top_y)), 0.0, 1.0)
+            df = np.clip(df + 0.30 * _notface * (_gyv < _face_top_y).astype(np.float32) + 0.55 * _above * _notface, 0, 1)
+        else:
+            # Group: each subject's neck/chest (and hair/crown) must graduate from THEIR OWN
+            # chin, not one group-wide line -- otherwise a taller person's chest sizes
+            # differently from a shorter one's and the type jumps between people. Build a
+            # smooth per-COLUMN chin / face-top / face-height by weighting every face's value
+            # by horizontal proximity (Gaussian on |x - face_centre|, sigma ~ face width), so
+            # the reference blends seamlessly across neighbours with no seam. Then, instead of
+            # a hard step at the chin (which snaps small->large), hold df up right under the
+            # chin and DECAY it over ~0.9 face-heights: the neck/upper-chest eases through a
+            # medium band before the long ramp grows the type toward the hem -- small (face) ->
+            # medium (neck) -> large (chest), identically for every subject.
+            _cx = np.array([0.5 * (float(_p[:, 0].min()) + float(_p[:, 0].max())) for _p in all_pts], np.float32)
+            _chin_a = np.array([float(_p[:, 1].max()) for _p in all_pts], np.float32)
+            _topa = np.array([float(_p[:, 1].min()) for _p in all_pts], np.float32)
+            _fwa = np.array([max(1.0, float(_p[:, 0].max() - _p[:, 0].min())) for _p in all_pts], np.float32)
+            _fha = np.array([max(1.0, float(_p[:, 1].max() - _p[:, 1].min())) for _p in all_pts], np.float32)
+            _xs = np.arange(W, dtype=np.float32)
+            _wt = np.exp(-0.5 * ((_xs[None, :] - _cx[:, None]) / (_fwa[:, None] * 1.1)) ** 2)
+            _wt /= (_wt.sum(0, keepdims=True) + 1e-6)
+            _chin_col = (_wt * _chin_a[:, None]).sum(0)[None, :]
+            _top_col = (_wt * _topa[:, None]).sum(0)[None, :]
+            _fh_col = (_wt * _fha[:, None]).sum(0)[None, :]
+            _belowm = (_gyv > _chin_col).astype(np.float32) * _notface
+            _below = np.clip((_gyv - _chin_col) / np.maximum(1.0, (_bottom_y - _chin_col)), 0.0, 1.0)
+            _neck = np.clip(1.0 - (_gyv - _chin_col) / np.maximum(1.0, 0.9 * _fh_col), 0.0, 1.0) * _belowm
+            df = np.clip(df + 0.40 * _neck + 0.55 * _below * _notface, 0, 1)
+            _abovem = (_gyv < _top_col).astype(np.float32) * _notface
+            _above = np.clip((_top_col - _gyv) / np.maximum(1.0, (_top_col - _top_y)), 0.0, 1.0)
+            _crown = np.clip(1.0 - (_top_col - _gyv) / np.maximum(1.0, 0.9 * _fh_col), 0.0, 1.0) * _abovem
+            df = np.clip(df + 0.40 * _crown + 0.55 * _above * _notface, 0, 1)
     # =================================================================================
     # #1 Forehead is a big smooth plane that large letters dominate -> push the type
     # finer above the brow line so it stops shouting.
