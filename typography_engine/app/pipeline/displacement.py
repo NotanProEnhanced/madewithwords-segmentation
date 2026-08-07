@@ -893,7 +893,7 @@ def render_displacement_portrait(
             hsv[..., 1] = np.clip(hsv[..., 1] * _PAPER_INK_SAT, 0, 255)
             hsv[..., 2] = np.minimum(hsv[..., 2], np.float32(_PAPER_INK_VALUE))
         else:
-            hsv[..., 1] = np.clip(hsv[..., 1] * 1.02, 0, 255)          # keep the photo's own saturation (natural skin, not cartoonish)
+            hsv[..., 1] = np.clip(hsv[..., 1] * float(os.environ.get("TYPO_INK_SAT", "1.02") or 1.02), 0, 255)  # step-3 colour-fidelity knob (was fixed 1.02)
             hsv[..., 2] = np.clip(hsv[..., 2] * 1.14 + 14, 0, 255)      # lift value vs dark ground
         ink_col = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
         out = np.array(g["bg"], np.float32) * (1 - al) + ink_col * al
@@ -1029,7 +1029,18 @@ def render_displacement_portrait(
     from .tonal import _fit_print_canvas
     out = _fit_print_canvas(out, _pad_bg, print_aspect)
     from .preprocess import apply_vibrance
-    out = apply_vibrance(out, strength=0.34, bgr=True)   # gentle life (clarity); restrained so colour stays natural and the sclera isn't glow-brightened
+    _vib = float(os.environ.get("TYPO_VIBRANCE", "0.22") or 0.22)   # step-3 colour-fidelity knob (was fixed 0.34)
+    out = apply_vibrance(out, strength=_vib, bgr=True)   # gentle life (clarity); restrained so colour stays natural and the sclera isn't glow-brightened
+    # Colour fidelity: soft-cap HSV saturation so the oversaturated extremes -- magenta lips,
+    # orange-boosted skin highlights -- compress toward a natural ceiling while ordinary skin
+    # keeps its colour. Only saturation ABOVE the cap is compressed (35% slope), so nothing
+    # below it is touched. TYPO_SAT_CAP=0 disables. Default 170 (gentle).
+    _scap = float(os.environ.get("TYPO_SAT_CAP", "170") or 170)
+    if _scap > 0:
+        _hh = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
+        _s = _hh[..., 1]
+        _hh[..., 1] = np.where(_s > _scap, _scap + (_s - _scap) * 0.35, _s)
+        out = cv2.cvtColor(_hh.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
     ok, buf = cv2.imencode(".png", np.clip(out, 0, 255).astype(np.uint8))
     if not ok:
         raise ValueError("encode_failed")
