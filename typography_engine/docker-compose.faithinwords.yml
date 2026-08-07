@@ -77,6 +77,12 @@ services:
       # less magenta lips. Defaults tuned for natural skin.
       - TYPO_VIBRANCE=${TYPO_VIBRANCE:-0.22}
       - TYPO_SAT_CAP=${TYPO_SAT_CAP:-150}
+      # Photographic eye-overlay opacity (0..1). Lower blends the typography through the eye
+      # so it reads as part of the words. Default 0.5.
+      - TYPO_EYE_PHOTO=${TYPO_EYE_PHOTO:-0.5}
+      # De-posterize: add the photo's smooth light->dark falloff back so the face isn't flat/
+      # banded (0..1; 0 disables). Default 0.6.
+      - TYPO_DEPOSTERIZE=${TYPO_DEPOSTERIZE:-0.6}
       - TYPO_INK_SAT=${TYPO_INK_SAT:-1.02}
       - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}
       - TYPO_RASTERIZER=${TYPO_RASTERIZER:-auto}

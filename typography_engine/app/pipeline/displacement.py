@@ -985,7 +985,7 @@ def render_displacement_portrait(
             _tk = _ea > eye_a
             eye_a = np.where(_tk, _ea, eye_a)
             eye_bgr[_tk] = _eb[_tk]
-        a3 = (eye_a * float(os.environ.get("TYPO_EYE_PHOTO", "0.94") or 0.94))[..., None]   # 1=opaque photo eye; lower blends the typography through so the eye reads as part of the words
+        a3 = (eye_a * float(os.environ.get("TYPO_EYE_PHOTO", "0.5") or 0.5))[..., None]   # 1=opaque photo eye; lower (default 0.5) blends the typography through so the eye reads as part of the words
         out = out * (1.0 - a3) + eye_bgr * a3
         if ink != "photo":
             lum = (out[..., 0] * 0.114 + out[..., 1] * 0.587 + out[..., 2] * 0.299)[..., None]
@@ -1000,6 +1000,20 @@ def render_displacement_portrait(
     if discovery:
         out = _add_discovery(out, pts, fw, H, W, discovery)
     # =======================================================================
+
+    # De-posterize: the tonal floors (highlight wash / shadow lift) and the discrete text-
+    # density steps flatten the face into bands. Add the photo's OWN low-frequency light->dark
+    # falloff back as a gentle multiply -- brighter where the photo is bright, darker where it
+    # is dark -- so the flat regions regain smooth photographic gradation WITHOUT blurring the
+    # glyph edges (only the LOW frequencies move, the type stays crisp). Subject only, light
+    # ground only. Default 0 -> byte-identical; TYPO_DEPOSTERIZE tunes the strength.
+    _dp = float(os.environ.get("TYPO_DEPOSTERIZE", "0.6") or 0.6)   # default ON; 0 disables
+    if _dp > 0.0 and g["tone"] == "light":
+        _plo = cv2.GaussianBlur(gray.astype(np.float32) / 255.0, (0, 0), sigmaX=max(2.0, fw * 0.11))
+        _m = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.01), 0, 1)
+        _mid = float(np.mean(_plo[mask01 > 0])) if np.any(mask01 > 0) else 0.5
+        _mod = 1.0 + _dp * np.clip(_plo - _mid, -0.5, 0.5) * _m
+        out = np.clip(out * _mod[..., None], 0, 255)
 
     oh = max(1, int(out_width * h0 / w0))
     out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
