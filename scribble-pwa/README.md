@@ -38,7 +38,10 @@ Everything runs on the device — the photo is never uploaded anywhere.
   Skips gracefully when no face is detected.
 - **Live controls**: density, contrast, scribble size, flow (chaotic ↔ contour),
   line weight, ink opacity, plus ink/paper colours.
-- **Save PNG** of the finished artwork (high‑res).
+- **Print-quality export** — **PNG** at ~3600 px long edge (≈ 300 dpi for a 12″
+  print) and **SVG** vector (infinitely scalable, ideal for large prints and
+  pen-plotters). Exports are recomputed deterministically so they match the
+  on-screen sketch exactly, at any resolution.
 - **Installable & offline** — PWA manifest + service worker cache the app shell.
 
 ## How it works

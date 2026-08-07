@@ -56,6 +56,7 @@
     redraw: $('redrawBtn'),
     pause: $('pauseBtn'),
     download: $('downloadBtn'),
+    svg: $('svgBtn'),
     install: $('installBtn'),
   };
 
@@ -569,21 +570,21 @@
   }
 
   // Draw a point list as a smooth curve (quadratic through segment midpoints).
-  function strokePath(pts) {
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
+  function strokePath(pts, g = ctx) {
+    g.beginPath();
+    g.moveTo(pts[0].x, pts[0].y);
     if (pts.length === 2) {
-      ctx.lineTo(pts[1].x, pts[1].y);
+      g.lineTo(pts[1].x, pts[1].y);
     } else {
       for (let i = 1; i < pts.length - 1; i++) {
         const mx = (pts[i].x + pts[i + 1].x) * 0.5;
         const my = (pts[i].y + pts[i + 1].y) * 0.5;
-        ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+        g.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
       }
       const n = pts.length;
-      ctx.quadraticCurveTo(pts[n - 2].x, pts[n - 2].y, pts[n - 1].x, pts[n - 1].y);
+      g.quadraticCurveTo(pts[n - 2].x, pts[n - 2].y, pts[n - 1].x, pts[n - 1].y);
     }
-    ctx.stroke();
+    g.stroke();
   }
 
   // ---- Single continuous line (one unbroken stroke) ----
@@ -749,6 +750,7 @@
   function enableControls(on) {
     buttons.redraw.disabled = !on;
     buttons.download.disabled = !on;
+    buttons.svg.disabled = !on;
     buttons.pause.disabled = !on;
   }
 
@@ -858,7 +860,8 @@
   }
 
   buttons.redraw.addEventListener('click', startSketch);
-  buttons.download.addEventListener('click', downloadPng);
+  buttons.download.addEventListener('click', () => exportPNG());
+  buttons.svg.addEventListener('click', () => exportSVG());
   buttons.pause.addEventListener('click', () => {
     if (!running) return;
     paused = !paused;
@@ -866,11 +869,84 @@
     if (!paused) rafId = requestAnimationFrame(tick);
   });
 
-  function downloadPng() {
+  // ---- Print-quality export ----
+  // Deterministically recompute the full set of drawn strokes (same seed as the
+  // on-screen sketch) so exports match what's shown, at any resolution. Saves
+  // and restores live sim state so exporting mid-animation is harmless.
+  function computeStrokes() {
+    const sRes = residual, sInk = initialInk, sCount = strokeCount, sRand = RAND_STATE.s;
+    seed(0x9e3779b9);
+    buildResidual();
+    strokeCount = 0;
+    const out = [];
+    if (controls.singleLine.checked) {
+      const p = buildSingleLinePath();
+      if (p.length > 1) out.push({ pts: p, alpha: 1 });
+    } else {
+      while (strokeCount < MAX_STROKES) {
+        if ((strokeCount & 1023) === 0 && coverage() >= params.target) break;
+        const s = nextStroke();
+        if (!s) break;
+        out.push({ pts: s.pts, alpha: s.alpha });
+        if (s.redrawPts) out.push({ pts: s.redrawPts, alpha: s.alpha * 0.8 });
+      }
+    }
+    residual = sRes; initialInk = sInk; strokeCount = sCount; RAND_STATE.s = sRand;
+    return out;
+  }
+
+  function saveBlob(blob, name) {
+    const u = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.download = 'scribble.png';
-    a.href = canvas.toDataURL('image/png');
-    a.click();
+    a.download = name; a.href = u; a.click();
+    setTimeout(() => URL.revokeObjectURL(u), 4000);
+  }
+
+  // High-resolution raster (default long edge ~3600px ≈ 12" at 300dpi).
+  function exportPNG(longEdge = 3600) {
+    if (!sourceBitmap) return;
+    busy('Rendering print file…');
+    const strokes = computeStrokes();
+    const scale = longEdge / Math.max(mapW, mapH);
+    const oc = document.createElement('canvas');
+    oc.width = Math.round(mapW * scale);
+    oc.height = Math.round(mapH * scale);
+    const g = oc.getContext('2d');
+    g.fillStyle = controls.paper.value;
+    g.fillRect(0, 0, oc.width, oc.height);
+    g.scale(scale, scale);
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    g.lineWidth = params.weight; g.strokeStyle = controls.ink.value;
+    for (const s of strokes) { g.globalAlpha = s.alpha; strokePath(s.pts, g); }
+    oc.toBlob((b) => { saveBlob(b, 'scribble.png'); showStatus(false); }, 'image/png');
+  }
+
+  // Vector SVG — infinitely scalable, ideal for print and pen-plotters.
+  function exportSVG() {
+    if (!sourceBitmap) return;
+    busy('Building vector file…');
+    const strokes = computeStrokes();
+    const f = (n) => Math.round(n * 10) / 10;
+    const d = (pts) => {
+      let s = `M${f(pts[0].x)} ${f(pts[0].y)}`;
+      if (pts.length === 2) { s += `L${f(pts[1].x)} ${f(pts[1].y)}`; return s; }
+      for (let i = 1; i < pts.length - 1; i++) {
+        const mx = (pts[i].x + pts[i + 1].x) / 2, my = (pts[i].y + pts[i + 1].y) / 2;
+        s += `Q${f(pts[i].x)} ${f(pts[i].y)} ${f(mx)} ${f(my)}`;
+      }
+      const n = pts.length;
+      s += `Q${f(pts[n - 2].x)} ${f(pts[n - 2].y)} ${f(pts[n - 1].x)} ${f(pts[n - 1].y)}`;
+      return s;
+    };
+    const parts = [
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${mapW} ${mapH}" width="${mapW}" height="${mapH}">`,
+      `<rect width="${mapW}" height="${mapH}" fill="${controls.paper.value}"/>`,
+      `<g fill="none" stroke="${controls.ink.value}" stroke-width="${params.weight}" stroke-linecap="round" stroke-linejoin="round">`,
+    ];
+    for (const s of strokes) parts.push(`<path stroke-opacity="${s.alpha.toFixed(3)}" d="${d(s.pts)}"/>`);
+    parts.push('</g></svg>');
+    saveBlob(new Blob([parts.join('\n')], { type: 'image/svg+xml' }), 'scribble.svg');
+    showStatus(false);
   }
 
   // File pickers + drag/drop + paste.
