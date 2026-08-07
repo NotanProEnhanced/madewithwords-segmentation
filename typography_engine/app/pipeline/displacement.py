@@ -380,11 +380,15 @@ def render_displacement_portrait(
             ratios.append(float(np.percentile(gray[inner > 0], 10)) / sclera)
         # Tinted lenses two ways: DARK sunglasses darken both eyes (max p90 < 95; require
         # the brighter eye dark too so a single shadowed/side-lit real eye isn't mistaken),
-        # or REFLECTIVE/mirrored lenses read broadly bright in BOTH eyes (min p75 over the
-        # two eyes > 135 -- a real face is asymmetrically lit, so its dimmer eye stays
-        # moderate even when the lit one is bright).
+        # or a REFLECTIVE/mirrored lens reads broadly bright AND has NO dark pupil. Brightness
+        # ALONE cannot tell a mirror lens from a brightly-lit real face -- a sunlit face's eye
+        # region is just as bright -- so the reflective branch also requires the pupil backstop
+        # to fail (no dark centre): a real eye, however bright, always has a dark pupil, so it
+        # is never mistaken for a lens.  Without the pupil requirement this fired on ordinary
+        # sunlit portraits and blacked their eyes out.
+        _no_pupil = len(ratios) >= 2 and min(ratios) > _EYE_OPEN_IRIS_MAX
         if _dl_on and ((scleras and max(scleras) < _EYE_SCLERA_MIN)
-                       or (len(bulk) >= 2 and min(bulk) > _EYE_REFLECTIVE_BOTH)):
+                       or (_no_pupil and len(bulk) >= 2 and min(bulk) > _EYE_REFLECTIVE_BOTH)):
             _dark_lens_active = True                   # shades on this face
             _dark_lens_eyes.extend(_fi)
             _dark_lens_face_pts.append(_fp)

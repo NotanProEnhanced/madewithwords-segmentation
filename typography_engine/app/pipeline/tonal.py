@@ -1885,13 +1885,23 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         # everyone else's eyes. Every eye/iris inside a shaded face is suppressed + lens-filled.
         if _dl_on and iris_c:
             _glum = (photo[..., 0] * 0.299 + photo[..., 1] * 0.587 + photo[..., 2] * 0.114)
+            _gh, _gw = _glum.shape
             def _spct(_c):
                 _icx, _icy, _irr = _c
                 _y0, _y1 = max(0, int(_icy - _irr * 2.4)), int(_icy + _irr * 2.4)
                 _x0, _x1 = max(0, int(_icx - _irr * 2.4)), int(_icx + _irr * 2.4)
                 _reg = _glum[_y0:_y1, _x0:_x1]
-                return ((float(np.percentile(_reg, 90)), float(np.percentile(_reg, 75)))
-                        if _reg.size >= 16 else None)
+                if _reg.size < 16:
+                    return None
+                _p90 = max(float(np.percentile(_reg, 90)), 1.0)
+                # Pupil ratio: darkest 10% of the iris centre / sclera. A real eye has a dark
+                # pupil (low ratio); a lens does not. Returned so the reflective branch can
+                # demand "no dark pupil" and never black out a brightly-lit real eye.
+                _inr = np.zeros((_gh, _gw), np.uint8)
+                cv2.circle(_inr, (int(round(_icx)), int(round(_icy))), max(1, int(_irr * 0.45)), 1, -1)
+                _inpx = _glum[_inr > 0]
+                _ratio = float(np.percentile(_inpx, 10)) / _p90 if _inpx.size else 1.0
+                return (_p90, float(np.percentile(_reg, 75)), _ratio)
             _shaded = []                                 # bboxes of faces wearing tinted lenses
             for _face in _faces_of(an):
                 _fp = _face.points * fsc0
@@ -1899,11 +1909,13 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
                 _fx1, _fy1 = float(_fp[:, 0].max()), float(_fp[:, 1].max())
                 _fi = [c for c in iris_c if _fx0 <= c[0] <= _fx1 and _fy0 <= c[1] <= _fy1]
                 _pp = [p for p in (_spct(c) for c in _fi) if p is not None]
-                # DARK tinted lens (max p90 < 95) OR REFLECTIVE/mirrored lens (BOTH eyes
-                # broadly bright: min p75 over the two eyes > 135). Keying reflective off the
-                # MIN (dimmer eye) not the MAX means a single bright, side-lit real eye -- or
-                # an auto-levels/brighter crop nudging one eye up -- never paints dark discs.
-                if len(_pp) >= 2 and (max(p[0] for p in _pp) < 95.0 or min(p[1] for p in _pp) > 135.0):
+                # DARK tinted lens (max p90 < 95) OR a REFLECTIVE/mirrored lens (both eyes
+                # broadly bright AND neither has a dark pupil). Brightness alone can't tell a
+                # mirror lens from a sunlit face -- both are bright -- so the reflective branch
+                # also demands the pupil backstop fail (min ratio > 0.40, no dark centre). A
+                # real eye, however bright, always has a dark pupil, so it is never blacked out.
+                _refl = (min(p[1] for p in _pp) > 135.0 and min(p[2] for p in _pp) > 0.40)
+                if len(_pp) >= 2 and (max(p[0] for p in _pp) < 95.0 or _refl):
                     _shaded.append((_fx0, _fy0, _fx1, _fy1))
             if _shaded:
                 def _in_shaded(_cx, _cy):
