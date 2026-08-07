@@ -595,6 +595,15 @@ def render_displacement_portrait(
         fh = ((fmh > 0) & (_yy < brow_y)).astype(np.float32)
         df = np.clip(df + 0.26 * cv2.GaussianBlur(fh, (0, 0), sigmaX=max(2.0, fw * 0.05)), 0, 1)
     df = cv2.GaussianBlur(df, (0, 0), sigmaX=max(2.0, fw * 0.06))   # ease the size steps further
+    # #4 Highlights breathe: the brightest skin otherwise keeps full-size, dense type and reads
+    # as a flat wash. Push df UP in the brightest ~30% of the face so the type there goes FINER
+    # -- smaller, airier words let the highlight breathe instead of caking. Face only; strength
+    # TYPO_HILIGHT_FINE (default 0.30; 0 disables).
+    _hf = float(os.environ.get("TYPO_HILIGHT_FINE", "0.30") or 0.30)
+    if _hf > 0.0:
+        _hib = np.clip((gray / 255.0 - 0.72) / 0.28, 0.0, 1.0) * face_norm
+        _hib = cv2.GaussianBlur(_hib, (0, 0), sigmaX=max(1.0, fw * 0.03))
+        df = np.clip(df + _hf * _hib, 0, 1)
 
     # Clean vertical drape, dampened in the feature band (keeps features crisp).
     D = cv2.GaussianBlur(gray, (0, 0), sigmaX=W * 0.020)
@@ -644,6 +653,16 @@ def render_displacement_portrait(
     hp2 = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.022))
     hp2 /= (np.std(hp2[mask01 > 0]) + 1e-6)
     ink_field = np.clip(ink_field + 0.32 * sign * np.clip(hp2, -2.0, 2.0) * feat_norm, 0, 1)
+    # #7 Micro-expression: the fine-scale contrast above is gated to the eyes/nose/mouth, so
+    # the CREASES that make a face recognisable -- nasolabial folds, crow's feet, forehead and
+    # smile lines out on the skin -- smooth away. Apply an even finer high-pass across the whole
+    # face (face_norm) so those creases render as delicate darker type instead of flat skin.
+    # Subject/face only; strength TYPO_CREASE (default 0.22; 0 disables).
+    _cr = float(os.environ.get("TYPO_CREASE", "0.22") or 0.22)
+    if _cr > 0.0:
+        _hpc = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.012))
+        _hpc /= (np.std(_hpc[mask01 > 0]) + 1e-6)
+        ink_field = np.clip(ink_field + _cr * sign * np.clip(_hpc, -2.0, 2.0) * face_norm, 0, 1)
     # Sculpt the hair (same TYPO_GRADUATE_BODY gate): boost mid-scale local contrast in the
     # hair region (subject, above the chin, outside the face) so strand clumps, volume and
     # highlights MODEL instead of reading as a flat text field.

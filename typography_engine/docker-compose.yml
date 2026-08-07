@@ -97,6 +97,10 @@ services:
       # De-posterize: add the photo's smooth light->dark falloff back so the face isn't flat/
       # banded (0..1; 0 disables). Default 0.6.
       - TYPO_DEPOSTERIZE=${TYPO_DEPOSTERIZE:-0.6}
+      # Micro-expression: render facial creases (folds, crow's feet) as fine type (0..1; 0 off). Default 0.22.
+      - TYPO_CREASE=${TYPO_CREASE:-0.22}
+      # Highlights breathe: finer type in the brightest skin so highlights don't cake (0..1; 0 off). Default 0.30.
+      - TYPO_HILIGHT_FINE=${TYPO_HILIGHT_FINE:-0.30}
       - TYPO_INK_SAT=${TYPO_INK_SAT:-1.02}
       - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}
       # SVG->PNG backend: auto (CairoSVG, full fidelity, slower) | resvg (much
