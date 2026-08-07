@@ -521,7 +521,7 @@
     <div id="drop" class="drop">
       <div class="ico">Photo</div><div class="big">Add a photo</div>
       <div class="small" id="dropSmall">A clear, close-up photo of <b>one person</b>, facing the camera. Only have a group photo? You can crop to a single face on the next step.</div>
-      <div class="small" id="dropTips" style="font-size:12px;margin-top:6px">Best results: front-facing &middot; face fills the frame &middot; avoid sunglasses &amp; profiles.</div>
+      <div class="small" id="dropTips" style="font-size:12px;margin-top:6px">Best results: front-facing &middot; face fills the frame &middot; <b>no sunglasses</b> &middot; no profiles.</div>
     </div>
     <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="origToggle" class="change toggle" type="button" style="display:none">See full photo</button><button id="adjustCrop" class="change adjust" type="button" style="display:none">Adjust crop</button><button id="changePhoto" class="change">Change photo</button></div>
     <div id="photoNote" class="photo-note" style="display:none"></div>
@@ -674,10 +674,6 @@
         <div><div class="t-lbl">Remove background</div><div class="t-sub">Keep the words on the subject only, clean ground.</div></div>
         <div id="bgSwitch" class="sw-switch on"></div>
       </div>
-      <div id="sgRow" class="toggle" style="margin-top:14px">
-        <div><div class="t-lbl">Wearing sunglasses</div><div class="t-sub">Render the lenses opaque instead of drawing eyes. Turn on for any subject in sunglasses.</div></div>
-        <div id="sgSwitch" class="sw-switch"></div>
-      </div>
     </div>
     <!-- Product picker: revealed only when physical fulfillment is configured
          (a Printful token is set). Until then the studio stays digital-only and
@@ -815,7 +811,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, crop:null, ink:"photo", inkHex:"#3a6df0", style:"displacement", fmt:"png", removeBg:true, sunglasses:false, sku:"digital", size:null, minFont:57, uppercase:true, maskData:null };
+const state = { file:null, crop:null, ink:"photo", inkHex:"#3a6df0", style:"displacement", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true, maskData:null };
 // Referral/source tag (?ref=everloved) AND brand skin. A brand re-dresses this
 // same engine as a partner identity (name + tagline). The brand is resolved from
 // the ?brand param FIRST (reliable, and it persists in this single-page URL),
@@ -1040,7 +1036,7 @@ consent.addEventListener("change", refreshCreate);
 })();
 // Style toggle: word mosaic vs continuous-prose story.
 const wordsLbl=$("#wordsLbl"), wordsHint=$("#wordsHint");
-const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch"), sgSwitch=$("#sgSwitch");
+const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch");
 // Shared style switcher — used by the style control on BOTH the input screen and
 // the result screen (the result one re-renders in place). Keeps both segments in sync.
 function setStyle(newStyle, rerender){
@@ -1270,9 +1266,6 @@ function updatePhotoControls(){
 // (and re-warms the swatch thumbnails) so the change is immediate.
 function optionChanged(){ if(resultView.style.display==="block"){ invalidate(); render(state.ink,{animate:false}); } }
 bgSwitch.addEventListener("click", ()=>{ userTouched=true; state.removeBg=!state.removeBg; bgSwitch.classList.toggle("on",state.removeBg); optionChanged(); });
-// Manual sunglasses: pixels can't reliably tell a tinted lens from a real eye, so the
-// user marks it. On => opaque lenses (no fabricated eyes); off => real eyes always.
-if(sgSwitch){ sgSwitch.addEventListener("click", ()=>{ userTouched=true; state.sunglasses=!state.sunglasses; sgSwitch.classList.toggle("on",state.sunglasses); optionChanged(); }); }
 // Letter case: render the words ALL CAPS, or exactly as the user typed them.
 const caseSeg=$("#caseSeg");
 if(caseSeg){ caseSeg.addEventListener("click", e=>{
@@ -1552,7 +1545,7 @@ async function renderSizeThumb(mf){
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
   const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
-  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); fd.append("sunglasses", state.sunglasses?"1":""); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(mf));
   fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
   try{
@@ -1609,7 +1602,7 @@ function recoFd(style, coarse){
   let ink=state.ink||"photo";
   if(style==="displacement" && (ink==="spectrum"||ink==="aurora")) ink="photo";  // gradients don't drape
   fd.append("ink",ink); fd.append("style",style); fd.append("ground","navy");
-  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); fd.append("sunglasses", state.sunglasses?"1":""); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", style==="message" ? "20" : String(state.minFont||57));
   if(coarse){ fd.append("png_width","380"); fd.append("render_w","760"); } else { fd.append("png_width","1500"); }
   return fd;
@@ -2162,7 +2155,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
   const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
-  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); fd.append("sunglasses", state.sunglasses?"1":""); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(state.minFont||20));
   if(thumb){
     // A 74px chip needs only the colour and rough likeness; a small canvas
