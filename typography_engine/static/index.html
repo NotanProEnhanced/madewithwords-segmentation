@@ -148,16 +148,14 @@
      same way the render does (shared aspect), so the two line up pixel-for-pixel. */
   #result.kp-desk #beforeImg{object-fit:contain}
   #result.kp-leaf{position:relative;margin-top:16px;padding:30px 26px;border-radius:16px;overflow:hidden;
-    background:radial-gradient(125% 120% at 50% 0%,#eef2e9 0%,#dde6d2 52%,#c8d5b7 100%)}
-  #result.kp-leaf::before,#result.kp-leaf::after{content:"";position:absolute;width:150px;height:330px;
-    background:url('/static/everloved/leaf-sprig.png') center/contain no-repeat;mix-blend-mode:multiply;opacity:.92;z-index:1;pointer-events:none}
-  #result.kp-leaf::before{top:-28px;left:-24px;transform:scaleX(-1) rotate(-8deg)}
-  #result.kp-leaf::after{bottom:-32px;right:-22px;transform:rotate(6deg)}
+    background:radial-gradient(125% 120% at 50% 0%,#f4f1ea 0%,#e9e4da 52%,#dcd5c8 100%)}
   #result.kp-leaf .frame{position:relative;z-index:2;margin-top:0;max-width:86%;margin-left:auto;margin-right:auto}
-  /* Frame sizes to the render's own aspect (square/landscape); drop the 240px floor so a
-     short landscape render doesn't leave a white gap under the art. */
-  #result.kp-leaf .stage{min-height:0}
-  #result.kp-leaf #portrait{width:100%;height:auto;display:block}
+  /* The stage takes the SELECTED aspect (JS sets --kp-ar = CROP_AR), so the frame matches
+     the render's shape AND holds that shape during compose -- the progress UI shows in a
+     correctly-sized box instead of a collapsed horizontal slot. */
+  #result.kp-leaf .stage{aspect-ratio:var(--kp-ar,1.25);min-height:0}
+  #result.kp-leaf .compare{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+  #result.kp-leaf #portrait{width:100%;height:100%;display:block;object-fit:cover}
   /* Quiet caption beneath the frame: tells the customer the room/frame is a
      preview and the file they receive is the artwork itself. */
   .frame-note{margin-top:11px;text-align:center;font-size:12.5px;line-height:1.45;color:var(--muted);letter-spacing:.005em;padding:0 16px}
@@ -1703,6 +1701,7 @@ function applyKeepsake(prelim){
   const portrait = CROP_AR <= 0.95;
   resultView.classList.toggle("kp-desk", portrait);
   resultView.classList.toggle("kp-leaf", !portrait);
+  if(!portrait) resultView.style.setProperty("--kp-ar", String(CROP_AR));  // stage holds the render's shape (compose slot + fit)
 }
 buy.addEventListener("click", async ()=>{
   // Redemption mode (gift/partner/pre-need code) claims the keepsake via /redeem
