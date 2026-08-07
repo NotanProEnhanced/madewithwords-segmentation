@@ -87,6 +87,9 @@ services:
       # Background lightening: render the image background lighter than the subject's
       # dark ground (0..1, fraction toward white; 0 = off, background == ground).
       - TYPO_BG_LIGHTEN=${TYPO_BG_LIGHTEN:-0}
+      # Highlight wash: keep bright features (silver hair, pale skin) light on the dark
+      # ground so they don't collapse to the ground (0..1; 0 disables). Default 0.5.
+      - TYPO_HILIGHT_WASH=${TYPO_HILIGHT_WASH:-0.5}
       - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}
       # SVG->PNG backend: auto (CairoSVG, full fidelity, slower) | resvg (much
       # faster; identical output for the current solid-fill SVGs) | cairosvg.

@@ -687,7 +687,7 @@ def render_displacement_portrait(
     # stays inside the subject mask, and it fills only the gaps (a += w*(1-a)) so glyph edges
     # keep their crispness. Default 0.0 -> byte-identical; TYPO_HILIGHT_WASH tunes the strength.
     if g["tone"] == "light":
-        _hw = float(os.environ.get("TYPO_HILIGHT_WASH", "0.0") or 0.0)
+        _hw = float(os.environ.get("TYPO_HILIGHT_WASH", "0.5") or 0.5)   # default ON; 0 disables
         if _hw > 0.0:
             _hi = np.clip((ink_field - 0.60) / 0.40, 0.0, 1.0)
             _mk = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0, 1)
