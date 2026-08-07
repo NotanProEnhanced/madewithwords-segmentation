@@ -37,7 +37,6 @@
     ink: $('inkColor'),
     paper: $('paperColor'),
     removeBg: $('removeBg'),
-    traceFace: $('traceFace'),
     animate: $('animateChk'),
     showPen: $('showPen'),
     singleLine: $('singleLine'),
@@ -79,21 +78,16 @@
   const params = {};           // engine settings captured at sketch start
   let lastFile = null;         // most recent upload, for re-analysis on toggle
   let matteMask = null;        // ML subject mask {data,w,h,invert} or null
-  let faceNorm = null;         // facial-feature segments (normalized 0..1) or null
-  let featQueue = [];          // feature strokes to draw last (scribble animate)
   let activePreset = null;     // currently selected style preset, if any
   const STORE_KEY = 'scribbler.settings.v1';
   const PRESET_KEYS = ['density', 'contrast', 'length', 'flow', 'weight', 'opacity', 'fill'];
 
-  // On-device vision (MediaPipe Tasks). Selfie Segmentation gives the subject
-  // matte; Face Landmarker gives feature lines for likeness. Self-hosted under
-  // vendor/ so they work fully offline; everything degrades gracefully if the
-  // assets fail to load.
+  // On-device subject segmentation (MediaPipe Selfie Segmentation). Self-hosted
+  // under vendor/ so it works fully offline; falls back to flood-fill on failure.
   const MP_VISION_MODULE = './vendor/mediapipe/vision_bundle.mjs';
   const MP_WASM = 'vendor/mediapipe/wasm';
   const MP_SELFIE_MODEL = 'vendor/mediapipe/models/selfie_segmenter.tflite';
-  const MP_FACE_MODEL = 'vendor/mediapipe/models/face_landmarker.task';
-  let mpVision = null, mpSegmenter = null, mpLandmarker = null;
+  let mpVision = null, mpSegmenter = null;
   const RAND_STATE = { s: 0x2545f491 };
 
   // Deterministic PRNG so a re-sketch with identical settings is reproducible.
@@ -110,7 +104,6 @@
     if (!file || !file.type.startsWith('image/')) return;
     lastFile = file;
     matteMask = null;
-    faceNorm = null;
     const url = URL.createObjectURL(file);
     try {
       sourceBitmap = await loadImage(url);
@@ -124,13 +117,13 @@
 
     canvasWrap.hidden = false;
     dropzone.style.display = 'none';
-    await prepareAnalysis();     // ML subject matte + face landmarks (best-effort)
+    await prepareAnalysis();     // ML subject matte (best-effort)
     buildToneMap();
     enableControls(true);
     startSketch();
   }
 
-  // Lazily load MediaPipe Tasks Vision (shared fileset for both models).
+  // Lazily load MediaPipe Tasks Vision (shared fileset).
   async function getVision() {
     if (mpVision) return mpVision;
     const mod = await import(MP_VISION_MODULE);
@@ -139,85 +132,40 @@
     return mpVision;
   }
 
-  // Compute the subject matte (Selfie Segmentation) and facial-feature lines
-  // (Face Landmarker) for the current photo. Each piece is best-effort: if the
-  // models can't load (offline/blocked) we fall back to flood-fill + no traces.
+  // Compute the subject matte (Selfie Segmentation) for the current photo.
+  // Best-effort: if the model can't load (offline/blocked) we fall back to
+  // the colour-keyed flood-fill matte.
   async function prepareAnalysis() {
-    const needSeg = controls.removeBg.checked && !matteMask;
-    const needFace = controls.traceFace.checked && !faceNorm;
-    if ((!needSeg && !needFace) || !lastFile) return;
+    if (!controls.removeBg.checked || matteMask || !lastFile) return;
 
     busy('Analyzing photo…');
     let bmp;
     try { bmp = await createImageBitmap(lastFile); } catch { return; }
 
-    let v;
-    try { v = await getVision(); }
-    catch (e) { console.warn('MediaPipe unavailable; using fallbacks.', e); bmp.close && bmp.close(); return; }
-
-    if (needSeg) {
-      try {
-        if (!mpSegmenter) {
-          mpSegmenter = await v.mod.ImageSegmenter.createFromOptions(v.fileset, {
-            baseOptions: { modelAssetPath: MP_SELFIE_MODEL },
-            runningMode: 'IMAGE', outputConfidenceMasks: true, outputCategoryMask: false,
-          });
-        }
-        const res = mpSegmenter.segment(bmp);
-        const m = res.confidenceMasks && res.confidenceMasks[0];
-        if (m) {
-          const w = m.width, h = m.height;
-          const data = Float32Array.from(m.getAsFloat32Array());
-          // Selfie mask is person-probability; auto-detect polarity via corners.
-          const cs = (data[0] + data[w - 1] + data[(h - 1) * w] + data[h * w - 1]) / 4;
-          matteMask = { data, w, h, invert: cs > 0.5 };
-        }
-        res.close && res.close();
-      } catch (e) { console.warn('Segmentation failed; flood-fill fallback.', e); matteMask = null; }
-    }
-
-    if (needFace) {
-      try {
-        if (!mpLandmarker) {
-          mpLandmarker = await v.mod.FaceLandmarker.createFromOptions(v.fileset, {
-            baseOptions: { modelAssetPath: MP_FACE_MODEL },
-            runningMode: 'IMAGE', numFaces: 1,
-          });
-        }
-        const res = mpLandmarker.detect(bmp);
-        const lm = res.faceLandmarks && res.faceLandmarks[0];
-        if (lm) {
-          const conns = featureConnections(v.mod.FaceLandmarker);
-          faceNorm = conns
-            .filter(([a, b]) => lm[a] && lm[b])
-            .map(([a, b]) => [{ x: lm[a].x, y: lm[a].y }, { x: lm[b].x, y: lm[b].y }]);
-        }
-      } catch (e) { console.warn('Face landmarks unavailable.', e); faceNorm = null; }
+    try {
+      const v = await getVision();
+      if (!mpSegmenter) {
+        mpSegmenter = await v.mod.ImageSegmenter.createFromOptions(v.fileset, {
+          baseOptions: { modelAssetPath: MP_SELFIE_MODEL },
+          runningMode: 'IMAGE', outputConfidenceMasks: true, outputCategoryMask: false,
+        });
+      }
+      const res = mpSegmenter.segment(bmp);
+      const m = res.confidenceMasks && res.confidenceMasks[0];
+      if (m) {
+        const w = m.width, h = m.height;
+        const data = Float32Array.from(m.getAsFloat32Array());
+        // Selfie mask is person-probability; auto-detect polarity via corners.
+        const cs = (data[0] + data[w - 1] + data[(h - 1) * w] + data[h * w - 1]) / 4;
+        matteMask = { data, w, h, invert: cs > 0.5 };
+      }
+      res.close && res.close();
+    } catch (e) {
+      console.warn('Segmentation unavailable; flood-fill fallback.', e);
+      matteMask = null;
     }
 
     bmp.close && bmp.close();
-  }
-
-  // Index pairs for the feature lines we want the pen to trace.
-  function featureConnections(FL) {
-    const sets = ['FACE_LANDMARKS_LIPS', 'FACE_LANDMARKS_LEFT_EYE', 'FACE_LANDMARKS_RIGHT_EYE',
-      'FACE_LANDMARKS_LEFT_EYEBROW', 'FACE_LANDMARKS_RIGHT_EYEBROW', 'FACE_LANDMARKS_FACE_OVAL'];
-    const out = [];
-    for (const s of sets) {
-      const arr = FL && FL[s];
-      if (Array.isArray(arr)) for (const c of arr) out.push([c.start, c.end]);
-    }
-    // Nose bridge + base (canonical 468-mesh indices) — no dedicated set exists.
-    const nose = [[168, 6], [6, 197], [197, 195], [195, 5], [5, 4], [4, 1],
-      [1, 19], [98, 97], [97, 2], [2, 326], [326, 327]];
-    for (const c of nose) out.push(c);
-    return out;
-  }
-
-  // Feature lines in tone-map coordinates (empty if disabled or none detected).
-  function featureStrokes() {
-    if (!controls.traceFace.checked || !faceNorm) return [];
-    return faceNorm.map((seg) => seg.map((p) => ({ x: p.x * mapW, y: p.y * mapH })));
   }
 
   function loadImage(src) {
@@ -412,9 +360,6 @@
       return;
     }
 
-    // Feature lines (eyes/brows/nose/lips/jaw) drawn last, on top, for likeness.
-    featQueue = featureStrokes();
-
     if (controls.animate.checked) {
       rafId = requestAnimationFrame(tick);   // progressive pen reveal
     } else {
@@ -462,12 +407,13 @@
 
     while (budget > 0) {
       if (!penStroke) {
-        penStroke = acquireStroke();
+        if (coverage() >= params.target) { finishSketch(); return; }
+        penStroke = nextStroke();
         if (!penStroke) { finishSketch(); return; }
-        ctx.lineWidth = penStroke.feature ? params.weight * 1.4 : params.weight;
+        penStroke.i = 0;
       }
       const s = penStroke;
-      ctx.globalAlpha = s.feature ? 0.9 : s.alpha;
+      ctx.globalAlpha = s.alpha;
       // Draw revealed segments as a flowing curve up to the new head.
       while (s.i < s.pts.length - 1 && budget > 0) {
         const a = s.pts[s.i], b = s.pts[s.i + 1];
@@ -498,24 +444,7 @@
       if (!s) break;
       paintStroke(s);
     }
-    // Feature lines last, on top, slightly heavier.
-    if (featQueue.length) {
-      ctx.lineWidth = params.weight * 1.4;
-      for (const f of featQueue) { ctx.globalAlpha = 0.9; strokePath(f); }
-      ctx.lineWidth = params.weight;
-    }
     finishSketch();
-  }
-
-  // Acquire the next thing to draw: a scribble until coverage is met, then the
-  // queued feature lines (drawn last so they stay crisp on top).
-  function acquireStroke() {
-    if (coverage() < params.target) {
-      const s = nextStroke();
-      if (s) { s.i = 0; return s; }
-    }
-    if (featQueue.length) return { pts: featQueue.shift(), i: 0, feature: true };
-    return null;
   }
 
   // Pull the next drawable stroke (skips empty attempts). Null when done.
@@ -677,7 +606,6 @@
       if (s && s.pts.length >= 2) strokes.push(s.pts);
       else if ((guard & 63) === 0 && coverage() >= target * 0.96) break;
     }
-    for (const f of featureStrokes()) strokes.push(f);   // weave features into the line
     if (!strokes.length) return [];
     return connectStrokes(strokes);
   }
@@ -849,12 +777,9 @@
   // Controls handled live (no re-sketch): they tune the in-progress drawing.
   const LIVE = new Set([controls.speed, controls.showPen]);
 
-  // Controls that may need (re)running the ML analysis before re-sketching.
-  const ANALYSIS = new Set([controls.removeBg, controls.traceFace]);
-
   // Sliders: update labels live, re-sketch shortly after the user settles.
   Object.entries(controls).forEach(([key, el]) => {
-    if (!el || ANALYSIS.has(el) || LIVE.has(el)) return;  // handled separately
+    if (!el || el === controls.removeBg || LIVE.has(el)) return;  // handled separately
     const ev = el.type === 'checkbox' || el.type === 'color' ? 'change' : 'input';
     el.addEventListener(ev, () => {
       if (PRESET_KEYS.includes(key)) { activePreset = null; highlightPreset(); }
@@ -871,17 +796,15 @@
     if (!controls.showPen.checked) clearPen();
   });
 
-  // Background removal / face tracing: turning either on may need a one-time
-  // ML pass; the matte also changes the tone map, so rebuild it.
-  async function onAnalysisToggle() {
+  // Background removal: turning it on may need a one-time segmentation pass;
+  // the matte also changes the tone map, so rebuild it.
+  controls.removeBg.addEventListener('change', async () => {
     saveSettings();
     if (!sourceBitmap) return;
     await prepareAnalysis();
     buildToneMap();
     startSketch();
-  }
-  controls.removeBg.addEventListener('change', onAnalysisToggle);
-  controls.traceFace.addEventListener('change', onAnalysisToggle);
+  });
 
   // One-tap style presets — set every slider at once.
   const PRESETS = {
