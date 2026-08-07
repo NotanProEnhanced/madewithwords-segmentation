@@ -520,8 +520,7 @@
   <section id="input" class="card">
     <div id="drop" class="drop">
       <div class="ico">Photo</div><div class="big">Add a photo</div>
-      <div class="small" id="dropSmall">A clear, close-up photo of <b>one person</b>, facing the camera. Only have a group photo? You can crop to a single face on the next step.</div>
-      <div class="small" id="dropTips" style="font-size:12px;margin-top:6px">Best results: front-facing &middot; face fills the frame &middot; <b>no sunglasses</b> &middot; no profiles.</div>
+      <div class="small" id="dropTips">Best results: front-facing &middot; face fills the frame &middot; no sunglasses &middot; no profile.</div>
     </div>
     <div id="preview" class="preview"><img id="previewImg" alt="your photo" /><button id="origToggle" class="change toggle" type="button" style="display:none">See full photo</button><button id="adjustCrop" class="change adjust" type="button" style="display:none">Adjust crop</button><button id="changePhoto" class="change">Change photo</button></div>
     <div id="photoNote" class="photo-note" style="display:none"></div>
@@ -909,7 +908,6 @@ if(BRAND){
       const _wl=document.getElementById("wordsLbl"); if(_wl) _wl.textContent="Tell us about them";
       const _wh=document.getElementById("wordsHint"); if(_wh) _wh.textContent="Paste an obituary or tribute, share a memory, or just list a few words — then tap “Find the words.” You can edit everything.";
       const _wt=document.getElementById("words"); if(_wt){ _wt.setAttribute("placeholder","Paste a tribute, share a memory, or list a few words…"); _wt.rows=5; }
-      const _ds=document.getElementById("dropSmall"); if(_ds) _ds.innerHTML="A clear, close-up photo of <b>your loved one</b>, facing the camera. Only have a group photo? You can crop to just them on the next step.";
     }
     if(BRAND.theme){ const rs=document.documentElement.style; for(const k in BRAND.theme) rs.setProperty(k, BRAND.theme[k]); }
     // Swap the favicon to this brand's typographic heart (default is the generic T).
@@ -1293,14 +1291,11 @@ const MAX_UPLOAD_BYTES=25*1024*1024;   // keep in step with TYPO_MAX_UPLOAD_BYTE
 function bioOK(){ var b=document.getElementById("bioConsent"); return !!(b && b.checked); }
 // Lock the photo drop zone until biometric consent is given, so the requirement
 // is obvious up front instead of surfacing as an error after a file is picked.
-var _dropSmall=drop?drop.querySelector(".small"):null;
-var _dropSmallDefault=_dropSmall?_dropSmall.textContent:"";
 function nudgeBio(){ var r=document.getElementById("bioConsentRow"); if(r){ r.scrollIntoView({block:"center",behavior:"smooth"}); r.classList.add("flash"); setTimeout(function(){r.classList.remove("flash");},1400); } }
 function syncBioLock(){
   if(window.__regionBlocked) return;            // region block owns the drop zone
   var ok=bioOK();
-  if(drop) drop.classList.toggle("locked", !ok);
-  if(_dropSmall) _dropSmall.textContent = ok ? _dropSmallDefault : "First, tick the consent box above — then add your photo.";
+  if(drop) drop.classList.toggle("locked", !ok);  // still gates upload until consent; clicking a locked drop flashes the consent box (nudgeBio)
 }
 (function(){ var b=document.getElementById("bioConsent"); if(b) b.addEventListener("change", syncBioLock); syncBioLock(); })();
 // Toggle the collapsible full biometric notice (the summary + checkbox stay visible).
