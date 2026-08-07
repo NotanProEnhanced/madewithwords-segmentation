@@ -245,6 +245,10 @@ def render_displacement_portrait(
                                   # (above face) step down from the largest tier -- plus a hair
                                   # local-contrast 'sculpt'. Default ON; env TYPO_GRADUATE_BODY=0
                                   # reverts with no code change.
+    _diag: Optional[dict] = None,  # test hook: if a dict is passed, the per-face eye
+                                  # classification counts are recorded into it (no effect on
+                                  # output). Lets a regression test assert e.g. that a bright
+                                  # single face is NOT flagged as a sunglasses/dark lens.
 ) -> bytes:
     """Render a displacement typographic portrait to PNG bytes.
 
@@ -397,6 +401,10 @@ def render_displacement_portrait(
             continue                                   # no dark pupil -> not a real eye
         irises.extend(_fi)
         _eye_face_pts.append(_fp)
+
+    if _diag is not None:
+        _diag.update(total_faces=len(all_pts), dark_lens_faces=len(_dark_lens_face_pts),
+                     eye_faces=len(_eye_face_pts), misfit_faces=len(_misfit_face_pts))
 
     # Glare clean-up: when the eyes are SUPPRESSED (closed / glare) AND the photo has a
     # blown-out specular reflection over the eye (e.g. glasses glare), tone it down
