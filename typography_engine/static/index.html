@@ -154,6 +154,10 @@
   #result.kp-leaf::before{top:-28px;left:-24px;transform:scaleX(-1) rotate(-8deg)}
   #result.kp-leaf::after{bottom:-32px;right:-22px;transform:rotate(6deg)}
   #result.kp-leaf .frame{position:relative;z-index:2;margin-top:0;max-width:86%;margin-left:auto;margin-right:auto}
+  /* Frame sizes to the render's own aspect (square/landscape); drop the 240px floor so a
+     short landscape render doesn't leave a white gap under the art. */
+  #result.kp-leaf .stage{min-height:0}
+  #result.kp-leaf #portrait{width:100%;height:auto;display:block}
   /* Quiet caption beneath the frame: tells the customer the room/frame is a
      preview and the file they receive is the artwork itself. */
   .frame-note{margin-top:11px;text-align:center;font-size:12.5px;line-height:1.45;color:var(--muted);letter-spacing:.005em;padding:0 16px}
@@ -1690,8 +1694,15 @@ let currentJob=null, priceLabel="", sourcePreview=null;   // sourcePreview = ser
 // then the 4:5 render revealed in another). Always the desk -> no flip.
 function applyKeepsake(prelim){
   if(!KEEPSAKE) return;
-  resultView.classList.remove("kp-leaf");
-  resultView.classList.add("kp-desk");
+  // Match the presentation to the SELECTED output orientation (known up front from
+  // CROP_AR, so there is no mid-compose flip). Portrait (4:5) drops into the photographic
+  // desk frame, whose mat opening is a fixed 4:5 -- it fills edge-to-edge. A square or
+  // landscape render can't fit that baked portrait frame, so it shows in the adaptive
+  // beveled frame on the eucalyptus backdrop (kp-leaf), which sizes to the render's own
+  // aspect instead of letterboxing it inside a portrait mat.
+  const portrait = CROP_AR <= 0.95;
+  resultView.classList.toggle("kp-desk", portrait);
+  resultView.classList.toggle("kp-leaf", !portrait);
 }
 buy.addEventListener("click", async ()=>{
   // Redemption mode (gift/partner/pre-need code) claims the keepsake via /redeem
