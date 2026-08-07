@@ -317,14 +317,36 @@ def render_displacement_portrait(
     _dark_lens_active = False
     _dark_lens_eyes = []
     _dark_lens_face_pts = []      # shaded faces (drive the opaque-lens fill)
+    _misfit_face_pts = []         # meshes fit so badly the eyes can't be trusted (skip entirely)
     for _fp in all_pts:
         if len(_fp) < 478:
+            continue
+        # Anatomical sanity: a real iris sits BELOW its own eyebrow. On a busy group a
+        # face can get a badly-fit mesh whose iris landmarks land on the FOREHEAD, well
+        # above the brows -- and the bright forehead then false-triggers the reflective-
+        # lens gate, painting two dark dots up there (and eye rings on the brows). When
+        # BOTH irises read clearly above their brow, distrust the whole eye region for
+        # this face: no fabricated eyes, no dark-lens fill, no eye anchor -- just words.
+        _fh = float(_fp[:, 1].max() - _fp[:, 1].min())
+        _gaps = []
+        for _ic, _bk in ((468, "Rbrow"), (473, "Lbrow")):
+            _brow = np.array([_fp[j] for j in _GROUPS[_bk] if j < len(_fp)], np.float32)
+            if _brow.size:
+                _gaps.append(float(_fp[_ic][1]) - float(_brow[:, 1].max()))
+        if len(_gaps) == 2 and all(g < -0.06 * _fh for g in _gaps):
+            _misfit_face_pts.append(_fp)
             continue
         _fi = []
         for ic, ring in ((468, (469, 470, 471, 472)), (473, (474, 475, 476, 477))):
             icx, icy = float(_fp[ic][0]), float(_fp[ic][1])
             ir = float(np.mean([np.hypot(_fp[i][0] - icx, _fp[i][1] - icy) for i in ring]))
-            if ir >= 8.0:
+            # 8px min iris was tuned at SS=2; scale it by _ssn so the SS=1 PREVIEW
+            # resolves the SAME irises the SS=2 paid file does. Without this, a light
+            # preview finds <2 irises per face, skips the whole living-eyes + dark-lens
+            # detection, and falls back to legacy eye-blobs/rings on EVERY face -- so
+            # sunglasses wearers render see-through in the preview though the paid file
+            # is correct. At SS=2 the threshold is unchanged (byte-identical).
+            if ir >= 8.0 * _ssn:
                 _fi.append((icx, icy, ir))
         if len(_fi) < 2:
             continue
@@ -604,8 +626,8 @@ def render_displacement_portrait(
     # a dark outline onto it ("black dots"), so a shaded face gets a lips anchor but no eye
     # anchor. Every other face (real eyes, closed eyes, low-res faces whose irises never
     # resolved) keeps its eye rings exactly as before.
-    _shaded_ids = {id(_fp) for _fp in _dark_lens_face_pts}
-    _eye_anchor_pts = [_fp for _fp in all_pts if id(_fp) not in _shaded_ids]
+    _no_eye_ids = {id(_fp) for _fp in _dark_lens_face_pts} | {id(_fp) for _fp in _misfit_face_pts}
+    _eye_anchor_pts = [_fp for _fp in all_pts if id(_fp) not in _no_eye_ids]
     for _fp in all_pts:
         p = np.array([_fp[i] for i in _GROUPS["lips"] if i < len(_fp)], np.int32)
         if len(p) >= 3:

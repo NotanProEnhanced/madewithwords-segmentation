@@ -1844,6 +1844,33 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         fsc0 = W / float(an.img.gray.shape[1])
         eyes_e = _eye_ellipses(an, fsc0)
         iris_c = _iris_circles(an, fsc0)
+        # Anatomical sanity (mirrors the Lifelike path): a real iris sits BELOW its own
+        # eyebrow. A badly-fit mesh -- common on an occluded/off-angle face in a group --
+        # drops the iris landmarks onto the FOREHEAD, above the brows; the bright forehead
+        # then false-triggers the reflective-lens gate (painting dark dots there) or gets a
+        # fabricated eye up on the brow. When BOTH irises of a face read clearly above their
+        # brow, distrust that face's eyes: drop its irises/eyes so it renders as plain words.
+        _MISFIT_BROW = ((468, (70, 63, 105, 66, 107, 55, 65, 52, 53, 46)),
+                        (473, (336, 296, 334, 293, 300, 285, 295, 282, 283, 276)))
+        _misfit_boxes = []
+        for _face in _faces_of(an):
+            _fp = _face.points * fsc0
+            if _fp.shape[0] < 478:
+                continue
+            _fh = float(_fp[:, 1].max() - _fp[:, 1].min())
+            _gaps = []
+            for _ic, _bidx in _MISFIT_BROW:
+                _by = [_fp[j][1] for j in _bidx if j < len(_fp)]
+                if _by:
+                    _gaps.append(float(_fp[_ic][1]) - max(_by))
+            if len(_gaps) == 2 and all(g < -0.06 * _fh for g in _gaps):
+                _misfit_boxes.append((float(_fp[:, 0].min()), float(_fp[:, 1].min()),
+                                      float(_fp[:, 0].max()), float(_fp[:, 1].max())))
+        if _misfit_boxes:
+            def _in_misfit(_cx, _cy):
+                return any(a <= _cx <= c and b <= _cy <= d for (a, b, c, d) in _misfit_boxes)
+            eyes_e = [e for e in eyes_e if not _in_misfit(e[0], e[1])]
+            iris_c = [c for c in iris_c if not _in_misfit(c[0], c[1])]
         # Dark-lens (sunglasses) guard -- mirrors the Lifelike path: a tinted lens has no
         # bright sclera (p90 < 95 vs 134-193 for real eyes), so suppress the fabricated /
         # see-through eye and paint an opaque lens below. Gated by env TYPO_DARKLENS (ON).
