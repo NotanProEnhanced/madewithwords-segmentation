@@ -68,11 +68,14 @@ _EYE_OPEN_IRIS_MAX = 0.40
 # eye bleeding through the shades. Gated by env TYPO_DARKLENS (default ON; =0 reverts).
 _EYE_SCLERA_MIN = 95.0
 # Reflective / mirrored sunglasses aren't DARK -- a broad lens reflection reads bright,
-# fooling the dark-sclera test. But a real eye's sclera is broken by a dark iris/pupil,
-# so its BULK brightness (p75 of the eye window) stays moderate (measured <=146 across
-# real eyes), whereas a reflective lens stays broadly bright (measured >=178). Above this
-# the eye region is too uniformly bright to be a real eye -> treat as a tinted lens.
-_EYE_REFLECTIVE_MAX = 165.0
+# fooling the dark-sclera test. The reliable tell is that a reflective lens makes BOTH
+# eyes uniformly bright, whereas a real face is asymmetrically lit -- one eye catches the
+# light (its p75 can run high, ~160) while the other stays in shadow (~100). So key off
+# the DIMMER eye: only when BOTH eye windows are broadly bright (min p75 over the two eyes
+# exceeds this) is the region too uniformly bright to be a real pair of eyes. Keying off
+# the max instead false-fired on a single bright real eye (and any auto-levels/brighter
+# crop tipped it over), painting dark discs on an open-eyed face.
+_EYE_REFLECTIVE_BOTH = 135.0
 
 # Sculpted ink colours: the WORD colour (BGR) draped on the dark ground. These are
 # light/bright tints (mirroring the studio's ink swatches) so they read on navy.
@@ -377,10 +380,11 @@ def render_displacement_portrait(
             ratios.append(float(np.percentile(gray[inner > 0], 10)) / sclera)
         # Tinted lenses two ways: DARK sunglasses darken both eyes (max p90 < 95; require
         # the brighter eye dark too so a single shadowed/side-lit real eye isn't mistaken),
-        # or REFLECTIVE/mirrored lenses read broadly bright (max p75 > 165 -- too uniform to
-        # be a real eye, whose sclera is broken by a dark iris/pupil).
+        # or REFLECTIVE/mirrored lenses read broadly bright in BOTH eyes (min p75 over the
+        # two eyes > 135 -- a real face is asymmetrically lit, so its dimmer eye stays
+        # moderate even when the lit one is bright).
         if _dl_on and ((scleras and max(scleras) < _EYE_SCLERA_MIN)
-                       or (bulk and max(bulk) > _EYE_REFLECTIVE_MAX)):
+                       or (len(bulk) >= 2 and min(bulk) > _EYE_REFLECTIVE_BOTH)):
             _dark_lens_active = True                   # shades on this face
             _dark_lens_eyes.extend(_fi)
             _dark_lens_face_pts.append(_fp)

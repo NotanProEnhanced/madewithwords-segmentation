@@ -1899,9 +1899,11 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
                 _fx1, _fy1 = float(_fp[:, 0].max()), float(_fp[:, 1].max())
                 _fi = [c for c in iris_c if _fx0 <= c[0] <= _fx1 and _fy0 <= c[1] <= _fy1]
                 _pp = [p for p in (_spct(c) for c in _fi) if p is not None]
-                # DARK tinted lens (max p90 < 95) OR REFLECTIVE/mirrored lens (max p75 > 165:
-                # too broadly bright to be a real eye, whose sclera is broken by a dark pupil).
-                if len(_pp) >= 2 and (max(p[0] for p in _pp) < 95.0 or max(p[1] for p in _pp) > 165.0):
+                # DARK tinted lens (max p90 < 95) OR REFLECTIVE/mirrored lens (BOTH eyes
+                # broadly bright: min p75 over the two eyes > 135). Keying reflective off the
+                # MIN (dimmer eye) not the MAX means a single bright, side-lit real eye -- or
+                # an auto-levels/brighter crop nudging one eye up -- never paints dark discs.
+                if len(_pp) >= 2 and (max(p[0] for p in _pp) < 95.0 or min(p[1] for p in _pp) > 135.0):
                     _shaded.append((_fx0, _fy0, _fx1, _fy1))
             if _shaded:
                 def _in_shaded(_cx, _cy):
