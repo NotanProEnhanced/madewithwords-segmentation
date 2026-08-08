@@ -836,7 +836,7 @@ async def _bounded_to_thread(fn, *args, **kwargs):
 # they queue with customer renders instead of thrashing the single CPU.
 from .config import PRIVATE_DIR, STATIC_DIR  # noqa: E402
 
-_STUDIO_GROUNDS = ("navy", "paper", "sand", "slate", "black")
+_STUDIO_GROUNDS = ("navy", "paper", "black")
 _STUDIO_INKS = (
     ("photo", "Lifelike (photo)"), ("mono", "Noir"), ("navy", "Navy"),
     ("sepia", "Sepia"), ("burgundy", "Rose"), ("forest", "Sage"), ("gold_noir", "Ember"),
@@ -1368,6 +1368,7 @@ async def render(
     remove_bg: bool = Form(True),
     light: bool = Form(False),
     ground: str = Form("navy"),
+    backdrop: Optional[str] = Form(None),   # "match your space" background colour (displacement)
     ref: str = Form(""),
     brand: str = Form(""),
     crop: Optional[str] = Form(None),
@@ -1491,7 +1492,14 @@ async def render(
     # "words" (the scattered mosaic). Words/Passage share the layered renderer.
     is_displacement = (style == "displacement")
     disp_flow = is_displacement and str(flow or "").strip().lower() in ("1", "true", "yes", "on")
-    ground_choice = ground if ground in ("paper", "sand", "slate", "navy", "black") else "navy"
+    ground_choice = ground if ground in ("paper", "navy", "black") else "navy"
+    # "Match your space" backdrop: recolours ONLY the segmented background behind the
+    # subject (a named wall colour), leaving the Lifelike sculpt untouched. Displacement
+    # only; unknown/blank => None => legacy background behaviour.
+    _BACKDROP_KEYS = ("gray", "ivory", "sand", "slate", "sage", "blush")
+    backdrop_choice = (backdrop or "").strip().lower() or None
+    if backdrop_choice not in _BACKDROP_KEYS:
+        backdrop_choice = None
     style_choice = "displacement" if is_displacement else (
         "message" if style in ("message", "poster", "story") else "words")
     render_w_eff = max(700, min(3000, int(render_w)))
@@ -1521,7 +1529,8 @@ async def render(
                 breathe=STUDIO_BREATHE,
                 # Env-driven word-variety dial (0.0 = original engine). MUST match the
                 # paid render in _ensure_clean_png or the preview would misrepresent it.
-                variety=WORD_VARIETY, print_aspect=aspect_choice, sunglasses=sunglasses_on)
+                variety=WORD_VARIETY, print_aspect=aspect_choice, backdrop=backdrop_choice,
+                sunglasses=sunglasses_on)
             runs, ground_hex, mask_svg = [], None, None
         else:
             png_bytes, runs, ground_hex, mask_svg = await _bounded_to_thread(
@@ -1613,6 +1622,7 @@ async def render(
             "style": style_choice, "ink": ink_choice, "remove_bg": bool(remove_bg),
             "light": bool(light), "text": text, "uppercase": bool(uppercase),
             "min_font_px": float(cfg.min_font_px), "ground": ground_choice,
+            "backdrop": backdrop_choice,   # "match your space" background -> paid recompose must match
             "ink_hex": ink_hex if ink_choice == "custom" else None,   # rebuild the custom colour at download
             "flow": bool(disp_flow),   # displacement message-flow -> paid recompose must match
             "aspect": aspect_choice,   # output shape (w/h) -> digital download recomposes to match
@@ -3494,7 +3504,7 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
                 ground=r.get("ground", "navy"), out_width=DOWNLOAD_PNG_WIDTH,
                 uppercase=bool(r.get("uppercase", True)), flow=bool(r.get("flow")),
                 ink=("photo" if r.get("ink") == "custom" else r.get("ink")),
-                print_aspect=aspect,
+                print_aspect=aspect, backdrop=r.get("backdrop"),
                 # Same passes as the preview render -- the paid file must match what the
                 # buyer approved on screen (breathe kill-switch + word-variety dial).
                 breathe=STUDIO_BREATHE,

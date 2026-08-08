@@ -807,11 +807,12 @@ const INKS = [["photo","conic","Original"],["photo_paper","conic_paper","Paper"]
   ["mono","#555555","Noir"],["gold_noir","gold","Ember"],
   ["navy","#0d1b3a","Navy"],["sepia","#5a3a1a","Sepia"],["burgundy","#4a0d18","Rose"],
   ["forest","#0f2e1e","Sage"],["spectrum","spectrum","Spectrum"],["aurora","aurora","Aurora"]];
-// The "paper family": light-ground ink-drawing looks (correct polarity, typographic
-// eyes/teeth) that differ only in ground colour -- the "match your space" palette.
-// Each maps its swatch id -> the renderer ground. They're only valid under the
-// Lifelike/Letter renderer (struck out under Mosaic/Passage, like Paper always was).
-const PAPER_INK_IDS = {photo_paper:"paper", photo_sand:"sand", photo_slate:"slate"};
+// "Paper" grounds the WHOLE portrait (subject included) on warm ivory -- its own look.
+const PAPER_INK_IDS = {photo_paper:"paper"};
+// "Match your space" backdrops: keep the subject rendered EXACTLY as Lifelike/Sculpted
+// (navy ground) and recolour ONLY the segmented background behind them. Each maps its
+// swatch id -> a backdrop wall colour. Lifelike/Letter only (struck out elsewhere).
+const BACKDROP_INK_IDS = {photo_sand:"sand", photo_slate:"slate"};
 function placeholderBg(col){
   if(col==="conic") return "conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)";
   if(col==="conic_paper") return "radial-gradient(circle at 50% 50%, #f6f1e8 0 40%, rgba(246,241,232,0) 43%), conic-gradient(#c07a64,#b89a52,#5f9476,#6280ac,#8a6aa6,#c07a64)";
@@ -957,6 +958,7 @@ function variantPost(id){
   // engraving can't carry a light-eyed face on white; Sculpt/paper renders the eyes
   // and likeness beautifully. (The dark grounds stay the dense Words/Sculpt looks.)
   if(PAPER_INK_IDS[id]) return {ink:"photo", style:"displacement", ground:PAPER_INK_IDS[id]};
+  if(BACKDROP_INK_IDS[id]) return {ink:"photo", style:"displacement", ground:"navy", backdrop:BACKDROP_INK_IDS[id]};
   if(state.style==="letter") return {ink:(id||"photo"), style:"displacement", ground:"navy"};   // Letter = displacement renderer, message-flow (flag sent in render())
   return state.style==="displacement"
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
@@ -1052,7 +1054,7 @@ function setStyle(newStyle, rerender){
   state.style=newStyle;
   // Paper is the Lifelike-on-white look; leaving Lifelike with it selected falls
   // back to Original so Mosaic/Passage never render the (now struck-out) Paper.
-  if(newStyle!=="displacement" && newStyle!=="letter" && PAPER_INK_IDS[state.ink]) state.ink="photo";
+  if(newStyle!=="displacement" && newStyle!=="letter" && (PAPER_INK_IDS[state.ink]||BACKDROP_INK_IDS[state.ink])) state.ink="photo";
   document.querySelectorAll('#styleSeg button, #styleSegResult button')
     .forEach(c=>c.classList.toggle("on", c.dataset.style===newStyle));
   // "letter" = a MESSAGE sculpted by the Lifelike renderer: it composes like a sculpt
@@ -1415,7 +1417,7 @@ function buildSwatches(){
     const el=document.createElement("button"); el.type="button";
     // "Paper" is the Lifelike-on-white look (it drives the Sculpt renderer), so it
     // only applies to Lifelike -- strike it out / make it inert under Mosaic & Passage.
-    const paperNA = (PAPER_INK_IDS[id] && state.style!=="displacement" && state.style!=="letter");
+    const paperNA = ((PAPER_INK_IDS[id]||BACKDROP_INK_IDS[id]) && state.style!=="displacement" && state.style!=="letter");
     el.className="thumb"+(id===state.ink?" sel":"")+(paperNA?" na":""); el.dataset.ink=id;
     if(paperNA) el.title="This tone is available with the Lifelike style";
     const pic=document.createElement("div"); pic.className="pic"; pic.dataset.ink=id;
@@ -1553,7 +1555,7 @@ async function renderSizeThumb(mf){
   const myGen=gen;
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
-  const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim());
+  const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(mf));
   fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
@@ -2180,7 +2182,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   if(!background && !thumb) showBusy(animate);
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
-  const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
+  const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(state.minFont||20));
   if(thumb){
@@ -2705,7 +2707,7 @@ function fetchWithTimeout(url, opts, ms){
       if(state.crop) fd.append("crop", state.crop);
       fd.append("title", $g("gatherName").value.trim()||"In their words");
       fd.append("words", words.value.trim());
-      fd.append("style", vp.style); fd.append("ink", vp.ink); fd.append("ground", vp.ground);
+      fd.append("style", vp.style); fd.append("ink", vp.ink); fd.append("ground", vp.ground); if(vp.backdrop) fd.append("backdrop", vp.backdrop);
       fd.append("min_font", String(state.minFont||20));
       const r=await fetch("/api/gather/create",{method:"POST",body:fd});
       const d=await r.json();

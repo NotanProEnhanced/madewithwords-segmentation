@@ -31,19 +31,29 @@ from .analyze import Analysis
 # its shadows ("dark" -> dark ink on a light ground).
 GROUNDS = {
     "paper": {"bg": (232, 240, 244), "ink": (58, 33, 20), "tone": "dark"},   # ink-drawing on warm ivory (BGR)
-    # "match your space" palette: the SAME ink-drawing renderer as paper (correct
-    # polarity, typographic eyes/teeth), only the ground colour changes so buyers can
-    # match a room's wall. All are LIGHT grounds (tone "dark" = dark ink) -- a dark
-    # ground would flip the compositor back to photographic eyes and lose the look.
-    "sand":  {"bg": (208, 228, 238), "ink": (58, 33, 20), "tone": "dark"},   # warm sand / oat
-    "slate": {"bg": (226, 221, 216), "ink": (44, 38, 34),  "tone": "dark"},   # soft cool grey
     "navy":  {"bg": (58, 27, 13),    "ink": (248, 248, 248), "tone": "light"},  # white on navy (hero)
     "black": {"bg": (14, 14, 14),    "ink": (248, 248, 248), "tone": "light"},  # white on black
 }
 
 # Grounds that share paper's ink-drawing treatment (density polarity, edge-drawn hair,
-# words-form-the-eye). They differ ONLY in ground colour -- the "match your space" swatches.
-PAPER_FAMILY = frozenset({"paper", "sand", "slate"})
+# words-form-the-eye). Currently just "paper"; kept as a set so the treatment can be
+# extended without touching every gate.
+PAPER_FAMILY = frozenset({"paper"})
+
+# "Match your space" backdrop swatches. Unlike a GROUND (which re-renders the whole
+# subject on that colour), a backdrop recolours ONLY the segmented background --
+# the region OUTSIDE the subject silhouette. The subject is rendered exactly as its
+# ground dictates (e.g. the navy Lifelike sculpt), untouched. Values are BGR wall
+# colours a buyer can match to a room. `None`/unknown => the legacy TYPO_BG_LIGHTEN
+# behaviour (navy sculpt on a lifted-grey backdrop).
+BACKDROPS = {
+    "gray":  (236, 236, 236),   # soft neutral gallery grey
+    "ivory": (232, 240, 244),   # warm off-white
+    "sand":  (208, 228, 238),   # warm oat / beige
+    "slate": (226, 221, 216),   # cool light slate
+    "sage":  (208, 222, 214),   # muted green-grey
+    "blush": (222, 222, 236),   # soft warm rose
+}
 
 # Paper = an INK-DRAWING on warm ivory. Colouring words by the photo's brightness
 # fails on a light ground (light hair/skin are highlights -> they vanish), so here
@@ -255,6 +265,9 @@ def render_displacement_portrait(
                                   # (above face) step down from the largest tier -- plus a hair
                                   # local-contrast 'sculpt'. Default ON; env TYPO_GRADUATE_BODY=0
                                   # reverts with no code change.
+    backdrop: Optional[str] = None,  # "match your space" background colour. Recolours ONLY the
+                                  # region outside the subject silhouette (a named key in BACKDROPS);
+                                  # the subject render is untouched. None => legacy TYPO_BG_LIGHTEN.
     sunglasses: bool = False,     # MANUAL sunglasses control. Pixels cannot reliably tell a
                                   # tinted/reflective lens from a real eye (a dark sclera and a
                                   # mirror lens look identical), so opacity is caller-driven:
@@ -1087,27 +1100,34 @@ def render_displacement_portrait(
 
     oh = max(1, int(out_width * h0 / w0))
     out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
-    # Background lightening (Sculpt): lift the region OUTSIDE the silhouette toward
-    # white so the sculpted subject (on its dark ground) sits against a lighter
-    # backdrop. The subject's own ground is untouched -- only pixels outside the
-    # silhouette move. Env TYPO_BG_LIGHTEN (0..1; 0 = off). Dark grounds only; the
-    # light "paper" ground is skipped (it's already bright).
+    # Background fill: recolour the region OUTSIDE the subject silhouette. The subject
+    # (on its own ground -- e.g. the navy Lifelike sculpt) is NEVER touched; only pixels
+    # outside the silhouette move. Two sources, in priority order:
+    #   1. An explicit `backdrop` swatch (the "match your space" wall colour) -- fills
+    #      with that colour regardless of ground. This is the user-facing feature.
+    #   2. Else the legacy env TYPO_BG_LIGHTEN lift (navy sculpt on a lighter grey),
+    #      dark grounds only (the light "paper" ground is already bright -> skipped).
+    _bd = BACKDROPS.get((backdrop or "").strip().lower()) if backdrop else None
     try:
         _bg_lift = float(os.environ.get("TYPO_BG_LIGHTEN", "0"))
     except ValueError:
         _bg_lift = 0.0
     _bg_lift = min(max(_bg_lift, 0.0), 1.0)
     _pad_bg = g["bg"]
-    if _bg_lift > 0.0 and ground not in PAPER_FAMILY:
+    _fill = None
+    if _bd is not None:
+        _fill = np.array(_bd, np.float32)
+    elif _bg_lift > 0.0 and ground not in PAPER_FAMILY:
+        _bgc = np.array(g["bg"], np.float32)
+        _fill = _bgc + (255.0 - _bgc) * _bg_lift
+    if _fill is not None and getattr(an, "silhouette", None) is not None:
         _ow = int(out_width)
         _sil = cv2.resize((an.silhouette.mask > 127).astype(np.uint8) * 255, (_ow, oh),
                           interpolation=cv2.INTER_NEAREST)
-        _bgc = np.array(g["bg"], np.float32)
-        _bg_light = _bgc + (255.0 - _bgc) * _bg_lift
         _outside = cv2.GaussianBlur((_sil <= 127).astype(np.float32), (0, 0),
                                     sigmaX=max(1.0, _ow * 0.002))[..., None]
-        out = out.astype(np.float32) * (1.0 - _outside) + _bg_light * _outside
-        _pad_bg = tuple(float(c) for c in _bg_light)
+        out = out.astype(np.float32) * (1.0 - _outside) + _fill * _outside
+        _pad_bg = tuple(float(c) for c in _fill)
     # Standard print canvas (4:5 = 16x20), padded with the ground BEFORE vibrance
     # so the band is processed identically to the interior ground (no seam).
     from .tonal import _fit_print_canvas
