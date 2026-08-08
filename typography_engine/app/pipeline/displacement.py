@@ -933,7 +933,10 @@ def render_displacement_portrait(
             # so it still reads as words, not a photo.
             _dark = 1.0 - _tone[..., 0]
             _cov = np.clip((0.28 + 0.22 * _dark) + 0.55 * w2, 0.0, 1.0) * _mkf
-            out = np.array(g["bg"], np.float32) * (1 - _cov[..., None]) + np.clip(_ink, 0, 255) * _cov[..., None]
+            # Darken the LOCAL ground (the gaps) toward black in deep shadow too, so the shadow
+            # reads as true black -- not the mid navy -- giving the piece a black to lean into.
+            _bg_local = np.array(g["bg"], np.float32) * np.clip(0.18 + 0.86 * _tone, 0.0, 1.0)
+            out = _bg_local * (1 - _cov[..., None]) + np.clip(_ink, 0, 255) * _cov[..., None]
     elif ink in _SCULPT_INK:
         word = np.array(_SCULPT_INK[ink], np.float32)
         out = np.array(g["bg"], np.float32) * (1 - al) + word * al
