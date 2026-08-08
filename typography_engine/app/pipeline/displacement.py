@@ -896,6 +896,15 @@ def render_displacement_portrait(
         a = a * (1.0 - 0.32 * _hl)
     # =======================================================================
 
+    # Paper/ink ground: on light skin the whole face is highlight, so the density falls away
+    # and the features wash out (worst on fair, older subjects). Keep a gentle ink floor inside
+    # the face so the likeness reads while the surrounding paper still breathes. TYPO_PAPER_FACE
+    # (default 0.30; 0 disables). Paper ground only -- dark grounds are unaffected.
+    if ground == "paper":
+        _pf = float(os.environ.get("TYPO_PAPER_FACE", "0.30") or 0.30)
+        if _pf > 0.0:
+            a = np.maximum(a, w2 * _pf * np.clip(face_norm, 0, 1))
+
     al = a[..., None]
     if ink == "photo":
         # Words take the photo's OWN colours, draped over the form, on the ground.
