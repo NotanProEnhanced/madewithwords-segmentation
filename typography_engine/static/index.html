@@ -944,12 +944,12 @@ const SCULPT_INKS=INKS.filter(s=>s[0]!=="spectrum" && s[0]!=="aurora");
 // swatches: Noir, Sepia, Navy, Sage, Photo -- timeless, restrained tones with no
 // loud rainbow gradients. Same set across every style; the generic studio keeps
 // the full palette.
-const MEMORIAL_INK_IDS=["photo","photo_paper","photo_sand","photo_slate","mono","sepia","navy","forest"];
+const MEMORIAL_INK_IDS=["photo","mono","photo_sand","photo_slate"];
 const MEMORIAL_INKS=MEMORIAL_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
 // Generic studio: a tight curated palette (Original + Noir/Sepia/Navy) + the
 // Custom picker (added in buildSwatches). The full nine-swatch list, incl. the
 // loud gradients, was more than needed now that Custom covers any colour.
-const GENERIC_INK_IDS=["photo","photo_paper","photo_sand","photo_slate","mono","sepia","navy"];
+const GENERIC_INK_IDS=["photo","mono","photo_sand","photo_slate"];
 const GENERIC_INKS=GENERIC_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
 function currentSwatches(){ return _isMemorialBrand ? MEMORIAL_INKS : GENERIC_INKS; }   // + Custom chip (buildSwatches)
 function variantPost(id){
