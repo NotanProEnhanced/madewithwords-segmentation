@@ -802,9 +802,16 @@
 const $ = s => document.querySelector(s);
 const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const ANIM_CAP = 2600;                 // max glyphs animated (perf); image shows all
-const INKS = [["photo","conic","Original"],["photo_paper","conic_paper","Paper"],["mono","#555555","Noir"],["gold_noir","gold","Ember"],
+const INKS = [["photo","conic","Original"],["photo_paper","conic_paper","Paper"],
+  ["photo_sand","#eee4d0","Sand"],["photo_slate","#d8dde2","Slate"],
+  ["mono","#555555","Noir"],["gold_noir","gold","Ember"],
   ["navy","#0d1b3a","Navy"],["sepia","#5a3a1a","Sepia"],["burgundy","#4a0d18","Rose"],
   ["forest","#0f2e1e","Sage"],["spectrum","spectrum","Spectrum"],["aurora","aurora","Aurora"]];
+// The "paper family": light-ground ink-drawing looks (correct polarity, typographic
+// eyes/teeth) that differ only in ground colour -- the "match your space" palette.
+// Each maps its swatch id -> the renderer ground. They're only valid under the
+// Lifelike/Letter renderer (struck out under Mosaic/Passage, like Paper always was).
+const PAPER_INK_IDS = {photo_paper:"paper", photo_sand:"sand", photo_slate:"slate"};
 function placeholderBg(col){
   if(col==="conic") return "conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)";
   if(col==="conic_paper") return "radial-gradient(circle at 50% 50%, #f6f1e8 0 40%, rgba(246,241,232,0) 43%), conic-gradient(#c07a64,#b89a52,#5f9476,#6280ac,#8a6aa6,#c07a64)";
@@ -936,12 +943,12 @@ const SCULPT_INKS=INKS.filter(s=>s[0]!=="spectrum" && s[0]!=="aurora");
 // swatches: Noir, Sepia, Navy, Sage, Photo -- timeless, restrained tones with no
 // loud rainbow gradients. Same set across every style; the generic studio keeps
 // the full palette.
-const MEMORIAL_INK_IDS=["photo","photo_paper","mono","sepia","navy","forest"];
+const MEMORIAL_INK_IDS=["photo","photo_paper","photo_sand","photo_slate","mono","sepia","navy","forest"];
 const MEMORIAL_INKS=MEMORIAL_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
 // Generic studio: a tight curated palette (Original + Noir/Sepia/Navy) + the
 // Custom picker (added in buildSwatches). The full nine-swatch list, incl. the
 // loud gradients, was more than needed now that Custom covers any colour.
-const GENERIC_INK_IDS=["photo","photo_paper","mono","sepia","navy"];
+const GENERIC_INK_IDS=["photo","photo_paper","photo_sand","photo_slate","mono","sepia","navy"];
 const GENERIC_INKS=GENERIC_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
 function currentSwatches(){ return _isMemorialBrand ? MEMORIAL_INKS : GENERIC_INKS; }   // + Custom chip (buildSwatches)
 function variantPost(id){
@@ -949,7 +956,7 @@ function variantPost(id){
   // a paper ground, photo colour -- regardless of the style segment. The flat Words
   // engraving can't carry a light-eyed face on white; Sculpt/paper renders the eyes
   // and likeness beautifully. (The dark grounds stay the dense Words/Sculpt looks.)
-  if(id==="photo_paper") return {ink:"photo", style:"displacement", ground:"paper"};
+  if(PAPER_INK_IDS[id]) return {ink:"photo", style:"displacement", ground:PAPER_INK_IDS[id]};
   if(state.style==="letter") return {ink:(id||"photo"), style:"displacement", ground:"navy"};   // Letter = displacement renderer, message-flow (flag sent in render())
   return state.style==="displacement"
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
@@ -1045,7 +1052,7 @@ function setStyle(newStyle, rerender){
   state.style=newStyle;
   // Paper is the Lifelike-on-white look; leaving Lifelike with it selected falls
   // back to Original so Mosaic/Passage never render the (now struck-out) Paper.
-  if(newStyle!=="displacement" && newStyle!=="letter" && state.ink==="photo_paper") state.ink="photo";
+  if(newStyle!=="displacement" && newStyle!=="letter" && PAPER_INK_IDS[state.ink]) state.ink="photo";
   document.querySelectorAll('#styleSeg button, #styleSegResult button')
     .forEach(c=>c.classList.toggle("on", c.dataset.style===newStyle));
   // "letter" = a MESSAGE sculpted by the Lifelike renderer: it composes like a sculpt
@@ -1408,9 +1415,9 @@ function buildSwatches(){
     const el=document.createElement("button"); el.type="button";
     // "Paper" is the Lifelike-on-white look (it drives the Sculpt renderer), so it
     // only applies to Lifelike -- strike it out / make it inert under Mosaic & Passage.
-    const paperNA = (id==="photo_paper" && state.style!=="displacement" && state.style!=="letter");
+    const paperNA = (PAPER_INK_IDS[id] && state.style!=="displacement" && state.style!=="letter");
     el.className="thumb"+(id===state.ink?" sel":"")+(paperNA?" na":""); el.dataset.ink=id;
-    if(paperNA) el.title="Paper is available with the Lifelike style";
+    if(paperNA) el.title="This tone is available with the Lifelike style";
     const pic=document.createElement("div"); pic.className="pic"; pic.dataset.ink=id;
     // Set the colour/gradient placeholder on its own longhand -- the `background`
     // shorthand would reset background-size to auto and break the cover crop when
