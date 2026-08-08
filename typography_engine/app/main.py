@@ -836,7 +836,7 @@ async def _bounded_to_thread(fn, *args, **kwargs):
 # they queue with customer renders instead of thrashing the single CPU.
 from .config import PRIVATE_DIR, STATIC_DIR  # noqa: E402
 
-_STUDIO_GROUNDS = ("navy", "paper", "black")
+_STUDIO_GROUNDS = ("navy", "paper", "sand", "slate", "black")
 _STUDIO_INKS = (
     ("photo", "Lifelike (photo)"), ("mono", "Noir"), ("navy", "Navy"),
     ("sepia", "Sepia"), ("burgundy", "Rose"), ("forest", "Sage"), ("gold_noir", "Ember"),
@@ -1491,7 +1491,7 @@ async def render(
     # "words" (the scattered mosaic). Words/Passage share the layered renderer.
     is_displacement = (style == "displacement")
     disp_flow = is_displacement and str(flow or "").strip().lower() in ("1", "true", "yes", "on")
-    ground_choice = ground if ground in ("paper", "navy", "black") else "navy"
+    ground_choice = ground if ground in ("paper", "sand", "slate", "navy", "black") else "navy"
     style_choice = "displacement" if is_displacement else (
         "message" if style in ("message", "poster", "story") else "words")
     render_w_eff = max(700, min(3000, int(render_w)))

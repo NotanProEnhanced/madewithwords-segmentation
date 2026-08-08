@@ -31,9 +31,19 @@ from .analyze import Analysis
 # its shadows ("dark" -> dark ink on a light ground).
 GROUNDS = {
     "paper": {"bg": (232, 240, 244), "ink": (58, 33, 20), "tone": "dark"},   # ink-drawing on warm ivory (BGR)
+    # "match your space" palette: the SAME ink-drawing renderer as paper (correct
+    # polarity, typographic eyes/teeth), only the ground colour changes so buyers can
+    # match a room's wall. All are LIGHT grounds (tone "dark" = dark ink) -- a dark
+    # ground would flip the compositor back to photographic eyes and lose the look.
+    "sand":  {"bg": (208, 228, 238), "ink": (58, 33, 20), "tone": "dark"},   # warm sand / oat
+    "slate": {"bg": (226, 221, 216), "ink": (44, 38, 34),  "tone": "dark"},   # soft cool grey
     "navy":  {"bg": (58, 27, 13),    "ink": (248, 248, 248), "tone": "light"},  # white on navy (hero)
     "black": {"bg": (14, 14, 14),    "ink": (248, 248, 248), "tone": "light"},  # white on black
 }
+
+# Grounds that share paper's ink-drawing treatment (density polarity, edge-drawn hair,
+# words-form-the-eye). They differ ONLY in ground colour -- the "match your space" swatches.
+PAPER_FAMILY = frozenset({"paper", "sand", "slate"})
 
 # Paper = an INK-DRAWING on warm ivory. Colouring words by the photo's brightness
 # fails on a light ground (light hair/skin are highlights -> they vanish), so here
@@ -857,7 +867,7 @@ def render_displacement_portrait(
                 teeth = None                           # no cavity, no teeth -> closed mouth
     if teeth is not None:
         a = a * (1.0 - 0.92 * teeth)
-    if ground == "paper":
+    if ground in PAPER_FAMILY:
         # INK-DRAWING density: tone is how much ink lands, not its colour. Heavy ink
         # where the photo is dark; fade to paper where it's light; an edge boost draws
         # contours/hair strands so light hair isn't erased on the ivory.
@@ -900,7 +910,7 @@ def render_displacement_portrait(
     # and the features wash out (worst on fair, older subjects). Keep a gentle ink floor inside
     # the face so the likeness reads while the surrounding paper still breathes. TYPO_PAPER_FACE
     # (default 0.30; 0 disables). Paper ground only -- dark grounds are unaffected.
-    if ground == "paper":
+    if ground in PAPER_FAMILY:
         _pf = float(os.environ.get("TYPO_PAPER_FACE", "0.30") or 0.30)
         if _pf > 0.0:
             a = np.maximum(a, w2 * _pf * np.clip(face_norm, 0, 1))
@@ -924,7 +934,7 @@ def render_displacement_portrait(
             gm, skin = _eye_deglare
             bgr_full = bgr_full * (1.0 - gm[..., None]) + np.float32(skin) * gm[..., None]
         hsv = cv2.cvtColor(np.clip(bgr_full, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
-        if ground == "paper":
+        if ground in PAPER_FAMILY:
             # Ink-drawing with COLOURED glyphs: the words keep the photo's hue at high
             # saturation but a capped dark value, so each word reads as coloured TYPE on
             # ivory (skin/lips/eyes show) -- colour from the glyphs, not a photo overlay.
@@ -975,7 +985,7 @@ def render_displacement_portrait(
             iout = np.array(g["bg"], np.float32) * (1 - al) + tip * al
             im3 = iris_m[..., None]
             out = out * (1.0 - im3) + iout * im3
-    elif irises and iris_m is not None and ground == "paper" and ink == "photo":
+    elif irises and iris_m is not None and ground in PAPER_FAMILY and ink == "photo":
         # Paper: keep the iris its TRUE source colour. The Keep-Paper-Light lift
         # mutes everything toward the paper, which would wash the eye colour out --
         # so re-lay the source's own iris pixels here, saturated but NOT lifted, so
@@ -1000,12 +1010,12 @@ def render_displacement_portrait(
     # glowed and picked up the render's cast); the neutral tone never glows and
     # never takes the ink's colour. The iris still carries the subject's real eye
     # colour in Photo mode (handled separately above).
-    if (g["tone"] == "light" or ground == "paper") and (irises or teeth is not None):
+    if (g["tone"] == "light" or ground in PAPER_FAMILY) and (irises or teeth is not None):
         gshade = np.clip((gray / 255.0 - 0.20) / 0.55, 0.0, 1.0)
         # On the mid greige paper ground the sclera/teeth must be painted brighter
         # and stronger than on a dark ground, or they read as dirty greige instead
         # of white -- this is what makes the eyes/smile come alive on paper.
-        paper_feat = ground == "paper"
+        paper_feat = ground in PAPER_FAMILY
         s_str, t_str = (0.90, 0.92) if paper_feat else (0.70, 0.66)
         s_col = (236, 238, 240) if paper_feat else (198, 200, 202)
         t_col = (238, 240, 242) if paper_feat else (200, 202, 204)
@@ -1024,7 +1034,7 @@ def render_displacement_portrait(
             out = out * (1.0 - tw) + np.array(t_col, np.float32) * tw
     # Catchlight is a SPECULAR highlight: always white (the lightest thing on the
     # face), never ink- or iris-coloured -- painted over the colour composite.
-    if irises and (g["tone"] == "light" or ground == "paper"):
+    if irises and (g["tone"] == "light" or ground in PAPER_FAMILY):
         gl3 = glint[..., None]
         out = out * (1.0 - gl3) + np.float32(238.0) * gl3   # bright glint, below blow-out so vibrance doesn't bloom it
     # Realistic eyes: composite the photo's OWN eye openings, tone-normalised, OVER the
@@ -1088,7 +1098,7 @@ def render_displacement_portrait(
         _bg_lift = 0.0
     _bg_lift = min(max(_bg_lift, 0.0), 1.0)
     _pad_bg = g["bg"]
-    if _bg_lift > 0.0 and ground != "paper":
+    if _bg_lift > 0.0 and ground not in PAPER_FAMILY:
         _ow = int(out_width)
         _sil = cv2.resize((an.silhouette.mask > 127).astype(np.uint8) * 255, (_ow, oh),
                           interpolation=cv2.INTER_NEAREST)
