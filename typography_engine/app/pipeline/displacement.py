@@ -916,6 +916,24 @@ def render_displacement_portrait(
             hsv[..., 2] = np.clip(hsv[..., 2] * 1.14 + 14, 0, 255)      # lift value vs dark ground
         ink_col = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
         out = np.array(g["bg"], np.float32) * (1 - al) + ink_col * al
+        if os.environ.get("TYPO_POLARITY", "0").strip().lower() in ("1", "true", "on", "yes"):
+            # PROTOTYPE -- polarity model. Instead of "light ink whose COVERAGE follows brightness"
+            # (shadow -> no ink -> ground shows -> absence), make the type present at HIGH coverage
+            # everywhere and carry the tone in the LETTER COLOUR across the full range: near-black
+            # letters in deep shadow (a heavy dark mass to lean into), light letters in highlight.
+            _mkf = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0, 1)
+            _tone = np.clip(lum, 0.0, 1.0)[..., None] ** 1.35     # gamma>1 -> deep shadow drives to near-black
+            _pc = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+            _pl = (_pc[..., 0] * 0.114 + _pc[..., 1] * 0.587 + _pc[..., 2] * 0.299)[..., None] + 1e-3
+            _ink = _pc / _pl * (3.0 + 250.0 * _tone)             # keep the photo HUE, re-map brightness full-range
+            _ink = np.minimum(_ink, np.float32([255, 255, 255])) # (hue*value can exceed 255 on saturated pixels)
+            # Coverage rises INTO the shadows (heavier, denser type there) and eases in highlights, and
+            # the glyph field w2 keeps the letterforms visible. Deep shadow = a dense near-black letter
+            # mass ("black to lean into"); highlight = lighter, airier letters. Ground shows in the gaps
+            # so it still reads as words, not a photo.
+            _dark = 1.0 - _tone[..., 0]
+            _cov = np.clip((0.28 + 0.22 * _dark) + 0.55 * w2, 0.0, 1.0) * _mkf
+            out = np.array(g["bg"], np.float32) * (1 - _cov[..., None]) + np.clip(_ink, 0, 255) * _cov[..., None]
     elif ink in _SCULPT_INK:
         word = np.array(_SCULPT_INK[ink], np.float32)
         out = np.array(g["bg"], np.float32) * (1 - al) + word * al
