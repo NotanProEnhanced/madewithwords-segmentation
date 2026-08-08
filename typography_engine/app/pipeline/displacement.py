@@ -904,6 +904,17 @@ def render_displacement_portrait(
         _pf = float(os.environ.get("TYPO_PAPER_FACE", "0.30") or 0.30)
         if _pf > 0.0:
             a = np.maximum(a, w2 * _pf * np.clip(face_norm, 0, 1))
+        # Light-hair floor: silver/blonde hair on the ivory washes out (light on light), so a
+        # silver-haired subject reads as a floating face. Give the HAIR region an ink-density
+        # floor so light hair renders as delicate grey words instead of vanishing. Dark hair
+        # already has density (max() leaves it untouched). TYPO_PAPER_HAIR (default 0.35; 0 off).
+        _ph = float(os.environ.get("TYPO_PAPER_HAIR", "0.35") or 0.35)
+        if _ph > 0.0:
+            _yy2 = np.arange(H, dtype=np.float32)[:, None]
+            _chin2 = max(float(_p[:, 1].max()) for _p in all_pts)
+            _hairm = ((mask01 > 0) & (_yy2 < _chin2)).astype(np.float32) * (1.0 - np.clip(face_norm, 0, 1))
+            _hairm = np.clip(cv2.GaussianBlur(_hairm, (0, 0), sigmaX=max(2.0, fw * 0.03)), 0, 1)
+            a = np.maximum(a, w2 * _ph * _hairm)
 
     al = a[..., None]
     if ink == "photo":
