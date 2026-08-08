@@ -104,6 +104,14 @@ services:
       # Paper/ink ground floors so faces + light hair read on ivory (0..1; 0 off).
       - TYPO_PAPER_FACE=${TYPO_PAPER_FACE:-0.30}
       - TYPO_PAPER_HAIR=${TYPO_PAPER_HAIR:-0.35}
+      # Lifelike polarity: dense dark type in shadow (a black to lean into) instead of
+      # fading to the ground; plus word-formed eyes (no photographic paste). ON for
+      # staging so it can be validated; set =0 in .env to revert. Tuning knobs:
+      # TYPO_POLARITY_GAMMA (>1 = harder shadows), TYPO_POLARITY_FLOOR (0 = true-black gaps).
+      - TYPO_POLARITY=${TYPO_POLARITY:-1}
+      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-1}
+      - TYPO_POLARITY_GAMMA=${TYPO_POLARITY_GAMMA:-1.35}
+      - TYPO_POLARITY_FLOOR=${TYPO_POLARITY_FLOOR:-0.18}
       # De-posterize: add the photo's smooth light->dark falloff back so the face isn't flat/
       # banded (0..1; 0 disables). Default 0.6.
       - TYPO_DEPOSTERIZE=${TYPO_DEPOSTERIZE:-0.6}

@@ -960,12 +960,18 @@ def render_displacement_portrait(
         ink_col = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
         out = np.array(g["bg"], np.float32) * (1 - al) + ink_col * al
         if os.environ.get("TYPO_POLARITY", "0").strip().lower() in ("1", "true", "on", "yes"):
-            # PROTOTYPE -- polarity model. Instead of "light ink whose COVERAGE follows brightness"
-            # (shadow -> no ink -> ground shows -> absence), make the type present at HIGH coverage
-            # everywhere and carry the tone in the LETTER COLOUR across the full range: near-black
-            # letters in deep shadow (a heavy dark mass to lean into), light letters in highlight.
+            # Polarity model (the paper-grade shadow behaviour, brought to the dark-ground
+            # Lifelike look). Instead of "light ink whose COVERAGE follows brightness"
+            # (shadow -> no ink -> ground shows -> absence), make the type present at HIGH
+            # coverage everywhere and carry the tone in the LETTER COLOUR across the full
+            # range: near-black letters in deep shadow (a heavy dark mass to lean into),
+            # light letters in highlight. Two tuning knobs (env; iterate without a rebuild):
+            #   TYPO_POLARITY_GAMMA (>1 drives deep shadow harder to black; default 1.35)
+            #   TYPO_POLARITY_FLOOR (how black the shadow GAPS get; 0 = true black; default 0.18)
+            _pol_g = float(os.environ.get("TYPO_POLARITY_GAMMA", "1.35") or 1.35)
+            _pol_f = float(os.environ.get("TYPO_POLARITY_FLOOR", "0.18") or 0.18)
             _mkf = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0, 1)
-            _tone = np.clip(lum, 0.0, 1.0)[..., None] ** 1.35     # gamma>1 -> deep shadow drives to near-black
+            _tone = np.clip(lum, 0.0, 1.0)[..., None] ** _pol_g  # gamma>1 -> deep shadow drives to near-black
             _pc = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
             _pl = (_pc[..., 0] * 0.114 + _pc[..., 1] * 0.587 + _pc[..., 2] * 0.299)[..., None] + 1e-3
             _ink = _pc / _pl * (3.0 + 250.0 * _tone)             # keep the photo HUE, re-map brightness full-range
@@ -978,7 +984,7 @@ def render_displacement_portrait(
             _cov = np.clip((0.28 + 0.22 * _dark) + 0.55 * w2, 0.0, 1.0) * _mkf
             # Darken the LOCAL ground (the gaps) toward black in deep shadow too, so the shadow
             # reads as true black -- not the mid navy -- giving the piece a black to lean into.
-            _bg_local = np.array(g["bg"], np.float32) * np.clip(0.18 + 0.86 * _tone, 0.0, 1.0)
+            _bg_local = np.array(g["bg"], np.float32) * np.clip(_pol_f + (1.0 - _pol_f) * _tone, 0.0, 1.0)
             out = _bg_local * (1 - _cov[..., None]) + np.clip(_ink, 0, 255) * _cov[..., None]
     elif ink in _SCULPT_INK:
         word = np.array(_SCULPT_INK[ink], np.float32)
@@ -1056,7 +1062,13 @@ def render_displacement_portrait(
     # the tinted/monochrome inks (Noir/Sepia/Navy/Sage) then DESATURATE it into the ink's
     # palette so a full-colour eye doesn't clash with the tinted face. Gated by the
     # openness check (closed eyes skipped); paper keeps its words-form-the-eye treatment.
-    if irises and g["tone"] == "light":
+    # Word-formed eyes (paper's treatment, brought to the dark ground): when TYPO_WORD_EYES
+    # is on, the Photo Lifelike look SKIPS this photographic paste and lets the eye be built
+    # from the synthetic sclera + tinted-iris words + limbal ring + catchlight already laid
+    # above -- so the eye reads as part of the typography, not a photo patch. Tinted inks
+    # (Noir/Sepia/...) still get the photographic eye (they have no colour clash to word-form).
+    _word_eyes = os.environ.get("TYPO_WORD_EYES", "0").strip().lower() in ("1", "true", "on", "yes")
+    if irises and g["tone"] == "light" and not (_word_eyes and ink == "photo"):
         from .tonal import _photo_eye_overlay
         bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
         # Composite the REAL photo eye for EVERY subject's eyes (this is what makes an
