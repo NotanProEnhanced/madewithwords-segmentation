@@ -90,6 +90,8 @@ services:
       # Sunglasses backstop: suppress fabricated eyes on dark lenses (auto). =0 reverts.
       - TYPO_DARKSCLERA=${TYPO_DARKSCLERA:-1}
       - TYPO_LENS_DARKRATIO=${TYPO_LENS_DARKRATIO:-0.62}
+      # Diagnostics: set TYPO_EYE_DEBUG=1 in .env to log per-face eye/lens detection to stderr.
+      - TYPO_EYE_DEBUG=${TYPO_EYE_DEBUG:-}
       - TYPO_POLARITY_GAMMA=${TYPO_POLARITY_GAMMA:-1.35}
       - TYPO_POLARITY_FLOOR=${TYPO_POLARITY_FLOOR:-0.18}
       - TYPO_NOIR_CONTRAST=${TYPO_NOIR_CONTRAST:-1.08}
