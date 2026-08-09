@@ -464,12 +464,12 @@ def render_displacement_portrait(
                   f"eye_meds={[round(m) for m in eye_meds]} cheek={_cheek:.0f} "
                   f"abs_dark={_abs_dark} rel_dark={_rel_dark} "
                   f"gaps={[round(g, 1) for g in _gaps]}", file=_sys.stderr, flush=True)
-        _ds_on = os.environ.get("TYPO_DARKSCLERA", "1").strip().lower() not in ("0", "false", "off", "no", "")
-        if _ds_on and (_abs_dark or _rel_dark):
-            _dark_lens_active = True
-            _dark_lens_eyes.extend(_fi)
-            _dark_lens_face_pts.append(_fp)              # clean opaque lens, no anchor, no fabricated eye
-            continue
+        # NOTE: _abs_dark / _rel_dark are computed for the DEBUG LOG ONLY and are NOT used
+        # to suppress. Brightness-based lens detection was painting opaque black lenses over
+        # deep-set / shadowed REAL eyes (they read just as dark as a tinted lens). Sunglasses
+        # are handled by the GEOMETRY guard above (iris-above-brow misfit), which cannot
+        # false-fire on a real face. Keeping the brightness signals wired (env + log) so a
+        # safer detector can be built from data later, but not acting on them.
         if len(ratios) >= 2 and min(ratios) > _EYE_OPEN_IRIS_MAX:
             continue                                   # no dark pupil -> not a real eye
         irises.extend(_fi)
