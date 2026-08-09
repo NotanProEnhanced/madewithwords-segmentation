@@ -373,11 +373,17 @@ def render_displacement_portrait(
             _brow = np.array([_fp[j] for j in _GROUPS[_bk] if j < len(_fp)], np.float32)
             if _brow.size:
                 _gaps.append(float(_fp[_ic][1]) - float(_brow[:, 1].max()))
-        # A real iris ALWAYS sits below its own brow. If EITHER iris lands well above its
-        # brow (6%+ of face height), the mesh is misfit -- often a sunglasses/occluded face
-        # in a group shot where one iris slid onto the forehead, leaving a stray tinted dot.
-        # Distrust the whole eye region for this face (any, not both -- one bad iris is enough).
-        if len(_gaps) == 2 and any(g < -0.06 * _fh for g in _gaps):
+        # A real iris ALWAYS sits BELOW its own brow (measured gaps +22..+24px, ~ +7% of
+        # face height). A misfit/occluded mesh -- e.g. a sunglasses face whose landmarks
+        # slide up onto the forehead -- puts the iris ABOVE its brow (measured -9.5..-14.9px,
+        # ~ -4% of face height), which fabricates eyes on the lens and a tinted iris on the
+        # forehead. Brightness tests are useless there (the mesh is displaced, so they sample
+        # the wrong regions); the reliable tell is the iris-above-brow geometry. Suppress the
+        # whole face if EITHER iris sits above its brow by more than TYPO_MISFIT_GAP of face
+        # height (default 0.02 -- real faces are at +0.07, misfits at -0.04, so this separates
+        # them with a wide margin and never touches a real eye).
+        _mgap = float(os.environ.get("TYPO_MISFIT_GAP", "0.02") or 0.02)
+        if len(_gaps) == 2 and any(g < -_mgap * _fh for g in _gaps):
             _misfit_face_pts.append(_fp)
             continue
         _fi = []

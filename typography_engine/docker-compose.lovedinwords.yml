@@ -94,6 +94,9 @@ services:
       # Sunglasses backstop: suppress fabricated eyes on dark lenses (auto). =0 reverts.
       - TYPO_DARKSCLERA=${TYPO_DARKSCLERA:-1}
       - TYPO_LENS_DARKRATIO=${TYPO_LENS_DARKRATIO:-0.62}
+      # Misfit-mesh guard: suppress a face whose iris sits above its brow by this
+      # fraction of face height (sunglasses/occluded meshes slide onto the forehead).
+      - TYPO_MISFIT_GAP=${TYPO_MISFIT_GAP:-0.02}
       # Diagnostics: set TYPO_EYE_DEBUG=1 in .env to log per-face eye/lens detection to stderr.
       - TYPO_EYE_DEBUG=${TYPO_EYE_DEBUG:-}
       - TYPO_POLARITY_GAMMA=${TYPO_POLARITY_GAMMA:-1.35}
