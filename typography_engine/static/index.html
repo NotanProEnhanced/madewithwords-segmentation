@@ -676,6 +676,10 @@
         <div><div class="t-lbl">Remove background</div><div class="t-sub">Keep the words on the subject only, clean ground.</div></div>
         <div id="bgSwitch" class="sw-switch on"></div>
       </div>
+      <div id="sunRow" class="toggle" style="margin-top:14px">
+        <div><div class="t-lbl">Subject is wearing sunglasses</div><div class="t-sub">Renders the lenses solid instead of drawing eyes behind them.</div></div>
+        <div id="sunSwitch" class="sw-switch"></div>
+      </div>
     </div>
     <!-- Product picker: revealed only when physical fulfillment is configured
          (a Printful token is set). Until then the studio stays digital-only and
@@ -821,7 +825,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, crop:null, ink:"photo", inkHex:"#3a6df0", style:"displacement", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true, maskData:null };
+const state = { file:null, crop:null, ink:"photo", inkHex:"#3a6df0", style:"displacement", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true, maskData:null, sunglasses:false };
 // Referral/source tag (?ref=everloved) AND brand skin. A brand re-dresses this
 // same engine as a partner identity (name + tagline). The brand is resolved from
 // the ?brand param FIRST (reliable, and it persists in this single-page URL),
@@ -1046,7 +1050,7 @@ consent.addEventListener("change", refreshCreate);
 })();
 // Style toggle: word mosaic vs continuous-prose story.
 const wordsLbl=$("#wordsLbl"), wordsHint=$("#wordsHint");
-const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch");
+const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch"), sunSwitch=$("#sunSwitch");
 // Shared style switcher — used by the style control on BOTH the input screen and
 // the result screen (the result one re-renders in place). Keeps both segments in sync.
 function setStyle(newStyle, rerender){
@@ -1276,6 +1280,7 @@ function updatePhotoControls(){
 // (and re-warms the swatch thumbnails) so the change is immediate.
 function optionChanged(){ if(resultView.style.display==="block"){ invalidate(); render(state.ink,{animate:false}); } }
 bgSwitch.addEventListener("click", ()=>{ userTouched=true; state.removeBg=!state.removeBg; bgSwitch.classList.toggle("on",state.removeBg); optionChanged(); });
+if(sunSwitch) sunSwitch.addEventListener("click", ()=>{ userTouched=true; state.sunglasses=!state.sunglasses; sunSwitch.classList.toggle("on",state.sunglasses); optionChanged(); });
 // Letter case: render the words ALL CAPS, or exactly as the user typed them.
 const caseSeg=$("#caseSeg");
 if(caseSeg){ caseSeg.addEventListener("click", e=>{
@@ -1555,7 +1560,7 @@ async function renderSizeThumb(mf){
   const myGen=gen;
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
-  const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); fd.append("message",words.value.trim());
+  const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); if(state.sunglasses) fd.append("sunglasses","1"); fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(mf));
   fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
@@ -2182,7 +2187,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
   if(!background && !thumb) showBusy(animate);
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
-  const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
+  const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); if(state.sunglasses) fd.append("sunglasses","1"); fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(state.minFont||20));
   if(thumb){
@@ -2707,7 +2712,7 @@ function fetchWithTimeout(url, opts, ms){
       if(state.crop) fd.append("crop", state.crop);
       fd.append("title", $g("gatherName").value.trim()||"In their words");
       fd.append("words", words.value.trim());
-      fd.append("style", vp.style); fd.append("ink", vp.ink); fd.append("ground", vp.ground); if(vp.backdrop) fd.append("backdrop", vp.backdrop);
+      fd.append("style", vp.style); fd.append("ink", vp.ink); fd.append("ground", vp.ground); if(vp.backdrop) fd.append("backdrop", vp.backdrop); if(state.sunglasses) fd.append("sunglasses", "1");
       fd.append("min_font", String(state.minFont||20));
       const r=await fetch("/api/gather/create",{method:"POST",body:fd});
       const d=await r.json();
