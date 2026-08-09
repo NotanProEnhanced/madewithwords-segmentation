@@ -373,7 +373,11 @@ def render_displacement_portrait(
             _brow = np.array([_fp[j] for j in _GROUPS[_bk] if j < len(_fp)], np.float32)
             if _brow.size:
                 _gaps.append(float(_fp[_ic][1]) - float(_brow[:, 1].max()))
-        if len(_gaps) == 2 and all(g < -0.06 * _fh for g in _gaps):
+        # A real iris ALWAYS sits below its own brow. If EITHER iris lands well above its
+        # brow (6%+ of face height), the mesh is misfit -- often a sunglasses/occluded face
+        # in a group shot where one iris slid onto the forehead, leaving a stray tinted dot.
+        # Distrust the whole eye region for this face (any, not both -- one bad iris is enough).
+        if len(_gaps) == 2 and any(g < -0.06 * _fh for g in _gaps):
             _misfit_face_pts.append(_fp)
             continue
         _fi = []
@@ -414,6 +418,7 @@ def render_displacement_portrait(
         # centre isn't darker than the surround the mesh isn't sitting on an eye -- render
         # plain words there rather than fabricate an eyeball.
         ratios = []
+        scleras = []
         for icx, icy, ir in _fi:
             y0, y1 = max(0, int(icy - ir * 2.4)), int(icy + ir * 2.4)
             x0, x1 = max(0, int(icx - ir * 2.4)), int(icx + ir * 2.4)
@@ -423,7 +428,18 @@ def render_displacement_portrait(
             inner = np.zeros((H, W), np.uint8)
             cv2.circle(inner, (int(round(icx)), int(round(icy))), max(1, int(ir * 0.45)), 1, -1)
             sclera = max(float(np.percentile(reg, 90)), 1.0)
+            scleras.append(sclera)
             ratios.append(float(np.percentile(gray[inner > 0], 10)) / sclera)
+        # Dark-lens (sunglasses) backstop: a real open eye ALWAYS has a bright sclera/skin
+        # around it (p90 measured 134-193); a tinted lens darkens the whole region (39-73).
+        # If even the BRIGHTER of the two eyes is below the floor, there's no real eye to
+        # model here -> render words, don't fabricate an almond eye over the lens. Absolute
+        # and dark-only, so it can never black out a real (bright) eye. Env TYPO_DARKSCLERA
+        # (default on; =0 reverts). This is what auto-detects sunglasses without a manual flag.
+        if (len(scleras) >= 2 and max(scleras) < _EYE_SCLERA_MIN
+                and os.environ.get("TYPO_DARKSCLERA", "1").strip().lower()
+                not in ("0", "false", "off", "no", "")):
+            continue
         if len(ratios) >= 2 and min(ratios) > _EYE_OPEN_IRIS_MAX:
             continue                                   # no dark pupil -> not a real eye
         irises.extend(_fi)
