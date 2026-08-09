@@ -940,7 +940,10 @@ def render_displacement_portrait(
             a = np.maximum(a, w2 * _ph * _hairm)
 
     al = a[..., None]
-    if ink == "photo":
+    if ink == "photo" or ink == "mono":
+        # Photo Lifelike composite. Noir (mono) shares this exact path -- full tonal range,
+        # polarity shadows, living eyes -- and is desaturated to black & white at the end,
+        # so it's a B&W Lifelike, not the old flat single-ink sculpt.
         # Words take the photo's OWN colours, draped over the form, on the ground.
         bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
         if _eye_deglare is not None:        # tone the suppressed-eye glare out of the colour too
@@ -996,7 +999,7 @@ def render_displacement_portrait(
     # colour -- sampled by the shared gated helper (both irises saturated and
     # hue-consistent, else no tint; sampled, never invented). Dark grounds only:
     # the lifted tint is designed for light-ink-on-dark.
-    if irises and iris_m is not None and g["tone"] == "light" and ink == "photo":
+    if irises and iris_m is not None and g["tone"] == "light" and ink in ("photo", "mono"):
         from .tonal import _iris_tint
         tint = _iris_tint(an)
         if tint is not None:
@@ -1068,7 +1071,7 @@ def render_displacement_portrait(
     # above -- so the eye reads as part of the typography, not a photo patch. Tinted inks
     # (Noir/Sepia/...) still get the photographic eye (they have no colour clash to word-form).
     _word_eyes = os.environ.get("TYPO_WORD_EYES", "0").strip().lower() in ("1", "true", "on", "yes")
-    if irises and g["tone"] == "light" and not (_word_eyes and ink == "photo"):
+    if irises and g["tone"] == "light" and not (_word_eyes and ink in ("photo", "mono")):
         from .tonal import _photo_eye_overlay
         bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
         # Composite the REAL photo eye for EVERY subject's eyes (this is what makes an
@@ -1082,7 +1085,7 @@ def render_displacement_portrait(
             eye_bgr[_tk] = _eb[_tk]
         a3 = (eye_a * float(os.environ.get("TYPO_EYE_PHOTO", "0.5") or 0.5))[..., None]   # 1=opaque photo eye; lower (default 0.5) blends the typography through so the eye reads as part of the words
         out = out * (1.0 - a3) + eye_bgr * a3
-        if ink != "photo":
+        if ink not in ("photo", "mono"):             # mono desaturates the WHOLE subject below
             lum = (out[..., 0] * 0.114 + out[..., 1] * 0.587 + out[..., 2] * 0.299)[..., None]
             grayed = out * 0.22 + lum * 0.78         # pull the eye toward the ink's monochrome
             em3 = eye_a[..., None]
@@ -1095,6 +1098,15 @@ def render_displacement_portrait(
     if discovery:
         out = _add_discovery(out, pts, fw, H, W, discovery)
     # =======================================================================
+
+    # Noir = the finished Lifelike render in black & white. Desaturate to luminance with a
+    # gentle contrast lift so the grayscale is punchy, not muddy -- keeping the polarity
+    # shadows, catchlight and living eyes intact. TYPO_NOIR_CONTRAST tunes the punch.
+    if ink == "mono":
+        _nc = float(os.environ.get("TYPO_NOIR_CONTRAST", "1.08") or 1.08)
+        _lo = out[..., 0] * 0.114 + out[..., 1] * 0.587 + out[..., 2] * 0.299
+        _lo = np.clip((_lo - 128.0) * _nc + 128.0, 0, 255)
+        out = np.stack([_lo, _lo, _lo], axis=-1)
 
     # De-posterize: the tonal floors (highlight wash / shadow lift) and the discrete text-
     # density steps flatten the face into bands. Add the photo's OWN low-frequency light->dark
