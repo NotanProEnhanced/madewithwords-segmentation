@@ -100,7 +100,7 @@ services:
       - TYPO_SAT_CAP=${TYPO_SAT_CAP:-150}
       # Photographic eye-overlay opacity (0..1). Lower blends the typography through the eye
       # so it reads as part of the words. Default 0.5.
-      - TYPO_EYE_PHOTO=${TYPO_EYE_PHOTO:-0.9}
+      - TYPO_EYE_PHOTO=${TYPO_EYE_PHOTO:-1.0}
       # Paper/ink ground floors so faces + light hair read on ivory (0..1; 0 off).
       - TYPO_PAPER_FACE=${TYPO_PAPER_FACE:-0.30}
       - TYPO_PAPER_HAIR=${TYPO_PAPER_HAIR:-0.35}
