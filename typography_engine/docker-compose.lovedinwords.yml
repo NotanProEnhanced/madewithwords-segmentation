@@ -87,10 +87,10 @@ services:
       # Paper/ink ground floors so faces + light hair read on ivory (0..1; 0 off).
       - TYPO_PAPER_FACE=${TYPO_PAPER_FACE:-0.30}
       - TYPO_PAPER_HAIR=${TYPO_PAPER_HAIR:-0.35}
-      # Lifelike polarity + word-formed eyes. OFF here (byte-identical) until validated on
-      # staging; flip to 1 (or set in .env) when promoting the new Lifelike look.
-      - TYPO_POLARITY=${TYPO_POLARITY:-0}
-      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-0}
+      # Lifelike polarity + word-formed eyes. Validated on staging and promoted -> ON.
+      # Tuning knobs below; set =0 in .env to revert without a code change.
+      - TYPO_POLARITY=${TYPO_POLARITY:-1}
+      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-1}
       - TYPO_POLARITY_GAMMA=${TYPO_POLARITY_GAMMA:-1.35}
       - TYPO_POLARITY_FLOOR=${TYPO_POLARITY_FLOOR:-0.18}
       - TYPO_NOIR_CONTRAST=${TYPO_NOIR_CONTRAST:-1.08}
