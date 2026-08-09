@@ -416,10 +416,26 @@ def render_displacement_portrait(
         # eye region as an opaque lens. Off (default) => this never runs, so a real eye can
         # never be blacked out by a mis-detection.
         if _dl_on:
-            _dark_lens_active = True
-            _dark_lens_eyes.extend(_fi)
-            _dark_lens_face_pts.append(_fp)
-            continue
+            # The flag is GLOBAL, but only faces with a genuinely DARK eye region (an actual
+            # tinted lens) should get the opaque fill. In a mixed group -- one subject in
+            # sunglasses, another in clear/prescription glasses -- the second has BRIGHT real
+            # eyes, and blacking those out gives "black circles". So sample the eye region and
+            # apply the lens only when it's dark; bright eyes fall through to normal rendering.
+            # Safe because the user already confirmed sunglasses are present -- this only picks
+            # WHICH faces, not whether any lens exists. TYPO_LENS_DARK_MAX tunes the cutoff.
+            _lens_max = float(os.environ.get("TYPO_LENS_DARK_MAX", "115") or 115)
+            _sc = []
+            for _icx, _icy, _ir in _fi:
+                _r = gray[max(0, int(_icy - _ir * 2.0)):int(_icy + _ir * 2.0),
+                          max(0, int(_icx - _ir * 2.0)):int(_icx + _ir * 2.0)]
+                if _r.size >= 16:
+                    _sc.append(float(np.percentile(_r, 90)))
+            if not _sc or max(_sc) < _lens_max:      # both eyes dark -> a real tinted lens
+                _dark_lens_active = True
+                _dark_lens_eyes.extend(_fi)
+                _dark_lens_face_pts.append(_fp)
+                continue
+            # else: bright eyes (clear/prescription glasses or no glasses) -> render normally
         # Dark-pupil backstop: a real open eye has a dark pupil in a lighter iris. If the
         # centre isn't darker than the surround the mesh isn't sitting on an eye -- render
         # plain words there rather than fabricate an eyeball.

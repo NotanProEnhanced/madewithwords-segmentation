@@ -116,6 +116,9 @@ services:
       # Misfit-mesh guard: suppress a face whose iris sits above its brow by this
       # fraction of face height (sunglasses/occluded meshes slide onto the forehead).
       - TYPO_MISFIT_GAP=${TYPO_MISFIT_GAP:-0.02}
+      # Sunglasses toggle: with the flag on, only faces darker than this (p90) get an opaque lens
+      # -- so a mixed group (sunglasses + clear/prescription glasses) doesn't black out real eyes.
+      - TYPO_LENS_DARK_MAX=${TYPO_LENS_DARK_MAX:-115}
       # Diagnostics: set TYPO_EYE_DEBUG=1 in .env to log per-face eye/lens detection to stderr.
       - TYPO_EYE_DEBUG=${TYPO_EYE_DEBUG:-}
       - TYPO_POLARITY_GAMMA=${TYPO_POLARITY_GAMMA:-1.35}
