@@ -98,6 +98,8 @@ services:
       - TYPO_POLARITY_GAMMA=${TYPO_POLARITY_GAMMA:-1.35}
       - TYPO_POLARITY_FLOOR=${TYPO_POLARITY_FLOOR:-0.18}
       - TYPO_NOIR_CONTRAST=${TYPO_NOIR_CONTRAST:-1.08}
+      # Iris colour fallback lift: brightens a low-saturation (brown) iris so it reads on the dark ground.
+      - TYPO_IRIS_LIFT=${TYPO_IRIS_LIFT:-1.35}
       # De-posterize: add the photo's smooth light->dark falloff back so the face isn't flat/
       # banded (0..1; 0 disables). Default 0.6.
       - TYPO_DEPOSTERIZE=${TYPO_DEPOSTERIZE:-0.6}

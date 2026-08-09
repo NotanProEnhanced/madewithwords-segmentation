@@ -1048,10 +1048,24 @@ def render_displacement_portrait(
     if irises and iris_m is not None and g["tone"] == "light" and ink in ("photo", "mono"):
         from .tonal import _iris_tint
         tint = _iris_tint(an)
+        im3 = iris_m[..., None]
         if tint is not None:
             tip = np.array(tint[1][::-1], np.float32)        # lifted RGB -> BGR
             iout = np.array(g["bg"], np.float32) * (1 - al) + tip * al
-            im3 = iris_m[..., None]
+            out = out * (1.0 - im3) + iout * im3
+        else:
+            # The tint gate rejected the sample -- most often a low-saturation BROWN iris in
+            # shadow. Without word-eyes the photo paste covered this; with word-eyes the iris
+            # would otherwise fall through to the dark navy ground and read BLUE. Re-lay the
+            # source's own iris pixels (saturation + a value lift so a dark brown reads on the
+            # dark ground), so a brown eye renders brown -- not blue. TYPO_IRIS_LIFT tunes it.
+            _il = float(os.environ.get("TYPO_IRIS_LIFT", "1.35") or 1.35)
+            bf = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+            hv = cv2.cvtColor(np.clip(bf, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
+            hv[..., 1] = np.clip(hv[..., 1] * 1.3, 0, 255)
+            hv[..., 2] = np.clip(hv[..., 2] * _il + 40, 0, 255)
+            iris_col = cv2.cvtColor(hv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
+            iout = np.array(g["bg"], np.float32) * (1 - al) + iris_col * al
             out = out * (1.0 - im3) + iout * im3
     elif irises and iris_m is not None and ground in PAPER_FAMILY and ink == "photo":
         # Paper: keep the iris its TRUE source colour. The Keep-Paper-Light lift
