@@ -419,6 +419,8 @@ def render_displacement_portrait(
         # plain words there rather than fabricate an eyeball.
         ratios = []
         scleras = []
+        eye_meds = []
+        cheek_meds = []
         for icx, icy, ir in _fi:
             y0, y1 = max(0, int(icy - ir * 2.4)), int(icy + ir * 2.4)
             x0, x1 = max(0, int(icx - ir * 2.4)), int(icx + ir * 2.4)
@@ -430,15 +432,37 @@ def render_displacement_portrait(
             sclera = max(float(np.percentile(reg, 90)), 1.0)
             scleras.append(sclera)
             ratios.append(float(np.percentile(gray[inner > 0], 10)) / sclera)
-        # Dark-lens (sunglasses) backstop: a real open eye ALWAYS has a bright sclera/skin
-        # around it (p90 measured 134-193); a tinted lens darkens the whole region (39-73).
-        # If even the BRIGHTER of the two eyes is below the floor, there's no real eye to
-        # model here -> render words, don't fabricate an almond eye over the lens. Absolute
-        # and dark-only, so it can never black out a real (bright) eye. Env TYPO_DARKSCLERA
-        # (default on; =0 reverts). This is what auto-detects sunglasses without a manual flag.
-        if (len(scleras) >= 2 and max(scleras) < _EYE_SCLERA_MIN
-                and os.environ.get("TYPO_DARKSCLERA", "1").strip().lower()
-                not in ("0", "false", "off", "no", "")):
+            eye_meds.append(float(np.median(reg)))
+            # Cheek reference: a skin patch BELOW the eye (never under a lens frame).
+            cyc, cxc = int(icy + ir * 3.2), int(icx)
+            cpatch = gray[max(0, cyc - int(ir)):min(H, cyc + int(ir)),
+                          max(0, cxc - int(ir)):min(W, cxc + int(ir))]
+            if cpatch.size >= 16:
+                cheek_meds.append(float(np.median(cpatch)))
+        # Sunglasses backstop (dark OR translucent-tinted lenses). Two independent tells,
+        # both dark-only so a real BRIGHT eye can never be suppressed:
+        #   * absolute: even the brighter eye region is below _EYE_SCLERA_MIN (opaque lens).
+        #   * relative: the eye region reads far DARKER than the cheek skin just below it --
+        #     a real eye (bright lids + sclera) never does; a tinted lens does. This catches
+        #     translucent lenses the absolute test misses (the eye shows through, but dark).
+        # A detected lens is routed to the SAME opaque-lens path as the manual flag, so it
+        # also skips the eye anchor/rings (a plain skip left stray rings on the lens).
+        # TYPO_DARKSCLERA gates it (default on); TYPO_LENS_DARKRATIO tunes the relative test.
+        _cheek = float(np.median(cheek_meds)) if cheek_meds else 0.0
+        _lens_ratio = float(os.environ.get("TYPO_LENS_DARKRATIO", "0.62") or 0.62)
+        _abs_dark = len(scleras) >= 2 and max(scleras) < _EYE_SCLERA_MIN
+        _rel_dark = (len(eye_meds) >= 2 and _cheek > 20.0 and max(eye_meds) < _lens_ratio * _cheek)
+        if os.environ.get("TYPO_EYE_DEBUG", "").strip():
+            import sys as _sys
+            print(f"[eye] fh={_fh:.0f} scleras={[round(s) for s in scleras]} "
+                  f"eye_meds={[round(m) for m in eye_meds]} cheek={_cheek:.0f} "
+                  f"abs_dark={_abs_dark} rel_dark={_rel_dark} "
+                  f"gaps={[round(g, 1) for g in _gaps]}", file=_sys.stderr, flush=True)
+        _ds_on = os.environ.get("TYPO_DARKSCLERA", "1").strip().lower() not in ("0", "false", "off", "no", "")
+        if _ds_on and (_abs_dark or _rel_dark):
+            _dark_lens_active = True
+            _dark_lens_eyes.extend(_fi)
+            _dark_lens_face_pts.append(_fp)              # clean opaque lens, no anchor, no fabricated eye
             continue
         if len(ratios) >= 2 and min(ratios) > _EYE_OPEN_IRIS_MAX:
             continue                                   # no dark pupil -> not a real eye
