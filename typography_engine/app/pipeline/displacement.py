@@ -646,9 +646,26 @@ def render_displacement_portrait(
     # (scaled by face_norm) so every facial region reads as FINE detail, clearly finer than
     # the neck below it. Falls off with face_norm, so the neck/body are barely touched.
     # TYPO_FACE_DETAIL (default 0.22; 0 reverts).
-    _fdt = float(os.environ.get("TYPO_FACE_DETAIL", "0.22") or 0.22)
+    _fdt = float(os.environ.get("TYPO_FACE_DETAIL", "0.28") or 0.28)
     if _fdt > 0.0:
-        df = np.clip(df + _fdt * face_norm, 0, 1)
+        # Detail mask = the TIGHT face interior (not the wide face_norm feather, so the chin/
+        # jaw/cheekbones get the FULL lift right to the jawline) PLUS an estimated EAR region on
+        # each side. MediaPipe has no ear landmarks, so anchor small ellipses just outside the
+        # face's lateral extremes at eye level, kept on the subject via mask01. Lifting df here
+        # makes chin/jaw/cheeks/ears read as FINE type, clearly finer than the neck below.
+        _detail = np.clip(cv2.GaussianBlur(fmh.astype(np.float32), (0, 0), sigmaX=max(1.0, fw * 0.05)), 0, 1)
+        _ears = np.zeros((H, W), np.float32)
+        for _fp in all_pts:
+            _x0, _x1 = float(_fp[:, 0].min()), float(_fp[:, 0].max())
+            _y0, _y1 = float(_fp[:, 1].min()), float(_fp[:, 1].max())
+            _fwi, _fhi = (_x1 - _x0), (_y1 - _y0)
+            _ey = _y0 + _fhi * 0.42                                   # ~eye level
+            for _ex in (_x0 - _fwi * 0.03, _x1 + _fwi * 0.03):
+                cv2.ellipse(_ears, (int(round(_ex)), int(round(_ey))),
+                            (int(round(_fwi * 0.14)), int(round(_fhi * 0.24))), 0, 0, 360, 1.0, -1)
+        _ears = np.clip(cv2.GaussianBlur(_ears, (0, 0), sigmaX=max(1.0, fw * 0.04)), 0, 1) * mask01
+        _detail = np.clip(np.maximum(_detail, _ears), 0, 1)
+        df = np.clip(df + _fdt * _detail, 0, 1)
     # === Graduate body + hair type (default ON; TYPO_GRADUATE_BODY=0 reverts) =========
     # Beyond the face the detail field falls to ~0, so the neck/clothing AND the crown of
     # the hair render at the LARGEST tier (giant words). Ramp df UP with distance away from

@@ -109,7 +109,7 @@ services:
       - TYPO_EYE_POP=${TYPO_EYE_POP:-0.8}
       # Face-detail sizing: lift text density across the whole face so the chin, cheekbones
       # and ears render as FINE type -- distinct from the larger neck below. 0 reverts.
-      - TYPO_FACE_DETAIL=${TYPO_FACE_DETAIL:-0.22}
+      - TYPO_FACE_DETAIL=${TYPO_FACE_DETAIL:-0.28}
       # Paper/ink ground floors so faces + light hair read on ivory (0..1; 0 off).
       - TYPO_PAPER_FACE=${TYPO_PAPER_FACE:-0.30}
       - TYPO_PAPER_HAIR=${TYPO_PAPER_HAIR:-0.35}
