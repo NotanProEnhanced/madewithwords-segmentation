@@ -645,8 +645,10 @@ def render_displacement_portrait(
     # neck -- no distinction, and the chin/jaw read too large. Lift df across the whole face
     # (scaled by face_norm) so every facial region reads as FINE detail, clearly finer than
     # the neck below it. Falls off with face_norm, so the neck/body are barely touched.
-    # TYPO_FACE_DETAIL (default 0.22; 0 reverts).
-    _fdt = float(os.environ.get("TYPO_FACE_DETAIL", "0.28") or 0.28)
+    # TYPO_FACE_DETAIL is the TARGET fineness FLOOR for the face+ears (0..1): a floor, not an
+    # add, so the ear (which starts at df~0 = the LARGEST tier) is forced straight to fine
+    # rather than merely nudged. Default 0.8; 0 reverts.
+    _fdt = float(os.environ.get("TYPO_FACE_DETAIL", "0.8") or 0.8)
     if _fdt > 0.0:
         # Detail mask = the TIGHT face interior (not the wide face_norm feather, so the chin/
         # jaw/cheekbones get the FULL lift right to the jawline) PLUS an estimated EAR region on
@@ -665,7 +667,10 @@ def render_displacement_portrait(
                             (int(round(_fwi * 0.14)), int(round(_fhi * 0.24))), 0, 0, 360, 1.0, -1)
         _ears = np.clip(cv2.GaussianBlur(_ears, (0, 0), sigmaX=max(1.0, fw * 0.04)), 0, 1) * mask01
         _detail = np.clip(np.maximum(_detail, _ears), 0, 1)
-        df = np.clip(df + _fdt * _detail, 0, 1)
+        # FLOOR: raise df to at least _fdt across the face+ears (feathered by _detail), so the
+        # ear/chin/cheeks are forced to fine no matter their starting size, while the features
+        # (already ~1) and the neck (_detail~0) are untouched.
+        df = np.maximum(df, _fdt * _detail)
     # === Graduate body + hair type (default ON; TYPO_GRADUATE_BODY=0 reverts) =========
     # Beyond the face the detail field falls to ~0, so the neck/clothing AND the crown of
     # the hair render at the LARGEST tier (giant words). Ramp df UP with distance away from
