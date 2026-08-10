@@ -733,6 +733,12 @@ def render_displacement_portrait(
         fh = ((fmh > 0) & (_yy < brow_y)).astype(np.float32)
         df = np.clip(df + 0.26 * cv2.GaussianBlur(fh, (0, 0), sigmaX=max(2.0, fw * 0.05)), 0, 1)
     df = cv2.GaussianBlur(df, (0, 0), sigmaX=max(2.0, fw * 0.06))   # ease the size steps further
+    # Re-assert the face-detail FLOOR after the smoothing: the blur above pulls the chin's
+    # LOWER edge down toward the larger neck (so the chin bottom read bigger than the forehead).
+    # Locking the floor here keeps the whole face -- chin bottom + ears included -- at the fine
+    # tier, with the size step to the neck happening right at the jaw, not inside the chin.
+    if _fdt > 0.0:
+        df = np.maximum(df, _fdt * _detail)
     # #4 Highlights breathe: the brightest skin otherwise keeps full-size, dense type and reads
     # as a flat wash. Push df UP in the brightest ~30% of the face so the type there goes FINER
     # -- smaller, airier words let the highlight breathe instead of caking. Face only; strength
