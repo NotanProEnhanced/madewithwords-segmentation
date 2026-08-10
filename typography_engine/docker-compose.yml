@@ -97,6 +97,9 @@ services:
       # Eye crispness: sharpen + local contrast inside the eye (scaled up for small/distant
       # eyes) so non-closeup sources don't render flat/muddy eyes. 0 disables.
       - TYPO_EYE_SHARPEN=${TYPO_EYE_SHARPEN:-0.6}
+      # Eye pop: paint a crisp catchlight + dark iris rim ON TOP of the photo eye so soft/
+      # low-res sources still read alive and defined (not flat/muddy). Scaled up for small eyes.
+      - TYPO_EYE_POP=${TYPO_EYE_POP:-0.8}
       # Paper/ink ground floors so faces + light hair read on ivory (0..1; 0 off).
       - TYPO_PAPER_FACE=${TYPO_PAPER_FACE:-0.30}
       - TYPO_PAPER_HAIR=${TYPO_PAPER_HAIR:-0.35}

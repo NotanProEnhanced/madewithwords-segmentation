@@ -1192,6 +1192,18 @@ def render_displacement_portrait(
             _blur = cv2.GaussianBlur(out, (0, 0), sigmaX=max(1.0, fw * 0.010))
             _enh = np.clip((out - 128.0) * 1.12 + 128.0 + _amt * (out - _blur), 0.0, 255.0)
             out = out * (1.0 - _em) + _enh * _em
+        # Eye "pop": re-assert a crisp specular CATCHLIGHT + a dark LIMBAL rim ON TOP of the
+        # photo eye. "Flat and muddy" = a soft source lost its key-light glint and iris rim;
+        # painting them back (like real portrait retouching) makes even a low-res eye read
+        # alive and defined. Scaled UP for smaller eyes; TYPO_EYE_POP (0 disables). A faint
+        # pupil-core darken adds depth. Runs before the mono desaturate so Noir gets it too.
+        _pop = float(os.environ.get("TYPO_EYE_POP", "0.8") or 0.8)
+        if _pop > 0.0 and float(glint.max()) > 0.0:
+            _psc = float(np.clip((0.16 * W) / max(1.0, fw), 0.7, 2.2))   # smaller face -> more pop
+            _l3 = np.clip(limbal * (0.6 * _pop), 0.0, 1.0)[..., None]
+            out = out * (1.0 - _l3) + (out * 0.32) * _l3                 # dark iris rim (definition)
+            _g3 = np.clip(glint * (_pop * _psc), 0.0, 1.0)[..., None]
+            out = out * (1.0 - _g3) + np.float32(246.0) * _g3           # bright specular catchlight
         if ink not in ("photo", "mono"):             # mono desaturates the WHOLE subject below
             lum = (out[..., 0] * 0.114 + out[..., 1] * 0.587 + out[..., 2] * 0.299)[..., None]
             grayed = out * 0.22 + lum * 0.78         # pull the eye toward the ink's monochrome
