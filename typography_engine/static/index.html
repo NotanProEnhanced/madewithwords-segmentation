@@ -1265,7 +1265,7 @@ cropApplyBtn.addEventListener("click", ()=>{
   _showingOrig=false;
   previewImg.src=_cropUrl || _origUrl;        // container shows the cropped result
   updatePhotoControls();                      // reveal "Adjust crop" + "See full photo"
-  preview.style.display="block"; drop.style.display="none"; setPhotoNote("");
+  preview.style.display="block"; drop.style.display="none"; setPhotoNote(window._lowResUpload ? LOW_RES_MSG : "");
   if(cropReopen){ invalidate(); }             // re-crop -> drop stale renders so the next Create uses the new crop
   cropReopen=false;
   refreshCreate(); tp_track("photo_selected");
@@ -1351,6 +1351,10 @@ function setFile(f){
   var _u=URL.createObjectURL(f), _im=new Image();
   _im.onload=function(){
     var px=(_im.naturalWidth||0)*(_im.naturalHeight||0);
+    // Low-resolution nudge: a small/soft source renders soft (esp. the eyes). Flag it here
+    // (on the original, pre-crop dimensions) so we can gently suggest a sharper photo; the
+    // shorter side is the better signal than total pixels. Non-blocking -- they can proceed.
+    window._lowResUpload = Math.min(_im.naturalWidth||0, _im.naturalHeight||0) < LOW_RES_MIN_SIDE;
     try{ URL.revokeObjectURL(_u); }catch(e){}
     if(px > MAX_IMAGE_PIXELS){ inputErr(IMG_TOO_LARGE_MSG); return; }
     openCrop(f);                        // crop first (auto-framed on the face), then use the result
@@ -1361,13 +1365,17 @@ function setFile(f){
 // ~100 MP cap (mirrors the server's TYPO_MAX_IMAGE_MP default). One friendly,
 // actionable message shared by the client pre-check and the server-error mapping.
 var MAX_IMAGE_PIXELS = 100*1000*1000;
+// Below this shorter-side pixel count, a photo tends to render soft (notably the eyes).
+// Purely a friendly nudge -- never blocks the upload.
+var LOW_RES_MIN_SIDE = 900;
+var LOW_RES_MSG = "This photo looks low-resolution — it’ll still work, but a larger, sharper photo renders crisper detail (especially the eyes).";
 var IMG_TOO_LARGE_MSG = "This photo is very large and can’t be processed. Please use a smaller copy — on a phone, take a screenshot of the photo and upload that; on a computer, resize or export it smaller, then add it again.";
 // The cropped image becomes the render source; from here the flow is as before.
 function useCroppedFile(f){
   if(previewImg.src && previewImg.src.indexOf("blob:")===0) URL.revokeObjectURL(previewImg.src);   // free the prior upload
   state.file=f; state.maskData=null; previewImg.src=URL.createObjectURL(f);   // new photo -> drop any prior manual mask
   _cropUrl=null; _showingOrig=false; updatePhotoControls();   // no crop applied -> hide the crop controls
-  preview.style.display="block"; drop.style.display="none"; setPhotoNote("");
+  preview.style.display="block"; drop.style.display="none"; setPhotoNote(window._lowResUpload ? LOW_RES_MSG : "");
   refreshCreate(); tp_track("photo_selected");
   measureSubject(f);
 }
