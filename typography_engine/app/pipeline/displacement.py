@@ -640,6 +640,15 @@ def render_displacement_portrait(
     feat_union = mask_of(_GROUPS.keys(), int(fw * 0.04), fw * 0.24)
     feat_norm = np.clip(feat_union / (feat_union.max() + 1e-6), 0, 1)
     df = np.clip(0.52 * face_norm + 0.70 * feat_norm, 0, 1)
+    # Face-detail floor: the chin, jaw, cheekbones and ears sit INSIDE the face but FAR from
+    # the eyes/nose/mouth, so feat_norm ~ 0 there and they render at the same mid size as the
+    # neck -- no distinction, and the chin/jaw read too large. Lift df across the whole face
+    # (scaled by face_norm) so every facial region reads as FINE detail, clearly finer than
+    # the neck below it. Falls off with face_norm, so the neck/body are barely touched.
+    # TYPO_FACE_DETAIL (default 0.22; 0 reverts).
+    _fdt = float(os.environ.get("TYPO_FACE_DETAIL", "0.22") or 0.22)
+    if _fdt > 0.0:
+        df = np.clip(df + _fdt * face_norm, 0, 1)
     # === Graduate body + hair type (default ON; TYPO_GRADUATE_BODY=0 reverts) =========
     # Beyond the face the detail field falls to ~0, so the neck/clothing AND the crown of
     # the hair render at the LARGEST tier (giant words). Ramp df UP with distance away from
