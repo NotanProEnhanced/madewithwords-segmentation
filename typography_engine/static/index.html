@@ -101,6 +101,8 @@
   .mat{padding:22px;border-radius:2px;background:var(--mat,#f5f3ec);
     box-shadow:inset 0 0 0 1px rgba(0,0,0,.05), inset 0 3px 10px rgba(0,0,0,.13);transition:background .35s ease}
   .stage{position:relative;border-radius:2px;overflow:hidden;background:#fff;border:1px solid rgba(0,0,0,.14);min-height:240px}
+  /* Transparent "Cutout" swatch: show a checkerboard behind the render so transparency reads. */
+  #stage.cutout,#result.kp-desk #stage.cutout{background:repeating-conic-gradient(#d4cfc4 0 25%,#fff 0 50%) 50%/22px 22px}
   .compare{position:relative;width:100%;line-height:0}
   #portrait{width:100%;display:block;opacity:0;transition:opacity .45s ease}
   #portrait.shown{opacity:1}
@@ -808,6 +810,7 @@ const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce
 const ANIM_CAP = 2600;                 // max glyphs animated (perf); image shows all
 const INKS = [["photo","conic","Original"],["photo_paper","conic_paper","Paper"],
   ["photo_sand","#eee4d0","Sand"],["photo_slate","#d8dde2","Slate"],
+  ["photo_transparent","checker","Cutout"],
   ["mono","#555555","Noir"],["gold_noir","gold","Ember"],
   ["navy","#0d1b3a","Navy"],["sepia","#5a3a1a","Sepia"],["burgundy","#4a0d18","Rose"],
   ["forest","#0f2e1e","Sage"],["spectrum","spectrum","Spectrum"],["aurora","aurora","Aurora"]];
@@ -816,8 +819,9 @@ const PAPER_INK_IDS = {photo_paper:"paper"};
 // "Match your space" backdrops: keep the subject rendered EXACTLY as Lifelike/Sculpted
 // (navy ground) and recolour ONLY the segmented background behind them. Each maps its
 // swatch id -> a backdrop wall colour. Lifelike/Letter only (struck out elsewhere).
-const BACKDROP_INK_IDS = {photo_sand:"sand", photo_slate:"slate"};
+const BACKDROP_INK_IDS = {photo_sand:"sand", photo_slate:"slate", photo_transparent:"transparent"};
 function placeholderBg(col){
+  if(col==="checker") return "repeating-conic-gradient(#cfcabf 0% 25%, #fff 0% 50%) 50% / 14px 14px";
   if(col==="conic") return "conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)";
   if(col==="conic_paper") return "radial-gradient(circle at 50% 50%, #f6f1e8 0 40%, rgba(246,241,232,0) 43%), conic-gradient(#c07a64,#b89a52,#5f9476,#6280ac,#8a6aa6,#c07a64)";
   if(col==="gold") return "radial-gradient(circle at 50% 42%, #e8c66a 0 40%, #0d0f13 44%)";
@@ -948,12 +952,12 @@ const SCULPT_INKS=INKS.filter(s=>s[0]!=="spectrum" && s[0]!=="aurora");
 // swatches: Noir, Sepia, Navy, Sage, Photo -- timeless, restrained tones with no
 // loud rainbow gradients. Same set across every style; the generic studio keeps
 // the full palette.
-const MEMORIAL_INK_IDS=["photo","mono","photo_sand","photo_slate"];
+const MEMORIAL_INK_IDS=["photo","mono","photo_sand","photo_slate","photo_transparent"];
 const MEMORIAL_INKS=MEMORIAL_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
 // Generic studio: a tight curated palette (Original + Noir/Sepia/Navy) + the
 // Custom picker (added in buildSwatches). The full nine-swatch list, incl. the
 // loud gradients, was more than needed now that Custom covers any colour.
-const GENERIC_INK_IDS=["photo","mono","photo_sand","photo_slate"];
+const GENERIC_INK_IDS=["photo","mono","photo_sand","photo_slate","photo_transparent"];
 const GENERIC_INKS=GENERIC_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
 function currentSwatches(){ return _isMemorialBrand ? MEMORIAL_INKS : GENERIC_INKS; }   // + Custom chip (buildSwatches)
 function variantPost(id){
@@ -1897,6 +1901,7 @@ function invalidate(){ gen++; cache={}; thumbCache={}; resetThumbs(); }
 
 function selectInk(id){
   if(id===state.ink) return; userTouched=true; state.ink=id; markSel();
+  { const _st=$("#stage"); if(_st) _st.classList.toggle("cutout", id==="photo_transparent"); }
   sizeThumbCache={}; resetSizeThumbs();        // size chips show the current ink -> now stale
   if(cache[id]) showImage(cache[id], true);    // instant crossfade
   else { const pic=swatchEl.querySelector(`.pic[data-ink="${id}"]`); if(pic) pic.classList.add("loading"); render(id,{animate:false}); }

@@ -1207,7 +1207,8 @@ def render_displacement_portrait(
     #      with that colour regardless of ground. This is the user-facing feature.
     #   2. Else the legacy env TYPO_BG_LIGHTEN lift (navy sculpt on a lighter grey),
     #      dark grounds only (the light "paper" ground is already bright -> skipped).
-    _bd = BACKDROPS.get((backdrop or "").strip().lower()) if backdrop else None
+    _transparent = (backdrop or "").strip().lower() == "transparent"
+    _bd = None if _transparent else (BACKDROPS.get((backdrop or "").strip().lower()) if backdrop else None)
     try:
         _bg_lift = float(os.environ.get("TYPO_BG_LIGHTEN", "0"))
     except ValueError:
@@ -1215,7 +1216,17 @@ def render_displacement_portrait(
     _bg_lift = min(max(_bg_lift, 0.0), 1.0)
     _pad_bg = g["bg"]
     _fill = None
-    if _bd is not None:
+    _alpha = None
+    if _transparent and getattr(an, "silhouette", None) is not None:
+        # Transparent cutout (digital PNG only): alpha = INSIDE the subject silhouette,
+        # lightly feathered for a clean anti-aliased edge. Everything outside -- and the
+        # print-canvas padding -- becomes fully transparent, so the portrait floats free.
+        _ow = int(out_width)
+        _sil = cv2.resize((an.silhouette.mask > 127).astype(np.uint8) * 255, (_ow, oh),
+                          interpolation=cv2.INTER_NEAREST)
+        _alpha = np.clip(cv2.GaussianBlur((_sil > 127).astype(np.float32), (0, 0), sigmaX=1.2), 0, 1)
+        _pad_bg = (0.0, 0.0, 0.0)
+    elif _bd is not None:
         _fill = np.array(_bd, np.float32)
     elif _bg_lift > 0.0 and ground not in PAPER_FAMILY:
         _bgc = np.array(g["bg"], np.float32)
@@ -1245,7 +1256,16 @@ def render_displacement_portrait(
         _s = _hh[..., 1]
         _hh[..., 1] = np.where(_s > _scap, _scap + (_s - _scap) * 0.35, _s)
         out = cv2.cvtColor(_hh.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
-    ok, buf = cv2.imencode(".png", np.clip(out, 0, 255).astype(np.uint8))
+    if _transparent and _alpha is not None:
+        # Pad the alpha to the SAME canvas as `out` (transparent border), then emit BGRA.
+        _a3 = _fit_print_canvas(np.repeat(_alpha[..., None], 3, axis=2).astype(np.float32),
+                                (0.0, 0.0, 0.0), print_aspect)
+        _alpha_c = np.clip(_a3[..., 0], 0.0, 1.0)
+        bgra = np.dstack([np.clip(out, 0, 255).astype(np.uint8),
+                          (_alpha_c * 255.0).astype(np.uint8)])
+        ok, buf = cv2.imencode(".png", bgra)
+    else:
+        ok, buf = cv2.imencode(".png", np.clip(out, 0, 255).astype(np.uint8))
     if not ok:
         raise ValueError("encode_failed")
     return buf.tobytes()
