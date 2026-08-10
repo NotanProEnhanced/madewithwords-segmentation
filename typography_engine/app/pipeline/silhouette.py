@@ -8,6 +8,7 @@ can decide whether to trust the silhouette or emit a warning.
 """
 from __future__ import annotations
 
+import os
 import urllib.request
 from dataclasses import dataclass
 from threading import Lock
@@ -85,10 +86,59 @@ def _clean_mask(fg: np.ndarray) -> np.ndarray:
     return fg
 
 
-def _selfie_mask(img: LoadedImage, warns: WarningCollector) -> Optional[np.ndarray]:
+def _guided_filter(guide: np.ndarray, src: np.ndarray, radius: int, eps: float) -> np.ndarray:
+    """Edge-aware smoothing of `src` steered by `guide` (both float32, 0..1). Snaps `src`
+    onto the structure of `guide` -- the classic cheap image-matting trick. Dependency-free
+    (box filters only), so no opencv-contrib needed."""
+    r = int(max(1, radius))
+    g = guide.astype(np.float32)
+    s = src.astype(np.float32)
+    mean_g = cv2.boxFilter(g, cv2.CV_32F, (r, r))
+    mean_s = cv2.boxFilter(s, cv2.CV_32F, (r, r))
+    corr_gs = cv2.boxFilter(g * s, cv2.CV_32F, (r, r))
+    corr_gg = cv2.boxFilter(g * g, cv2.CV_32F, (r, r))
+    cov_gs = corr_gs - mean_g * mean_s
+    var_g = corr_gg - mean_g * mean_g
+    a = cov_gs / (var_g + eps)
+    b = mean_s - a * mean_g
+    mean_a = cv2.boxFilter(a, cv2.CV_32F, (r, r))
+    mean_b = cv2.boxFilter(b, cv2.CV_32F, (r, r))
+    return mean_a * g + mean_b
+
+
+def _soft_matte(img: LoadedImage, prob: np.ndarray, binary: np.ndarray) -> Optional[np.ndarray]:
+    """Refine the model's soft confidence into an edge-aware ALPHA matte so hair keeps a
+    natural feathered edge instead of a hard binary cut ("cardboard cutout"). A guided
+    filter (guide = image luminance) snaps the soft mask onto real image edges -- hair
+    strands -- recovering detail the 0.5 threshold throws away. Constrained to a band
+    around the cleaned binary so distant background noise / dropped blobs don't reappear.
+    Returns HxW uint8 (0..255) or None. Env TYPO_SOFT_MATTE (default on; =0 reverts)."""
+    if os.environ.get("TYPO_SOFT_MATTE", "1").strip().lower() in ("0", "false", "off", "no", ""):
+        return None
+    try:
+        h, w = binary.shape[:2]
+        guide = cv2.cvtColor(img.bgr, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+        r = max(4, int(round(min(w, h) * 0.006)))
+        refined = _guided_filter(guide, np.clip(prob, 0.0, 1.0).astype(np.float32), r, 1e-4)
+        refined = np.clip(refined, 0.0, 1.0)
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        band_it = max(2, int(round(min(w, h) * 0.012)))
+        band = cv2.dilate(binary, k, iterations=band_it)
+        refined = refined * (band > 0).astype(np.float32)         # kill far-field noise
+        core = cv2.erode(binary, k, iterations=band_it)
+        refined = np.maximum(refined, (core > 127).astype(np.float32))  # deep interior stays opaque
+        return (np.clip(refined, 0.0, 1.0) * 255.0).astype(np.uint8)
+    except Exception:  # noqa: BLE001 -- matting is best-effort; fall back to the binary edge
+        return None
+
+
+def _selfie_mask(img: LoadedImage, warns: WarningCollector):
+    """Returns (binary_mask, soft_matte) or (None, None). soft_matte is an edge-aware
+    alpha (uint8) that preserves hair; None when matting is disabled/failed (callers
+    fall back to the binary edge)."""
     seg = _get_segmenter(warns)
     if seg is None:
-        return None
+        return None, None
     try:
         import mediapipe as mp
 
@@ -96,10 +146,10 @@ def _selfie_mask(img: LoadedImage, warns: WarningCollector) -> Optional[np.ndarr
         result = seg.segment(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
     except Exception as e:
         warns.warn("silhouette", "seg_failed", f"Selfie segmentation error: {e}")
-        return None
+        return None, None
     masks = getattr(result, "confidence_masks", None)
     if not masks:
-        return None
+        return None, None
     prob = np.squeeze(np.asarray(masks[0].numpy_view()))
     h, w = img.bgr.shape[:2]
     if prob.shape[:2] != (h, w):
@@ -108,16 +158,18 @@ def _selfie_mask(img: LoadedImage, warns: WarningCollector) -> Optional[np.ndarr
     coverage = float((fg > 127).sum()) / float(h * w)
     if coverage < 0.05 or coverage > 0.97:
         # Implausible person mask; let GrabCut try instead.
-        return None
-    return _clean_mask(fg)
+        return None, None
+    binary = _clean_mask(fg)
+    return binary, _soft_matte(img, prob, binary)
 
 
 @dataclass
 class Silhouette:
-    mask: np.ndarray          # HxW uint8, 0/255
+    mask: np.ndarray          # HxW uint8, 0/255 (binary -- density, geometry, guards)
     bbox: tuple               # (x, y, w, h) in working coords
     coverage: float           # foreground fraction of frame
     confidence: float
+    soft: Optional[np.ndarray] = None   # HxW uint8 alpha matte (feathered hair edge), or None
 
 
 def _bbox_of(mask: np.ndarray):
@@ -180,12 +232,12 @@ def extract_silhouette(
     h, w = img.bgr.shape[:2]
 
     # Primary: MediaPipe selfie segmentation (clean person/background cut).
-    selfie = _selfie_mask(img, warns)
+    selfie, soft = _selfie_mask(img, warns)
     if selfie is not None:
         bbox = _bbox_of(selfie)
         coverage = float((selfie > 127).sum()) / float(h * w)
         conf = max(0.85, _confidence(selfie, bbox, coverage))
-        return Silhouette(mask=selfie, bbox=bbox, coverage=coverage, confidence=conf)
+        return Silhouette(mask=selfie, bbox=bbox, coverage=coverage, confidence=conf, soft=soft)
 
     # Fallback: deterministic GrabCut seeded by the face box.
     gc_mask = np.full((h, w), cv2.GC_PR_BGD, dtype=np.uint8)

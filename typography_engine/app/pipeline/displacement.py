@@ -327,6 +327,16 @@ def render_displacement_portrait(
     W, H = w0 * SS, h0 * SS
     gray = cv2.resize(g0, (W, H), interpolation=cv2.INTER_CUBIC)
     mask01 = cv2.resize(m0, (W, H), interpolation=cv2.INTER_LINEAR)
+    # Soft alpha matte (hair-preserving feathered edge). Used for the SUBJECT edge and all
+    # subject/background compositing so the silhouette doesn't read as a hard "cardboard"
+    # cut. Falls back to a gently-blurred binary edge when matting is off/unavailable, so
+    # behaviour is unchanged then. mask01 stays BINARY for density/geometry/guards.
+    _soft = getattr(an.silhouette, "soft", None)
+    if _soft is not None:
+        soft01 = np.clip(cv2.resize(_soft.astype(np.float32) / 255.0, (W, H),
+                                    interpolation=cv2.INTER_LINEAR), 0.0, 1.0)
+    else:
+        soft01 = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0.0, 1.0)
     pts = pts0 * SS
     # Every detected face's landmarks (primary first), so eyes + facial-feature
     # typography are rendered identically for EVERY subject, not just the largest.
@@ -782,7 +792,7 @@ def render_displacement_portrait(
     w2 = np.clip(warped + (b1 - warped) * gd1 + (b2 - b1) * gd2, 0, 1)
 
     a = np.clip(w2 * (0.04 + 0.96 * np.power(ink_field, 0.62)), 0, 1)
-    a = a * np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0, 1)   # feathered edge
+    a = a * soft01   # hair-preserving soft matte edge (was a gently-blurred binary edge)
     # Highlight wash (light-ground only): a BRIGHT subject region -- silver/white hair, pale
     # skin, specular highlights -- otherwise reads DARK because the navy ground shows through
     # the gaps BETWEEN glyphs. Lift a gentle light floor under the type in the brightest areas
@@ -1218,13 +1228,11 @@ def render_displacement_portrait(
     _fill = None
     _alpha = None
     if _transparent and getattr(an, "silhouette", None) is not None:
-        # Transparent cutout (digital PNG only): alpha = INSIDE the subject silhouette,
-        # lightly feathered for a clean anti-aliased edge. Everything outside -- and the
-        # print-canvas padding -- becomes fully transparent, so the portrait floats free.
+        # Transparent cutout (digital PNG only): alpha = the soft matte (hair-preserving),
+        # so wispy hair feathers into transparency instead of a hard cut. Everything outside
+        # -- and the print-canvas padding -- becomes fully transparent, portrait floats free.
         _ow = int(out_width)
-        _sil = cv2.resize((an.silhouette.mask > 127).astype(np.uint8) * 255, (_ow, oh),
-                          interpolation=cv2.INTER_NEAREST)
-        _alpha = np.clip(cv2.GaussianBlur((_sil > 127).astype(np.float32), (0, 0), sigmaX=1.2), 0, 1)
+        _alpha = np.clip(cv2.resize(soft01, (_ow, oh), interpolation=cv2.INTER_LINEAR), 0.0, 1.0)
         _pad_bg = (0.0, 0.0, 0.0)
     elif _bd is not None:
         _fill = np.array(_bd, np.float32)
@@ -1233,10 +1241,9 @@ def render_displacement_portrait(
         _fill = _bgc + (255.0 - _bgc) * _bg_lift
     if _fill is not None and getattr(an, "silhouette", None) is not None:
         _ow = int(out_width)
-        _sil = cv2.resize((an.silhouette.mask > 127).astype(np.uint8) * 255, (_ow, oh),
-                          interpolation=cv2.INTER_NEAREST)
-        _outside = cv2.GaussianBlur((_sil <= 127).astype(np.float32), (0, 0),
-                                    sigmaX=max(1.0, _ow * 0.002))[..., None]
+        # Soft matte edge so the backdrop blends into hair instead of a hard cardboard cut.
+        _inside = np.clip(cv2.resize(soft01, (_ow, oh), interpolation=cv2.INTER_LINEAR), 0.0, 1.0)
+        _outside = (1.0 - _inside)[..., None]
         out = out.astype(np.float32) * (1.0 - _outside) + _fill * _outside
         _pad_bg = tuple(float(c) for c in _fill)
     # Standard print canvas (4:5 = 16x20), padded with the ground BEFORE vibrance
