@@ -655,7 +655,9 @@ def render_displacement_portrait(
         # each side. MediaPipe has no ear landmarks, so anchor small ellipses just outside the
         # face's lateral extremes at eye level, kept on the subject via mask01. Lifting df here
         # makes chin/jaw/cheeks/ears read as FINE type, clearly finer than the neck below.
-        _detail = np.clip(cv2.GaussianBlur(fmh.astype(np.float32), (0, 0), sigmaX=max(1.0, fw * 0.05)), 0, 1)
+        # Tight feather so the floor stays SOLID right to the jawline/chin (a wider feather
+        # tapered the floor at the chin edge, so the chin read larger than the mid-face).
+        _detail = np.clip(cv2.GaussianBlur(fmh.astype(np.float32), (0, 0), sigmaX=max(1.0, fw * 0.025)), 0, 1)
         _ears = np.zeros((H, W), np.float32)
         for _fp in all_pts:
             _x0, _x1 = float(_fp[:, 0].min()), float(_fp[:, 0].max())
