@@ -266,7 +266,11 @@
      align-items:center;justify-content:center;text-align:center;padding:6px;overflow:hidden;
      background:#ece7df;background-size:cover;background-position:center;box-shadow:0 1px 3px rgba(0,0,0,.12)}
   .seg.stylecards button .styleth::before{content:attr(data-hint);font-size:12px;font-weight:600;
-     color:var(--muted);line-height:1.25;letter-spacing:-.01em}
+     color:var(--muted);line-height:1.2;letter-spacing:-.01em;
+     /* Let the hint SHRINK + wrap inside the square so a long word (e.g. "Verses,")
+        can't overflow and get clipped on the left on narrow mobile cards. */
+     min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;hyphens:none}
+  @media(max-width:430px){.seg.stylecards button .styleth::before{font-size:11px}}
   .seg.stylecards button .styleth.has-img::before{content:none}
   .seg.stylecards button.on .styleth{background-color:#e3ddd2}
   .seg.stylecards button .nm{font-size:13px;font-weight:600;color:var(--muted);letter-spacing:-.01em}
