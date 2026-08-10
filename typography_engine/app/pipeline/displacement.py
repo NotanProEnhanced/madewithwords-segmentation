@@ -335,6 +335,16 @@ def render_displacement_portrait(
     if _soft is not None:
         soft01 = np.clip(cv2.resize(_soft.astype(np.float32) / 255.0, (W, H),
                                     interpolation=cv2.INTER_LINEAR), 0.0, 1.0)
+        # Clean the faint transition band so background GAPS between hair strands don't
+        # carry stray words: push the low end toward 0 while keeping the wisps. A soft
+        # knee (below TYPO_MATTE_FLOOR -> 0) plus a gentle gamma. Only when a real matte
+        # is present (the coarse fallback edge is already soft, no band to clean).
+        _mf = float(os.environ.get("TYPO_MATTE_FLOOR", "0.12") or 0.12)
+        _mgam = float(os.environ.get("TYPO_MATTE_GAMMA", "1.5") or 1.5)
+        if _mf > 0.0:
+            soft01 = np.clip((soft01 - _mf) / max(1e-3, 1.0 - _mf), 0.0, 1.0)
+        if _mgam != 1.0:
+            soft01 = np.power(soft01, _mgam)
     else:
         soft01 = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0.0, 1.0)
     pts = pts0 * SS

@@ -104,6 +104,10 @@ services:
       # back to the guided-filter soft matte when unset/unavailable. TYPO_MATTE_MAXSIDE caps res.
       - TYPO_MATTE_MODEL=${TYPO_MATTE_MODEL:-}
       - TYPO_MATTE_MAXSIDE=${TYPO_MATTE_MAXSIDE:-1280}
+      # Matte edge cleanup: drop alpha below FLOOR to 0 (clean background gaps between
+      # hair strands, no stray words) then GAMMA sharpens the low end. Matte-model path only.
+      - TYPO_MATTE_FLOOR=${TYPO_MATTE_FLOOR:-0.12}
+      - TYPO_MATTE_GAMMA=${TYPO_MATTE_GAMMA:-1.5}
       # Diagnostics: set TYPO_EYE_DEBUG=1 in .env to log per-face eye/lens detection to stderr.
       - TYPO_EYE_DEBUG=${TYPO_EYE_DEBUG:-}
       - TYPO_POLARITY_GAMMA=${TYPO_POLARITY_GAMMA:-1.35}
