@@ -231,6 +231,25 @@ def extract_silhouette(
 ) -> Silhouette:
     h, w = img.bgr.shape[:2]
 
+    # Best (opt-in): a real matting model -> true strand-level hair alpha. Only runs when
+    # TYPO_MATTE_MODEL is set and the model + onnxruntime are available; otherwise falls
+    # straight through to MediaPipe below. Fully fail-safe (matte() never raises).
+    from . import matting
+    if matting.enabled():
+        alpha = matting.matte(img.bgr, warns)
+        if alpha is not None:
+            binm = _clean_mask((alpha > 0.5).astype(np.uint8) * 255)
+            cov = float((binm > 127).sum()) / float(h * w)
+            if 0.02 < cov < 0.98:
+                # Constrain the alpha to the cleaned blobs so a dropped speck can't leave
+                # a ghost; keep the full soft edge (hair) within a band around them.
+                k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+                band = cv2.dilate(binm, k, iterations=max(2, int(round(min(w, h) * 0.012))))
+                soft = (np.clip(alpha, 0.0, 1.0) * (band > 0).astype(np.float32) * 255.0).astype(np.uint8)
+                bbox = _bbox_of(binm)
+                conf = max(0.9, _confidence(binm, bbox, cov))
+                return Silhouette(mask=binm, bbox=bbox, coverage=cov, confidence=conf, soft=soft)
+
     # Primary: MediaPipe selfie segmentation (clean person/background cut).
     selfie, soft = _selfie_mask(img, warns)
     if selfie is not None:

@@ -14,6 +14,10 @@ httpx==0.27.2
 # Unpinned so pip resolves a build compatible with the pinned Pillow; the
 # import in app/pipeline/preprocess.py is guarded, so absence is non-fatal.
 pillow-heif
+# Optional high-quality matting (RobustVideoMatting ONNX) for strand-level hair.
+# Only used when TYPO_MATTE_MODEL is set; the import in app/pipeline/matting.py is
+# guarded, so the feature degrades gracefully if the wheel/model is unavailable.
+onnxruntime>=1.19
 reportlab>=4.0
 # PDF -> image for the memorial-card preview. pypdfium2 (PDFium) is permissive
 # (BSD-3-Clause / Apache-2.0) and ships a self-contained wheel -- replaced PyMuPDF,

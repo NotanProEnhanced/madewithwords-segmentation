@@ -27,6 +27,13 @@ RUN mkdir -p models \
     && curl -fsSL -o models/selfie_segmenter.tflite \
       "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite"
 
+# Optional matting model (RobustVideoMatting, ~15MB). NON-FATAL: a failed fetch must not
+# break the build -- the feature is opt-in (TYPO_MATTE_MODEL) and re-fetches at runtime,
+# falling back to the guided-filter matte if still unavailable.
+RUN curl -fsSL -o models/rvm_mobilenetv3_fp32.onnx \
+      "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx" \
+    || echo "matting model prefetch skipped (optional; fetched at runtime)"
+
 COPY app ./app
 COPY static ./static
 # memorial_card.py is imported by app.main /download/card to build the print-ready

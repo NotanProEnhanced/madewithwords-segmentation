@@ -103,6 +103,11 @@ services:
       # Soft hair matte: feather the subject/background edge (guided-filter alpha) so hair
       # doesn't read as a cardboard cutout on any backdrop. =0 reverts to the hard binary edge.
       - TYPO_SOFT_MATTE=${TYPO_SOFT_MATTE:-1}
+      # High-quality matting model (RobustVideoMatting) for true strand-level hair. OPT-IN:
+      # set TYPO_MATTE_MODEL=1 in .env to enable (needs onnxruntime + the ~15MB model). Falls
+      # back to the guided-filter soft matte when unset/unavailable. TYPO_MATTE_MAXSIDE caps res.
+      - TYPO_MATTE_MODEL=${TYPO_MATTE_MODEL:-}
+      - TYPO_MATTE_MAXSIDE=${TYPO_MATTE_MAXSIDE:-1280}
       # Diagnostics: set TYPO_EYE_DEBUG=1 in .env to log per-face eye/lens detection to stderr.
       - TYPO_EYE_DEBUG=${TYPO_EYE_DEBUG:-}
       - TYPO_POLARITY_GAMMA=${TYPO_POLARITY_GAMMA:-1.35}

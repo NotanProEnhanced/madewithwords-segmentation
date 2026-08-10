@@ -30,6 +30,16 @@ SELFIE_SEGMENTER_URL = (
     "selfie_segmenter/float16/latest/selfie_segmenter.tflite"
 )
 
+# Optional high-quality matting model (RobustVideoMatting, MIT-licensed) for true
+# strand-level hair alpha. Off unless TYPO_MATTE_MODEL is set; the ~15MB ONNX is
+# fetched on first use (a failed fetch/load degrades gracefully to the guided-filter
+# matte). Stable GitHub-releases URL.
+MATTE_MODEL = MODELS_DIR / "rvm_mobilenetv3_fp32.onnx"
+MATTE_MODEL_URL = (
+    "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/"
+    "rvm_mobilenetv3_fp32.onnx"
+)
+
 
 @dataclass
 class RenderConfig:
