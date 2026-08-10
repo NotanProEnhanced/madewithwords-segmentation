@@ -93,6 +93,9 @@ services:
       # Face-detail sizing: lift text density across the whole face so the chin, cheekbones
       # and ears render as FINE type -- distinct from the larger neck below. 0 reverts.
       - TYPO_FACE_DETAIL=${TYPO_FACE_DETAIL:-0.95}
+      # Light-aware far-edge softening: on a directionally-lit subject, fade the SHADOW-side
+      # silhouette edge into the ground (self-gates -- flat lighting = no effect). 0 disables.
+      - TYPO_EDGE_FALLOFF=${TYPO_EDGE_FALLOFF:-0.45}
       # Paper/ink ground floors so faces + light hair read on ivory (0..1; 0 off).
       - TYPO_PAPER_FACE=${TYPO_PAPER_FACE:-0.30}
       - TYPO_PAPER_HAIR=${TYPO_PAPER_HAIR:-0.35}

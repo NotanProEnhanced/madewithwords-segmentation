@@ -841,7 +841,34 @@ def render_displacement_portrait(
     w2 = np.clip(warped + (b1 - warped) * gd1 + (b2 - b1) * gd2, 0, 1)
 
     a = np.clip(w2 * (0.04 + 0.96 * np.power(ink_field, 0.62)), 0, 1)
-    a = a * soft01   # hair-preserving soft matte edge (was a gently-blurred binary edge)
+    # Light-aware far-edge softening (prototype): when the subject is DIRECTIONALLY lit, let
+    # the SHADOW-side silhouette edge fall off into the ground instead of a crisp cut -- the
+    # natural way a portrait's dark side melts into space. Self-gating: light direction is the
+    # face's own left/right + top/bottom brightness asymmetry, and confidence is that asymmetry's
+    # magnitude, so FLAT lighting -> ~0 confidence -> no effect. Only the shadow-side edge band
+    # fades; the lit edge stays crisp. TYPO_EDGE_FALLOFF (0 disables).
+    _ef = float(os.environ.get("TYPO_EDGE_FALLOFF", "0.45") or 0.45)
+    if _ef > 0.0 and int(np.count_nonzero(mask01 > 0.5)) > 200:
+        _fm = mask01 > 0.5
+        _xr = np.arange(W, dtype=np.float32)[None, :]
+        _yr = np.arange(H, dtype=np.float32)[:, None]
+        _n = float(_fm.sum())
+        _cx, _cy = float((_xr * _fm).sum() / _n), float((_yr * _fm).sum() / _n)
+        _gf = gray.astype(np.float32)
+        _R, _L = _fm & (_xr > _cx), _fm & (_xr <= _cx)
+        _B, _T = _fm & (_yr > _cy), _fm & (_yr <= _cy)
+        _dx = (float(_gf[_R].mean()) - float(_gf[_L].mean())) if _R.any() and _L.any() else 0.0
+        _dy = (float(_gf[_B].mean()) - float(_gf[_T].mean())) if _B.any() and _T.any() else 0.0
+        _mag = (_dx * _dx + _dy * _dy) ** 0.5
+        _conf = min(1.0, _mag / 35.0)                    # 35 grey-levels of asymmetry -> full effect
+        if _conf > 0.05 and _mag > 1e-3:
+            _sx, _sy = -_dx / _mag, -_dy / _mag          # shadow direction (away from the light)
+            _rad = 0.5 * float(fw) + 1e-3
+            _proj = np.clip(((_xr - _cx) * _sx + (_yr - _cy) * _sy) / _rad, 0.0, 1.0)   # 1 on the shadow side
+            _dist = cv2.distanceTransform(_fm.astype(np.uint8), cv2.DIST_L2, 3)
+            _band = np.clip(1.0 - _dist / max(1.0, fw * 0.16), 0.0, 1.0)                # 1 at edge -> 0 inward
+            soft01 = soft01 * (1.0 - np.clip(_ef * _conf * _band * _proj, 0.0, 1.0))
+    a = a * soft01   # hair-preserving soft matte edge (+ optional light-aware shadow-edge falloff)
     # Highlight wash (light-ground only): a BRIGHT subject region -- silver/white hair, pale
     # skin, specular highlights -- otherwise reads DARK because the navy ground shows through
     # the gaps BETWEEN glyphs. Lift a gentle light floor under the type in the brightest areas
