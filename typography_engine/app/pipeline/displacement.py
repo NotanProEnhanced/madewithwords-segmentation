@@ -1181,6 +1181,17 @@ def render_displacement_portrait(
             eye_bgr[_tk] = _eb[_tk]
         a3 = (eye_a * float(os.environ.get("TYPO_EYE_PHOTO", "0.5") or 0.5))[..., None]   # 1=opaque photo eye; lower (default 0.5) blends the typography through so the eye reads as part of the words
         out = out * (1.0 - a3) + eye_bgr * a3
+        # A NON-closeup source has small, soft eyes, so the pasted eye reads flat/muddy.
+        # Sharpen + lift local contrast INSIDE the eye opening so the iris/pupil/catchlight
+        # read crisp; scale the amount UP for smaller (more distant) eyes. TYPO_EYE_SHARPEN
+        # (0 disables) sets the base strength.
+        _esh = float(os.environ.get("TYPO_EYE_SHARPEN", "0.6") or 0.6)
+        if _esh > 0.0 and float(eye_a.max()) > 0.0:
+            _em = np.clip(eye_a, 0.0, 1.0)[..., None]
+            _amt = _esh * float(np.clip((0.16 * W) / max(1.0, fw), 0.6, 2.4))   # smaller face -> more
+            _blur = cv2.GaussianBlur(out, (0, 0), sigmaX=max(1.0, fw * 0.010))
+            _enh = np.clip((out - 128.0) * 1.12 + 128.0 + _amt * (out - _blur), 0.0, 255.0)
+            out = out * (1.0 - _em) + _enh * _em
         if ink not in ("photo", "mono"):             # mono desaturates the WHOLE subject below
             lum = (out[..., 0] * 0.114 + out[..., 1] * 0.587 + out[..., 2] * 0.299)[..., None]
             grayed = out * 0.22 + lum * 0.78         # pull the eye toward the ink's monochrome
