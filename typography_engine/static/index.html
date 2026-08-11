@@ -223,8 +223,14 @@
   /* Relief has only 2 grounds -> centre them, no scroll arrows */
   .carousel.relief .arrow{display:none}
   .carousel.relief .swatches{justify-content:center}
-  /* Swatches not available in the current style (e.g. Paper/backdrops outside Lifelike)
-     are hidden entirely in buildSwatches -- no dimmed/struck-through clutter. */
+  /* "Make it yours" splits into two labelled axes: Type colour (a live-thumbnail
+     carousel) and Background (solid preview tiles). A quiet divider + heading make it
+     clear the two rows do different things. */
+  .swatchgroup .ctl-lbl{text-align:center}
+  .swatchgroup .ctl-hint{text-align:center;margin-top:2px}
+  #bgGroup{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+  .bgswatches{justify-content:center;flex-wrap:wrap}
+  /* Paper is hidden outside Lifelike in buildSwatches -- no dimmed/struck-through clutter. */
   .thumb-status{display:flex;align-items:center;justify-content:center;gap:8px;min-height:18px;
     text-align:center;color:var(--muted);font-size:13px;margin-top:10px;opacity:0;transition:opacity .2s}
   .thumb-status.on{opacity:1}
@@ -655,10 +661,19 @@
       <div class="ctl-hint" id="styleCaption">A lifelike portrait — the words follow their face.</div>
       <div class="ctl-hint" id="bestNote" style="display:none"></div>
     </div>
-    <div class="carousel">
-      <button type="button" class="arrow left" id="arrowL" aria-label="Previous colours">&#8249;</button>
-      <div id="swatches" class="swatches"></div>
-      <button type="button" class="arrow right" id="arrowR" aria-label="More colours">&#8250;</button>
+    <div class="ctl swatchgroup" id="inkGroup" style="margin-top:14px">
+      <div class="ctl-lbl">Type colour</div>
+      <div class="ctl-hint">The colour of the words that form the portrait.</div>
+      <div class="carousel">
+        <button type="button" class="arrow left" id="arrowL" aria-label="Previous colours">&#8249;</button>
+        <div id="swatches" class="swatches"></div>
+        <button type="button" class="arrow right" id="arrowR" aria-label="More colours">&#8250;</button>
+      </div>
+    </div>
+    <div class="ctl swatchgroup" id="bgGroup">
+      <div class="ctl-lbl">Background</div>
+      <div class="ctl-hint">What sits behind them — a studio wall, a soft colour, or none at all.</div>
+      <div id="bgSwatches" class="swatches bgswatches"></div>
     </div>
     <div id="thumbStatus" class="thumb-status" aria-live="polite"></div>
     <div class="sizefilm" id="sizeFilm">
@@ -815,10 +830,17 @@ const INKS = [["photo","conic","Original"],["photo_paper","conic_paper","Paper"]
   ["forest","#0f2e1e","Sage"],["spectrum","spectrum","Spectrum"],["aurora","aurora","Aurora"]];
 // "Paper" grounds the WHOLE portrait (subject included) on warm ivory -- its own look.
 const PAPER_INK_IDS = {photo_paper:"paper"};
-// "Match your space" backdrops: keep the subject rendered EXACTLY as Lifelike/Sculpted
-// (navy ground) and recolour ONLY the segmented background behind them. Each maps its
-// swatch id -> a backdrop wall colour. Lifelike/Letter only (struck out elsewhere).
-const BACKDROP_INK_IDS = {photo_sand:"sand", photo_slate:"slate", photo_transparent:"transparent"};
+// "Match your space" backdrops: recolour ONLY the segmented region behind the subject,
+// leaving the sculpt untouched. Now a first-class, INDEPENDENT axis (state.backdrop) --
+// any type colour can sit on any background. [backdropKey, previewSwatch, label];
+// "" = the default studio ground (no backdrop). These render as solid preview tiles
+// (a background is a flat colour -- it needs no per-face render to preview).
+const BACKGROUNDS = [
+  ["",            "#0d1b3a", "Studio"],   // default navy ground (state.backdrop = null)
+  ["sand",        "#eee4d0", "Sand"],
+  ["slate",       "#d8dde2", "Slate"],
+  ["transparent", "checker", "Cutout"],   // transparent PNG (checkerboard preview)
+];
 function placeholderBg(col){
   if(col==="checker") return "repeating-conic-gradient(#cfcabf 0% 25%, #fff 0% 50%) 50% / 14px 14px";
   if(col==="conic") return "conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)";
@@ -828,7 +850,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, crop:null, ink:"photo", inkHex:"#3a6df0", style:"displacement", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true, maskData:null, sunglasses:false };
+const state = { file:null, crop:null, ink:"photo", inkHex:"#3a6df0", backdrop:null, style:"displacement", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true, maskData:null, sunglasses:false };
 // Referral/source tag (?ref=everloved) AND brand skin. A brand re-dresses this
 // same engine as a partner identity (name + tagline). The brand is resolved from
 // the ?brand param FIRST (reliable, and it persists in this single-page URL),
@@ -947,32 +969,28 @@ const GROUNDS_SW=[["g_navy","#0d1b3a","Navy"],["g_black","#111317","Black"]];
 // Sculpted now uses the same ink palette as Words/Passage (minus the gradient
 // inks, which don't drape cleanly over the form): Photo + solid/duotone tints.
 const SCULPT_INKS=INKS.filter(s=>s[0]!=="spectrum" && s[0]!=="aurora");
-// Memorial brand (lovedinwords) shows a calm, curated palette instead of all nine
-// swatches: Noir, Sepia, Navy, Sage, Photo -- timeless, restrained tones with no
-// loud rainbow gradients. Same set across every style; the generic studio keeps
-// the full palette.
-const MEMORIAL_INK_IDS=["photo","mono","photo_sand","photo_slate","photo_transparent"];
+// TYPE COLOUR palette (the colour of the words). Background treatments used to live in
+// this same list, which conflated two different choices; they're now their own axis
+// (BACKGROUNDS). Both brands offer Original + Noir here; the generic studio adds the
+// Custom picker (in buildSwatches). Memorial keeps it to the two curated tones (no free
+// colour picker for grieving families).
+const MEMORIAL_INK_IDS=["photo","mono"];
 const MEMORIAL_INKS=MEMORIAL_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
-// Generic studio: a tight curated palette (Original + Noir/Sepia/Navy) + the
-// Custom picker (added in buildSwatches). The full nine-swatch list, incl. the
-// loud gradients, was more than needed now that Custom covers any colour.
-const GENERIC_INK_IDS=["photo","mono","photo_sand","photo_slate","photo_transparent"];
+const GENERIC_INK_IDS=["photo","mono"];
 const GENERIC_INKS=GENERIC_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
 function currentSwatches(){ return _isMemorialBrand ? MEMORIAL_INKS : GENERIC_INKS; }   // + Custom chip (buildSwatches)
 function variantPost(id){
-  // "Paper" = the photographic Sculpt-on-white look: the displacement renderer on
-  // a paper ground, photo colour -- regardless of the style segment. The flat Words
-  // engraving can't carry a light-eyed face on white; Sculpt/paper renders the eyes
-  // and likeness beautifully. (The dark grounds stay the dense Words/Sculpt looks.)
-  if(PAPER_INK_IDS[id]) return {ink:"photo", style:"displacement", ground:PAPER_INK_IDS[id]};
-  // A backdrop keeps the CURRENT input: in message mode it sculpts the passage (flow)
-  // with the chosen background; in words mode it's the Lifelike sculpt. Either way the
-  // subject is the photographic sculpt (ink "photo") and only the ground is recoloured.
-  if(BACKDROP_INK_IDS[id]) return {ink:"photo", style:(state.style==="message"?"message":"displacement"), ground:"navy", backdrop:BACKDROP_INK_IDS[id]};
-  if(state.style==="letter") return {ink:(id||"photo"), style:"displacement", ground:"navy"};   // Letter = displacement renderer, message-flow (flag sent in render())
-  return state.style==="displacement"
+  // `id` is the selected TYPE COLOUR (photo / mono / custom). The BACKGROUND is an
+  // independent axis (state.backdrop), layered on top -- so e.g. Noir type can sit on a
+  // Sand ground, or a Custom colour on a transparent Cutout. The subject always sculpts
+  // in the chosen ink; the backdrop only recolours (or clears) the region behind them.
+  // Letter/Lifelike are the words sculpt (style "displacement"); Passage keeps "message"
+  // so the server streams the passage in written order. The flow flag is sent in render().
+  const base = (state.style==="displacement" || state.style==="letter")
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
-    : {ink:id, style:state.style, ground:"navy"}; }
+    : {ink:(id||"photo"), style:state.style, ground:"navy"};
+  if(state.backdrop) base.backdrop = state.backdrop;
+  return base; }
 // Umami funnel event helper. No-ops silently if the script is blocked, still
 // loading, or unconfigured — analytics must never break the app.
 function tp_track(name, data){ try{ if(window.umami) window.umami.track(name, data||{}); }catch(e){} }
@@ -1062,10 +1080,8 @@ const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch"), sunSwitch=$("#sunSwitch");
 function setStyle(newStyle, rerender){
   const wasDisp = state.style==="displacement" || state.style==="letter";
   state.style=newStyle;
-  // Paper is the Lifelike-on-white look; leaving Lifelike with it selected falls back
-  // to Original so a message never renders the (now hidden) Paper. Backdrops now work
-  // in every mode, so they PERSIST across a mode switch (no reset).
-  if(newStyle!=="displacement" && newStyle!=="letter" && PAPER_INK_IDS[state.ink]) state.ink="photo";
+  // Type colour (photo/mono/custom) and background are independent axes now, and both
+  // work in every mode -- so neither is reset on a style switch; the user's picks persist.
   document.querySelectorAll('#styleSeg button, #styleSegResult button')
     .forEach(c=>c.classList.toggle("on", c.dataset.style===newStyle));
   // "letter" = a MESSAGE sculpted by the Lifelike renderer: it composes like a sculpt
@@ -1085,7 +1101,7 @@ function setStyle(newStyle, rerender){
   words.placeholder = letterUI
     ? "You are the kindest soul I know. From the day you were born…"
     : "GRACE, KIND, BRILLIANT, MOM, ALWAYS";
-  bgRow.style.display = prose ? "flex" : "none";   // background toggle = Passage only (flat)
+  bgRow.style.display = "none";   // superseded by the Background swatch group (Studio/Cutout cover keep-vs-clear)
   // Input-screen content link reflects the current mode.
   const ct=document.getElementById("contentToggle");
   if(ct) ct.innerHTML = letterUI ? "&larr; Use a few words instead" : "Writing a letter or a message instead? &rarr;";
@@ -1460,14 +1476,49 @@ function measureSubject(f){
    the Displacement style — same machinery, different items) ---------------- */
 const swatchEl=$("#swatches");
 const carouselEl=document.querySelector(".carousel");
+const bgSwatchEl=$("#bgSwatches");
+// Background axis: solid preview tiles (Studio / Sand / Slate / Cutout). A background is
+// a flat colour, so it needs no per-face render to preview -- unlike the type-colour
+// chips, which are live thumbnails. Selecting one is a GLOBAL change (it re-grounds every
+// render), so it invalidates the ink thumbnails and re-warms them at the new background.
+function buildBgSwatches(){
+  if(!bgSwatchEl) return;
+  bgSwatchEl.innerHTML="";
+  BACKGROUNDS.forEach(([bg,col,label])=>{
+    const el=document.createElement("button"); el.type="button";
+    el.className="thumb"+(((state.backdrop||"")===bg)?" sel":""); el.dataset.bg=bg;
+    const pic=document.createElement("div"); pic.className="pic"; pic.dataset.bg=bg;
+    const ph=placeholderBg(col);
+    if(ph.indexOf("gradient")>=0) pic.style.backgroundImage=ph; else pic.style.backgroundColor=ph;
+    const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
+    el.append(pic,nm);
+    el.addEventListener("click", ()=>selectBackground(bg));
+    bgSwatchEl.append(el);
+  });
+}
+function markBgSel(){
+  if(!bgSwatchEl) return;
+  [...bgSwatchEl.children].forEach(c=>c.classList.toggle("sel",(c.dataset.bg||"")===(state.backdrop||"")));
+}
+function selectBackground(bg){
+  bg = bg || null;
+  if((state.backdrop||null)===(bg||null)) return;
+  userTouched=true; state.backdrop=bg; markBgSel();
+  { const _st=$("#stage"); if(_st) _st.classList.toggle("cutout", bg==="transparent"); }
+  sizeThumbCache={}; resetSizeThumbs();
+  invalidate();                 // a new ground makes every ink thumbnail + the main portrait stale
+  buildSwatches();              // fresh ink chips (placeholders now; re-warmed below)
+  const pic=swatchEl.querySelector(`.pic[data-ink="${state.ink}"]`); if(pic) pic.classList.add("loading");
+  render(state.ink,{animate:false});
+  refreshSizeStrip(); prewarmSizes();
+  if(!_isMemorialBrand) prewarm();   // re-fill the type-colour chips at the new background
+}
 function buildSwatches(){
   if(carouselEl) carouselEl.classList.toggle("relief", false);  // Sculpted now uses the full ink carousel
   swatchEl.innerHTML="";
   currentSwatches().forEach(([id,col,label])=>{
-    // The "match your space" backdrops (Sand/Slate/Cutout) now sculpt in EVERY mode
-    // (words or message), so they're offered everywhere -- the studio shows one
-    // consistent palette regardless of input. "Paper" is the one Lifelike-on-white
-    // ground that only makes sense for the words sculpt, so it stays Lifelike-only.
+    // Type-colour chips (Original/Noir) -- one consistent set in every mode. "Paper" (a
+    // white-ground sculpt) is the lone Lifelike-only look, guarded here if ever added.
     if(PAPER_INK_IDS[id] && state.style!=="displacement" && state.style!=="letter") return;
     const el=document.createElement("button"); el.type="button";
     el.className="thumb"+(id===state.ink?" sel":""); el.dataset.ink=id;
@@ -1533,6 +1584,7 @@ function pickCustom(hex){
   refreshSizeStrip(); prewarmSizes();
 }
 buildSwatches();
+buildBgSwatches();   // the background axis is the same in every mode -- build once, mark on select
 function rebuildSwatches(){
   const ids=currentSwatches().map(s=>s[0]);
   // "custom" is an additive chip (not in currentSwatches) but valid in every mode now,
@@ -1949,7 +2001,6 @@ function invalidate(){ gen++; cache={}; thumbCache={}; resetThumbs(); }
 
 function selectInk(id){
   if(id===state.ink) return; userTouched=true; state.ink=id; markSel();
-  { const _st=$("#stage"); if(_st) _st.classList.toggle("cutout", id==="photo_transparent"); }
   sizeThumbCache={}; resetSizeThumbs();        // size chips show the current ink -> now stale
   if(cache[id]) showImage(cache[id], true);    // instant crossfade
   else { const pic=swatchEl.querySelector(`.pic[data-ink="${id}"]`); if(pic) pic.classList.add("loading"); render(id,{animate:false}); }
