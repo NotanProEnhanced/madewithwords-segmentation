@@ -926,15 +926,30 @@ const _isMemorialBrand=!!(BRAND && BRAND.memorial);
 if(!_isMemorialBrand){
   fetch("/gallery",{method:"HEAD"}).then(r=>{ if(r.ok){ const _gl=document.getElementById("galleryLink"); if(_gl) _gl.style.display="inline-block"; } }).catch(()=>{});
 }
-// Memorial skins keep a calmer two-style flow: Lifelike (default) + Passage (a
-// readable tribute forming the face). Mosaic (the scattered word-cloud) is hidden
-// here -- in grief, fewer choices and "words you can read" land better. Generic
-// Typortrait keeps all three (creative product = choice is a feature).
+// Memorial skins keep a calmer flow and name the styles by WHAT THE VISITOR PROVIDES --
+// Words / Passage / Letter (short -> long) -- rather than by abstract style jargon. It's
+// self-evident with no friction for a grieving visitor, avoids "lifelike" (off-tone for
+// someone who has passed), and never reuses "Original" (already the colour swatch). Mosaic
+// (the scattered word-cloud) is hidden here -- in grief, fewer choices land better.
+// Generic Typortrait is untouched: it doesn't show this chooser at all.
 if(_isMemorialBrand){
   const _mb=document.querySelector('#styleSegResult button[data-style="words"]');
   if(_mb) _mb.style.display="none";
   const _lt=document.querySelector('#styleSegResult button[data-style="letter"]');
-  if(_lt) _lt.style.display="";   // sculpted-message option -> memorial only (a letter, in their face)
+  if(_lt) _lt.style.display="";   // the written-letter option -> memorial only
+  // Relabel the cards to the input-led scheme (label + the hint shown before the
+  // buyer's own thumbnail lands).
+  const _relabel=(style,name,hint)=>{
+    const b=document.querySelector('#styleSegResult button[data-style="'+style+'"]'); if(!b) return;
+    const nm=b.querySelector(".nm"); if(nm) nm.textContent=name;
+    const th=b.querySelector(".styleth"); if(th) th.setAttribute("data-hint",hint);
+  };
+  _relabel("displacement","Words","A name & a few traits");
+  _relabel("message","Passage","Verses, lyrics, a tribute");
+  _relabel("letter","Letter","A letter");
+  // Initial caption (default style is Words); setStyle keeps it in sync after that.
+  const _cap=document.getElementById("styleCaption");
+  if(_cap) _cap.textContent="Their face, formed from their name and the words that describe them.";
 }
 if(BRAND){
   try{
@@ -1111,11 +1126,17 @@ function setStyle(newStyle, rerender){
   const ct=document.getElementById("contentToggle");
   if(ct) ct.innerHTML = letterUI ? "&larr; Use a few words instead" : "Writing a letter or a message instead? &rarr;";
   // Result-screen gallery caption — plain-language description of the chosen look.
+  // Memorial skins get gentler wording (no "lifelike"/"sculpted") to match the calmer,
+  // input-led naming (Words / Passage / Letter); the generic studio keeps its copy.
   const cap=document.getElementById("styleCaption");
-  if(cap) cap.textContent = letter ? "Their letter, sculpted into their face — reading like a refrain."
-    : disp ? "A lifelike portrait — the words shaped to follow their face."
-    : prose ? "Their face from a whole message — a letter, a poem, a tribute."
-    : "Their face from scattered words & names you choose.";
+  if(cap) cap.textContent = _isMemorialBrand
+    ? ( letter ? "Their letter, formed into their face — reading like a refrain."
+      : prose ? "Their face, formed from a passage — a verse, a lyric, a tribute."
+      : "Their face, formed from their name and the words that describe them." )
+    : ( letter ? "Their letter, sculpted into their face — reading like a refrain."
+      : disp ? "A lifelike portrait — the words shaped to follow their face."
+      : prose ? "Their face from a whole message — a letter, a poem, a tribute."
+      : "Their face from scattered words & names you choose." );
   if(disp !== wasDisp) rebuildSwatches();          // swap the swatch strip: inks <-> grounds
   applySizes(null);                                // restock/hide the size strip for this style
   updateStyleChooserVisibility(letterUI);          // collapse the redundant chooser in message mode
