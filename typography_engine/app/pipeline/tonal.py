@@ -201,6 +201,11 @@ def _hex_to_rgb(h: str) -> Tuple[int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
+def _rgb_to_hex(rgb) -> str:
+    r, g, b = (int(max(0, min(255, round(float(c))))) for c in rgb)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 # Positional-gradient inks: hue runs top->bottom independent of the photo; tone
 # still drives density. Stops are (vertical_fraction, colour).
 _GRADIENTS = {
@@ -1838,7 +1843,7 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         # = the resolution the eyes need). Save/restore so the shared cfg + recipe
         # are untouched; the download re-renders through here and pins identically.
         _orig_mf = cfg.min_font_px
-        if ink == "photo_paper":
+        if ink == "photo_paper" or (not light and ink == "photo" and _layered_photo_on()):
             cfg.min_font_px = min(float(cfg.min_font_px), 28.0)
         # Multi-scale gap-fill packs the full size range into the silhouette in
         # both modes. In light/engraving mode the lit face is pushed to white
@@ -1879,12 +1884,19 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     mpng = svg_to_png_bytes(mask_svg, output_width=render_w)
     mask = np.asarray(Image.open(io.BytesIO(mpng)).convert("L"))
     H, W = mask.shape[:2]
-    # Photographic mode: navy subject ground + light backdrop outside (Lifelike look),
-    # only for the photo (Original) ink on the dark-composite path. Everything else is
+    # Photographic mode (Original ink only): render Mosaic/Passage BRIGHT like Lifelike
+    # instead of the dark near-black composite. The dark ground made even a lit profile
+    # read as a dark rectangle -- lifting the ground alone was invisible because the
+    # SUBJECT itself is dark wherever the sparse words let the ground show. So route the
+    # subject through the proven "Original on paper" colour-engraving treatment
+    # (photo_paper): darkness drives the ink, the photo's own colours form the words, and
+    # the paper is the light backdrop. Result: a bright coloured word-portrait on a clean
+    # backdrop -- the whole piece reads light, no dark field. Everything else is
     # byte-identical to before.
     _photo_mode = (not light) and ink == "photo" and _layered_photo_on()
-    _g_override = _PHOTO_NAVY_HEX if _photo_mode else None
-    photo = _tint_photo(an, W, H, ink, remove_bg, light=light, custom=custom,
+    _eff_ink = "photo_paper" if _photo_mode else ink
+    _g_override = _rgb_to_hex(_layered_backdrop_rgb(backdrop)) if _photo_mode else None
+    photo = _tint_photo(an, W, H, _eff_ink, remove_bg, light=light, custom=custom,
                         ground_override=_g_override).astype(np.float32)
     ground = np.array(_hex_to_rgb(_g_override if _g_override else _ground_hex(ink, light, custom)), dtype=np.float32)
     m = (mask.astype(np.float32) / 255.0)[..., None]
@@ -1895,7 +1907,7 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     # or iris-coloured. Dark grounds only; before the pad so coords hold.
     # photo_paper takes its OWN white-ground eye treatment below -- the dark-ground
     # catchlight/limbal here darkens toward the ground, which inverts on white.
-    if not light and ink != "photo_paper":
+    if not light and _eff_ink != "photo_paper":
         # Sclera wash: the whites of the eyes read LIGHT (carrying no typography),
         # painted as a soft warm-white modulated by the photo's own shading so the
         # eye keeps its natural gradient -- not a flat disc, dimmer than glyphs.
@@ -2085,21 +2097,7 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         _bg_lift = 0.0
     _bg_lift = min(max(_bg_lift, 0.0), 1.0)
     _pad_col = ground
-    if _photo_mode and remove_bg:
-        # Photographic mode: replace the dark field OUTSIDE the silhouette with a clean
-        # LIGHT backdrop (gray/ivory/sand/slate...), exactly like Lifelike's "match your
-        # space". The subject keeps its navy ground; only outside pixels become the
-        # backdrop, so the worded subject reads bright/photographic on a studio ground.
-        _bd = _layered_backdrop_rgb(backdrop)
-        _silm = an.silhouette.mask
-        if _silm.shape[:2] != (H, W):
-            _silm = cv2.resize(_silm, (W, H), interpolation=cv2.INTER_NEAREST)
-        _outside = cv2.GaussianBlur((_silm <= 127).astype(np.float32), (0, 0),
-                                    sigmaX=max(1.0, W * 0.0025))[..., None]
-        out = (out.astype(np.float32) * (1.0 - _outside)
-               + _bd * _outside).clip(0, 255).astype(np.uint8)
-        _pad_col = _bd                             # print band matches the backdrop
-    elif remove_bg and not light and _bg_lift > 0.0:
+    if remove_bg and not light and _bg_lift > 0.0:
         _silm = an.silhouette.mask
         if _silm.shape[:2] != (H, W):
             _silm = cv2.resize(_silm, (W, H), interpolation=cv2.INTER_NEAREST)
