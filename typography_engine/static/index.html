@@ -1093,8 +1093,31 @@ function setStyle(newStyle, rerender){
     : "Their face from scattered words & names you choose.";
   if(disp !== wasDisp) rebuildSwatches();          // swap the swatch strip: inks <-> grounds
   applySizes(null);                                // restock/hide the size strip for this style
+  updateStyleChooserVisibility(letterUI);          // collapse the redundant chooser in message mode
   if(rerender && resultView.style.display==="block" && state.file){ invalidate(); render(state.ink,{animate:false}); }
 }
+// All styles share the ONE Lifelike engine (words follow the face); the only real
+// variable is the INPUT -- a few words vs a written message. Offering Lifelike/Mosaic/
+// Passage side-by-side rendered the SAME portrait three times (confusing, looks broken).
+// So the chooser is now mode-appropriate: word-list styles (Lifelike, Mosaic) when the
+// input is words; message styles (Passage, + Letter on memorial) when it's a letter/
+// message/verse. When only ONE style is left, the whole "Choose your style" block hides
+// -- a message shows a single look, no phantom choice.
+function updateStyleChooserVisibility(msgMode){
+  // Memorial skins keep their own deliberately-curated flow (Lifelike + Passage +
+  // Letter); leave those untouched. This collapse applies to the generic studio.
+  if(_isMemorialBrand) return;
+  const seg=document.getElementById("styleSegResult");
+  const gal=document.getElementById("styleGallery");
+  if(!seg||!gal) return;
+  const vis=(id,show)=>{ const b=seg.querySelector('button[data-style="'+id+'"]'); if(b) b.style.display = show ? "" : "none"; };
+  vis("displacement", !msgMode);                       // Lifelike -> words input only
+  vis("words", !msgMode);                              // Mosaic  -> words input only
+  vis("message", !!msgMode);                           // Passage -> message input only
+  const shown=[...seg.querySelectorAll('button[data-style]')].filter(b=>b.style.display!=="none").length;
+  gal.style.display = shown>=2 ? "" : "none";          // no chooser when there's no real choice
+}
+updateStyleChooserVisibility(state.style==="message" || state.style==="letter");   // apply on first load
 // Input screen: a quiet link to switch between a few words and a written message.
 // No context-free style toggle here — style exploration happens on the result gallery.
 const contentToggle=$("#contentToggle");
