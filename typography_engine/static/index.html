@@ -979,6 +979,11 @@ const MEMORIAL_INKS=MEMORIAL_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boo
 const GENERIC_INK_IDS=["photo","mono"];
 const GENERIC_INKS=GENERIC_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
 function currentSwatches(){ return _isMemorialBrand ? MEMORIAL_INKS : GENERIC_INKS; }   // + Custom chip (buildSwatches)
+// Backgrounds per brand. Memorial keepsakes are meant to be framed and hung, so they
+// keep the room-matching grounds (Studio/Sand/Slate) but drop "Cutout" -- a transparent
+// PNG is a creative/merch feature, off-tone for a remembrance portrait. The generic
+// studio keeps the full set.
+function currentBackgrounds(){ return _isMemorialBrand ? BACKGROUNDS.filter(b=>b[0]!=="transparent") : BACKGROUNDS; }
 function variantPost(id){
   // `id` is the selected TYPE COLOUR (photo / mono / custom). The BACKGROUND is an
   // independent axis (state.backdrop), layered on top -- so e.g. Noir type can sit on a
@@ -1484,7 +1489,7 @@ const bgSwatchEl=$("#bgSwatches");
 function buildBgSwatches(){
   if(!bgSwatchEl) return;
   bgSwatchEl.innerHTML="";
-  BACKGROUNDS.forEach(([bg,col,label])=>{
+  currentBackgrounds().forEach(([bg,col,label])=>{
     const el=document.createElement("button"); el.type="button";
     el.className="thumb"+(((state.backdrop||"")===bg)?" sel":""); el.dataset.bg=bg;
     const pic=document.createElement("div"); pic.className="pic"; pic.dataset.bg=bg;
