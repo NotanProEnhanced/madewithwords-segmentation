@@ -248,6 +248,10 @@ def render_displacement_portrait(
     seed: int = 7,
     uppercase: bool = True,
     ink: Optional[str] = None,
+    ink_hex: Optional[str] = None,  # only when ink=="custom": the user-picked colour.
+                                  # Draped as a single light tint (lifted to read on the
+                                  # dark ground) so a Custom pick SCULPTS in its own hue
+                                  # instead of falling back to a flat/photo render.
     print_aspect: float = 0.8,    # width/height of the print canvas (4:5 default)
     flow: bool = False,           # True => the text is a MESSAGE: keep it in written
                                   # order and stream it continuously (a sculpted letter),
@@ -1139,6 +1143,18 @@ def render_displacement_portrait(
             out = _bg_local * (1 - _cov[..., None]) + np.clip(_ink, 0, 255) * _cov[..., None]
     elif ink in _SCULPT_INK:
         word = np.array(_SCULPT_INK[ink], np.float32)
+        out = np.array(g["bg"], np.float32) * (1 - al) + word * al
+    elif ink == "custom" and ink_hex:
+        # A user-picked colour, sculpted as a single light tint. Reuse the poster
+        # helper's dark-colour lift (hue preserved, brightened if it's too dark to
+        # read on the dark ground), then drape it like any other sculpt ink.
+        from .tonal import custom_poster
+        _cp = custom_poster(ink_hex)
+        if _cp:
+            _h = _cp[1].lstrip("#")
+            word = np.array((int(_h[4:6], 16), int(_h[2:4], 16), int(_h[0:2], 16)), np.float32)  # RGB hex -> BGR
+        else:
+            word = np.array(g["ink"], np.float32)
         out = np.array(g["bg"], np.float32) * (1 - al) + word * al
     else:
         out = np.array(g["bg"], np.float32) * (1 - al) + np.array(g["ink"], np.float32) * al

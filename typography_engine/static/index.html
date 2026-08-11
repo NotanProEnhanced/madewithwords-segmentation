@@ -1499,6 +1499,12 @@ function buildSwatches(){
     cin.addEventListener("change", ()=>pickCustom(cin.value));
     swatchEl.append(cel);
   }
+  // Re-paint any already-rendered thumbnail onto its fresh chip. Without this, a
+  // rebuild (e.g. picking a Custom colour) drops every chip back to its gradient
+  // placeholder -- most visibly the Original chip, whose placeholder is the rainbow
+  // conic -- until a prewarm slowly re-fills them. Cached inks repaint instantly.
+  currentSwatches().forEach(([id])=>updateThumb(id));
+  updateThumb("custom");
   requestAnimationFrame(updateCarouselArrows);   // hide the scroll arrows unless the strip overflows
 }
 // Show the carousel arrows ONLY when the swatches overflow their track. With the
@@ -1513,7 +1519,11 @@ window.addEventListener("resize", updateCarouselArrows);
 function pickCustom(hex){
   userTouched=true; state.inkHex=hex; state.ink="custom";
   sizeThumbCache={}; resetSizeThumbs();
-  invalidate();                                  // colour changed -> drop stale renders
+  // A colour change only invalidates the CUSTOM variant -- every other ink's render
+  // is unaffected, so keep their cached thumbnails. (invalidate() dropped ALL of them,
+  // which flashed the Original chip back to its rainbow placeholder.) Bump gen so any
+  // stale in-flight custom render is discarded.
+  gen++; delete cache["custom"]; delete thumbCache["custom"];
   buildSwatches(); markSel();
   const pic=swatchEl.querySelector('.pic[data-ink="custom"]'); if(pic) pic.classList.add("loading");
   render("custom",{animate:false});
@@ -1654,7 +1664,7 @@ function recoFd(style, coarse){
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim()); fd.append("message",words.value.trim());
   let ink=state.ink||"photo";
   if(style==="displacement" && (ink==="spectrum"||ink==="aurora")) ink="photo";  // gradients don't drape
-  fd.append("ink",ink); fd.append("style",style); fd.append("ground","navy");
+  fd.append("ink",ink); if(ink==="custom") fd.append("ink_hex", state.inkHex||""); fd.append("style",style); fd.append("ground","navy");
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", style==="message" ? "20" : String(state.minFont||57));
   if(coarse){ fd.append("png_width","380"); fd.append("render_w","760"); } else { fd.append("png_width","1500"); }

@@ -1344,6 +1344,16 @@ def auto_mask(job: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Inks the displacement (Lifelike) engine can SCULPT: "photo" (per-pixel colour),
+# the tinted sculpt palette, and a user-picked "custom" hex (draped as a light tint).
+# Mosaic/Passage on any of these routes through the sculpt renderer so every ink is
+# sculpted, not flat. Gradients (spectrum/aurora) don't drape over the form and are
+# deliberately excluded -- they stay on the layered renderer.
+_DISP_SCULPT_INKS = frozenset({
+    "photo", "mono", "navy", "sepia", "burgundy", "forest", "gold_noir", "custom",
+})
+
+
 @app.post("/render")
 async def render(
     request: Request,
@@ -1503,13 +1513,20 @@ async def render(
     style_choice = "displacement" if is_displacement else (
         "message" if style in ("message", "poster", "story") else "words")
     # Photographic Mosaic/Passage: when enabled, the Words (mosaic) and Message
-    # (passage) styles on Original ("photo") ink render through the Lifelike
-    # (displacement) engine instead of the dark layered renderer -- same photographic,
-    # form-following portrait, fed the mosaic words / the passage message. flow=True for
-    # Passage streams the message in written order (a sculpted letter); Mosaic stays a
-    # word list. Gated by TYPO_LAYERED_PHOTO.
+    # (passage) styles render through the Lifelike (displacement) engine instead of
+    # the dark layered renderer -- same photographic, form-following SCULPT, fed the
+    # mosaic words / the passage message. flow=True for Passage streams the message in
+    # written order (a sculpted letter); Mosaic stays a word list. Gated by
+    # TYPO_LAYERED_PHOTO.
+    #
+    # Every ink the studio offers must sculpt, not just Original -- a flat, un-sculpted
+    # passage on Noir/Sepia/Navy/Custom read as broken next to Original's sculpt. The
+    # displacement engine renders "photo" (per-pixel colour), the tinted sculpt palette
+    # (mono/navy/sepia/burgundy/forest/gold_noir), and a "custom" hex (draped as a light
+    # tint), so route all of them. Only the loud gradients (spectrum/aurora) can't drape
+    # over the form -- they stay on the layered renderer.
     disp_route = (not is_displacement and style_choice in ("words", "message")
-                  and ink_choice == "photo" and lifelike_route_on())
+                  and ink_choice in _DISP_SCULPT_INKS and lifelike_route_on())
     disp_flow_eff = disp_flow if is_displacement else (style_choice == "message")
     # Same Lifelike RENDERING for all three styles; only the TYPOGRAPHY differs:
     #   Lifelike -> importance-weighted words (env WORD_VARIETY, name/leading words repeat)
@@ -1541,7 +1558,8 @@ async def render(
             png_bytes = await _bounded_to_thread(
                 render_displacement_portrait, an, disp_words, ground=ground_choice,
                 out_width=max(320, preview_w), supersample=disp_ss, flow=disp_flow_eff,
-                uppercase=uppercase, ink=("photo" if ink_choice in ("custom", "photo_paper") else ink_choice),
+                uppercase=uppercase, ink=("photo" if ink_choice == "photo_paper" else ink_choice),
+                ink_hex=(ink_hex if ink_choice == "custom" else None),   # custom colour -> a light sculpt tint
                 # Phase-1 realism 'breathe' pass (env kill-switch STUDIO_BREATHE). MUST match
                 # the paid render in _ensure_clean_png below, or the preview would misrepresent it.
                 breathe=STUDIO_BREATHE,
@@ -3526,7 +3544,7 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
                 an, (r.get("text", "") or "").split(),
                 ground=r.get("ground", "navy"), out_width=DOWNLOAD_PNG_WIDTH,
                 uppercase=bool(r.get("uppercase", True)), flow=bool(r.get("flow")),
-                ink=("photo" if r.get("ink") == "custom" else r.get("ink")),
+                ink=r.get("ink"), ink_hex=r.get("ink_hex"),   # custom colour sculpts as its own light tint
                 print_aspect=aspect, backdrop=r.get("backdrop"),
                 # Same passes as the preview render -- the paid file must match what the
                 # buyer approved on screen (breathe kill-switch + per-style variety: a
