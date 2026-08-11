@@ -251,27 +251,17 @@ _POSTER = {
     "photo_paper": ("#f6f1e8", None),
 }
 
-# --- Bright Mosaic / Passage (Original ink) -----------------------------------
-# Mosaic (Words) and Passage (Message) read "dark" on Original ink because the worded
-# subject is composited on a near-black ground AND the whole field is that same near-
-# black -- even a lit face becomes a dark rectangle. This mode keeps each style's OWN
-# typographic identity (Mosaic's scattered word-cloud, Passage's passage layout -- NOT
-# Lifelike's form-following words) but flips the composite bright: a LIGHT paper ground
-# (gaps + the field outside the silhouette read light) with the photo's colour carried
-# in the words, darkness-driven so features/shadows take the ink and lit skin melts into
-# the paper. A bright, colourful word-portrait that stays distinctly Mosaic/Passage.
-# Env-gated (TYPO_LAYERED_PHOTO) so it's byte-identical until validated on staging.
-_BRIGHT_PAPER_HEX = "#f4f1ea"        # soft warm gallery white -- the light ground for the bright mode
-
-
-def layered_bright_on() -> bool:
-    """Whether Mosaic/Passage (Original ink) render bright (light paper) instead of dark."""
+# --- Photographic Mosaic / Passage routing ------------------------------------
+# Mosaic (Words) and Passage (Message) read "dark" because they run through the
+# LAYERED renderer (words scattered on a near-black ground), a fundamentally
+# different engine from Lifelike (displacement: words follow the facial form, full
+# photographic colour). Recolouring the layered engine can make it brighter but never
+# makes it read as Lifelike -- the scatter layout is the tell. So when this flag is on,
+# main.py ROUTES the photo (Original) Mosaic/Passage renders through the Lifelike engine
+# instead. Env-gated (TYPO_LAYERED_PHOTO) so it's off until validated on staging.
+def lifelike_route_on() -> bool:
+    """Whether Mosaic/Passage (Original ink) should render through the Lifelike engine."""
     return os.environ.get("TYPO_LAYERED_PHOTO", "0").strip().lower() not in ("0", "false", "off", "no", "")
-
-
-def _bright_layered(ink: str, light: bool) -> bool:
-    """The bright Mosaic/Passage path: Original ink, dark-composite path, flag on."""
-    return (not light) and ink == "photo" and layered_bright_on()
 
 
 def custom_poster(hex_in: str):
@@ -1605,9 +1595,6 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         ground_hex, ink_hex = custom                       # (ground, ink) from a user-picked colour
     else:
         ground_hex, ink_hex = _POSTER.get(ink, ("#0a0a0c", "#f2ece0"))
-    _bright = _bright_layered(ink, light)
-    if _bright:
-        ground_hex = _BRIGHT_PAPER_HEX          # light paper -> gaps + field read bright
     ground = np.array(_hex_to_rgb(ground_hex), dtype=np.float32)
     grad = _GRADIENTS.get(ink)
     if grad is not None:
@@ -1622,11 +1609,6 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         tip = np.clip(g + (rgb - g) * 1.12, 0.0, 255.0)     # keep close to the photo's own saturation (natural skin, not cartoonish)
         if ink == "photo_paper":
             tip = tip * 0.60        # darken the hue so it reads as ink on white paper
-        elif _bright:
-            # Bright Mosaic/Passage: keep the photo's COLOUR (no paper-mute) but push
-            # saturation up so mid-tones read as colour, not grey, on the light paper --
-            # a rich colour word-cloud, distinct from photo_paper's muted engraving.
-            tip = np.clip(g + (tip - g) * 1.35, 0.0, 255.0)
     else:
         tip = np.array(_hex_to_rgb(ink_hex), dtype=np.float32)
     # Dark ground: brightness drives ink. Light paper: darkness drives ink
@@ -1642,11 +1624,6 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         # Eye detail is injected into the ink array just below (after `out`), so it
         # rides the SAME word mask in compose -> a photo-true eye made of type, never
         # a smooth patch. Teeth stay the natural engraving (lips dark, teeth light).
-    elif _bright:
-        # Bright Mosaic/Passage: darkness drives the ink like photo_paper, but a lower
-        # floor (0.18) + steeper gain (0.92) keeps highlights airy and the darks punchy
-        # -- a crisp, colourful word-cloud on paper rather than a flat wash.
-        v = np.clip(0.18 + 0.92 * (1.0 - lum), 0.0, 1.0)
     elif not light:
         v = lum
     else:
@@ -1657,7 +1634,7 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         # with white space, not a faint gray jumble.
         v = np.clip(0.08 + 1.25 * (1.0 - np.clip(lum ** 0.8, 0.0, 1.0)), 0.0, 1.0)
     out = ground + (tip - ground) * v[..., None]
-    if ink == "photo_paper" or _bright:
+    if ink == "photo_paper":
         # Eye STRUCTURE forced into the ink array (pre-mask), so it renders THROUGH
         # the words (typographic, never a smooth patch). The photo's own eye is too
         # light to read on paper for light-eyed/grey subjects, so we lay an explicit
@@ -1834,7 +1811,7 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         # = the resolution the eyes need). Save/restore so the shared cfg + recipe
         # are untouched; the download re-renders through here and pins identically.
         _orig_mf = cfg.min_font_px
-        if ink == "photo_paper" or _bright_layered(ink, light):
+        if ink == "photo_paper":
             cfg.min_font_px = min(float(cfg.min_font_px), 28.0)
         # Multi-scale gap-fill packs the full size range into the silhouette in
         # both modes. In light/engraving mode the lit face is pushed to white
@@ -1847,7 +1824,7 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
                              gap_fill=True, gap_fill_passes=12)
         cfg.min_font_px = _orig_mf
         colored, runs = res.svg, res.runs
-    ground_hex = _BRIGHT_PAPER_HEX if _bright_layered(ink, light) else _ground_hex(ink, light, custom)
+    ground_hex = _ground_hex(ink, light, custom)
     if not colored:
         return b"", runs, ground_hex, ""
     mask_svg = _mask_svg(colored)
@@ -1875,9 +1852,8 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     mpng = svg_to_png_bytes(mask_svg, output_width=render_w)
     mask = np.asarray(Image.open(io.BytesIO(mpng)).convert("L"))
     H, W = mask.shape[:2]
-    _bright = _bright_layered(ink, light)   # bright Mosaic/Passage: light paper ground
     photo = _tint_photo(an, W, H, ink, remove_bg, light=light, custom=custom).astype(np.float32)
-    ground = np.array(_hex_to_rgb(_BRIGHT_PAPER_HEX if _bright else _ground_hex(ink, light, custom)), dtype=np.float32)
+    ground = np.array(_hex_to_rgb(_ground_hex(ink, light, custom)), dtype=np.float32)
     m = (mask.astype(np.float32) / 255.0)[..., None]
     out = (ground + (photo - ground) * m).clip(0, 255).astype(np.uint8)
     # Catchlight: a SPECULAR white glint at the eye's real brightest pixel inside
@@ -1886,8 +1862,8 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     # or iris-coloured. Dark grounds only; before the pad so coords hold.
     # photo_paper takes its OWN white-ground eye treatment below -- the dark-ground
     # catchlight/limbal here darkens toward the ground, which inverts on white.
-    eyes_e = []          # photo_paper + bright Mosaic/Passage (word-formed eyes) + light-message skip the block below
-    if not light and ink != "photo_paper" and not _bright:
+    eyes_e = []          # photo_paper (word-formed eyes) + light-message skip the block below
+    if not light and ink != "photo_paper":
         # Sclera wash: the whites of the eyes read LIGHT (carrying no typography),
         # painted as a soft warm-white modulated by the photo's own shading so the
         # eye keeps its natural gradient -- not a flat disc, dimmer than glyphs.
