@@ -92,10 +92,11 @@ services:
       # Light-aware far-edge softening: on a directionally-lit subject, fade the SHADOW-side
       # silhouette edge into the ground (self-gates -- flat lighting = no effect). 0 disables.
       - TYPO_EDGE_FALLOFF=${TYPO_EDGE_FALLOFF:-0.45}
-      # Photographic Mosaic/Passage: render the Words (Mosaic) + Message (Passage) styles
-      # on Original ("photo") ink through the Lifelike (displacement) engine instead of the
-      # dark layered renderer -- same photographic, form-following portrait, fed the mosaic
-      # words / the passage message. OFF until validated on staging; flip to 1 (or set in .env).
+      # Bright Mosaic/Passage (Original ink): Mosaic (Words) + Passage (Message) read dark
+      # on Original because the worded subject sits on a near-black ground. This flips them
+      # BRIGHT -- a light paper ground with the photo's colour carried in the words -- while
+      # keeping each style's own identity (Mosaic's word-cloud, Passage's passage layout),
+      # distinct from Lifelike. OFF until validated on staging; flip to 1 (or set in .env).
       - TYPO_LAYERED_PHOTO=${TYPO_LAYERED_PHOTO:-0}
       # Paper/ink ground floors so faces + light hair read on ivory (0..1; 0 off).
       - TYPO_PAPER_FACE=${TYPO_PAPER_FACE:-0.30}
