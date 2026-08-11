@@ -1907,6 +1907,7 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     # or iris-coloured. Dark grounds only; before the pad so coords hold.
     # photo_paper takes its OWN white-ground eye treatment below -- the dark-ground
     # catchlight/limbal here darkens toward the ground, which inverts on white.
+    eyes_e = []          # word-formed-eye paths (photo_paper / photo_mode) skip the block below
     if not light and _eff_ink != "photo_paper":
         # Sclera wash: the whites of the eyes read LIGHT (carrying no typography),
         # painted as a soft warm-white modulated by the photo's own shading so the
