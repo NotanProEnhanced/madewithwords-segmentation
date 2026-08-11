@@ -965,7 +965,10 @@ function variantPost(id){
   // engraving can't carry a light-eyed face on white; Sculpt/paper renders the eyes
   // and likeness beautifully. (The dark grounds stay the dense Words/Sculpt looks.)
   if(PAPER_INK_IDS[id]) return {ink:"photo", style:"displacement", ground:PAPER_INK_IDS[id]};
-  if(BACKDROP_INK_IDS[id]) return {ink:"photo", style:"displacement", ground:"navy", backdrop:BACKDROP_INK_IDS[id]};
+  // A backdrop keeps the CURRENT input: in message mode it sculpts the passage (flow)
+  // with the chosen background; in words mode it's the Lifelike sculpt. Either way the
+  // subject is the photographic sculpt (ink "photo") and only the ground is recoloured.
+  if(BACKDROP_INK_IDS[id]) return {ink:"photo", style:(state.style==="message"?"message":"displacement"), ground:"navy", backdrop:BACKDROP_INK_IDS[id]};
   if(state.style==="letter") return {ink:(id||"photo"), style:"displacement", ground:"navy"};   // Letter = displacement renderer, message-flow (flag sent in render())
   return state.style==="displacement"
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
@@ -1059,9 +1062,10 @@ const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch"), sunSwitch=$("#sunSwitch");
 function setStyle(newStyle, rerender){
   const wasDisp = state.style==="displacement" || state.style==="letter";
   state.style=newStyle;
-  // Paper is the Lifelike-on-white look; leaving Lifelike with it selected falls
-  // back to Original so Mosaic/Passage never render the (now struck-out) Paper.
-  if(newStyle!=="displacement" && newStyle!=="letter" && (PAPER_INK_IDS[state.ink]||BACKDROP_INK_IDS[state.ink])) state.ink="photo";
+  // Paper is the Lifelike-on-white look; leaving Lifelike with it selected falls back
+  // to Original so a message never renders the (now hidden) Paper. Backdrops now work
+  // in every mode, so they PERSIST across a mode switch (no reset).
+  if(newStyle!=="displacement" && newStyle!=="letter" && PAPER_INK_IDS[state.ink]) state.ink="photo";
   document.querySelectorAll('#styleSeg button, #styleSegResult button')
     .forEach(c=>c.classList.toggle("on", c.dataset.style===newStyle));
   // "letter" = a MESSAGE sculpted by the Lifelike renderer: it composes like a sculpt
@@ -1460,12 +1464,11 @@ function buildSwatches(){
   if(carouselEl) carouselEl.classList.toggle("relief", false);  // Sculpted now uses the full ink carousel
   swatchEl.innerHTML="";
   currentSwatches().forEach(([id,col,label])=>{
-    // "Paper"/backdrop tones are the Lifelike-on-white look (they drive the Sculpt
-    // renderer), so they only apply to Lifelike. Under Mosaic & Passage they're not
-    // available -- HIDE them entirely (a struck-through, inert swatch just reads as
-    // confusing clutter). setStyle() already resets the selected ink off these when
-    // leaving Lifelike, so nothing hidden can stay selected.
-    if((PAPER_INK_IDS[id]||BACKDROP_INK_IDS[id]) && state.style!=="displacement" && state.style!=="letter") return;
+    // The "match your space" backdrops (Sand/Slate/Cutout) now sculpt in EVERY mode
+    // (words or message), so they're offered everywhere -- the studio shows one
+    // consistent palette regardless of input. "Paper" is the one Lifelike-on-white
+    // ground that only makes sense for the words sculpt, so it stays Lifelike-only.
+    if(PAPER_INK_IDS[id] && state.style!=="displacement" && state.style!=="letter") return;
     const el=document.createElement("button"); el.type="button";
     el.className="thumb"+(id===state.ink?" sel":""); el.dataset.ink=id;
     const pic=document.createElement("div"); pic.className="pic"; pic.dataset.ink=id;
@@ -1479,12 +1482,12 @@ function buildSwatches(){
     el.addEventListener("click", ()=>{ selectInk(id); });
     swatchEl.append(el);
   });
-  // "Custom colour" chip (curated swatches stay; this is additive). The layered
-  // Words/Message renderer honours a picked colour; Sculpt doesn't, so hide it there.
-  // Also hidden on the memorial skins: a free colour picker invites a clashing/
-  // illegible result and adds decision burden for grieving families -- the curated
-  // palette is the tasteful, finite set. (Stays on the generic gift brand.)
-  if(state.style!=="displacement" && !_isMemorialBrand){
+  // "Custom colour" chip (curated swatches stay; this is additive). The Sculpt engine
+  // now draws a picked colour as a light tint, so Custom is offered in EVERY mode
+  // (words or message) for one consistent palette. Still hidden on the memorial skins:
+  // a free colour picker invites a clashing/illegible result and adds decision burden
+  // for grieving families -- the curated palette is the tasteful, finite set there.
+  if(!_isMemorialBrand){
     const cel=document.createElement("button"); cel.type="button";
     cel.className="thumb"+(state.ink==="custom"?" sel":""); cel.dataset.ink="custom";
     const cpic=document.createElement("div"); cpic.className="pic"; cpic.dataset.ink="custom";
@@ -1532,7 +1535,9 @@ function pickCustom(hex){
 buildSwatches();
 function rebuildSwatches(){
   const ids=currentSwatches().map(s=>s[0]);
-  if(!ids.includes(state.ink)) state.ink = (ids.includes("photo") ? "photo" : (state.style==="displacement" ? "g_navy" : "mono"));
+  // "custom" is an additive chip (not in currentSwatches) but valid in every mode now,
+  // so don't treat it as an unknown ink and reset it away on a mode switch.
+  if(!ids.includes(state.ink) && state.ink!=="custom") state.ink = (ids.includes("photo") ? "photo" : (state.style==="displacement" ? "g_navy" : "mono"));
   invalidate();            // renders depend on style+variant -> drop stale caches
   buildSwatches();
 }
