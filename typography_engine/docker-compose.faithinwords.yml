@@ -92,6 +92,13 @@ services:
       # Light-aware far-edge softening: on a directionally-lit subject, fade the SHADOW-side
       # silhouette edge into the ground (self-gates -- flat lighting = no effect). 0 disables.
       - TYPO_EDGE_FALLOFF=${TYPO_EDGE_FALLOFF:-0.45}
+      # Photographic Mosaic/Passage: render the Words (Mosaic) + Message (Passage) styles like
+      # Lifelike -- the worded subject on the studio navy ground, placed on a clean light
+      # backdrop -- instead of the near-black field that read "dark". OFF until validated on
+      # staging; flip to 1 (or set in .env). TYPO_LAYERED_BACKDROP picks the default outside
+      # colour (gray/ivory/sand/slate/sage/blush) when the buyer hasn't chosen a swatch.
+      - TYPO_LAYERED_PHOTO=${TYPO_LAYERED_PHOTO:-0}
+      - TYPO_LAYERED_BACKDROP=${TYPO_LAYERED_BACKDROP:-gray}
       # Paper/ink ground floors so faces + light hair read on ivory (0..1; 0 off).
       - TYPO_PAPER_FACE=${TYPO_PAPER_FACE:-0.30}
       - TYPO_PAPER_HAIR=${TYPO_PAPER_HAIR:-0.35}

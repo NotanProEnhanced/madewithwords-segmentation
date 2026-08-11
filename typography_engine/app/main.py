@@ -1537,7 +1537,8 @@ async def render(
                 render_layered_png, an, text, style_choice, cfg, warns,
                 ink=ink_choice, remove_bg=remove_bg, light=light,
                 out_width=max(320, preview_w), render_w=render_w_eff, uppercase=uppercase,
-                custom=custom_tuple, print_aspect=aspect_choice, sunglasses=sunglasses_on)
+                custom=custom_tuple, print_aspect=aspect_choice, sunglasses=sunglasses_on,
+                backdrop=backdrop_choice)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
     except Exception as e:  # noqa: BLE001
@@ -3521,7 +3522,7 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
                 mask_path.read_text(encoding="utf-8"), an,
                 r.get("ink", "navy"), bool(r.get("remove_bg", True)), DOWNLOAD_PNG_WIDTH,
                 light=bool(r.get("light", False)), boost=dl_boost, print_aspect=aspect,
-                custom=dl_custom, sunglasses=dl_sun)
+                custom=dl_custom, sunglasses=dl_sun, backdrop=r.get("backdrop"))
         else:  # no stored mask (e.g. light/engraving renders) or older jobs:
             # recompose at print size. Reuse the chosen word size so the paid
             # download matches the preview (light mode has no baked mask).
@@ -3536,7 +3537,7 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
                 ink=r.get("ink", "navy"), remove_bg=bool(r.get("remove_bg", True)),
                 light=bool(r.get("light", False)), out_width=DOWNLOAD_PNG_WIDTH, render_w=2600,
                 uppercase=bool(r.get("uppercase", True)), print_aspect=aspect, custom=dl_custom,
-                sunglasses=dl_sun)
+                sunglasses=dl_sun, backdrop=r.get("backdrop"))
         if not png_bytes:
             return None
         path.write_bytes(png_bytes)

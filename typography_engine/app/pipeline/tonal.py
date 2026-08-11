@@ -251,6 +251,41 @@ _POSTER = {
     "photo_paper": ("#f6f1e8", None),
 }
 
+# --- Photographic layered mode (Mosaic / Passage rendered like Lifelike) --------
+# Mosaic/Passage read "dark" because the worded subject is composited on a near-
+# black ground AND the whole surrounding field is that same near-black -- so even a
+# bright profile becomes a dark rectangle. Lifelike (displacement) instead sits the
+# subject on the studio NAVY ground and fills the space OUTSIDE the silhouette with a
+# clean light backdrop, so the piece reads bright/photographic. This mode ports that
+# composition to the layered renderer: navy subject ground + light backdrop outside.
+# Env-gated (TYPO_LAYERED_PHOTO) so it's byte-identical until validated on staging.
+_PHOTO_NAVY_HEX = "#1a1b3a"                 # RGB ~(26,27,58); mirrors displacement GROUNDS["navy"] (BGR 58,27,13)
+# Light backdrops OUTSIDE the silhouette, RGB. Mirror displacement.BACKDROPS (which
+# are BGR) so the two renderers match swatch-for-swatch ("match your space").
+_LAYERED_BACKDROPS = {
+    "gray":  (236, 236, 236),   # soft neutral gallery grey (default)
+    "ivory": (244, 240, 232),   # warm off-white
+    "sand":  (238, 228, 208),   # warm oat / beige
+    "slate": (216, 221, 226),   # cool light slate
+    "sage":  (214, 222, 208),   # muted green-grey
+    "blush": (236, 222, 222),   # soft warm rose
+    "transparent": (236, 236, 236),   # digital cutout -> treat like grey here; alpha handled by caller
+}
+
+
+def _layered_photo_on() -> bool:
+    """Whether the photographic (subject-on-backdrop) layered mode is enabled."""
+    return os.environ.get("TYPO_LAYERED_PHOTO", "0").strip().lower() not in ("0", "false", "off", "no", "")
+
+
+def _layered_backdrop_rgb(backdrop):
+    """Resolve a backdrop name -> RGB fill for outside the silhouette. Falls back to
+    the env default (TYPO_LAYERED_BACKDROP, else 'gray')."""
+    key = (backdrop or "").strip().lower() or None
+    if key not in _LAYERED_BACKDROPS:
+        key = (os.environ.get("TYPO_LAYERED_BACKDROP", "gray").strip().lower() or "gray")
+    return np.array(_LAYERED_BACKDROPS.get(key, _LAYERED_BACKDROPS["gray"]), dtype=np.float32)
+
 
 def custom_poster(hex_in: str):
     """Build a (ground, ink) poster pair from a user-picked colour for the 'custom'
@@ -1546,7 +1581,7 @@ def build_poster(
 # ---------------------------------------------------------------------------
 
 def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = False,
-                custom=None) -> np.ndarray:
+                custom=None, ground_override: str = None) -> np.ndarray:
     """Processed, ink-tinted photo that shows through the text mask.
 
     Dark ground (default): brightness-positive -- lit areas are the bright ink,
@@ -1583,6 +1618,10 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         ground_hex, ink_hex = custom                       # (ground, ink) from a user-picked colour
     else:
         ground_hex, ink_hex = _POSTER.get(ink, ("#0a0a0c", "#f2ece0"))
+    # Photographic layered mode: lift the near-black subject ground to the studio navy
+    # so Mosaic/Passage share Lifelike's tonal base (shadows fall to navy, not black).
+    if ground_override:
+        ground_hex = ground_override
     ground = np.array(_hex_to_rgb(ground_hex), dtype=np.float32)
     grad = _GRADIENTS.get(ink)
     if grad is not None:
@@ -1739,7 +1778,7 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
                        ink: str = "mono", remove_bg: bool = True, light: bool = False,
                        out_width: int = 1400, render_w: int = 2200, tone_density: float = 0.6,
                        uppercase: bool = True, print_aspect: float = _PRINT_ASPECT, custom=None,
-                       sunglasses: bool = False):
+                       sunglasses: bool = False, backdrop: str = None):
     """Layered portrait -> PNG bytes. style='message' = poster rows; else Words
     (mosaic) layout. Returns (png_bytes, runs, ground_hex, mask_svg).
 
@@ -1818,14 +1857,15 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
     mask_svg = _mask_svg(colored)
     boost = _MSG_BOOST if style == "message" else 0.0
     png = compose_layered(mask_svg, an, ink, remove_bg, out_width, light=light, boost=boost,
-                          print_aspect=print_aspect, custom=custom, sunglasses=sunglasses)
+                          print_aspect=print_aspect, custom=custom, sunglasses=sunglasses,
+                          backdrop=backdrop)
     return png, runs, ground_hex, mask_svg
 
 
 def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int,
                     light: bool = False, boost: float = 0.0,
                     print_aspect: float = _PRINT_ASPECT, custom=None,
-                    sunglasses: bool = False) -> bytes:
+                    sunglasses: bool = False, backdrop: str = None) -> bytes:
     """Composite the tinted photo through a prebuilt white-text mask SVG. Reused
     at download from the stored mask, so the costly layout build runs only once
     (at render), not again per sale. `boost` (>0) gamma-lifts the finished
@@ -1839,8 +1879,14 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     mpng = svg_to_png_bytes(mask_svg, output_width=render_w)
     mask = np.asarray(Image.open(io.BytesIO(mpng)).convert("L"))
     H, W = mask.shape[:2]
-    photo = _tint_photo(an, W, H, ink, remove_bg, light=light, custom=custom).astype(np.float32)
-    ground = np.array(_hex_to_rgb(_ground_hex(ink, light, custom)), dtype=np.float32)
+    # Photographic mode: navy subject ground + light backdrop outside (Lifelike look),
+    # only for the photo (Original) ink on the dark-composite path. Everything else is
+    # byte-identical to before.
+    _photo_mode = (not light) and ink == "photo" and _layered_photo_on()
+    _g_override = _PHOTO_NAVY_HEX if _photo_mode else None
+    photo = _tint_photo(an, W, H, ink, remove_bg, light=light, custom=custom,
+                        ground_override=_g_override).astype(np.float32)
+    ground = np.array(_hex_to_rgb(_g_override if _g_override else _ground_hex(ink, light, custom)), dtype=np.float32)
     m = (mask.astype(np.float32) / 255.0)[..., None]
     out = (ground + (photo - ground) * m).clip(0, 255).astype(np.uint8)
     # Catchlight: a SPECULAR white glint at the eye's real brightest pixel inside
@@ -2039,7 +2085,21 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         _bg_lift = 0.0
     _bg_lift = min(max(_bg_lift, 0.0), 1.0)
     _pad_col = ground
-    if remove_bg and not light and _bg_lift > 0.0:
+    if _photo_mode and remove_bg:
+        # Photographic mode: replace the dark field OUTSIDE the silhouette with a clean
+        # LIGHT backdrop (gray/ivory/sand/slate...), exactly like Lifelike's "match your
+        # space". The subject keeps its navy ground; only outside pixels become the
+        # backdrop, so the worded subject reads bright/photographic on a studio ground.
+        _bd = _layered_backdrop_rgb(backdrop)
+        _silm = an.silhouette.mask
+        if _silm.shape[:2] != (H, W):
+            _silm = cv2.resize(_silm, (W, H), interpolation=cv2.INTER_NEAREST)
+        _outside = cv2.GaussianBlur((_silm <= 127).astype(np.float32), (0, 0),
+                                    sigmaX=max(1.0, W * 0.0025))[..., None]
+        out = (out.astype(np.float32) * (1.0 - _outside)
+               + _bd * _outside).clip(0, 255).astype(np.uint8)
+        _pad_col = _bd                             # print band matches the backdrop
+    elif remove_bg and not light and _bg_lift > 0.0:
         _silm = an.silhouette.mask
         if _silm.shape[:2] != (H, W):
             _silm = cv2.resize(_silm, (W, H), interpolation=cv2.INTER_NEAREST)
