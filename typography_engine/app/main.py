@@ -1506,7 +1506,7 @@ async def render(
     # "Match your space" backdrop: recolours ONLY the segmented background behind the
     # subject (a named wall colour), leaving the Lifelike sculpt untouched. Displacement
     # only; unknown/blank => None => legacy background behaviour.
-    _BACKDROP_KEYS = ("gray", "ivory", "sand", "slate", "sage", "blush", "transparent")
+    _BACKDROP_KEYS = ("studio", "gray", "ivory", "sand", "slate", "sage", "blush", "transparent")
     backdrop_choice = (backdrop or "").strip().lower() or None
     if backdrop_choice not in _BACKDROP_KEYS:
         backdrop_choice = None

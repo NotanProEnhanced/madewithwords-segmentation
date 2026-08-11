@@ -47,6 +47,9 @@ PAPER_FAMILY = frozenset({"paper"})
 # colours a buyer can match to a room. `None`/unknown => the legacy TYPO_BG_LIGHTEN
 # behaviour (navy sculpt on a lifted-grey backdrop).
 BACKDROPS = {
+    "studio": (230, 230, 230),  # the DEFAULT "Studio" wall -- a light neutral grey (#e6e6e6).
+                                # Explicit (not the legacy TYPO_BG_LIGHTEN lift) so the studio swatch
+                                # tile matches the render exactly; near-neutral => vibrance/sat leave it put.
     "gray":  (236, 236, 236),   # soft neutral gallery grey
     "ivory": (232, 240, 244),   # warm off-white
     "sand":  (208, 228, 238),   # warm oat / beige

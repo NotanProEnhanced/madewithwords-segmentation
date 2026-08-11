@@ -833,10 +833,14 @@ const PAPER_INK_IDS = {photo_paper:"paper"};
 // "Match your space" backdrops: recolour ONLY the segmented region behind the subject,
 // leaving the sculpt untouched. Now a first-class, INDEPENDENT axis (state.backdrop) --
 // any type colour can sit on any background. [backdropKey, previewSwatch, label];
-// "" = the default studio ground (no backdrop). These render as solid preview tiles
-// (a background is a flat colour -- it needs no per-face render to preview).
+// every entry is an EXPLICIT backdrop key the server fills with a known colour, so each
+// tile matches the render (no guessing at env behaviour). "studio" is the default. These
+// render as solid preview tiles (a background is flat -- no per-face render to preview).
 const BACKGROUNDS = [
-  ["",            "#0d1b3a", "Studio"],   // default navy ground (state.backdrop = null)
+  ["studio",      "#e6e6e6", "Studio"],   // the default -- an explicit light-neutral wall
+                                          // (server fills the same #e6e6e6), so the tile
+                                          // matches the render instead of guessing at the
+                                          // legacy TYPO_BG_LIGHTEN lift.
   ["sand",        "#eee4d0", "Sand"],
   ["slate",       "#d8dde2", "Slate"],
   ["transparent", "checker", "Cutout"],   // transparent PNG (checkerboard preview)
@@ -850,7 +854,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, crop:null, ink:"photo", inkHex:"#3a6df0", backdrop:null, style:"displacement", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true, maskData:null, sunglasses:false };
+const state = { file:null, crop:null, ink:"photo", inkHex:"#3a6df0", backdrop:"studio", style:"displacement", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true, maskData:null, sunglasses:false };
 // Referral/source tag (?ref=everloved) AND brand skin. A brand re-dresses this
 // same engine as a partner identity (name + tagline). The brand is resolved from
 // the ?brand param FIRST (reliable, and it persists in this single-page URL),
