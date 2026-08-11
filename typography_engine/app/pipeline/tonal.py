@@ -201,11 +201,6 @@ def _hex_to_rgb(h: str) -> Tuple[int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
-def _rgb_to_hex(rgb) -> str:
-    r, g, b = (int(max(0, min(255, round(float(c))))) for c in rgb)
-    return f"#{r:02x}{g:02x}{b:02x}"
-
-
 # Positional-gradient inks: hue runs top->bottom independent of the photo; tone
 # still drives density. Stops are (vertical_fraction, colour).
 _GRADIENTS = {
@@ -256,40 +251,17 @@ _POSTER = {
     "photo_paper": ("#f6f1e8", None),
 }
 
-# --- Photographic layered mode (Mosaic / Passage rendered like Lifelike) --------
-# Mosaic/Passage read "dark" because the worded subject is composited on a near-
-# black ground AND the whole surrounding field is that same near-black -- so even a
-# bright profile becomes a dark rectangle. Lifelike (displacement) instead sits the
-# subject on the studio NAVY ground and fills the space OUTSIDE the silhouette with a
-# clean light backdrop, so the piece reads bright/photographic. This mode ports that
-# composition to the layered renderer: navy subject ground + light backdrop outside.
-# Env-gated (TYPO_LAYERED_PHOTO) so it's byte-identical until validated on staging.
-_PHOTO_NAVY_HEX = "#1a1b3a"                 # RGB ~(26,27,58); mirrors displacement GROUNDS["navy"] (BGR 58,27,13)
-# Light backdrops OUTSIDE the silhouette, RGB. Mirror displacement.BACKDROPS (which
-# are BGR) so the two renderers match swatch-for-swatch ("match your space").
-_LAYERED_BACKDROPS = {
-    "gray":  (236, 236, 236),   # soft neutral gallery grey (default)
-    "ivory": (244, 240, 232),   # warm off-white
-    "sand":  (238, 228, 208),   # warm oat / beige
-    "slate": (216, 221, 226),   # cool light slate
-    "sage":  (214, 222, 208),   # muted green-grey
-    "blush": (236, 222, 222),   # soft warm rose
-    "transparent": (236, 236, 236),   # digital cutout -> treat like grey here; alpha handled by caller
-}
-
-
-def _layered_photo_on() -> bool:
-    """Whether the photographic (subject-on-backdrop) layered mode is enabled."""
+# --- Photographic Mosaic / Passage routing ------------------------------------
+# Mosaic (Words) and Passage (Message) read "dark" because they run through the
+# LAYERED renderer (words scattered on a near-black ground), a fundamentally
+# different engine from Lifelike (displacement: words follow the facial form, full
+# photographic colour). Recolouring the layered engine can make it brighter but never
+# makes it read as Lifelike -- the scatter layout is the tell. So when this flag is on,
+# main.py ROUTES the photo (Original) Mosaic/Passage renders through the Lifelike engine
+# instead. Env-gated (TYPO_LAYERED_PHOTO) so it's off until validated on staging.
+def lifelike_route_on() -> bool:
+    """Whether Mosaic/Passage (Original ink) should render through the Lifelike engine."""
     return os.environ.get("TYPO_LAYERED_PHOTO", "0").strip().lower() not in ("0", "false", "off", "no", "")
-
-
-def _layered_backdrop_rgb(backdrop):
-    """Resolve a backdrop name -> RGB fill for outside the silhouette. Falls back to
-    the env default (TYPO_LAYERED_BACKDROP, else 'gray')."""
-    key = (backdrop or "").strip().lower() or None
-    if key not in _LAYERED_BACKDROPS:
-        key = (os.environ.get("TYPO_LAYERED_BACKDROP", "gray").strip().lower() or "gray")
-    return np.array(_LAYERED_BACKDROPS.get(key, _LAYERED_BACKDROPS["gray"]), dtype=np.float32)
 
 
 def custom_poster(hex_in: str):
@@ -1586,7 +1558,7 @@ def build_poster(
 # ---------------------------------------------------------------------------
 
 def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = False,
-                custom=None, ground_override: str = None) -> np.ndarray:
+                custom=None) -> np.ndarray:
     """Processed, ink-tinted photo that shows through the text mask.
 
     Dark ground (default): brightness-positive -- lit areas are the bright ink,
@@ -1623,10 +1595,6 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         ground_hex, ink_hex = custom                       # (ground, ink) from a user-picked colour
     else:
         ground_hex, ink_hex = _POSTER.get(ink, ("#0a0a0c", "#f2ece0"))
-    # Photographic layered mode: lift the near-black subject ground to the studio navy
-    # so Mosaic/Passage share Lifelike's tonal base (shadows fall to navy, not black).
-    if ground_override:
-        ground_hex = ground_override
     ground = np.array(_hex_to_rgb(ground_hex), dtype=np.float32)
     grad = _GRADIENTS.get(ink)
     if grad is not None:
@@ -1843,7 +1811,7 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         # = the resolution the eyes need). Save/restore so the shared cfg + recipe
         # are untouched; the download re-renders through here and pins identically.
         _orig_mf = cfg.min_font_px
-        if ink == "photo_paper" or (not light and ink == "photo" and _layered_photo_on()):
+        if ink == "photo_paper":
             cfg.min_font_px = min(float(cfg.min_font_px), 28.0)
         # Multi-scale gap-fill packs the full size range into the silhouette in
         # both modes. In light/engraving mode the lit face is pushed to white
@@ -1884,21 +1852,8 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     mpng = svg_to_png_bytes(mask_svg, output_width=render_w)
     mask = np.asarray(Image.open(io.BytesIO(mpng)).convert("L"))
     H, W = mask.shape[:2]
-    # Photographic mode (Original ink only): render Mosaic/Passage BRIGHT like Lifelike
-    # instead of the dark near-black composite. The dark ground made even a lit profile
-    # read as a dark rectangle -- lifting the ground alone was invisible because the
-    # SUBJECT itself is dark wherever the sparse words let the ground show. So route the
-    # subject through the proven "Original on paper" colour-engraving treatment
-    # (photo_paper): darkness drives the ink, the photo's own colours form the words, and
-    # the paper is the light backdrop. Result: a bright coloured word-portrait on a clean
-    # backdrop -- the whole piece reads light, no dark field. Everything else is
-    # byte-identical to before.
-    _photo_mode = (not light) and ink == "photo" and _layered_photo_on()
-    _eff_ink = "photo_paper" if _photo_mode else ink
-    _g_override = _rgb_to_hex(_layered_backdrop_rgb(backdrop)) if _photo_mode else None
-    photo = _tint_photo(an, W, H, _eff_ink, remove_bg, light=light, custom=custom,
-                        ground_override=_g_override).astype(np.float32)
-    ground = np.array(_hex_to_rgb(_g_override if _g_override else _ground_hex(ink, light, custom)), dtype=np.float32)
+    photo = _tint_photo(an, W, H, ink, remove_bg, light=light, custom=custom).astype(np.float32)
+    ground = np.array(_hex_to_rgb(_ground_hex(ink, light, custom)), dtype=np.float32)
     m = (mask.astype(np.float32) / 255.0)[..., None]
     out = (ground + (photo - ground) * m).clip(0, 255).astype(np.uint8)
     # Catchlight: a SPECULAR white glint at the eye's real brightest pixel inside
@@ -1907,8 +1862,8 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     # or iris-coloured. Dark grounds only; before the pad so coords hold.
     # photo_paper takes its OWN white-ground eye treatment below -- the dark-ground
     # catchlight/limbal here darkens toward the ground, which inverts on white.
-    eyes_e = []          # word-formed-eye paths (photo_paper / photo_mode) skip the block below
-    if not light and _eff_ink != "photo_paper":
+    eyes_e = []          # photo_paper (word-formed eyes) + light-message skip the block below
+    if not light and ink != "photo_paper":
         # Sclera wash: the whites of the eyes read LIGHT (carrying no typography),
         # painted as a soft warm-white modulated by the photo's own shading so the
         # eye keeps its natural gradient -- not a flat disc, dimmer than glyphs.

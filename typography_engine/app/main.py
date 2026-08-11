@@ -1476,7 +1476,7 @@ async def render(
             status_code=422,
         )
 
-    from .pipeline.tonal import _PALETTES, _GRADIENTS, render_layered_png, custom_poster
+    from .pipeline.tonal import _PALETTES, _GRADIENTS, render_layered_png, custom_poster, lifelike_route_on
     # "custom" = a user-picked colour (a (ground, ink) poster pair built from the
     # hex). Only the layered Words/Message renderer honours it; everything else
     # falls back. Invalid/absent hex -> not custom.
@@ -1502,6 +1502,15 @@ async def render(
         backdrop_choice = None
     style_choice = "displacement" if is_displacement else (
         "message" if style in ("message", "poster", "story") else "words")
+    # Photographic Mosaic/Passage: when enabled, the Words (mosaic) and Message
+    # (passage) styles on Original ("photo") ink render through the Lifelike
+    # (displacement) engine instead of the dark layered renderer -- same photographic,
+    # form-following portrait, fed the mosaic words / the passage message. flow=True for
+    # Passage streams the message in written order (a sculpted letter); Mosaic stays a
+    # word list. Gated by TYPO_LAYERED_PHOTO.
+    disp_route = (not is_displacement and style_choice in ("words", "message")
+                  and ink_choice == "photo" and lifelike_route_on())
+    disp_flow_eff = disp_flow if is_displacement else (style_choice == "message")
     render_w_eff = max(700, min(3000, int(render_w)))
     is_thumb = int(png_width) < 600         # small png_width => a swatch chip render
     if style_choice == "message":
@@ -1511,9 +1520,12 @@ async def render(
 
     try:
         preview_w = min(int(png_width), PREVIEW_PNG_WIDTH)
-        if is_displacement:
+        if is_displacement or disp_route:
             from .pipeline.displacement import render_displacement_portrait
-            disp_words = word_list or text.split()
+            # Routed Mosaic/Passage: source the words from `text` exactly as the paid
+            # download does (text.split()), so preview and paid file never diverge --
+            # for Passage that's the message words, for Mosaic the mosaic words.
+            disp_words = text.split() if disp_route else (word_list or text.split())
             # The Sculpt renderer works at supersample x the ANALYSIS resolution
             # (independent of out_width): 5 full-canvas text layers + a warp. At
             # SS=2 that's ~2048px and ~20s. This endpoint only ever produces the
@@ -1522,7 +1534,7 @@ async def render(
             disp_ss = 1 if int(png_width) < 1200 else 2
             png_bytes = await _bounded_to_thread(
                 render_displacement_portrait, an, disp_words, ground=ground_choice,
-                out_width=max(320, preview_w), supersample=disp_ss, flow=disp_flow,
+                out_width=max(320, preview_w), supersample=disp_ss, flow=disp_flow_eff,
                 uppercase=uppercase, ink=("photo" if ink_choice in ("custom", "photo_paper") else ink_choice),
                 # Phase-1 realism 'breathe' pass (env kill-switch STUDIO_BREATHE). MUST match
                 # the paid render in _ensure_clean_png below, or the preview would misrepresent it.
@@ -1549,7 +1561,7 @@ async def render(
     # SVG, and a cairosvg->resvg fallback quietly drops tonal modulation. Surface
     # it as a warning everywhere; in production set TYPO_REQUIRE_CAIROSVG to make
     # it a hard block so a degraded portrait can never reach a paying customer.
-    if not is_displacement:
+    if not (is_displacement or disp_route):
         import os
         from .pipeline.raster import cairosvg_available
         if not cairosvg_available():
@@ -1625,7 +1637,8 @@ async def render(
             "min_font_px": float(cfg.min_font_px), "ground": ground_choice,
             "backdrop": backdrop_choice,   # "match your space" background -> paid recompose must match
             "ink_hex": ink_hex if ink_choice == "custom" else None,   # rebuild the custom colour at download
-            "flow": bool(disp_flow),   # displacement message-flow -> paid recompose must match
+            "flow": bool(disp_flow_eff),   # displacement message-flow -> paid recompose must match
+            "disp_route": bool(disp_route),   # Mosaic/Passage rendered via the Lifelike engine -> download must too
             "aspect": aspect_choice,   # output shape (w/h) -> digital download recomposes to match
             "sunglasses": bool(sunglasses_on),   # manual opaque-lens flag -> paid recompose must match
             "ref": ref_clean, "brand": brand_clean,
@@ -3498,7 +3511,10 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
             except Exception:  # noqa: BLE001
                 _bgmask = None
         an = analyze_image(src_path.read_bytes(), RenderConfig(), warns2, manual_mask=_bgmask)
-        if r.get("style") == "displacement":
+        if r.get("style") == "displacement" or r.get("disp_route"):
+            # r.get("disp_route"): a Mosaic/Passage render routed through the Lifelike
+            # engine (photographic mode) -- the paid file recomposes through displacement
+            # too, using the same words/message + flow the preview used.
             from .pipeline.displacement import render_displacement_portrait
             png_bytes = render_displacement_portrait(
                 an, (r.get("text", "") or "").split(),
