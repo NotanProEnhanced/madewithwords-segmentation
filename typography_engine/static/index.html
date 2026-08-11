@@ -2341,12 +2341,12 @@ async function render(ink,{animate=false,background=false,thumb=false,hires=fals
     // renders fast even on a slow single core.
     fd.append("png_width","380"); fd.append("render_w","760");
   } else if(hires){
-    // "View up close" loupe: the watermarked preview at its full cap
-    // (PREVIEW_PNG_WIDTH=1400 server-side), SAME composition as the main preview
-    // (render_w unchanged) so it's the same portrait, just sharper. Still
-    // watermarked -- never the paid asset. Only needed where the on-screen preview
-    // is below the cap (the memorial 900px light preview); generic is already 1400.
-    fd.append("png_width","1400"); fd.append("render_w","1500");
+    // "View up close" loupe: a higher-res but STILL WATERMARKED render -- the loupe flag
+    // tells the server to raise the preview cap to LOUPE_PNG_WIDTH (2000). Same composition
+    // as the brand's main preview (matching render_w) so it's the same portrait, just
+    // sharper. Never the paid asset. Applies to every brand now.
+    fd.append("png_width","2000"); fd.append("loupe","1");
+    if(_isMemorialBrand) fd.append("render_w","1500");   // match the memorial light preview; generic uses the server default (its main preview does too)
   } else if(_isMemorialBrand){
     // Memorial: a LIGHT preview (smaller + less dense) renders in a few seconds
     // instead of ~16s; the paid download recomposes at full render_w server-side,
@@ -2449,14 +2449,14 @@ $("#arrowR").addEventListener("click", ()=> swatchEl.scrollBy({left:200,behavior
 const zoomView=$("#zoomView"), zoomImg=$("#zoomImg"); let zScale=1;
 function applyZoom(){ zoomImg.style.width=(zScale*100)+"%"; zoomImg.style.cursor = zScale>=3 ? "zoom-out" : "zoom-in"; }
 // The on-screen preview is deliberately low-res (fast; the paid file is the full-detail
-// asset). On "view up close", upgrade the loupe to a higher-res WATERMARKED render where
-// the preview is below the cap (the memorial 900px light preview -> 1400). Cached per
-// variant so reopening is instant; generic is already at the cap, so it's a no-op there.
+// asset). On "view up close", upgrade the loupe to a higher-res WATERMARKED render (2000px
+// via the loupe flag) on every brand -- memorial's 900px light preview and generic's 1400px
+// preview both sharpen. Cached per variant so reopening is instant.
 let zoomHiCache={};
 function zoomKey(){ return [gen,state.ink,state.inkHex,state.backdrop,state.style,state.minFont,state.sunglasses].join("|"); }
 function setZoomLoading(on){ const el=$("#zoomLoad"); if(el) el.style.display = on ? "" : "none"; }
 async function loadZoomHiRes(){
-  if(!_isMemorialBrand || !state.file) return;
+  if(!state.file) return;
   const key=zoomKey();
   if(zoomHiCache[key]){ if(zoomView.classList.contains("on")) zoomImg.src=zoomHiCache[key]; return; }
   setZoomLoading(true);

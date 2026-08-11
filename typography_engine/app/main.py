@@ -50,6 +50,7 @@ from .config import (
     MAX_IMAGE_MP,
     MAX_IMAGE_PIXELS,
     MAX_UPLOAD_BYTES,
+    LOUPE_PNG_WIDTH,
     OUTPUTS_DIR,
     PREVIEW_PNG_WIDTH,
     PRINTFUL_API_TOKEN,
@@ -1370,6 +1371,9 @@ async def render(
     message: Optional[str] = Form(None),
     flow: Optional[str] = Form(None),   # displacement only: stream the text as a MESSAGE
                                         # (in order, looping) instead of a weighted word list
+    loupe: Optional[str] = Form(None),  # "view up close": render the WATERMARKED preview at
+                                        # the higher LOUPE_PNG_WIDTH cap so the close-up reads
+                                        # crisply. Still watermarked -- not the paid asset.
     poster: bool = Form(False),
     title: Optional[str] = Form(None),
     caption: Optional[str] = Form(None),
@@ -1542,7 +1546,11 @@ async def render(
         text = " ".join(word_list) or (message or "").strip()
 
     try:
-        preview_w = min(int(png_width), PREVIEW_PNG_WIDTH)
+        # "View up close" loupe renders at a higher (still watermarked) cap so the close-up
+        # is crisp; every other preview stays web-light at PREVIEW_PNG_WIDTH.
+        _is_loupe = str(loupe or "").strip().lower() in ("1", "true", "yes", "on")
+        _preview_cap = LOUPE_PNG_WIDTH if _is_loupe else PREVIEW_PNG_WIDTH
+        preview_w = min(int(png_width), _preview_cap)
         if is_displacement or disp_route:
             from .pipeline.displacement import render_displacement_portrait
             # Routed Mosaic/Passage: source the words from `text` exactly as the paid

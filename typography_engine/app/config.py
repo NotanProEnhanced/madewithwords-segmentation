@@ -222,6 +222,10 @@ GATHER_WORD_MAXLEN = env_int("TYPO_GATHER_WORD_MAXLEN", 40)           # per subm
 # rendered at print resolution (lazily, at download time) so the one expensive
 # big raster runs once per sale, not on every preview/swatch.
 PREVIEW_PNG_WIDTH = env_int("TYPO_PREVIEW_PX", 1400)
+# "View up close" loupe: a higher-res but STILL WATERMARKED render so the on-screen
+# close-up reads crisply, without exposing the (larger) paid asset. Only used when the
+# render carries the loupe flag; the standard preview stays at PREVIEW_PNG_WIDTH.
+LOUPE_PNG_WIDTH = env_int("TYPO_LOUPE_PX", 2000)
 # Print/download long-edge width in px. 3600 clears Printful's 150-PPI floor with
 # margin on every catalogued size: 225 PPI on 16x20, 200 PPI on 18x24 (the widest
 # product) -- crisp paper prints, ~35s to compose (warmed in the background at
