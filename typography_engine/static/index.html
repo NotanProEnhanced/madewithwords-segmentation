@@ -1111,20 +1111,27 @@ function updateStyleChooserVisibility(msgMode){
   const gal=document.getElementById("styleGallery");
   if(!seg||!gal) return;
   const vis=(id,show)=>{ const b=seg.querySelector('button[data-style="'+id+'"]'); if(b) b.style.display = show ? "" : "none"; };
-  vis("displacement", !msgMode);                       // Lifelike -> words input only
-  vis("words", !msgMode);                              // Mosaic  -> words input only
-  vis("message", !!msgMode);                           // Passage -> message input only
+  // Every style shares the ONE Lifelike engine, so Mosaic rendered identically to
+  // Lifelike and Passage identically to a Lifelike message -- offering them as separate
+  // buttons just showed the same portrait two/three times. The only real variable is the
+  // INPUT (a few words vs a written message), which the content toggle already controls.
+  // So the generic studio has a single style; the chooser never needs to show. (To bring
+  // Mosaic/Passage back as named tiers, flip these to show and restore the buttons.)
+  vis("displacement", false);
+  vis("words", false);
+  vis("message", false);
   const shown=[...seg.querySelectorAll('button[data-style]')].filter(b=>b.style.display!=="none").length;
-  gal.style.display = shown>=2 ? "" : "none";          // no chooser when there's no real choice
+  gal.style.display = shown>=2 ? "" : "none";          // one style -> no chooser
 }
 updateStyleChooserVisibility(state.style==="message" || state.style==="letter");   // apply on first load
 // Input screen: a quiet link to switch between a few words and a written message.
 // No context-free style toggle here — style exploration happens on the result gallery.
 const contentToggle=$("#contentToggle");
 if(contentToggle){ contentToggle.addEventListener("click", ()=>{
-  // On memorial skins Mosaic ("words") is hidden, so toggle Passage<->Lifelike there
-  // instead of routing to the hidden style.
-  setStyle(state.style==="message" ? (_isMemorialBrand ? "displacement" : "words") : "message", false);
+  // Single-style model: a few words -> Lifelike ("displacement"); a written message ->
+  // "message" (the same Lifelike engine, streamed in order). The content toggle is the
+  // only real choice now, so words mode always lands on the canonical Lifelike style.
+  setStyle(state.style==="message" ? "displacement" : "message", false);
 }); }
 $("#styleSegResult").addEventListener("click", e=>{ const b=e.target.closest("button"); if(b){ userTouched=true; setStyle(b.dataset.style, true); } });
 // Word-size scale: sets the floor font size; the body/mid/face/eye tiers all
