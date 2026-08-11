@@ -1109,12 +1109,17 @@ function setStyle(newStyle, rerender){
   const letter = newStyle==="letter";
   const prose = newStyle==="message", disp = newStyle==="displacement" || letter;
   const letterUI = prose || letter;
-  wordsLbl.innerHTML = letter ? "Their letter — sculpted into their face"
-    : disp ? "The words to sculpt the face"
+  // Memorial input labels use gentle, plain wording (no "sculpt"/"drape" jargon) to
+  // match the Words/Passage/Letter naming; the generic studio keeps its maker language.
+  const _mem=_isMemorialBrand;
+  wordsLbl.innerHTML = letter ? (_mem ? "Their letter — formed into their face" : "Their letter — sculpted into their face")
+    : disp ? (_mem ? "The words that form their face" : "The words to sculpt the face")
     : prose ? "A passage, in your words" : "The words that make them <em>them</em>";
   wordsHint.textContent = letter
-    ? "A letter, a tribute, a poem — sculpted across their face and draped over its form, reading like a refrain."
-    : disp ? "Their name and the traits you love — sculpted across the face and draped over its form. Separate with commas."
+    ? (_mem ? "A letter, a tribute, a poem — formed into their face, reading like a refrain."
+            : "A letter, a tribute, a poem — sculpted across their face and draped over its form, reading like a refrain.")
+    : disp ? (_mem ? "Their name and the traits you love — formed into their face. Separate with commas."
+                   : "Their name and the traits you love — sculpted across the face and draped over its form. Separate with commas.")
     : prose ? "A letter, lyrics, a poem, a tribute, your vows — it becomes the portrait."
     : "Their name, what you love, a date, an inside joke. Separate with commas.";
   words.rows = letterUI ? 5 : 3;
@@ -2487,7 +2492,7 @@ sharePanel.addEventListener("click", async e=>{
 function friendly(code){ return ({no_words:"Add a few words first.",
   unsuitable_image:"We couldn't find a clear face — try a head-and-shoulders photo.",
   could_not_decode_image:"We couldn't read that image — please try a JPG or PNG.",
-  displacement_needs_face:"The Sculpted style needs a clear, front-facing face — try another photo, or pick Words or Passage.",
+  displacement_needs_face:"We need a clear, front-facing face for this portrait — please try a head-and-shoulders photo.",
   file_too_large:"That photo is too large (max 25 MB). Try a smaller image or a screenshot.",
   image_too_large:IMG_TOO_LARGE_MSG,
   empty_upload:"Please add a photo."})[code]; }
