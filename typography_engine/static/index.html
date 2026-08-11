@@ -484,6 +484,13 @@
   #zoomImg{display:block;margin:0 auto;width:100%;cursor:zoom-in}
   .zoomclose{position:fixed;top:14px;right:16px;z-index:51;width:42px;height:42px;border-radius:50%;border:none;
     background:rgba(255,255,255,.92);color:var(--navy);font-size:24px;line-height:1;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.3)}
+  /* Honest note under the loupe: the preview is deliberately lower-res than the file
+     you buy. Sits over the image at the bottom; only visible while the loupe is open. */
+  .zoomnote{position:fixed;left:0;right:0;bottom:0;z-index:51;margin:0;pointer-events:none;
+    padding:14px 18px calc(14px + env(safe-area-inset-bottom,0px));text-align:center;
+    font-size:13px;line-height:1.45;color:#e9e9ec;
+    background:linear-gradient(to top,rgba(8,8,10,.85),rgba(8,8,10,0))}
+  .zoomload{color:#cfd3da}
   /* ---- Crop editor (opens on upload; 4:5 print frame; mouse/touch/stylus) ---- */
   .crop-modal{position:fixed;inset:0;z-index:80;background:rgba(10,12,18,.72);display:none;
     align-items:center;justify-content:center;padding:18px}
@@ -786,6 +793,7 @@
 <div id="zoomView" class="zoomview">
   <button id="zoomClose" class="zoomclose" aria-label="Close">&times;</button>
   <img id="zoomImg" alt="your typortrait, up close" />
+  <div id="zoomNote" class="zoomnote"><span id="zoomLoad" class="zoomload" style="display:none">Loading a sharper view… &middot; </span>Digital downloads &amp; prints are at a higher resolution than this preview.</div>
 </div>
 
 <div id="saveModal" class="savemodal" role="dialog" aria-modal="true" aria-labelledby="saveTitle">
@@ -2318,11 +2326,11 @@ function showBusy(animate){
   // = two spinners) and clear the cycle timer (freezing the text). One ring, live text.
   startComposeStatus();   // live phased progress, every render (keepsake forces animate=false)
 }
-async function render(ink,{animate=false,background=false,thumb=false}={}){
+async function render(ink,{animate=false,background=false,thumb=false,hires=false}={}){
   if(!state.file) return;
   if(KEEPSAKE) animate=false;   // keepsake shows the portrait in a scene; skip the canvas fly-in
   const myGen=gen;
-  if(!background && !thumb) showBusy(animate);
+  if(!background && !thumb && !hires) showBusy(animate);
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
   const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); if(state.sunglasses) fd.append("sunglasses","1"); fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
@@ -2332,6 +2340,13 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     // A 74px chip needs only the colour and rough likeness; a small canvas
     // renders fast even on a slow single core.
     fd.append("png_width","380"); fd.append("render_w","760");
+  } else if(hires){
+    // "View up close" loupe: the watermarked preview at its full cap
+    // (PREVIEW_PNG_WIDTH=1400 server-side), SAME composition as the main preview
+    // (render_w unchanged) so it's the same portrait, just sharper. Still
+    // watermarked -- never the paid asset. Only needed where the on-screen preview
+    // is below the cap (the memorial 900px light preview); generic is already 1400.
+    fd.append("png_width","1400"); fd.append("render_w","1500");
   } else if(_isMemorialBrand){
     // Memorial: a LIGHT preview (smaller + less dense) renders in a few seconds
     // instead of ~16s; the paid download recomposes at full render_w server-side,
@@ -2344,13 +2359,14 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     const r=await fetchWithTimeout("/render",{method:"POST",body:fd}, RENDER_TIMEOUT_MS); const data=await r.json();
     if(myGen!==gen) return;                 // photo/words/poster changed mid-render -> drop
     if(!r.ok||!data.ok){
-      if(background || thumb) return;
+      if(background || thumb || hires) return;
       const msg=data.detail||friendly(data.error)||"Something went wrong. Try another photo.";
       if(!portrait.src){ showServerInputError(msg, data.error); }   // first render failed -> route to the photo/words step
       else { showResultError(msg); }                               // re-render failed -> alert on the result, scrolled in
       stopAssembly(); busy.classList.add("hide"); return;
     }
     if(thumb){ thumbCache[ink]=data.preview; updateThumb(ink); return; }
+    if(hires){ return data.preview; }   // loupe render -- return the sharper URL; don't touch cache/portrait/prewarm
     cache[ink]={preview:data.preview, job:data.job, price:data.price_cents, currency:data.currency}; updateThumb(ink);
     if(data.source){ sourcePreview=data.source; if(beforeImg) beforeImg.src=sourcePreview; }   // cropped "before"
     if(background || ink!==state.ink) return;
@@ -2371,7 +2387,7 @@ async function render(ink,{animate=false,background=false,thumb=false}={}){
     } else {
       refreshSizeStrip();      // cheap: just reflects the current size; no extra renders
     }
-  }catch(e){ if(!background && !thumb){
+  }catch(e){ if(!background && !thumb && !hires){
       const m=(e&&e.name==="AbortError") ? "This is taking longer than usual — it may still be finishing. Please give it a moment, then try again." : "Network error — please try again.";
       // On a first render with no portrait yet, surface on the input screen
       // (mirrors the server-error path) rather than an empty result frame. This is
@@ -2432,9 +2448,28 @@ $("#arrowR").addEventListener("click", ()=> swatchEl.scrollBy({left:200,behavior
 /* ---------- zoom / view up close ---------- */
 const zoomView=$("#zoomView"), zoomImg=$("#zoomImg"); let zScale=1;
 function applyZoom(){ zoomImg.style.width=(zScale*100)+"%"; zoomImg.style.cursor = zScale>=3 ? "zoom-out" : "zoom-in"; }
+// The on-screen preview is deliberately low-res (fast; the paid file is the full-detail
+// asset). On "view up close", upgrade the loupe to a higher-res WATERMARKED render where
+// the preview is below the cap (the memorial 900px light preview -> 1400). Cached per
+// variant so reopening is instant; generic is already at the cap, so it's a no-op there.
+let zoomHiCache={};
+function zoomKey(){ return [gen,state.ink,state.inkHex,state.backdrop,state.style,state.minFont,state.sunglasses].join("|"); }
+function setZoomLoading(on){ const el=$("#zoomLoad"); if(el) el.style.display = on ? "" : "none"; }
+async function loadZoomHiRes(){
+  if(!_isMemorialBrand || !state.file) return;
+  const key=zoomKey();
+  if(zoomHiCache[key]){ if(zoomView.classList.contains("on")) zoomImg.src=zoomHiCache[key]; return; }
+  setZoomLoading(true);
+  try{
+    const url=await render(state.ink,{hires:true});
+    if(url){ zoomHiCache[key]=url; if(zoomView.classList.contains("on") && zoomKey()===key) zoomImg.src=url; }
+  }catch(e){}
+  setZoomLoading(false);
+}
 $("#zoomBtn").addEventListener("click", ()=>{
   const src=portrait.getAttribute("src"); if(!src) return;
   zoomImg.src=src; zScale=1; applyZoom(); zoomView.classList.add("on"); zoomView.scrollTop=0;
+  loadZoomHiRes();   // swap in a sharper render when it's ready
 });
 zoomImg.addEventListener("click", e=>{ e.stopPropagation(); zScale = zScale>=3 ? 1 : zScale+1; applyZoom(); });
 function closeZoom(){ zoomView.classList.remove("on"); }
