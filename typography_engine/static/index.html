@@ -935,18 +935,17 @@ if(!_isMemorialBrand){
 if(_isMemorialBrand){
   const _mb=document.querySelector('#styleSegResult button[data-style="words"]');
   if(_mb) _mb.style.display="none";
-  const _lt=document.querySelector('#styleSegResult button[data-style="letter"]');
-  if(_lt) _lt.style.display="";   // the written-letter option -> memorial only
-  // Relabel the cards to the input-led scheme (label + the hint shown before the
-  // buyer's own thumbnail lands).
+  // "Letter" and "Passage" render the SAME portrait -- both stream the written text into
+  // the face through the sculpt engine (only the label differed). So the memorial chooser
+  // is just TWO real choices: a few Words, or a longer Passage (a letter, a verse, a
+  // tribute -- folded into Passage). Letter stays hidden (its HTML default).
   const _relabel=(style,name,hint)=>{
     const b=document.querySelector('#styleSegResult button[data-style="'+style+'"]'); if(!b) return;
     const nm=b.querySelector(".nm"); if(nm) nm.textContent=name;
     const th=b.querySelector(".styleth"); if(th) th.setAttribute("data-hint",hint);
   };
   _relabel("displacement","Words","A name & a few traits");
-  _relabel("message","Passage","Verses, lyrics, a tribute");
-  _relabel("letter","Letter","A letter");
+  _relabel("message","Passage","A letter, a verse, a tribute");
   // Initial caption (default style is Words); setStyle keeps it in sync after that.
   const _cap=document.getElementById("styleCaption");
   if(_cap) _cap.textContent="Their face, formed from their name and the words that describe them.";
@@ -1136,7 +1135,7 @@ function setStyle(newStyle, rerender){
   const cap=document.getElementById("styleCaption");
   if(cap) cap.textContent = _isMemorialBrand
     ? ( letter ? "Their letter, formed into their face — reading like a refrain."
-      : prose ? "Their face, formed from a passage — a verse, a lyric, a tribute."
+      : prose ? "Their face, formed from what you write — a letter, a verse, a tribute."
       : "Their face, formed from their name and the words that describe them." )
     : ( letter ? "Their letter, sculpted into their face — reading like a refrain."
       : disp ? "A lifelike portrait — the words shaped to follow their face."
