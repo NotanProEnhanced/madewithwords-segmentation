@@ -582,8 +582,12 @@ def render_displacement_portrait(
         if flow:
             # MESSAGE mode: stream the words continuously DOWN the rows, wrapping word
             # by word and looping seamlessly, so the sentence reads in order and then
-            # repeats like a refrain across the face. A gentle, deterministic per-row
-            # indent (no random jitter) breaks vertical seams while staying legible.
+            # repeats like a refrain across the face. A SHORT looping phrase would tile into
+            # a visible "wallpaper" lattice, so offset each row's horizontal start (rows are
+            # built 6*fs wider than the canvas, so an offset never leaves a gap). Env-tunable
+            # in units of the row font size -- TYPO_FLOW_JITTER=0 restores the old gentle,
+            # near-aligned indent; higher scatters more. Seeded rng => preview == paid file.
+            _fjit = float(os.environ.get("TYPO_FLOW_JITTER", "3.0") or 3.0)
             adv = {w: float(d.textlength(w + " ", font=f)) for w in set(_vocab_stream)}
             space = max(1.0, float(d.textlength(" ", font=f)))
             n = max(1, len(_vocab_stream))
@@ -595,7 +599,8 @@ def render_displacement_portrait(
                 while row_w < target and len(parts) < 20000:   # cap: never hang a row
                     tok = _vocab_stream[wi % n]; wi += 1
                     parts.append(tok); row_w += adv.get(tok, space)
-                d.text((-(ry % 5) * fs * 0.5, y), " ".join(parts), font=f, fill=0)
+                _ox = -(rng.randint(0, int(fs * _fjit)) if _fjit > 0 else int((ry % 5) * fs * 0.5))
+                d.text((_ox, y), " ".join(parts), font=f, fill=0)
                 y += max(6, int(fs)); ry += 1
         else:
             # Keep the words in the order they were entered (a sentence stays a
@@ -768,7 +773,11 @@ def render_displacement_portrait(
     D = cv2.GaussianBlur(gray, (0, 0), sigmaX=W * 0.020)
     dn = (D / 255.0 - 0.5) * 2.0
     xx, yy = np.meshgrid(np.arange(W).astype(np.float32), np.arange(H).astype(np.float32))
-    amp = 64.0 * s * _ssn * (1.0 - 0.85 * feat_damp)
+    # Drape amplitude: how far the rows ride the facial form (vertical remap by luminance).
+    # Higher = more sculptural wrap around brow/nose/cheeks; too high distorts. Env-tunable
+    # so it can be dialled on staging without a rebuild (default 64 = unchanged).
+    _drape = float(os.environ.get("TYPO_DRAPE", "64") or 64.0)
+    amp = _drape * s * _ssn * (1.0 - 0.85 * feat_damp)
     my = (yy + amp * dn).astype(np.float32)
     mx = xx.astype(np.float32)
 
