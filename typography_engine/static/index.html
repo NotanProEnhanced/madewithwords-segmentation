@@ -908,7 +908,7 @@ const BRANDS={
   // so a direct visit brands correctly with no ?brand param. (name/tag/theme are a first
   // pass -- easy to tune.)
   faithinwords:{ name:"Faith in Words", owned:true, tag:"A sacred portrait, in the words of Scripture.", title:"Faith in Words — a sacred portrait made from Scripture", host:"faithinwords.com",
-    style:"displacement", ink:"photo", pinStyle:true,
+    style:"displacement", ink:"photo", pinStyle:true, glyph:"cross",
     theme:{ "--navy":"#33405f", "--ink":"#2a2f40", "--paper":"#f4f0e6", "--card":"#fffdf7", "--line":"#e7dfca", "--muted":"#77705f" } }
 };
 function _brandFromReferrer(){
@@ -984,9 +984,15 @@ if(BRAND){
       const _wh=document.getElementById("wordsHint"); if(_wh) _wh.textContent="Paste an obituary or tribute, share a memory, or just list a few words — then tap “Find the words.” You can edit everything.";
       const _wt=document.getElementById("words"); if(_wt){ _wt.setAttribute("placeholder","Paste a tribute, share a memory, or list a few words…"); _wt.rows=5; }
     }
+    // Brand header glyph: memorial shows the heart (above); a brand can opt into a
+    // different mark via `glyph`. Faith uses a cross lockup instead of the heart.
+    if(BRAND.glyph==="cross"){
+      const _h=document.querySelector(".brand-heart");
+      if(_h){ _h.innerHTML='<svg viewBox="0 0 64 64" width="26" height="26" fill="none"><path d="M26 8 H38 V22 H52 V34 H38 V56 H26 V34 H12 V22 H26 Z" stroke="#b0863a" stroke-width="3.2" stroke-linejoin="round"/></svg>'; _h.style.display="inline-flex"; }
+    }
     if(BRAND.theme){ const rs=document.documentElement.style; for(const k in BRAND.theme) rs.setProperty(k, BRAND.theme[k]); }
-    // Swap the favicon to this brand's typographic heart (default is the generic T).
-    const _FAV={lovedinwords:1,everloved:1,keepsake:1};
+    // Swap the favicon to this brand's mark (default is the generic Typortrait T).
+    const _FAV={lovedinwords:1,everloved:1,keepsake:1,faithinwords:1};
     if(_FAV[BRAND_ID]) document.querySelectorAll('link[rel*="icon"]').forEach(function(l){
       const h=l.getAttribute("href"); if(h) l.setAttribute("href", h.replace("/favicons/typortrait/","/favicons/"+BRAND_ID+"/")); });
   }catch(e){}
