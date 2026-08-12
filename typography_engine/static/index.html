@@ -1518,7 +1518,10 @@ function measureSubject(f){
   fetch("/measure",{method:"POST",body:fd}).then(r=>r.json())
     .then(d=>{ if(d&&d.ok){
         applySizes(d.sizes, d.default);
-        setPhotoNote((d.faces||0)>=2 ? "More than one face detected — we'll feature the largest. Crop to one person for the sharpest portrait." : "");
+        // Multi-face is fully supported now -- the sculpt renders EVERY detected subject
+        // (displacement.py builds from an.faces), so the old "we'll feature the largest /
+        // crop to one person" warning is obsolete and was removed. We also no longer touch
+        // #photoNote here, so an earlier note (e.g. the low-res warning) isn't clobbered.
       } })
     .catch(()=>applySizes([120,57,27]));     // network failure: be conservative (skip unreadable Small)
 }
