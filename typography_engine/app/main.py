@@ -1525,7 +1525,12 @@ async def render(
     # "Match your space" backdrop: recolours ONLY the segmented background behind the
     # subject (a named wall colour), leaving the Lifelike sculpt untouched. Displacement
     # only; unknown/blank => None => legacy background behaviour.
-    _BACKDROP_KEYS = ("studio", "gray", "ivory", "sand", "slate", "sage", "blush", "transparent")
+    # Solid "match your space" walls + the floral FRAMES (wildflowers/roses/eucalyptus/line).
+    # A floral key routes the render through the Paper-sculpt + watercolour-mat path (the
+    # pipeline forces the Paper ground when it sees a floral backdrop); stored + replayed on
+    # the paid recompose like any other backdrop.
+    _BACKDROP_KEYS = ("studio", "gray", "ivory", "sand", "slate", "sage", "blush", "transparent",
+                      "wildflowers", "roses", "eucalyptus", "line")
     backdrop_choice = (backdrop or "").strip().lower() or None
     if backdrop_choice not in _BACKDROP_KEYS:
         backdrop_choice = None

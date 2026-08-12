@@ -58,6 +58,33 @@ BACKDROPS = {
     "blush": (222, 222, 236),   # soft warm rose
 }
 
+# Floral background FRAMES (memorial). Unlike a BACKDROP (a solid wall colour), a floral
+# fills the region OUTSIDE the subject silhouette with a curated watercolour frame on a
+# cream ground -- so the portrait reads as ink-on-paper inside a floral mat. A floral pairs
+# ONLY with the ink-on-ivory Paper sculpt (forced below), and is composited AFTER the print
+# canvas pad so the blooms (corners / borders / side columns) land on the true canvas edges.
+# Art lives in static/florals/<key>.png (bind-mounted -> swap the art without a rebuild) at
+# 4:5, ideally 4800x6000. A missing/broken file falls back to a flat cream mat (never crashes).
+_FLORAL_KEYS = ("wildflowers", "roses", "eucalyptus", "line")
+_FLORAL_CREAM = (232.0, 240.0, 244.0)   # BGR, matches the Paper ground so the pad is seamless
+_FLORAL_DIR = (os.environ.get("TYPO_FLORAL_DIR", "").strip()
+               or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+                   os.path.abspath(__file__)))), "static", "florals"))
+_floral_cache: Dict[str, Optional[np.ndarray]] = {}
+
+
+def _load_floral(key: str) -> Optional[np.ndarray]:
+    """Return the floral frame as a float32 BGR image (H, W, 3), or None if unavailable
+    (missing file / unreadable) so the caller can fall back to a plain cream mat."""
+    key = (key or "").strip().lower()
+    if key not in _FLORAL_KEYS:
+        return None
+    if key not in _floral_cache:
+        path = os.path.join(_FLORAL_DIR, key + ".png")
+        img = cv2.imread(path, cv2.IMREAD_COLOR)   # BGR; alpha (if any) dropped onto the frame's own ground
+        _floral_cache[key] = None if img is None else img.astype(np.float32)
+    return _floral_cache[key]
+
 # Paper = an INK-DRAWING on warm ivory. Colouring words by the photo's brightness
 # fails on a light ground (light hair/skin are highlights -> they vanish), so here
 # tone comes from ink DENSITY instead: dark photo areas get heavy dark ink; light
@@ -303,6 +330,12 @@ def render_displacement_portrait(
     if pts0 is None:
         raise ValueError("displacement_needs_face")
 
+    # A floral frame is chosen via the `backdrop` slot; it pairs ONLY with the Paper sculpt
+    # (dark ink on warm ivory), so force that ground here regardless of what the caller sent.
+    _floral_key = (backdrop or "").strip().lower()
+    _floral_key = _floral_key if _floral_key in _FLORAL_KEYS else None
+    if _floral_key:
+        ground = "paper"
     g = GROUNDS.get(ground, GROUNDS["navy"])
     rng = random.Random(seed)
     vocab = _normalize_words(words, uppercase, keep_punct=flow)   # keep sentence punctuation only for a flowing Passage/Letter
@@ -1399,7 +1432,15 @@ def render_displacement_portrait(
     _pad_bg = g["bg"]
     _fill = None
     _alpha = None
-    if _transparent and getattr(an, "silhouette", None) is not None:
+    _floral_inside = None
+    if _floral_key and getattr(an, "silhouette", None) is not None:
+        # Floral frame: capture the subject's soft alpha now; the frame itself is composited
+        # over the padded canvas below (so the blooms sit on the true edges). Pad with the
+        # art's cream so any pad the frame doesn't cover stays seamless.
+        _ow = int(out_width)
+        _floral_inside = np.clip(cv2.resize(soft01, (_ow, oh), interpolation=cv2.INTER_LINEAR), 0.0, 1.0)
+        _pad_bg = _FLORAL_CREAM
+    elif _transparent and getattr(an, "silhouette", None) is not None:
         # Transparent cutout (digital PNG only): alpha = the soft matte (hair-preserving),
         # so wispy hair feathers into transparency instead of a hard cut. Everything outside
         # -- and the print-canvas padding -- becomes fully transparent, portrait floats free.
@@ -1435,6 +1476,20 @@ def render_displacement_portrait(
         _s = _hh[..., 1]
         _hh[..., 1] = np.where(_s > _scap, _scap + (_s - _scap) * 0.35, _s)
         out = cv2.cvtColor(_hh.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
+    if _floral_key and _floral_inside is not None:
+        # Floral frame: composite the watercolour frame everywhere OUTSIDE the subject, on the
+        # padded canvas (blooms land on the true edges). Pad the subject alpha to the SAME canvas
+        # (0 outside) so hair feathers into the frame; a missing art file -> a plain cream mat.
+        _fl = _load_floral(_floral_key)
+        _hc, _wc = out.shape[:2]
+        _fa = _fit_print_canvas(np.repeat(_floral_inside[..., None], 3, axis=2).astype(np.float32),
+                                (0.0, 0.0, 0.0), print_aspect)
+        _fai = np.clip(_fa[..., 0:1], 0.0, 1.0)
+        if _fl is None:
+            _fl = np.full((_hc, _wc, 3), _FLORAL_CREAM, np.float32)
+        else:
+            _fl = cv2.resize(_fl, (_wc, _hc), interpolation=cv2.INTER_AREA).astype(np.float32)
+        out = np.clip(out, 0, 255).astype(np.float32) * _fai + _fl * (1.0 - _fai)
     if _transparent and _alpha is not None:
         # Pad the alpha to the SAME canvas as `out` (transparent border), then emit BGRA.
         _a3 = _fit_print_canvas(np.repeat(_alpha[..., None], 3, axis=2).astype(np.float32),

@@ -230,6 +230,8 @@
   .swatchgroup .ctl-hint{text-align:center;margin-top:2px}
   #bgGroup{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
   .bgswatches{justify-content:center;flex-wrap:wrap}
+  .bgswatches .bg-group{flex:0 0 100%;width:100%;text-align:center;font-size:11px;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:4px 0 -4px}
   /* Paper is hidden outside Lifelike in buildSwatches -- no dimmed/struck-through clutter. */
   .thumb-status{display:flex;align-items:center;justify-content:center;gap:8px;min-height:18px;
     text-align:center;color:var(--muted);font-size:13px;margin-top:10px;opacity:0;transition:opacity .2s}
@@ -856,6 +858,17 @@ const BACKGROUNDS = [
   ["slate",       "#d8dde2", "Slate"],
   ["transparent", "checker", "Cutout"],   // transparent PNG (checkerboard preview)
 ];
+// Floral FRAMES (memorial only). A curated watercolour frame fills the region behind the
+// subject; selecting one forces the Paper sculpt (dark ink on warm ivory) so the portrait
+// reads as ink-on-paper inside a floral mat. [key, thumbnail src, label]. The thumbnails are
+// the same bind-mounted art the server composites, so a chip always matches its render.
+const FLORALS = [
+  ["wildflowers", "/static/florals/wildflowers.png", "Wildflowers"],
+  ["roses",       "/static/florals/roses.png",       "Soft Roses"],
+  ["eucalyptus",  "/static/florals/eucalyptus.png",  "Eucalyptus"],
+  ["line",        "/static/florals/line.png",        "Quiet Line"],
+];
+const FLORAL_KEYS = FLORALS.map(f=>f[0]);
 function placeholderBg(col){
   if(col==="checker") return "repeating-conic-gradient(#cfcabf 0% 25%, #fff 0% 50%) 50% / 14px 14px";
   if(col==="conic") return "conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)";
@@ -1039,6 +1052,9 @@ function variantPost(id){
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
     : {ink:(id||"photo"), style:state.style, ground:"navy"};
   if(state.backdrop) base.backdrop = state.backdrop;
+  // A floral frame pairs only with the Paper sculpt -- force the ground so the preview
+  // request matches what the server renders (the server also forces it, belt-and-suspenders).
+  if(FLORAL_KEYS.indexOf(state.backdrop)>=0) base.ground = "paper";
   return base; }
 // Umami funnel event helper. No-ops silently if the script is blocked, still
 // loading, or unconfigured — analytics must never break the app.
@@ -1549,17 +1565,29 @@ const bgSwatchEl=$("#bgSwatches");
 function buildBgSwatches(){
   if(!bgSwatchEl) return;
   bgSwatchEl.innerHTML="";
-  currentBackgrounds().forEach(([bg,col,label])=>{
+  // One chip. `col` is a solid colour / gradient key, OR "img:<src>" for a floral thumbnail.
+  const mk=(bg,col,label)=>{
     const el=document.createElement("button"); el.type="button";
     el.className="thumb"+(((state.backdrop||"")===bg)?" sel":""); el.dataset.bg=bg;
     const pic=document.createElement("div"); pic.className="pic"; pic.dataset.bg=bg;
-    const ph=placeholderBg(col);
-    if(ph.indexOf("gradient")>=0) pic.style.backgroundImage=ph; else pic.style.backgroundColor=ph;
+    if(col.indexOf("img:")===0){
+      pic.style.backgroundImage=`url("${col.slice(4)}")`;   // floral art thumbnail (matches the render)
+    } else {
+      const ph=placeholderBg(col);
+      if(ph.indexOf("gradient")>=0) pic.style.backgroundImage=ph; else pic.style.backgroundColor=ph;
+    }
     const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
     el.append(pic,nm);
     el.addEventListener("click", ()=>selectBackground(bg));
     bgSwatchEl.append(el);
-  });
+  };
+  currentBackgrounds().forEach(([bg,col,label])=>mk(bg,col,label));
+  // Florals: a labelled group, memorial only (the frames pair with the Paper sculpt).
+  if(_isMemorialBrand && FLORALS.length){
+    const lab=document.createElement("div"); lab.className="bg-group"; lab.textContent="Florals";
+    bgSwatchEl.append(lab);
+    FLORALS.forEach(([bg,src,label])=>mk(bg,"img:"+src,label));
+  }
 }
 function markBgSel(){
   if(!bgSwatchEl) return;
