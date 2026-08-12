@@ -1786,8 +1786,11 @@ def gallery_page(request: Request) -> HTMLResponse:
                             f'<h1 id="brandTitle">{headline}</h1>', 1)
         html = html.replace("Sacred figures and beloved moments, each portrait woven entirely from the words that belong to it.",
                             lead, 1)
+        # Faith self-serve is now offered (a faith-skinned studio), so keep this entry
+        # point instead of hiding it -- pointed at the studio, which host-brands to
+        # "Faith in Words" on faithinwords.com.
         html = html.replace('<a href="/static/index.html">Make your own from a photo →</a>',
-                            '<span style="opacity:.7">Powered by Typortrait</span>', 1)
+                            '<a href="/static/index.html">Create your own from a photo →</a>', 1)
         # Marketing hero/story band above the grid: explains the "made of words" concept,
         # the value, and how it works — so the storefront home isn't a bare product grid
         # (helps conversion + gives AI/search real content). Server-rendered => crawlable.
@@ -1816,6 +1819,14 @@ def gallery_page(request: Request) -> HTMLResponse:
             'into language; step back, and the face returns. Each piece is paired with a verse chosen for its subject.</p>'
             '<div class="fh-trust"><b>From $29</b> &middot; No watermark &middot; Free phone &amp; desktop wallpapers '
             '&middot; Archival prints &amp; framed</div>'
+            # Self-serve entry point: browse the collection below, OR make your own sacred
+            # portrait from your photo + a chosen verse (the faith-skinned studio).
+            '<div style="margin-top:18px;display:flex;flex-wrap:wrap;gap:12px 16px;align-items:center">'
+            '<a href="/static/index.html" style="display:inline-block;background:#2f2b57;color:#fff;'
+            'text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:10px">'
+            'Create your own from a photo &rarr;</a>'
+            '<span style="font-size:13.5px;color:#7a7264">Your photo, sculpted from a verse you choose.</span>'
+            '</div>'
             '</div>'
             '<figure class="fh-art"><img src="/static/gallery/art/jesus-good-shepherd-loupe.jpg" '
             'alt="A sacred word portrait magnified to reveal it is made of words" loading="lazy"></figure>'

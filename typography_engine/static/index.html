@@ -900,7 +900,16 @@ const BRANDS={
   // it's reached only by the redeem redirect, never by referrer.
   keepsake:{ name:"Loved in Words", owned:true, tag:"A portrait of a life, in the words that describe them.", title:"Loved in Words — a remembrance portrait made from words",
     style:"displacement", ink:"photo", pinStyle:true, memorial:true,
-    theme:{ "--navy":"#42525f", "--ink":"#2f3742", "--paper":"#f4efe8", "--card":"#fffdf9", "--line":"#e7e0d5", "--muted":"#776f64" } }
+    theme:{ "--navy":"#42525f", "--ink":"#2f3742", "--paper":"#f4efe8", "--card":"#fffdf9", "--line":"#e7e0d5", "--muted":"#776f64" } },
+  // Faith in Words (faithinwords.com) -- sacred/devotional word portraits. NOT memorial:
+  // this is the full creative studio (a name & a few words, or a written verse/passage),
+  // just skinned with the faith identity so faithinwords.com/static/index.html brands as
+  // "Faith in Words" instead of falling back to the generic Typortrait look. Host-mapped,
+  // so a direct visit brands correctly with no ?brand param. (name/tag/theme are a first
+  // pass -- easy to tune.)
+  faithinwords:{ name:"Faith in Words", owned:true, tag:"A sacred portrait, in the words of Scripture.", title:"Faith in Words — a sacred portrait made from Scripture", host:"faithinwords.com",
+    style:"displacement", ink:"photo", pinStyle:true,
+    theme:{ "--navy":"#33405f", "--ink":"#2a2f40", "--paper":"#f4f0e6", "--card":"#fffdf7", "--line":"#e7dfca", "--muted":"#77705f" } }
 };
 function _brandFromReferrer(){
   try{
