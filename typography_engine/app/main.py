@@ -443,14 +443,15 @@ def _liw_landing_html(request: Request) -> str:
  .serif{{font-family:"Palatino Linotype","Book Antiqua",Palatino,Georgia,serif}}
  a{{color:var(--navy)}}.wrap{{max-width:1120px;margin:0 auto;padding:0 22px}}
  header{{display:flex;align-items:center;justify-content:space-between;padding:18px 0}}
- .brand{{display:flex;align-items:center;gap:9px;text-decoration:none}}
- .brand .nm{{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:21px;font-weight:600;color:var(--navy)}}
- header nav a{{font-size:14px;color:var(--mut);text-decoration:none;margin-left:18px}}
+ .brand{{display:flex;align-items:center;gap:9px;text-decoration:none;flex-shrink:0}}
+ .brand .nm{{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:21px;font-weight:600;color:var(--navy);white-space:nowrap}}
+ header nav a{{font-size:14px;color:var(--mut);text-decoration:none;margin-left:18px;white-space:nowrap}}
  header nav a:hover{{color:var(--navy)}}
- /* Narrow screens (iPhone): the brand + nav don't fit one row, so "Redeem a code"
-    wrapped awkwardly. Stack the header -- brand centred on top, nav centred on its own
-    line -- and let the links wrap evenly instead of colliding with the brand. */
- @media(max-width:560px){{
+ /* Narrow screens (iPhone): the brand + nav don't fit one row, so the labels wrapped
+    mid-word ("Loved in / Words", "Redeem a / code"). white-space:nowrap keeps each label
+    intact at every width; here we also stack -- brand centred on top, nav centred on its
+    own line -- so nothing collides. */
+ @media(max-width:640px){{
    header{{flex-direction:column;gap:12px;padding:14px 0}}
    header nav{{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 22px}}
    header nav a{{margin:0}}
