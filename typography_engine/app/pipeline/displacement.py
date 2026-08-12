@@ -706,20 +706,19 @@ def render_displacement_portrait(
         _bottom_y = float(_rows_on.max()) if _rows_on.size else float(H)
         _top_y = float(_rows_on.min()) if _rows_on.size else 0.0
         if len(all_pts) <= 1:
-            # Single subject (the memorial portrait). Hold the neck + body + hair at a clean,
-            # UNIFORM fine tier outside the face. The previous flat-step + ramp + neck-band
-            # stack combined into a NON-MONOTONIC curve -- fine at the jaw, but a bulge of
-            # larger type through the mid-neck (read as "larger near the jaw, not uniform").
-            # Instead, raise df to at least the target wherever we're below the chin or above
-            # the face-top, feathered by _notface so it eases out of the jaw/hairline with no
-            # step and no bulge. TYPO_NECK_FINE = the target (0 = legacy large body; higher =
-            # finer, closer to the face).
-            _neck_fine = float(os.environ.get("TYPO_NECK_FINE", "0.65") or 0.65)
+            # Single subject (the memorial portrait). Hold the neck + body + hair AT LEAST as
+            # fine as the FACE'S OWN detail floor (_fdt), so they read proportional to the jaw
+            # -- uniform, never coarser than the face, no bulge. (The prior fixed target 0.65
+            # sat BELOW _fdt=0.8, so the neck rendered COARSER than the jaw -> "still too
+            # large".) TYPO_NECK_FINE scales that floor: 1.0 = match the face; >1 = finer than
+            # the face; 0 = legacy large body.
+            _neck_scale = float(os.environ.get("TYPO_NECK_FINE", "1.0") or 1.0)
+            _neck_target = float(np.clip(_fdt * _neck_scale, 0.0, 1.0))
             _chin_y = max(float(_p[:, 1].max()) for _p in all_pts)
             _face_top_y = min(float(_p[:, 1].min()) for _p in all_pts)
             _offface = _notface * np.maximum((_gyv > _chin_y).astype(np.float32),
                                              (_gyv < _face_top_y).astype(np.float32))
-            df = np.clip(np.maximum(df, _neck_fine * _offface), 0, 1)
+            df = np.clip(np.maximum(df, _neck_target * _offface), 0, 1)
         else:
             # Group: each subject's neck/chest (and hair/crown) must graduate from THEIR OWN
             # chin, not one group-wide line -- otherwise a taller person's chest sizes
