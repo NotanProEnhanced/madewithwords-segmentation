@@ -713,7 +713,7 @@ def render_displacement_portrait(
             # Neck-fine band (was group-only): raise df -> FINER type right under the jaw,
             # decaying over ~0.9 face-heights into the chest, so the neck reads proportional
             # to the chin/jaw instead of stepping straight to large. Env-tunable; 0 = legacy.
-            _neck_fine = float(os.environ.get("TYPO_NECK_FINE", "0.35") or 0.35)
+            _neck_fine = float(os.environ.get("TYPO_NECK_FINE", "0.65") or 0.65)
             if _neck_fine > 0.0:
                 _fh1 = max(1.0, max(float(_p[:, 1].max() - _p[:, 1].min()) for _p in all_pts))
                 _neckm = (_gyv > _chin_y).astype(np.float32) * _notface
