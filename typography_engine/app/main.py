@@ -447,6 +447,14 @@ def _liw_landing_html(request: Request) -> str:
  .brand .nm{{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:21px;font-weight:600;color:var(--navy)}}
  header nav a{{font-size:14px;color:var(--mut);text-decoration:none;margin-left:18px}}
  header nav a:hover{{color:var(--navy)}}
+ /* Narrow screens (iPhone): the brand + nav don't fit one row, so "Redeem a code"
+    wrapped awkwardly. Stack the header -- brand centred on top, nav centred on its own
+    line -- and let the links wrap evenly instead of colliding with the brand. */
+ @media(max-width:560px){{
+   header{{flex-direction:column;gap:12px;padding:14px 0}}
+   header nav{{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 22px}}
+   header nav a{{margin:0}}
+ }}
  .hero{{display:grid;grid-template-columns:1.05fr .95fr;gap:46px;align-items:center;padding:26px 0 44px}}
  @media(max-width:820px){{.hero{{grid-template-columns:1fr;gap:26px;padding:8px 0 30px}}}}
  .eyebrow{{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600}}
