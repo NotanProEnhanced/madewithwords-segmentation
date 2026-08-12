@@ -1518,10 +1518,11 @@ function measureSubject(f){
   fetch("/measure",{method:"POST",body:fd}).then(r=>r.json())
     .then(d=>{ if(d&&d.ok){
         applySizes(d.sizes, d.default);
-        // Multi-face is fully supported now -- the sculpt renders EVERY detected subject
-        // (displacement.py builds from an.faces), so the old "we'll feature the largest /
-        // crop to one person" warning is obsolete and was removed. We also no longer touch
-        // #photoNote here, so an earlier note (e.g. the low-res warning) isn't clobbered.
+        // Multi-face is fully supported -- the sculpt renders EVERY subject (displacement.py
+        // builds from an.faces). So instead of the old "we'll feature the largest / crop to
+        // one person" warning, reassure warmly on a group photo. Guarded by !_lowResUpload so
+        // it never overwrites the more-important low-res note (both share #photoNote).
+        if((d.faces||0)>=2 && !window._lowResUpload) setPhotoNote("More than one person — everyone will be featured.");
       } })
     .catch(()=>applySizes([120,57,27]));     // network failure: be conservative (skip unreadable Small)
 }
