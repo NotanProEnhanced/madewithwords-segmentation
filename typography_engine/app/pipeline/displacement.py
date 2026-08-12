@@ -192,11 +192,19 @@ def _font(sz: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
-def _normalize_words(words: Sequence[str], uppercase: bool = True) -> List[str]:
+# Characters kept inside a token. Word-cloud modes keep only hyphen + apostrophe (commas
+# etc. are separators there, and "KIND," would read as clutter). A flowing Passage/Letter
+# also keeps sentence punctuation so a verse or note reads naturally.
+_WORD_PUNCT = "-'"
+_FLOW_PUNCT = _WORD_PUNCT + ".,;:!?()&" + '"' + "‘’“”–—…"
+
+
+def _normalize_words(words: Sequence[str], uppercase: bool = True, keep_punct: bool = False) -> List[str]:
     out: List[str] = []
+    allow = _FLOW_PUNCT if keep_punct else _WORD_PUNCT
     for w in words:
         s = str(w).upper() if uppercase else str(w)
-        t = "".join(ch for ch in s if ch.isalnum() or ch in "-'")
+        t = "".join(ch for ch in s if ch.isalnum() or ch in allow)
         if t:
             out.append(t)
     return out or (["LOVE"] if uppercase else ["love"])
@@ -297,7 +305,7 @@ def render_displacement_portrait(
 
     g = GROUNDS.get(ground, GROUNDS["navy"])
     rng = random.Random(seed)
-    vocab = _normalize_words(words, uppercase)
+    vocab = _normalize_words(words, uppercase, keep_punct=flow)   # keep sentence punctuation only for a flowing Passage/Letter
     # Importance-weighted frequency: words arrive most-important-first (the AI returns
     # them that way; people type the name first), so repeat the leading words more --
     # the portrait is built mostly OF them. Each word's copies are spread evenly across
