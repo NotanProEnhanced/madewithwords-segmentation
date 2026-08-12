@@ -717,14 +717,18 @@ def render_displacement_portrait(
             # leaves large type there. maximum() only raises df, so overlapping the face is safe
             # (the face floor already holds it). TYPO_NECK_FINE scales the floor: 1.0 = match the
             # face; >1 = finer; 0 = legacy large body.
+            # FULL-strength boost across the ENTIRE region below the chin-bottom / above the
+            # face-top (hard horizontal cut, seamless because the neck target == the face floor
+            # so both read the same size); _notface fills the sides. Earlier masks (_notface's
+            # wide blur, and a ramp that started at 0 AT the chin) both starved the UPPER neck
+            # of the boost -> large type there. This applies it evenly from just under the jaw.
             _neck_scale = float(os.environ.get("TYPO_NECK_FINE", "1.0") or 1.0)
             _neck_target = float(np.clip(_fdt * _neck_scale, 0.0, 1.0))
             _chin_y = max(float(_p[:, 1].max()) for _p in all_pts)
             _face_top_y = min(float(_p[:, 1].min()) for _p in all_pts)
-            _fh1 = max(1.0, max(float(_p[:, 1].max() - _p[:, 1].min()) for _p in all_pts))
-            _belowm = np.clip((_gyv - _chin_y) / max(1.0, 0.15 * _fh1), 0.0, 1.0)
-            _abovem = np.clip((_face_top_y - _gyv) / max(1.0, 0.15 * _fh1), 0.0, 1.0)
-            df = np.clip(np.maximum(df, _neck_target * np.maximum(_belowm, _abovem)), 0, 1)
+            _offmask = np.maximum(_notface, np.maximum((_gyv > _chin_y).astype(np.float32),
+                                                       (_gyv < _face_top_y).astype(np.float32)))
+            df = np.clip(np.maximum(df, _neck_target * _offmask), 0, 1)
         else:
             # Group: each subject's neck/chest (and hair/crown) must graduate from THEIR OWN
             # chin, not one group-wide line -- otherwise a taller person's chest sizes
