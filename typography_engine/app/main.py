@@ -1293,9 +1293,12 @@ async def suggest_words_endpoint(
     request: Request,
     story: str = Form(""),
     nickname: str = Form(""),
+    role: str = Form(""),
     sayings: str = Form(""),
     three_words: str = Form(""),
     hobby: str = Form(""),
+    known: str = Form(""),
+    legacy: str = Form(""),
 ) -> JSONResponse:
     """Memorial 'Share their story' step: take a pasted tribute/obituary and/or the
     optional structured details (nickname, sayings, three words, hobby) and return
@@ -1306,9 +1309,12 @@ async def suggest_words_endpoint(
     text = (story or "").strip()
     details = {
         "nickname": (nickname or "").strip(),
+        "role": (role or "").strip(),
         "sayings": (sayings or "").strip(),
         "three_words": (three_words or "").strip(),
         "hobby": (hobby or "").strip(),
+        "known": (known or "").strip(),
+        "legacy": (legacy or "").strip(),
     }
     if not text and not any(details.values()):
         return JSONResponse({"ok": True, "words": []})

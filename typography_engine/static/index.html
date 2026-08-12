@@ -600,10 +600,13 @@
       <details class="story-more" id="storyMore">
         <summary>Add a few more details</summary>
         <div class="story-grid">
-          <label>Nickname<input id="dtNickname" type="text" autocomplete="off" placeholder="Poppy, Nana&hellip;" maxlength="40" /></label>
-          <label>Favourite saying<input id="dtSaying" type="text" autocomplete="off" placeholder="&ldquo;Always look up.&rdquo;" maxlength="80" /></label>
-          <label>Three words<input id="dtThree" type="text" autocomplete="off" placeholder="kind, funny, strong" maxlength="60" /></label>
-          <label>Hobby or passion<input id="dtHobby" type="text" autocomplete="off" placeholder="gardening, fishing&hellip;" maxlength="40" /></label>
+          <label>What everyone called them<input id="dtNickname" type="text" autocomplete="off" placeholder="Poppy, Nana, Coach&hellip;" maxlength="40" /></label>
+          <label>Who they were to you<input id="dtRole" type="text" autocomplete="off" placeholder="Mom, best friend, my rock&hellip;" maxlength="50" /></label>
+          <label>In a few words<input id="dtThree" type="text" autocomplete="off" placeholder="kind, stubborn, faithful&hellip;" maxlength="60" /></label>
+          <label>What they loved<input id="dtHobby" type="text" autocomplete="off" placeholder="gardening, the Yankees, her faith&hellip;" maxlength="60" /></label>
+          <label>Something they always said<input id="dtSaying" type="text" autocomplete="off" placeholder="&ldquo;Always look up.&rdquo;" maxlength="80" /></label>
+          <label>What they were known for<input id="dtKnown" type="text" autocomplete="off" placeholder="her laugh, Sunday dinners&hellip;" maxlength="60" /></label>
+          <label>What they left you with<input id="dtLegacy" type="text" autocomplete="off" placeholder="patience, faith, courage&hellip;" maxlength="60" /></label>
         </div>
       </details>
       <div id="storyMsg" class="story-msg" aria-live="polite"></div>
@@ -1079,15 +1082,16 @@ consent.addEventListener("change", refreshCreate);
     // words), and this distills it into the word list IN PLACE -- no second box.
     // "Back to what I wrote" restores the original. Fails soft to manual entry.
     const text=(words.value||"").trim();
-    const details={nickname:val("dtNickname"), sayings:val("dtSaying"), three_words:val("dtThree"), hobby:val("dtHobby")};
+    const details={nickname:val("dtNickname"), role:val("dtRole"), sayings:val("dtSaying"), three_words:val("dtThree"), hobby:val("dtHobby"), known:val("dtKnown"), legacy:val("dtLegacy")};
     const hasDetail=Object.values(details).some(Boolean);
     if(!text && !hasDetail){ say("Write or paste something about them, or add a detail or two."); words.focus(); return; }
     btn.disabled=true; const label=btn.textContent; btn.textContent="Finding the words…"; say("");
     try{
       const fd=new FormData();
       fd.append("story", text);
-      fd.append("nickname", details.nickname||""); fd.append("sayings", details.sayings||"");
+      fd.append("nickname", details.nickname||""); fd.append("role", details.role||""); fd.append("sayings", details.sayings||"");
       fd.append("three_words", details.three_words||""); fd.append("hobby", details.hobby||"");
+      fd.append("known", details.known||""); fd.append("legacy", details.legacy||"");
       const r=await fetch("/suggest-words",{method:"POST",body:fd});
       const j=await r.json();
       const ws=(j&&j.words)||[];
@@ -2857,7 +2861,7 @@ function fetchWithTimeout(url, opts, ms){
       var file=new File([blob],"sample-keeper.jpg",{type:blob.type||"image/jpeg"});
       if(typeof useCroppedFile==="function") useCroppedFile(file); else if(typeof setFile==="function") setFile(file);
       setv("words", SAMPLE_OBIT);   // the one box now holds the story; "Find the words" distills it in place
-      setv("dtNickname","Bob"); setv("dtSaying","There’s good in everyone."); setv("dtThree","kind, wise, patient"); setv("dtHobby","fishing");
+      setv("dtNickname","Bob"); setv("dtRole","Dad, Grandpa, my rock"); setv("dtSaying","There’s good in everyone."); setv("dtThree","kind, wise, patient"); setv("dtHobby","fishing"); setv("dtKnown","his bear hugs, Sunday pancakes"); setv("dtLegacy","patience, faith");
       var sm=document.getElementById("storyMore"); if(sm) sm.open=true;
       if(window.guidedOpenStep) setTimeout(function(){ try{ guidedOpenStep(2); }catch(e){} },60);
       var msg=document.getElementById("storyMsg"); if(msg) msg.textContent="Example loaded — tap “Find the words,” then “Create their portrait.”";

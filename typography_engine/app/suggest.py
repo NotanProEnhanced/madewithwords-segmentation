@@ -51,10 +51,13 @@ _SYSTEM = (
 
 # Structured detail fields the studio may add alongside the free-text story.
 _DETAIL_LABELS = (
-    ("nickname", "Nickname"),
-    ("sayings", "Favourite saying"),
-    ("three_words", "Three words that describe them"),
-    ("hobby", "Hobby or passion"),
+    ("nickname", "What people called them (names/nicknames)"),
+    ("role", "Who they were to their family (roles/relationships)"),
+    ("three_words", "A few words that described them"),
+    ("hobby", "What they loved (hobbies, passions, teams, faith)"),
+    ("sayings", "Something they always said"),
+    ("known", "What they were known for"),
+    ("legacy", "What they left the family with (values they passed on)"),
 )
 
 
