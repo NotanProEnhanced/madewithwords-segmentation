@@ -1781,6 +1781,7 @@ def gallery_page(request: Request) -> HTMLResponse:
               f'<meta name="twitter:description" content="{desc}">'
               f'<meta name="twitter:image" content="{img}">')
         html = html.replace("<title>The Typortrait Gallery</title>", f"<title>{doctitle}</title>{og}", 1)
+        html = html.replace("/static/favicons/typortrait/", "/static/favicons/faithinwords/")   # faith favicon on the gallery (its <head> hardcodes the typortrait set)
         html = html.replace('style="display:none;font:700 13px', 'style="display:block;font:700 13px', 1)
         html = html.replace('<h1 id="brandTitle">The Typortrait Gallery</h1>',
                             f'<h1 id="brandTitle">{headline}</h1>', 1)
@@ -4396,7 +4397,7 @@ def _notify_sale(sess: dict, order: Optional[dict]) -> None:
 def _fav_links(brand: str = "typortrait") -> str:
     """Favicon <link> tags for a server-rendered page. `brand` maps to the studio
     favicon set at /static/favicons/{brand}/; an unknown brand -> generic typortrait."""
-    b = brand if brand in ("typortrait", "lovedinwords", "everloved") else "typortrait"
+    b = brand if brand in ("typortrait", "lovedinwords", "everloved", "faithinwords") else "typortrait"
     p = f"/static/favicons/{b}"
     return (f"<link rel='icon' type='image/svg+xml' href='{p}/favicon.svg'>"
             f"<link rel='icon' type='image/png' sizes='32x32' href='{p}/favicon-32.png'>"
@@ -4411,7 +4412,7 @@ _SITE_BRANDS = {
     "lovedinwords": ("Loved in Words", "https://lovedinwords.com", "lovedinwords"),
     "keepsake":     ("Loved in Words", "https://lovedinwords.com", "lovedinwords"),
     "everloved":    ("Ever Loved",     "https://everloved.com",    "everloved"),
-    "faithinwords": ("Faith in Words", "https://faithinwords.com", "typortrait"),
+    "faithinwords": ("Faith in Words", "https://faithinwords.com", "faithinwords"),
 }
 
 
