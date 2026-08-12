@@ -458,14 +458,33 @@ def render_displacement_portrait(
             # apply the lens only when it's dark; bright eyes fall through to normal rendering.
             # Safe because the user already confirmed sunglasses are present -- this only picks
             # WHICH faces, not whether any lens exists. TYPO_LENS_DARK_MAX tunes the cutoff.
+            # Single confirmed-sunglasses subject: there's no ambiguity about WHICH face wears
+            # the lens, so apply it unconditionally. A glossy/reflective lens can read too bright
+            # for the darkness gate below (its glare spikes the p90), which would otherwise
+            # fabricate eyes behind confirmed sunglasses. The gate only matters for MIXED groups.
+            if len(all_pts) <= 1:
+                _dark_lens_active = True
+                _dark_lens_eyes.extend(_fi)
+                _dark_lens_face_pts.append(_fp)
+                continue
             _lens_max = float(os.environ.get("TYPO_LENS_DARK_MAX", "115") or 115)
-            _sc = []
+            _lens_med_max = float(os.environ.get("TYPO_LENS_DARK_MED", "105") or 105)
+            _sc = []      # per-eye p90  -> bright-sclera tell (fooled by a lens glare spike)
+            _md = []      # per-eye median -> overall darkness tell (robust to a glare spike)
             for _icx, _icy, _ir in _fi:
                 _r = gray[max(0, int(_icy - _ir * 2.0)):int(_icy + _ir * 2.0),
                           max(0, int(_icx - _ir * 2.0)):int(_icx + _ir * 2.0)]
                 if _r.size >= 16:
                     _sc.append(float(np.percentile(_r, 90)))
-            if not _sc or max(_sc) < _lens_max:      # both eyes dark -> a real tinted lens
+                    _md.append(float(np.median(_r)))
+            # A real open eye is broadly bright -- a HIGH MEDIAN across lids + sclera. A tinted
+            # lens is dark OVERALL even when a glare/reflection lifts its p90, so the old
+            # p90-only test mistook a glossy/mirrored lens for a clear-glasses/real eye and let
+            # eyes be fabricated behind confirmed sunglasses. Treat the face as lensed when it is
+            # dark by EITHER measure (both eyes' p90 dark, OR both eyes' median dark) so a
+            # reflective lens is caught while a genuinely bright real eye still renders normally.
+            _lens_dark = (not _sc) or (max(_sc) < _lens_max) or (bool(_md) and max(_md) < _lens_med_max)
+            if _lens_dark:                           # both eyes dark -> a real tinted lens
                 _dark_lens_active = True
                 _dark_lens_eyes.extend(_fi)
                 _dark_lens_face_pts.append(_fp)
