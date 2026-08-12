@@ -724,10 +724,12 @@ def render_displacement_portrait(
             # of the boost -> large type there. This applies it evenly from just under the jaw.
             _neck_scale = float(os.environ.get("TYPO_NECK_FINE", "1.0") or 1.0)
             _neck_target = float(np.clip(_fdt * _neck_scale, 0.0, 1.0))
-            _chin_y = max(float(_p[:, 1].max()) for _p in all_pts)
-            _face_top_y = min(float(_p[:, 1].min()) for _p in all_pts)
-            _offmask = np.maximum(_notface, np.maximum((_gyv > _chin_y).astype(np.float32),
-                                                       (_gyv < _face_top_y).astype(np.float32)))
+            # SHARP face-hull complement (tight fw*0.03 feather) so the boost reaches full
+            # strength right under the JAWLINE. _notface's wide fw*0.22 blur and the chin-TIP
+            # cut both left the under-jaw neck un-boosted -> large type there. Seamless because
+            # the neck target == the face floor; df is smoothed downstream.
+            _offmask = 1.0 - np.clip(cv2.GaussianBlur(fmh.astype(np.float32), (0, 0),
+                                                      sigmaX=max(1.0, fw * 0.03)), 0, 1)
             df = np.clip(np.maximum(df, _neck_target * _offmask), 0, 1)
         else:
             # Group: each subject's neck/chest (and hair/crown) must graduate from THEIR OWN
