@@ -203,7 +203,7 @@ def _render_word_portrait(bgr, mask, words, ground="mid"):
     sc = W / 900.0                                          # size reference
 
     # 1) Four ink-coverage tiers, coarse -> micro. PET_TYPE_SCALE (<1 = finer type).
-    _tsc = float(os.environ.get("PET_TYPE_SCALE", "0.6") or 0.6)
+    _tsc = float(os.environ.get("PET_TYPE_SCALE", "0.42") or 0.42)
     tL = _rows(toks, W, H, 64 * sc * _tsc, rng)
     tM = _rows(toks, W, H, 40 * sc * _tsc, rng)
     tF = _rows(toks, W, H, 26 * sc * _tsc, rng)
@@ -249,7 +249,18 @@ def _render_word_portrait(bgr, mask, words, ground="mid"):
     k = float(os.environ.get("PET_EDGE_INK", "0.62") or 0.62)
     out = out * (1.0 - k * edge) + ink * (k * edge)
 
-    # 6) Tonal depth: deepen shadows + lift highlights within the subject so black fur reads
+    # 6) Photographic FEATURE realism: blend the real (contrast-enhanced) photo into the render
+    #    weighted by DETAIL, so the eyes / nose / whiskers gain photographic definition while the
+    #    flat body stays words -- the landmark-free analogue of the human engine's real-photo eyes.
+    #    PET_PHOTO scales it (0 = pure typography; higher = more photographic).
+    _pf = float(os.environ.get("PET_PHOTO", "0.4") or 0.4)
+    if _pf > 0.0:
+        photo_rgb = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2RGB).astype(np.float32)
+        wgt = cv2.GaussianBlur(np.clip(det * 1.3, 0, 1), (0, 0), sigmaX=max(1.0, W * 0.003)) * mask
+        wgt = (wgt * _pf)[..., None]
+        out = out * (1.0 - wgt) + photo_rgb * wgt
+
+    # 7) Tonal depth: deepen shadows + lift highlights within the subject so black fur reads
     #    deep (not flat grey) and lit areas glow -- the pet analogue of the engine's 'breathe'.
     #    PET_TONAL scales it (0 = off).
     _tone = float(os.environ.get("PET_TONAL", "1.0") or 1.0)
