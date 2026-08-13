@@ -1088,15 +1088,30 @@ def render_displacement_portrait(
     # of a see-through eye. The fabricated-eye pass (iris/catchlight/sclera) is already
     # suppressed above; this removes the words too.
     if _dark_lens_active:
-        _lens = np.zeros((H, W), np.uint8)
+        # Shape the opaque lens like real EYEWEAR, not a circular dilation of the narrow eye
+        # slit. The old fill (eyelid hull + a uniform circular dilation) made a round disc that
+        # happens to match ROUND frames but reads as "dark circles" on cat-eye / rectangular
+        # frames. Instead draw a filled ellipse per eye, sized from the eyelid landmarks --
+        # wider than tall (a lens, not a slit) and lifted a touch toward the brow (where glasses
+        # actually sit). Two ellipses + the natural bridge gap read as a pair of lenses on any
+        # frame style. TYPO_LENS_SIZE scales the whole lens (default 1.0) with no rebuild.
+        _lsz = float(os.environ.get("TYPO_LENS_SIZE", "1.0") or 1.0)
+        _lens = np.zeros((H, W), np.float32)
         for _fp in _dark_lens_face_pts:
             for k in ("Leye", "Reye"):
-                p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
-                if len(p) >= 3:
-                    cv2.fillConvexPoly(_lens, cv2.convexHull(p), 1)
-        _dk = max(3, int(fw * 0.075)) | 1
-        _lensf = cv2.dilate(_lens, np.ones((_dk, _dk), np.uint8), 1).astype(np.float32)
-        _lensf = np.clip(cv2.GaussianBlur(_lensf, (0, 0), sigmaX=max(1.0, fw * 0.010)), 0, 1)
+                _idx = [i for i in _GROUPS[k] if i < len(_fp)]
+                if len(_idx) < 3:
+                    continue
+                _p = np.array([_fp[i] for i in _idx], np.float32)
+                _cx = float(_p[:, 0].mean())
+                _cy = float(_p[:, 1].mean())
+                _ew = float(_p[:, 0].max() - _p[:, 0].min())     # eye-slit width
+                _eh = float(_p[:, 1].max() - _p[:, 1].min())     # eye-slit height (small)
+                _ax = max(4, int(round(_ew * 0.80 * _lsz)))                       # half-width  (~1.6x the slit)
+                _ay = max(4, int(round(max(_eh * 1.15, _ew * 0.52) * _lsz)))      # half-height (a real lens, not a slit)
+                _ecy = int(round(_cy - _eh * 0.25))                              # sit a touch high (toward the brow)
+                cv2.ellipse(_lens, (int(round(_cx)), _ecy), (_ax, _ay), 0, 0, 360, 1.0, -1, cv2.LINE_AA)
+        _lensf = np.clip(cv2.GaussianBlur(_lens, (0, 0), sigmaX=max(1.0, fw * 0.012)), 0, 1)
         a = a * (1.0 - 0.97 * _lensf)
 
     # Teeth carry NO typography. Where the mouth is open, suppress ink across the
