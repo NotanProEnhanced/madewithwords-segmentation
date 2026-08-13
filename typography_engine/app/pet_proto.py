@@ -234,12 +234,15 @@ def _render_word_portrait(bgr, mask, words, ground="dark"):
     # Smooth the drape FIELD generously so the type rides the broad form, not sharp local
     # features -- a hard bright-fur -> dark-nose edge otherwise SHEARS the warp into a glitchy
     # blob (worst on light-furred pets with a dark nose). PET_DRAPE_SMOOTH tunes it.
-    _dsm = float(os.environ.get("PET_DRAPE_SMOOTH", "0.032") or 0.032)
+    _dsm = float(os.environ.get("PET_DRAPE_SMOOTH", "0.045") or 0.045)
     D = cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, W * _dsm))
     dn = np.tanh((D / 255.0 - 0.5) * 2.4) * 0.85            # soft-limit: no over-stretch on the darkest/brightest fur (kills the 'melt')
     xx, yy = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
-    featdamp = np.clip(det * 1.3, 0, 1)
-    amp = float(os.environ.get("PET_DRAPE", "68") or 68.0) * sc * (1.0 - 0.85 * featdamp)
+    # Feature protection: SPREAD the detail edges inward (blur) so the eye/nose INTERIORS -- a
+    # flat dark pupil has ~0 local detail but sits inside a high-detail rim -- inherit their
+    # rim's protection and don't get warped into a corrupted blob. Then damp the drape there.
+    featdamp = np.clip(cv2.GaussianBlur(det, (0, 0), sigmaX=max(1.0, W * 0.010)) * 1.9, 0, 1)
+    amp = float(os.environ.get("PET_DRAPE", "68") or 68.0) * sc * (1.0 - 0.92 * featdamp)
     my = (yy + amp * dn).astype(np.float32)
     mx = xx
 
@@ -276,10 +279,12 @@ def _render_word_portrait(bgr, mask, words, ground="dark"):
     #    weighted by DETAIL, so the eyes / nose / whiskers gain photographic definition while the
     #    flat body stays words -- the landmark-free analogue of the human engine's real-photo eyes.
     #    PET_PHOTO scales it (0 = pure typography; higher = more photographic).
-    _pf = float(os.environ.get("PET_PHOTO", "0.4") or 0.4)
+    _pf = float(os.environ.get("PET_PHOTO", "0.45") or 0.45)
     if _pf > 0.0:
         photo_rgb = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2RGB).astype(np.float32)
-        wgt = cv2.GaussianBlur(np.clip(det * 1.3, 0, 1), (0, 0), sigmaX=max(1.0, W * 0.003)) * mask
+        # Spread the weight into the feature interiors (same reason as featdamp) so the eyes/nose
+        # read as the REAL photo -- covering any residual warp -- while the body stays words.
+        wgt = cv2.GaussianBlur(np.clip(det * 1.6, 0, 1), (0, 0), sigmaX=max(1.0, W * 0.008)) * mask
         wgt = (wgt * _pf)[..., None]
         out = out * (1.0 - wgt) + photo_rgb * wgt
 
