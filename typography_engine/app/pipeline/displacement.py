@@ -484,45 +484,42 @@ def render_displacement_portrait(
         # eye region as an opaque lens. Off (default) => this never runs, so a real eye can
         # never be blacked out by a mis-detection.
         if _dl_on:
-            # The flag is GLOBAL, but only faces with a genuinely DARK eye region (an actual
-            # tinted lens) should get the opaque fill. In a mixed group -- one subject in
-            # sunglasses, another in clear/prescription glasses -- the second has BRIGHT real
-            # eyes, and blacking those out gives "black circles". So sample the eye region and
-            # apply the lens only when it's dark; bright eyes fall through to normal rendering.
-            # Safe because the user already confirmed sunglasses are present -- this only picks
-            # WHICH faces, not whether any lens exists. TYPO_LENS_DARK_MAX tunes the cutoff.
-            # Single confirmed-sunglasses subject: there's no ambiguity about WHICH face wears
-            # the lens, so apply it unconditionally. A glossy/reflective lens can read too bright
-            # for the darkness gate below (its glare spikes the p90), which would otherwise
-            # fabricate eyes behind confirmed sunglasses. The gate only matters for MIXED groups.
-            if len(all_pts) <= 1:
-                _dark_lens_active = True
-                _dark_lens_eyes.extend(_fi)
-                _dark_lens_face_pts.append(_fp)
-                continue
+            # The flag is GLOBAL (the whole render), but it must pick WHICH faces actually wear
+            # a tinted lens -- in a mixed group one subject may be bare-eyed, and blacking those
+            # eyes out paints "dark circles" over a real face. Sample each eye region and decide.
             _lens_max = float(os.environ.get("TYPO_LENS_DARK_MAX", "115") or 115)
             _lens_med_max = float(os.environ.get("TYPO_LENS_DARK_MED", "105") or 105)
-            _sc = []      # per-eye p90  -> bright-sclera tell (fooled by a lens glare spike)
-            _md = []      # per-eye median -> overall darkness tell (robust to a glare spike)
+            _sc = []      # per-eye p90     -> sclera / lens-glare brightness
+            _md = []      # per-eye median  -> overall darkness of the eye region
+            _rt = []      # per-eye pupil ratio (p10 centre / p90 sclera) -> real-eye structure
             for _icx, _icy, _ir in _fi:
                 _r = gray[max(0, int(_icy - _ir * 2.0)):int(_icy + _ir * 2.0),
                           max(0, int(_icx - _ir * 2.0)):int(_icx + _ir * 2.0)]
                 if _r.size >= 16:
-                    _sc.append(float(np.percentile(_r, 90)))
+                    _p90 = max(float(np.percentile(_r, 90)), 1.0)
+                    _sc.append(_p90)
                     _md.append(float(np.median(_r)))
-            # A real open eye is broadly bright -- a HIGH MEDIAN across lids + sclera. A tinted
-            # lens is dark OVERALL even when a glare/reflection lifts its p90, so the old
-            # p90-only test mistook a glossy/mirrored lens for a clear-glasses/real eye and let
-            # eyes be fabricated behind confirmed sunglasses. Treat the face as lensed when it is
-            # dark by EITHER measure (both eyes' p90 dark, OR both eyes' median dark) so a
-            # reflective lens is caught while a genuinely bright real eye still renders normally.
+                    _inner = np.zeros((H, W), np.uint8)
+                    cv2.circle(_inner, (int(round(_icx)), int(round(_icy))), max(1, int(_ir * 0.45)), 1, -1)
+                    _rt.append(float(np.percentile(gray[_inner > 0], 10)) / _p90)
+            # Real-eye VETO: a dark pupil (low ratio) inside a bright sclera (high p90) is the one
+            # signature a tinted lens cannot fake. Never lens such a face -- this is what keeps a
+            # bare-eyed subject from being blacked out ("dark circles") when the toggle is on for
+            # someone else in the group. TYPO_LENS_REALEYE tunes the pupil-darkness cutoff.
+            _realeye_max = float(os.environ.get("TYPO_LENS_REALEYE", "0.18") or 0.18)
+            _real_eye = (len(_rt) >= 2 and min(_rt) <= _realeye_max
+                         and len(_sc) >= 2 and max(_sc) >= _EYE_SCLERA_MIN)
+            # Apply the opaque lens to a single confirmed subject unconditionally (no group
+            # ambiguity), or in a MIXED group only to genuinely dark faces (p90 or median) -- but
+            # in BOTH cases never over a real open eye (the veto). A glossy lens whose glare spikes
+            # p90 is still caught by the median test.
             _lens_dark = (not _sc) or (max(_sc) < _lens_max) or (bool(_md) and max(_md) < _lens_med_max)
-            if _lens_dark:                           # both eyes dark -> a real tinted lens
+            if not _real_eye and (len(all_pts) <= 1 or _lens_dark):
                 _dark_lens_active = True
                 _dark_lens_eyes.extend(_fi)
                 _dark_lens_face_pts.append(_fp)
                 continue
-            # else: bright eyes (clear/prescription glasses or no glasses) -> render normally
+            # else: a real open eye (veto) or bright eyes -> render normally
         # Dark-pupil backstop: a real open eye has a dark pupil in a lighter iris. If the
         # centre isn't darker than the surround the mesh isn't sitting on an eye -- render
         # plain words there rather than fabricate an eyeball.
