@@ -17,6 +17,10 @@ finished look.
 from __future__ import annotations
 
 import os
+import tempfile
+import urllib.request
+from threading import Lock
+
 import numpy as np
 import cv2
 from PIL import Image, ImageDraw, ImageFont
@@ -41,9 +45,9 @@ GROUNDS = {                     # BGR
 _FADE_GROUNDS = ("paper", "slate")   # ink-density styling -> fades light tones (loses white fur)
 
 
-def _foreground_mask(bgr):
-    """GrabCut with a border-init rectangle -- no model download. Serviceable for a
-    centred subject on a distinct background (the common pet-photo case)."""
+def _grabcut_mask(bgr):
+    """GrabCut border-init FALLBACK (no model). Serviceable for a centred subject on a
+    distinct background; struggles on white fur against a white background."""
     h, w = bgr.shape[:2]
     mask = np.zeros((h, w), np.uint8)
     rect = (int(w * 0.06), int(h * 0.06), int(w * 0.88), int(h * 0.88))
@@ -59,6 +63,76 @@ def _foreground_mask(bgr):
     m = cv2.morphologyEx((m * 255).astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
     m = cv2.GaussianBlur(m, (0, 0), sigmaX=max(1.0, w * 0.004)) / 255.0
     return np.clip(m, 0, 1)
+
+
+# ---- U2-Net foreground matte (general objects: pets, any subject). Run directly through
+# onnxruntime (already a dependency) -- no rembg, so no extra deps to conflict with. The
+# ~176MB model is fetched once to a cache dir on first use (needs runtime internet), then
+# reused. Any failure -> None, and the caller falls back to GrabCut. --------------------
+_U2NET_URL = os.environ.get(
+    "PET_MATTE_URL",
+    "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx")
+_U2NET_PATH = os.path.join(os.environ.get("PET_MATTE_DIR", tempfile.gettempdir()), "u2net.onnx")
+_U2_SESSION = None
+_U2_LOCK = Lock()
+_U2_FAILED = False
+
+
+def _ensure_u2net():
+    if os.path.exists(_U2NET_PATH) and os.path.getsize(_U2NET_PATH) > 1_000_000:
+        return _U2NET_PATH
+    os.makedirs(os.path.dirname(_U2NET_PATH) or ".", exist_ok=True)
+    urllib.request.urlretrieve(_U2NET_URL, _U2NET_PATH)
+    return _U2NET_PATH if (os.path.exists(_U2NET_PATH) and os.path.getsize(_U2NET_PATH) > 1_000_000) else None
+
+
+def _u2net_session():
+    global _U2_SESSION, _U2_FAILED
+    with _U2_LOCK:
+        if _U2_SESSION is not None or _U2_FAILED:
+            return _U2_SESSION
+        try:
+            import onnxruntime as ort  # already a project dependency
+            path = _ensure_u2net()
+            if not path:
+                _U2_FAILED = True
+                return None
+            _U2_SESSION = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+        except Exception:  # noqa: BLE001  -- any failure -> fall back to GrabCut
+            _U2_FAILED = True
+            _U2_SESSION = None
+    return _U2_SESSION
+
+
+def _u2net_mask(bgr):
+    """Per-pixel foreground matte from U2-Net, or None on any failure. Standard U2-Net I/O:
+    RGB resized to 320x320, ImageNet-normalised; output saliency min-max normalised."""
+    sess = _u2net_session()
+    if sess is None:
+        return None
+    try:
+        h, w = bgr.shape[:2]
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        im = cv2.resize(rgb, (320, 320), interpolation=cv2.INTER_AREA)
+        im = (im - np.array([0.485, 0.456, 0.406], np.float32)) / np.array([0.229, 0.224, 0.225], np.float32)
+        inp = np.transpose(im, (2, 0, 1))[None].astype(np.float32)
+        pred = sess.run(None, {sess.get_inputs()[0].name: inp})[0][0, 0]
+        mn, mx = float(pred.min()), float(pred.max())
+        pred = (pred - mn) / (mx - mn + 1e-8)
+        m = cv2.resize(pred.astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
+        m = cv2.GaussianBlur(m, (0, 0), sigmaX=max(1.0, w * 0.0015))
+        if float((m > 0.5).mean()) < 0.004:      # matte collapsed -> not usable
+            return None
+        return np.clip(m, 0, 1)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _foreground_mask(bgr):
+    """Real matte first (U2-Net, clean fur-vs-background even white-on-white); GrabCut only
+    as a fallback when the model is unavailable."""
+    m = _u2net_mask(bgr)
+    return m if m is not None else _grabcut_mask(bgr)
 
 
 def _detail_map(gray):
