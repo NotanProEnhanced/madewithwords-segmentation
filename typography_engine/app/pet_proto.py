@@ -265,6 +265,13 @@ def _render_word_portrait(bgr, mask, words, ground="dark"):
     if fade:                                                # ink-density styling (dark-furred pets)
         dens = 0.35 + 0.65 * (1.0 - gray / 255.0)
         col = col * 0.72
+    else:
+        # SHADOW LIFT: a dark ground swallows dark-fur words -- so a shadowed neck/chest reads as
+        # an empty void (a "floating head"). Floor the word colour to a dim WARM ink so shadowed
+        # fur still shows readable type against the dark ground. PET_SHADOW_LIFT scales it (0 off).
+        _slift = float(os.environ.get("PET_SHADOW_LIFT", "1.0") or 1.0)
+        if _slift > 0.0:
+            col = np.maximum(col, np.array([50.0, 42.0, 34.0], np.float32) * _slift)
     a = (warped * dens * mask)[..., None]
     ground_rgb = np.full((H, W, 3), gbgr[::-1], np.float32)
     out = ground_rgb * (1.0 - a) + col * a

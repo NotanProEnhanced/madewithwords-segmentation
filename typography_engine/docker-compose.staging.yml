@@ -98,6 +98,7 @@ services:
       - PET_VIGNETTE=${PET_VIGNETTE:-}
       - PET_SHARPEN=${PET_SHARPEN:-}
       - PET_DRAPE_SMOOTH=${PET_DRAPE_SMOOTH:-}
+      - PET_SHADOW_LIFT=${PET_SHADOW_LIFT:-}
       # Persist the U2-Net matte model on the bind-mounted /app/data so it survives rebuilds.
       - PET_MATTE_DIR=/app/data/pet-models
       # Background lightening: render the image background lighter than the subject's
