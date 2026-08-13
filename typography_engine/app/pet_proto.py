@@ -17,6 +17,7 @@ finished look.
 from __future__ import annotations
 
 import os
+import random
 import tempfile
 import urllib.request
 from threading import Lock
@@ -142,47 +143,27 @@ def _detail_map(gray):
     return np.clip(lap, 0, 1)
 
 
-def _char_stream(words):
+def _tokens(words):
     toks = [t for t in "".join(c if (c.isalnum() or c in " ,") else " " for c in words.upper()).split() if t]
-    if not toks:
-        toks = ["LOVE"]
-    i = 0
-    while True:
-        for ch in toks[i % len(toks)]:
-            yield ch
-        yield " "
-        i += 1
+    return toks or ["LOVE"]
 
 
-def _render_tier(bgr, mask, size, words, fade):
-    h, w = bgr.shape[:2]
-    font = ImageFont.truetype(_FONT, size) if _FONT else ImageFont.load_default()
-    layer = Image.new("RGB", (w, h), (0, 0, 0))
-    alpha = Image.new("L", (w, h), 0)
-    dl, da = ImageDraw.Draw(layer), ImageDraw.Draw(alpha)
-    cw = max(3, int(font.getlength("M")))
-    lh = int(size * 1.02)
-    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
-    stream = _char_stream(words)
+def _rows(tokens, W, H, fs, rng):
+    """A full-canvas grayscale INK-COVERAGE map (1 = ink, 0 = ground) of horizontal word
+    rows at font size `fs`. Ported from the human engine's row generator (landmark-free);
+    each row's horizontal start is jittered so a short list doesn't tile into wallpaper."""
+    fs = max(6, int(round(fs)))
+    font = ImageFont.truetype(_FONT, fs) if _FONT else ImageFont.load_default()
+    im = Image.new("L", (W, H), 255)
+    d = ImageDraw.Draw(im)
+    base = " ".join(tokens) + "  "
+    bw = max(1.0, float(d.textlength(base, font=font)))
+    line = base * max(2, int((W + fs * 7) / bw) + 2)
     y = 0
-    while y < h:
-        x = 0
-        while x < w:
-            ch = next(stream)
-            cx, cy = min(w - 1, x + cw // 2), min(h - 1, y + size // 2)
-            if ch != " " and mask[cy, cx] > 0.5:
-                b, g, r = bgr[cy, cx]
-                col = (int(r), int(g), int(b))
-                if fade:                                  # ink-density styling (paper/slate)
-                    a = int(255 * (0.35 + 0.65 * (1.0 - gray[cy, cx])))
-                    col = tuple(int(c * 0.72) for c in col)
-                else:                                     # true-tone: keep the photo's real luminance
-                    a = 255
-                dl.text((x, y), ch, font=font, fill=col)
-                da.text((x, y), ch, font=font, fill=a)
-            x += cw
-        y += lh
-    return np.asarray(layer, np.float32), np.asarray(alpha, np.float32) / 255.0
+    while y < H + fs:
+        d.text((-rng.randint(0, int(fs * 6)), y), line, font=font, fill=0)
+        y += max(6, int(fs))
+    return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
 
 
 def _enhance_contrast(bgr, mask):
@@ -207,27 +188,65 @@ def _edge_ink(gray):
 
 
 def _render_word_portrait(bgr, mask, words, ground="mid"):
-    h, w = bgr.shape[:2]
+    """Sculpted landmark-free word-portrait: word rows are WARPED by the photo's luminance so
+    the type drapes over the subject's form, blended across detail tiers (fine on features,
+    coarse on the body), then coloured by the photo. Ported from the human displacement engine
+    but driven by the U2-Net silhouette + saliency -- this module never touches that engine."""
+    H, W = bgr.shape[:2]
     gbgr = GROUNDS.get(ground, GROUNDS["mid"])
     fade = ground in _FADE_GROUNDS
-    bgr = _enhance_contrast(bgr, mask)                  # punch up the tonal range first
-    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    det = _detail_map(gray)
-    base = max(9, int(round(w / 46)))
-    fine = max(6, int(round(base * 0.55)))
-    c_rgb, c_a = _render_tier(bgr, mask, base, words, fade)
-    f_rgb, f_a = _render_tier(bgr, mask, fine, words, fade)
-    sel = np.clip((det - 0.26) / 0.34, 0, 1)[..., None]     # a touch more fine text on features
-    rgb = c_rgb * (1 - sel) + f_rgb * sel
-    a = (c_a[..., None] * (1 - sel) + f_a[..., None] * sel) * mask[..., None]
-    ground_rgb = np.full((h, w, 3), gbgr[::-1], np.float32)
-    out = ground_rgb * (1 - a) + rgb * a
-    # Feature definition: darken along real internal edges so the FACE reads (eyes, nose,
-    # muzzle, fur boundaries) instead of a flat text field. Subtle; PET_EDGE_INK tunes it.
-    edge = (_edge_ink(gray) * mask)[..., None]
-    ink = np.array([28.0, 24.0, 20.0], np.float32)      # near-black warm ink (RGB)
+    bgr = _enhance_contrast(bgr, mask)                       # punch up the tonal range first
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    rng = random.Random(20260813)                           # fixed seed -> deterministic
+    toks = _tokens(words)
+    det = _detail_map(gray.astype(np.uint8))                # 0..1 saliency: high on features/edges
+    sc = W / 900.0                                          # size reference
+
+    # 1) Four ink-coverage tiers, coarse -> micro (sizes ported from the human engine).
+    tL = _rows(toks, W, H, 64 * sc, rng)
+    tM = _rows(toks, W, H, 40 * sc, rng)
+    tF = _rows(toks, W, H, 26 * sc, rng)
+    tMi = _rows(toks, W, H, 16 * sc, rng)
+
+    # 2) Drape: warp the rows VERTICALLY by smoothed luminance so they ride the form. Damp the
+    #    warp on high-detail features (eyes/nose) so they stay crisp -- the saliency stand-in
+    #    for the human engine's feature band. PET_DRAPE tunes the wrap depth.
+    D = cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, W * 0.02))
+    dn = (D / 255.0 - 0.5) * 2.0
+    xx, yy = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
+    featdamp = np.clip(det * 1.3, 0, 1)
+    amp = float(os.environ.get("PET_DRAPE", "58") or 58.0) * sc * (1.0 - 0.7 * featdamp)
+    my = (yy + amp * dn).astype(np.float32)
+    mx = xx
+
+    def R(t):
+        return cv2.remap(t, mx, my, cv2.INTER_LINEAR, borderValue=0.0)
+
+    wL, wM, wF, wMi = R(tL), R(tM), R(tF), R(tMi)
+
+    # 3) Blend tiers by the detail field: coarse text on flat body, fine on features.
+    df = np.clip(det, 0, 1)
+    warped = wL.copy()
+    for a0, b0, ia, ib in ((0.0, 0.45, wL, wM), (0.45, 0.75, wM, wF), (0.75, 1.0001, wF, wMi)):
+        bt = np.clip((df - a0) / (b0 - a0), 0, 1)
+        warped = np.where((df >= a0) & (df < b0), ia * (1 - bt) + ib * bt, warped)
+    warped = np.where(df >= 1.0, wMi, warped)               # ink density 0..1
+
+    # 4) Colourise: the ink carries the photo's own colour, composited on the ground.
+    col = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2RGB).astype(np.float32)
+    dens = np.ones_like(gray)
+    if fade:                                                # ink-density styling (dark-furred pets)
+        dens = 0.35 + 0.65 * (1.0 - gray / 255.0)
+        col = col * 0.72
+    a = (warped * dens * mask)[..., None]
+    ground_rgb = np.full((H, W, 3), gbgr[::-1], np.float32)
+    out = ground_rgb * (1.0 - a) + col * a
+
+    # 5) Feature edge-ink: darken along real internal edges so the face reads.
+    edge = (_edge_ink(gray.astype(np.uint8)) * mask)[..., None]
+    ink = np.array([28.0, 24.0, 20.0], np.float32)
     k = float(os.environ.get("PET_EDGE_INK", "0.5") or 0.5)
-    out = out * (1 - k * edge) + ink * (k * edge)
+    out = out * (1.0 - k * edge) + ink * (k * edge)
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
