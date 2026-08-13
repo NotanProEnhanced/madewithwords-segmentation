@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import random
+import re
 import tempfile
 import urllib.request
 from threading import Lock
@@ -143,20 +144,38 @@ def _detail_map(gray):
     return np.clip(lap, 0, 1)
 
 
-def _tokens(words):
-    toks = [t for t in "".join(c if (c.isalnum() or c in " ,") else " " for c in words.upper()).split() if t]
-    return toks or ["LOVE"]
+def _phrases(words):
+    ph = [re.sub(r"[^A-Z0-9' ]+", "", p).strip() for p in words.upper().replace("\n", ",").split(",")]
+    return [p for p in ph if p] or ["LOVE"]
 
 
-def _rows(tokens, W, H, fs, rng):
-    """A full-canvas grayscale INK-COVERAGE map (1 = ink, 0 = ground) of horizontal word
-    rows at font size `fs`. Ported from the human engine's row generator (landmark-free);
-    each row's horizontal start is jittered so a short list doesn't tile into wallpaper."""
+def _weighted_stream(words):
+    """Importance-weighted phrase stream: the NAME + lead words repeat most (up to ~3x) with
+    their copies spread evenly, so the pet's name is findable across the portrait -- the
+    'oh, it says his name' moment that drives the sale. Ported from the human engine's weighting."""
+    ph = _phrases(words)
+    n = len(ph)
+    if n <= 1:
+        return ph
+    top = 3.2
+    items = []
+    for i, p in enumerate(ph):
+        w = max(1, int(round(1.0 + (top - 1.0) * (1.0 - i / (n - 1)) ** 1.25)))
+        for c in range(w):
+            items.append(((c + 0.5) / w, i, p))
+    items.sort(key=lambda t: (t[0], t[1]))
+    return [p for _, _, p in items]
+
+
+def _rows(stream, W, H, fs, rng):
+    """A full-canvas grayscale INK-COVERAGE map (1 = ink, 0 = ground) of horizontal rows of the
+    (importance-weighted) phrase stream at font size `fs`. Each row's horizontal start is
+    jittered so a short list doesn't tile into wallpaper."""
     fs = max(6, int(round(fs)))
     font = ImageFont.truetype(_FONT, fs) if _FONT else ImageFont.load_default()
     im = Image.new("L", (W, H), 255)
     d = ImageDraw.Draw(im)
-    base = " ".join(tokens) + "  "
+    base = ", ".join(stream) + ",  "
     bw = max(1.0, float(d.textlength(base, font=font)))
     line = base * max(2, int((W + fs * 7) / bw) + 2)
     y = 0
@@ -187,36 +206,36 @@ def _edge_ink(gray):
     return np.clip(cv2.GaussianBlur(e, (0, 0), sigmaX=1.1), 0, 1)
 
 
-def _render_word_portrait(bgr, mask, words, ground="mid"):
+def _render_word_portrait(bgr, mask, words, ground="dark"):
     """Sculpted landmark-free word-portrait: word rows are WARPED by the photo's luminance so
     the type drapes over the subject's form, blended across detail tiers (fine on features,
     coarse on the body), then coloured by the photo. Ported from the human displacement engine
     but driven by the U2-Net silhouette + saliency -- this module never touches that engine."""
     H, W = bgr.shape[:2]
-    gbgr = GROUNDS.get(ground, GROUNDS["mid"])
+    gbgr = GROUNDS.get(ground, GROUNDS["dark"])
     fade = ground in _FADE_GROUNDS
     bgr = _enhance_contrast(bgr, mask)                       # punch up the tonal range first
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
     rng = random.Random(20260813)                           # fixed seed -> deterministic
-    toks = _tokens(words)
+    stream = _weighted_stream(words)                        # name + lead words weighted -> findable
     det = _detail_map(gray.astype(np.uint8))                # 0..1 saliency: high on features/edges
     sc = W / 900.0                                          # size reference
 
     # 1) Four ink-coverage tiers, coarse -> micro. PET_TYPE_SCALE (<1 = finer type).
     _tsc = float(os.environ.get("PET_TYPE_SCALE", "0.42") or 0.42)
-    tL = _rows(toks, W, H, 64 * sc * _tsc, rng)
-    tM = _rows(toks, W, H, 40 * sc * _tsc, rng)
-    tF = _rows(toks, W, H, 26 * sc * _tsc, rng)
-    tMi = _rows(toks, W, H, 16 * sc * _tsc, rng)
+    tL = _rows(stream, W, H, 64 * sc * _tsc, rng)
+    tM = _rows(stream, W, H, 40 * sc * _tsc, rng)
+    tF = _rows(stream, W, H, 26 * sc * _tsc, rng)
+    tMi = _rows(stream, W, H, 16 * sc * _tsc, rng)
 
     # 2) Drape: warp the rows VERTICALLY by smoothed luminance so they ride the form. Damp the
     #    warp on high-detail features (eyes/nose) so they stay crisp -- the saliency stand-in
     #    for the human engine's feature band. PET_DRAPE tunes the wrap depth.
     D = cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, W * 0.02))
-    dn = (D / 255.0 - 0.5) * 2.0
+    dn = np.tanh((D / 255.0 - 0.5) * 2.4) * 0.85            # soft-limit: no over-stretch on the darkest/brightest fur (kills the 'melt')
     xx, yy = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
     featdamp = np.clip(det * 1.3, 0, 1)
-    amp = float(os.environ.get("PET_DRAPE", "82") or 82.0) * sc * (1.0 - 0.85 * featdamp)
+    amp = float(os.environ.get("PET_DRAPE", "68") or 68.0) * sc * (1.0 - 0.85 * featdamp)
     my = (yy + amp * dn).astype(np.float32)
     mx = xx
 
@@ -270,10 +289,35 @@ def _render_word_portrait(bgr, mask, words, ground="mid"):
         o2 = np.power(o, 1.0 + 0.18 * _tone)                        # deepen darks
         o2 = np.clip((o2 - 0.5) * (1.0 + 0.14 * _tone) + 0.5, 0, 1)  # gentle overall contrast
         out = (o * (1.0 - m3) + o2 * m3) * 255.0
+
+    # 8) Eye/feature crispness: a gentle unsharp within the subject so the eyes and nose snap.
+    _shp = float(os.environ.get("PET_SHARPEN", "0.5") or 0.5)
+    if _shp > 0.0:
+        m3 = mask[..., None]
+        blur = cv2.GaussianBlur(out, (0, 0), sigmaX=1.2)
+        out = out * (1.0 - m3) + np.clip(out + _shp * (out - blur), 0, 255) * m3
+
+    # 9) Vibrance: boost less-saturated colours more so warm fur glows without going garish.
+    _vib = float(os.environ.get("PET_VIBRANCE", "0.35") or 0.35)
+    if _vib > 0.0 and not fade:
+        hsv = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+        s = hsv[..., 1] / 255.0
+        hsv[..., 1] = np.clip((s + _vib * s * (1.0 - s)) * 255.0, 0, 255)
+        out = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
+
+    # 10) Studio spotlight vignette: darken toward the canvas corners so the subject is lit like
+    #     a gallery portrait. Applied to the whole canvas (ground included). PET_VIGNETTE tunes it.
+    _vg = float(os.environ.get("PET_VIGNETTE", "0.32") or 0.32)
+    if _vg > 0.0:
+        cy0, cx0 = H * 0.46, W * 0.5
+        r = np.sqrt(((xx - cx0) / (0.72 * W)) ** 2 + ((yy - cy0) / (0.72 * H)) ** 2)
+        vig = np.clip(1.0 - _vg * np.clip(r - 0.45, 0, 1) ** 1.4, 0.45, 1.0)
+        out = out * vig[..., None]
+
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
-def render_pet_portrait(image_bytes: bytes, words: str, ground: str = "mid", height: int = 900) -> bytes:
+def render_pet_portrait(image_bytes: bytes, words: str, ground: str = "dark", height: int = 900) -> bytes:
     """Decode a photo, render a landmark-free word-portrait, return PNG bytes."""
     arr = np.frombuffer(image_bytes, np.uint8)
     bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)

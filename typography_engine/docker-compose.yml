@@ -85,6 +85,9 @@ services:
       - PET_EDGE_INK=${PET_EDGE_INK:-}
       - PET_TONAL=${PET_TONAL:-}
       - PET_PHOTO=${PET_PHOTO:-}
+      - PET_VIBRANCE=${PET_VIBRANCE:-}
+      - PET_VIGNETTE=${PET_VIGNETTE:-}
+      - PET_SHARPEN=${PET_SHARPEN:-}
       # Background lightening: render the image background lighter than the subject's
       # dark ground (0..1, fraction toward white; 0 = off, background == ground).
       - TYPO_BG_LIGHTEN=${TYPO_BG_LIGHTEN:-0}
