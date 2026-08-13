@@ -321,8 +321,31 @@ def _render_word_portrait(bgr, mask, words, ground="dark"):
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
-def render_pet_portrait(image_bytes: bytes, words: str, ground: str = "dark", height: int = 900) -> bytes:
-    """Decode a photo, render a landmark-free word-portrait, return PNG bytes."""
+def _fit_print_aspect(bgr, mask, aspect):
+    """Pad the (matted) subject to a target print aspect (width/height) so the render composes
+    on a proper canvas -- e.g. 0.8 = 4:5. Margins get mask=0 so the render fills them with the
+    ground, and the vignette then lights the whole print. Subject is centred (a touch high)."""
+    H, W = bgr.shape[:2]
+    cur = W / max(1, H)
+    if abs(cur - aspect) < 0.005:
+        return bgr, mask
+    if cur > aspect:                                   # too wide -> pad top/bottom
+        newH = int(round(W / aspect)); pad = newH - H
+        top = int(pad * 0.42); bot = pad - top         # subject sits slightly high (portrait framing)
+        l = r = 0
+    else:                                              # too tall -> pad left/right
+        newW = int(round(H * aspect)); pad = newW - W
+        l = pad // 2; r = pad - l; top = bot = 0
+    bgr2 = cv2.copyMakeBorder(bgr, top, bot, l, r, cv2.BORDER_CONSTANT, value=(128, 128, 128))
+    mask2 = cv2.copyMakeBorder(mask, top, bot, l, r, cv2.BORDER_CONSTANT, value=0)
+    return bgr2, mask2
+
+
+def render_pet_portrait(image_bytes: bytes, words: str, ground: str = "dark", height: int = 900,
+                        print_aspect: float | None = None) -> bytes:
+    """Decode a photo, render a landmark-free word-portrait, return PNG bytes. `height` sets the
+    render resolution (preview ~900; print ~4500). `print_aspect` (e.g. 0.8 for 4:5) pads the
+    subject onto a gallery canvas for print -- omit for the raw preview crop."""
     arr = np.frombuffer(image_bytes, np.uint8)
     bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if bgr is None:
@@ -331,6 +354,8 @@ def render_pet_portrait(image_bytes: bytes, words: str, ground: str = "dark", he
         bgr = cv2.resize(bgr, (max(1, int(bgr.shape[1] * height / bgr.shape[0])), height),
                          interpolation=cv2.INTER_AREA)
     mask = _foreground_mask(bgr)
+    if print_aspect:
+        bgr, mask = _fit_print_aspect(bgr, mask, float(print_aspect))
     out_rgb = _render_word_portrait(bgr, mask, words, ground=ground)
     ok, buf = cv2.imencode(".png", cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR))
     if not ok:
