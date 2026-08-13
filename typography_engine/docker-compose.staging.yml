@@ -84,6 +84,9 @@ services:
       - TYPO_CONSENT_RETENTION_DAYS=${TYPO_CONSENT_RETENTION_DAYS:-}
       - TYPO_ENABLE_DEBUG=${TYPO_ENABLE_DEBUG:-}
       - TYPO_REQUIRE_CAIROSVG=${TYPO_REQUIRE_CAIROSVG:-}
+      # Pet render PROTOTYPE test page (/pet-test). Default OFF -> the route 404s. Set
+      # PET_TEST=1 in THIS tree's .env to expose the landmark-free prototype (staging only).
+      - PET_TEST=${PET_TEST:-}
       # Background lightening: render the image background lighter than the subject's
       # dark ground (0..1, fraction toward white; 0 = off, background == ground).
       - TYPO_BG_LIGHTEN=${TYPO_BG_LIGHTEN:-0}
