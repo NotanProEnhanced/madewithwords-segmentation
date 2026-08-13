@@ -1505,23 +1505,28 @@ async def render(
                 manual_mask_arr = _arr
         except Exception:  # noqa: BLE001
             manual_mask_arr = None
-    try:
-        an = await _bounded_to_thread(_cached_analyze, img_bytes, cfg, warns, manual_mask=manual_mask_arr)
-    except ValueError as e:
-        return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
+    if pet_on:
+        # Pet engine is landmark-free (its own U2-Net matte) -- no face analyze, and the
+        # human-face quality gate ("we couldn't find a face") must NOT run on an animal.
+        an = None
+    else:
+        try:
+            an = await _bounded_to_thread(_cached_analyze, img_bytes, cfg, warns, manual_mask=manual_mask_arr)
+        except ValueError as e:
+            return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
 
-    # Input-quality gate: give actionable feedback instead of a silently bad
-    # portrait when the photo isn't a usable single head-and-shoulders shot.
-    gate = assess_portrait_input(an)
-    for issue in gate:
-        (warns.error if issue.severity == "error" else warns.warn)("input", issue.code, issue.message)
-    blocking = [i for i in gate if i.severity == "error"]
-    if blocking:
-        return JSONResponse(
-            {"ok": False, "error": "unsuitable_image", "detail": blocking[0].message,
-             "warnings": warns.as_list()},
-            status_code=422,
-        )
+        # Input-quality gate: give actionable feedback instead of a silently bad
+        # portrait when the photo isn't a usable single head-and-shoulders shot.
+        gate = assess_portrait_input(an)
+        for issue in gate:
+            (warns.error if issue.severity == "error" else warns.warn)("input", issue.code, issue.message)
+        blocking = [i for i in gate if i.severity == "error"]
+        if blocking:
+            return JSONResponse(
+                {"ok": False, "error": "unsuitable_image", "detail": blocking[0].message,
+                 "warnings": warns.as_list()},
+                status_code=422,
+            )
 
     from .pipeline.tonal import _PALETTES, _GRADIENTS, render_layered_png, custom_poster, lifelike_route_on
     # "custom" = a user-picked colour (a (ground, ink) poster pair built from the
