@@ -2311,6 +2311,62 @@ def partners_page(request: Request) -> HTMLResponse:
     return _render_trust("partners", request)
 
 
+# ---- Pet render PROTOTYPE test page (landmark-free). Gated by env PET_TEST=1 so it is
+# inert (404) in production unless explicitly enabled on a test instance. ----------------
+_PET_TEST_HTML = """<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Pet render test</title>
+<style>body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial;max-width:760px;margin:0 auto;padding:28px 18px;background:#f4f1ea;color:#26221c}
+h1{font-weight:650;font-size:24px}.tag{font-size:13px;color:#8a8676;font-weight:400}
+form{background:#fff;border:1px solid #e3ddd0;border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:14px;margin-top:16px}
+label{font-size:13px;font-weight:600;display:block;margin-bottom:5px}
+input[type=text],select,input[type=file]{width:100%;padding:10px;border:1px solid #d8d2c4;border-radius:8px;font-size:15px;background:#fff}
+button{background:#2e3a5c;color:#fff;border:0;border-radius:24px;padding:12px 24px;font-size:15px;font-weight:600;cursor:pointer;align-self:flex-start}
+.result{margin:18px 0}.result img{max-width:100%;border-radius:10px;border:1px solid #ddd;display:block}
+.note{font-size:12.5px;color:#6b6559;line-height:1.5}</style></head><body>
+<h1>Pet render test <span class="tag">landmark-free prototype</span></h1>
+<p class="note">Upload a pet photo &mdash; front-facing, subject filling the frame, a clean-ish background works best. This is a crude GrabCut cutout with no realism passes: a quality gate, not the finished look.</p>
+<div class="result"><!--RESULT--></div>
+<form method="post" enctype="multipart/form-data">
+<div><label>Photo</label><input type="file" name="image" accept="image/*" required></div>
+<div><label>Words (comma-separated)</label><input type="text" name="words" value="BUDDY, GOOD BOY, LOYAL, RESCUE, FETCH, ZOOMIES, CUDDLES"></div>
+<div><label>Ground</label><select name="ground">
+<option value="dark">Dark (colours pop)</option><option value="paper">Paper (ink on cream)</option><option value="slate">Slate</option></select></div>
+<button type="submit">Render</button></form></body></html>"""
+
+
+def _pet_test_enabled() -> bool:
+    import os
+    return os.environ.get("PET_TEST", "").strip().lower() not in ("", "0", "false", "off", "no")
+
+
+@app.get("/pet-test", response_class=HTMLResponse)
+def pet_test_form(request: Request) -> HTMLResponse:
+    if not _pet_test_enabled():
+        return HTMLResponse(_not_found_page(request), status_code=404)
+    return HTMLResponse(_PET_TEST_HTML.replace("<!--RESULT-->", ""))
+
+
+@app.post("/pet-test", response_class=HTMLResponse)
+async def pet_test_render(request: Request, image: UploadFile = File(...),
+                          words: str = Form("BUDDY, GOOD BOY, LOYAL"),
+                          ground: str = Form("dark")) -> HTMLResponse:
+    if not _pet_test_enabled():
+        return HTMLResponse(_not_found_page(request), status_code=404)
+    import base64
+    result = ""
+    try:
+        data = await image.read()
+        if not data:
+            raise ValueError("empty upload")
+        from .pet_proto import render_pet_portrait
+        png = await _bounded_to_thread(render_pet_portrait, data, words, ground)
+        b64 = base64.b64encode(png).decode("ascii")
+        result = f'<img src="data:image/png;base64,{b64}" alt="pet word-portrait">'
+    except Exception as e:  # noqa: BLE001
+        result = f'<p style="color:#b0403a;font-weight:600">Render failed: {e}</p>'
+    return HTMLResponse(_PET_TEST_HTML.replace("<!--RESULT-->", result))
+
+
 @app.api_route("/how-its-made", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def how_its_made_page(request: Request) -> HTMLResponse:
     if not GALLERY_ENABLED:
