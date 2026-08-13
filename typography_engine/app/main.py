@@ -2330,7 +2330,11 @@ button{background:#2e3a5c;color:#fff;border:0;border-radius:24px;padding:12px 24
 <div><label>Photo</label><input type="file" name="image" accept="image/*" required></div>
 <div><label>Words (comma-separated)</label><input type="text" name="words" value="BUDDY, GOOD BOY, LOYAL, RESCUE, FETCH, ZOOMIES, CUDDLES"></div>
 <div><label>Ground</label><select name="ground">
-<option value="dark">Dark (colours pop)</option><option value="paper">Paper (ink on cream)</option><option value="slate">Slate</option></select></div>
+<option value="mid">Neutral grey &mdash; best for black &amp; white pets</option>
+<option value="dark">Dark navy &mdash; light fur pops</option>
+<option value="charcoal">Charcoal</option>
+<option value="paper">Paper (ink look &mdash; dark-furred pets only)</option>
+<option value="slate">Slate (dark-furred pets only)</option></select></div>
 <button type="submit">Render</button></form></body></html>"""
 
 
