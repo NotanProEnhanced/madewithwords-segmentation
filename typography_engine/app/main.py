@@ -1763,7 +1763,7 @@ async def render(
             "ok": True,
             "job_id": job_id,
             "job": job_id,
-            "faces": len(an.faces),
+            "faces": (len(an.faces) if an is not None else 1),   # pet path has no face analyze
             "likeness": likeness,
             "ink": ink_choice,
             "style": style_choice,
