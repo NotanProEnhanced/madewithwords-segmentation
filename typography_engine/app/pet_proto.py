@@ -185,21 +185,50 @@ def _render_tier(bgr, mask, size, words, fade):
     return np.asarray(layer, np.float32), np.asarray(alpha, np.float32) / 255.0
 
 
+def _enhance_contrast(bgr, mask):
+    """Stretch the subject's tones to the full range so black fur reads black and white fur
+    white. The flat grey wash came from compressed midtones -- this is the punch that makes a
+    black-and-white pet read on any ground."""
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    inside = gray[mask > 0.5]
+    if inside.size < 50:
+        return bgr
+    lo, hi = float(np.percentile(inside, 2.0)), float(np.percentile(inside, 98.0))
+    if hi - lo < 24.0:
+        hi = lo + 24.0
+    out = (bgr.astype(np.float32) - lo) * (255.0 / (hi - lo))
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
+def _edge_ink(gray):
+    """Strong internal edges (eyes, nose, muzzle line, fur boundaries) as a 0..1 field."""
+    e = cv2.Canny(gray, 45, 130).astype(np.float32) / 255.0
+    return np.clip(cv2.GaussianBlur(e, (0, 0), sigmaX=1.1), 0, 1)
+
+
 def _render_word_portrait(bgr, mask, words, ground="mid"):
     h, w = bgr.shape[:2]
     gbgr = GROUNDS.get(ground, GROUNDS["mid"])
     fade = ground in _FADE_GROUNDS
-    det = _detail_map(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY))
+    bgr = _enhance_contrast(bgr, mask)                  # punch up the tonal range first
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    det = _detail_map(gray)
     base = max(9, int(round(w / 46)))
     fine = max(6, int(round(base * 0.55)))
     c_rgb, c_a = _render_tier(bgr, mask, base, words, fade)
     f_rgb, f_a = _render_tier(bgr, mask, fine, words, fade)
-    sel = np.clip((det - 0.32) / 0.33, 0, 1)[..., None]
+    sel = np.clip((det - 0.26) / 0.34, 0, 1)[..., None]     # a touch more fine text on features
     rgb = c_rgb * (1 - sel) + f_rgb * sel
     a = (c_a[..., None] * (1 - sel) + f_a[..., None] * sel) * mask[..., None]
     ground_rgb = np.full((h, w, 3), gbgr[::-1], np.float32)
-    out = np.clip(ground_rgb * (1 - a) + rgb * a, 0, 255).astype(np.uint8)   # RGB
-    return out
+    out = ground_rgb * (1 - a) + rgb * a
+    # Feature definition: darken along real internal edges so the FACE reads (eyes, nose,
+    # muzzle, fur boundaries) instead of a flat text field. Subtle; PET_EDGE_INK tunes it.
+    edge = (_edge_ink(gray) * mask)[..., None]
+    ink = np.array([28.0, 24.0, 20.0], np.float32)      # near-black warm ink (RGB)
+    k = float(os.environ.get("PET_EDGE_INK", "0.5") or 0.5)
+    out = out * (1 - k * edge) + ink * (k * edge)
+    return np.clip(out, 0, 255).astype(np.uint8)
 
 
 def render_pet_portrait(image_bytes: bytes, words: str, ground: str = "mid", height: int = 900) -> bytes:
