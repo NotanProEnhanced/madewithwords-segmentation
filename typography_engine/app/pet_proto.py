@@ -67,25 +67,31 @@ def _grabcut_mask(bgr):
     return np.clip(m, 0, 1)
 
 
-# ---- U2-Net foreground matte (general objects: pets, any subject). Run directly through
-# onnxruntime (already a dependency) -- no rembg, so no extra deps to conflict with. The
-# ~176MB model is fetched once to a cache dir on first use (needs runtime internet), then
-# reused. Any failure -> None, and the caller falls back to GrabCut. --------------------
-_U2NET_URL = os.environ.get(
-    "PET_MATTE_URL",
-    "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx")
-_U2NET_PATH = os.path.join(os.environ.get("PET_MATTE_DIR", tempfile.gettempdir()), "u2net.onnx")
+# ---- Foreground matte via onnxruntime (already a dependency -- no rembg). Default model is
+# isnet-general-use: markedly better than u2net on fur edges and white-fur-on-white background.
+# u2net is a lighter, revertible fallback (PET_MATTE_MODEL=u2net). ~170MB, fetched once to the
+# cache dir (needs runtime internet), then reused. Any failure -> None -> GrabCut fallback. -----
+_MATTE_MODELS = {
+    "isnet": ("https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx", 1024),
+    "u2net": ("https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx", 320),
+}
+_MATTE_NAME = (os.environ.get("PET_MATTE_MODEL", "isnet").strip().lower() or "isnet")
+if _MATTE_NAME not in _MATTE_MODELS:
+    _MATTE_NAME = "isnet"
+_MATTE_URL = (os.environ.get("PET_MATTE_URL", "").strip() or _MATTE_MODELS[_MATTE_NAME][0])
+_MATTE_SIZE = _MATTE_MODELS[_MATTE_NAME][1]
+_MATTE_PATH = os.path.join(os.environ.get("PET_MATTE_DIR", tempfile.gettempdir()), _MATTE_NAME + ".onnx")
 _U2_SESSION = None
 _U2_LOCK = Lock()
 _U2_FAILED = False
 
 
 def _ensure_u2net():
-    if os.path.exists(_U2NET_PATH) and os.path.getsize(_U2NET_PATH) > 1_000_000:
-        return _U2NET_PATH
-    os.makedirs(os.path.dirname(_U2NET_PATH) or ".", exist_ok=True)
-    urllib.request.urlretrieve(_U2NET_URL, _U2NET_PATH)
-    return _U2NET_PATH if (os.path.exists(_U2NET_PATH) and os.path.getsize(_U2NET_PATH) > 1_000_000) else None
+    if os.path.exists(_MATTE_PATH) and os.path.getsize(_MATTE_PATH) > 1_000_000:
+        return _MATTE_PATH
+    os.makedirs(os.path.dirname(_MATTE_PATH) or ".", exist_ok=True)
+    urllib.request.urlretrieve(_MATTE_URL, _MATTE_PATH)
+    return _MATTE_PATH if (os.path.exists(_MATTE_PATH) and os.path.getsize(_MATTE_PATH) > 1_000_000) else None
 
 
 def _u2net_session():
@@ -107,16 +113,20 @@ def _u2net_session():
 
 
 def _u2net_mask(bgr):
-    """Per-pixel foreground matte from U2-Net, or None on any failure. Standard U2-Net I/O:
-    RGB resized to 320x320, ImageNet-normalised; output saliency min-max normalised."""
+    """Per-pixel foreground matte from the selected model (isnet/u2net), or None on failure.
+    isnet: 1024x1024, /max, mean 0.5 std 1. u2net: 320x320, ImageNet-normalised. Output saliency
+    min-max normalised either way."""
     sess = _u2net_session()
     if sess is None:
         return None
     try:
         h, w = bgr.shape[:2]
-        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-        im = cv2.resize(rgb, (320, 320), interpolation=cv2.INTER_AREA)
-        im = (im - np.array([0.485, 0.456, 0.406], np.float32)) / np.array([0.229, 0.224, 0.225], np.float32)
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
+        im = cv2.resize(rgb, (_MATTE_SIZE, _MATTE_SIZE), interpolation=cv2.INTER_AREA)
+        if _MATTE_NAME == "isnet":
+            im = im / max(float(im.max()), 1.0) - 0.5
+        else:
+            im = (im / 255.0 - np.array([0.485, 0.456, 0.406], np.float32)) / np.array([0.229, 0.224, 0.225], np.float32)
         inp = np.transpose(im, (2, 0, 1))[None].astype(np.float32)
         pred = sess.run(None, {sess.get_inputs()[0].name: inp})[0][0, 0]
         mn, mx = float(pred.min()), float(pred.max())
@@ -135,7 +145,7 @@ def _solidify_matte(m, w):
     drops out -> a 'floating head'. Threshold to a solid silhouette (largest component + filled
     interior holes), feather it, then UNION with the confident soft matte so wispy fur edges
     survive. PET_MATTE_FILL is the keep threshold (0 disables)."""
-    thr = float(os.environ.get("PET_MATTE_FILL", "0.12") or 0.12)
+    thr = float(os.environ.get("PET_MATTE_FILL", "0.35") or 0.35)
     if thr <= 0:
         return m
     b = (m > thr).astype(np.uint8)
