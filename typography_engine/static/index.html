@@ -869,6 +869,10 @@ const FLORALS = [
   ["line",        "/static/florals/line.png",        "Quiet Line"],
 ];
 const FLORAL_KEYS = FLORALS.map(f=>f[0]);
+// Chip crop per concept. A 4:5 frame under `cover` in a square chip shows the full width
+// in a horizontal band, so vertical position picks which blooms show: roses sit low,
+// the eucalyptus arch and the corner sprigs sit high, wildflowers run full-height (centre).
+const FLORAL_CHIP_POS = { wildflowers:"center", roses:"center bottom", eucalyptus:"center top", line:"center top" };
 function placeholderBg(col){
   if(col==="checker") return "repeating-conic-gradient(#cfcabf 0% 25%, #fff 0% 50%) 50% / 14px 14px";
   if(col==="conic") return "conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)";
@@ -1572,6 +1576,7 @@ function buildBgSwatches(){
     const pic=document.createElement("div"); pic.className="pic"; pic.dataset.bg=bg;
     if(col.indexOf("img:")===0){
       pic.style.backgroundImage=`url("${col.slice(4)}")`;   // floral art thumbnail (matches the render)
+      pic.style.backgroundPosition=FLORAL_CHIP_POS[bg]||"center";   // crop onto this concept's blooms
     } else {
       const ph=placeholderBg(col);
       if(ph.indexOf("gradient")>=0) pic.style.backgroundImage=ph; else pic.style.backgroundColor=ph;
