@@ -491,24 +491,32 @@ def render_displacement_portrait(
             _lens_med_max = float(os.environ.get("TYPO_LENS_DARK_MED", "105") or 105)
             _sc = []      # per-eye p90     -> sclera / lens-glare brightness
             _md = []      # per-eye median  -> overall darkness of the eye region
-            _rt = []      # per-eye pupil ratio (p10 centre / p90 sclera) -> real-eye structure
+            _pup = []     # per-eye pupil darkness   (p10 of the central disc)
+            _scl = []     # per-eye sclera brightness (p75 of the RING just outside the iris)
             for _icx, _icy, _ir in _fi:
                 _r = gray[max(0, int(_icy - _ir * 2.0)):int(_icy + _ir * 2.0),
                           max(0, int(_icx - _ir * 2.0)):int(_icx + _ir * 2.0)]
                 if _r.size >= 16:
-                    _p90 = max(float(np.percentile(_r, 90)), 1.0)
-                    _sc.append(_p90)
+                    _sc.append(max(float(np.percentile(_r, 90)), 1.0))
                     _md.append(float(np.median(_r)))
-                    _inner = np.zeros((H, W), np.uint8)
-                    cv2.circle(_inner, (int(round(_icx)), int(round(_icy))), max(1, int(_ir * 0.45)), 1, -1)
-                    _rt.append(float(np.percentile(gray[_inner > 0], 10)) / _p90)
-            # Real-eye VETO: a dark pupil (low ratio) inside a bright sclera (high p90) is the one
-            # signature a tinted lens cannot fake. Never lens such a face -- this is what keeps a
-            # bare-eyed subject from being blacked out ("dark circles") when the toggle is on for
-            # someone else in the group. TYPO_LENS_REALEYE tunes the pupil-darkness cutoff.
-            _realeye_max = float(os.environ.get("TYPO_LENS_REALEYE", "0.18") or 0.18)
-            _real_eye = (len(_rt) >= 2 and min(_rt) <= _realeye_max
-                         and len(_sc) >= 2 and max(_sc) >= _EYE_SCLERA_MIN)
+                _cx, _cy = int(round(_icx)), int(round(_icy))
+                _disc = np.zeros((H, W), np.uint8)                          # pupil: central disc
+                cv2.circle(_disc, (_cx, _cy), max(1, int(_ir * 0.45)), 1, -1)
+                _ring = np.zeros((H, W), np.uint8)                          # sclera: annulus AROUND the iris
+                cv2.circle(_ring, (_cx, _cy), max(2, int(_ir * 1.35)), 1, -1)
+                cv2.circle(_ring, (_cx, _cy), max(1, int(_ir * 0.80)), 0, -1)
+                if np.any(_disc > 0) and np.any(_ring > 0):
+                    _pup.append(float(np.percentile(gray[_disc > 0], 10)))
+                    _scl.append(float(np.percentile(gray[_ring > 0], 75)))
+            # Real-eye VETO (SPATIAL): a real open eye has a bright sclera in the RING right around
+            # the iris and a much darker pupil at the centre. A tinted lens is dark right up to the
+            # pupil -- no bright ring. Measuring the ring (not the whole box, whose edges catch
+            # skin) is what reliably keeps a BARE-EYED subject from being blacked out ("dark
+            # circles") when the toggle is on for someone else. Both eyes must show it.
+            # TYPO_LENS_REALEYE = how many times brighter the sclera ring must be than the pupil.
+            _realeye = float(os.environ.get("TYPO_LENS_REALEYE", "1.6") or 1.6)
+            _real_eye = (len(_scl) >= 2 and min(_scl) >= 80.0
+                         and all(_scl[i] >= _realeye * max(_pup[i], 1.0) for i in range(len(_scl))))
             # Apply the opaque lens to a single confirmed subject unconditionally (no group
             # ambiguity), or in a MIXED group only to genuinely dark faces (p90 or median) -- but
             # in BOTH cases never over a real open eye (the veto). A glossy lens whose glare spikes
