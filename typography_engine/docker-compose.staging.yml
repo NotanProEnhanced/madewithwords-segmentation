@@ -97,6 +97,7 @@ services:
       - PET_VIBRANCE=${PET_VIBRANCE:-}
       - PET_VIGNETTE=${PET_VIGNETTE:-}
       - PET_SHARPEN=${PET_SHARPEN:-}
+      - PET_DRAPE_SMOOTH=${PET_DRAPE_SMOOTH:-}
       # Background lightening: render the image background lighter than the subject's
       # dark ground (0..1, fraction toward white; 0 = off, background == ground).
       - TYPO_BG_LIGHTEN=${TYPO_BG_LIGHTEN:-0}

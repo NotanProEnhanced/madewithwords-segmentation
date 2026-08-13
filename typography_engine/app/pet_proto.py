@@ -231,7 +231,11 @@ def _render_word_portrait(bgr, mask, words, ground="dark"):
     # 2) Drape: warp the rows VERTICALLY by smoothed luminance so they ride the form. Damp the
     #    warp on high-detail features (eyes/nose) so they stay crisp -- the saliency stand-in
     #    for the human engine's feature band. PET_DRAPE tunes the wrap depth.
-    D = cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, W * 0.02))
+    # Smooth the drape FIELD generously so the type rides the broad form, not sharp local
+    # features -- a hard bright-fur -> dark-nose edge otherwise SHEARS the warp into a glitchy
+    # blob (worst on light-furred pets with a dark nose). PET_DRAPE_SMOOTH tunes it.
+    _dsm = float(os.environ.get("PET_DRAPE_SMOOTH", "0.032") or 0.032)
+    D = cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, W * _dsm))
     dn = np.tanh((D / 255.0 - 0.5) * 2.4) * 0.85            # soft-limit: no over-stretch on the darkest/brightest fur (kills the 'melt')
     xx, yy = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
     featdamp = np.clip(det * 1.3, 0, 1)
