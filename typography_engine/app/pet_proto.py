@@ -202,11 +202,12 @@ def _render_word_portrait(bgr, mask, words, ground="mid"):
     det = _detail_map(gray.astype(np.uint8))                # 0..1 saliency: high on features/edges
     sc = W / 900.0                                          # size reference
 
-    # 1) Four ink-coverage tiers, coarse -> micro (sizes ported from the human engine).
-    tL = _rows(toks, W, H, 64 * sc, rng)
-    tM = _rows(toks, W, H, 40 * sc, rng)
-    tF = _rows(toks, W, H, 26 * sc, rng)
-    tMi = _rows(toks, W, H, 16 * sc, rng)
+    # 1) Four ink-coverage tiers, coarse -> micro. PET_TYPE_SCALE (<1 = finer type).
+    _tsc = float(os.environ.get("PET_TYPE_SCALE", "0.6") or 0.6)
+    tL = _rows(toks, W, H, 64 * sc * _tsc, rng)
+    tM = _rows(toks, W, H, 40 * sc * _tsc, rng)
+    tF = _rows(toks, W, H, 26 * sc * _tsc, rng)
+    tMi = _rows(toks, W, H, 16 * sc * _tsc, rng)
 
     # 2) Drape: warp the rows VERTICALLY by smoothed luminance so they ride the form. Damp the
     #    warp on high-detail features (eyes/nose) so they stay crisp -- the saliency stand-in
@@ -215,7 +216,7 @@ def _render_word_portrait(bgr, mask, words, ground="mid"):
     dn = (D / 255.0 - 0.5) * 2.0
     xx, yy = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
     featdamp = np.clip(det * 1.3, 0, 1)
-    amp = float(os.environ.get("PET_DRAPE", "58") or 58.0) * sc * (1.0 - 0.7 * featdamp)
+    amp = float(os.environ.get("PET_DRAPE", "82") or 82.0) * sc * (1.0 - 0.85 * featdamp)
     my = (yy + amp * dn).astype(np.float32)
     mx = xx
 
@@ -245,8 +246,19 @@ def _render_word_portrait(bgr, mask, words, ground="mid"):
     # 5) Feature edge-ink: darken along real internal edges so the face reads.
     edge = (_edge_ink(gray.astype(np.uint8)) * mask)[..., None]
     ink = np.array([28.0, 24.0, 20.0], np.float32)
-    k = float(os.environ.get("PET_EDGE_INK", "0.5") or 0.5)
+    k = float(os.environ.get("PET_EDGE_INK", "0.62") or 0.62)
     out = out * (1.0 - k * edge) + ink * (k * edge)
+
+    # 6) Tonal depth: deepen shadows + lift highlights within the subject so black fur reads
+    #    deep (not flat grey) and lit areas glow -- the pet analogue of the engine's 'breathe'.
+    #    PET_TONAL scales it (0 = off).
+    _tone = float(os.environ.get("PET_TONAL", "1.0") or 1.0)
+    if _tone > 0.0:
+        m3 = mask[..., None]
+        o = np.clip(out / 255.0, 0, 1)
+        o2 = np.power(o, 1.0 + 0.18 * _tone)                        # deepen darks
+        o2 = np.clip((o2 - 0.5) * (1.0 + 0.14 * _tone) + 0.5, 0, 1)  # gentle overall contrast
+        out = (o * (1.0 - m3) + o2 * m3) * 255.0
     return np.clip(out, 0, 255).astype(np.uint8)
 
 

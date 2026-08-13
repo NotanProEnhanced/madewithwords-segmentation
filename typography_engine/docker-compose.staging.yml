@@ -87,6 +87,12 @@ services:
       # Pet render PROTOTYPE test page (/pet-test). Default OFF -> the route 404s. Set
       # PET_TEST=1 in THIS tree's .env to expose the landmark-free prototype (staging only).
       - PET_TEST=${PET_TEST:-}
+      # Pet prototype render knobs (live-tunable via .env, no rebuild): drape wrap depth,
+      # type fineness (<1 finer), edge-ink strength, tonal depth.
+      - PET_DRAPE=${PET_DRAPE:-}
+      - PET_TYPE_SCALE=${PET_TYPE_SCALE:-}
+      - PET_EDGE_INK=${PET_EDGE_INK:-}
+      - PET_TONAL=${PET_TONAL:-}
       # Background lightening: render the image background lighter than the subject's
       # dark ground (0..1, fraction toward white; 0 = off, background == ground).
       - TYPO_BG_LIGHTEN=${TYPO_BG_LIGHTEN:-0}

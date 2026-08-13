@@ -65,6 +65,11 @@ services:
       - TYPO_REQUIRE_CAIROSVG=${TYPO_REQUIRE_CAIROSVG:-}
       # Pet render PROTOTYPE test page (/pet-test). Default OFF -> the route 404s.
       - PET_TEST=${PET_TEST:-}
+      # Pet prototype render knobs (live-tunable via .env, no rebuild).
+      - PET_DRAPE=${PET_DRAPE:-}
+      - PET_TYPE_SCALE=${PET_TYPE_SCALE:-}
+      - PET_EDGE_INK=${PET_EDGE_INK:-}
+      - PET_TONAL=${PET_TONAL:-}
       # Background lightening: image background lighter than the subject's dark
       # ground (0..1 toward white; 0 = off, background == ground).
       - TYPO_BG_LIGHTEN=${TYPO_BG_LIGHTEN:-0}
