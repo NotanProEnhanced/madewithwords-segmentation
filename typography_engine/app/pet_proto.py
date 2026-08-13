@@ -154,9 +154,14 @@ def _solidify_matte(m, w):
     n, lab, stats, _ = cv2.connectedComponentsWithStats(b, 8)
     if n > 1:
         b = (lab == (1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA])))).astype(np.uint8)
-    ff = b.copy()                                             # fill interior holes (flood from a corner)
-    cv2.floodFill(ff, np.zeros((b.shape[0] + 2, b.shape[1] + 2), np.uint8), (0, 0), 1)
-    b = np.clip(b + (ff == 0).astype(np.uint8), 0, 1)
+    # Fill ONLY true interior holes. PAD a background frame first so background pockets walled
+    # off by the subject touching the image edge (ears/shoulders in a tight crop) stay connected
+    # to the border and are NOT mistaken for holes -- otherwise they fill and leak type into the
+    # background at the sides.
+    padded = cv2.copyMakeBorder(b, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=0)
+    cv2.floodFill(padded, np.zeros((padded.shape[0] + 2, padded.shape[1] + 2), np.uint8), (0, 0), 1)
+    holes = (padded[1:-1, 1:-1] == 0).astype(np.uint8)       # 0s unreachable from the border = real holes
+    b = np.clip(b + holes, 0, 1)
     solid = cv2.GaussianBlur(b.astype(np.float32), (0, 0), sigmaX=max(1.0, w * 0.006))
     return np.clip(np.maximum(m, solid), 0, 1)
 
