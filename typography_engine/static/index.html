@@ -986,7 +986,7 @@ if(_isPet && !state.petGround) state.petGround="dark";   // gallery-dark hero by
 // "Look", add word chips + composition guidance. Gated on _isPet -> other brands untouched.
 function _petSetup(){
   try{
-    ["styleGallery","inkGroup","sizeFilm","caseCtl","sunRow"].forEach(function(id){ var e=document.getElementById(id); if(e) e.style.display="none"; });
+    ["styleGallery","inkGroup","sizeFilm","caseCtl","sunRow","dropTips"].forEach(function(id){ var e=document.getElementById(id); if(e) e.style.display="none"; });
     var _bl=document.querySelector("#bgGroup .ctl-lbl"); if(_bl) _bl.textContent="Look";
     var _bh=document.querySelector("#bgGroup .ctl-hint"); if(_bh) _bh.textContent="The gallery ground your portrait sits on.";
     var _wl=document.getElementById("wordsLbl"); if(_wl) _wl.innerHTML="Their name &amp; the words that are <em>theirs</em>";
