@@ -232,6 +232,11 @@
   .bgswatches{justify-content:center;flex-wrap:wrap}
   .bgswatches .bg-group{flex:0 0 100%;width:100%;text-align:center;font-size:11px;
     letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:4px 0 -4px}
+  .sunfaces{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .sunface{padding:7px 15px;border-radius:20px;border:1.5px solid var(--line);background:#fff;
+    color:var(--ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer;line-height:1;
+    -webkit-tap-highlight-color:transparent}
+  .sunface.on{background:var(--navy);color:#fff;border-color:var(--navy)}
   /* Paper is hidden outside Lifelike in buildSwatches -- no dimmed/struck-through clutter. */
   .thumb-status{display:flex;align-items:center;justify-content:center;gap:8px;min-height:18px;
     text-align:center;color:var(--muted);font-size:13px;margin-top:10px;opacity:0;transition:opacity .2s}
@@ -882,7 +887,7 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, crop:null, ink:"photo", inkHex:"#3a6df0", backdrop:"studio", style:"displacement", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true, maskData:null, sunglasses:false };
+const state = { file:null, crop:null, ink:"photo", inkHex:"#3a6df0", backdrop:"studio", style:"displacement", fmt:"png", removeBg:true, sku:"digital", size:null, minFont:57, uppercase:true, maskData:null, sunglassFaces:[], faceCount:1 };
 // Referral/source tag (?ref=everloved) AND brand skin. A brand re-dresses this
 // same engine as a partner identity (name + tagline). The brand is resolved from
 // the ?brand param FIRST (reliable, and it persists in this single-page URL),
@@ -1414,7 +1419,48 @@ function updatePhotoControls(){
 // (and re-warms the swatch thumbnails) so the change is immediate.
 function optionChanged(){ if(resultView.style.display==="block"){ invalidate(); render(state.ink,{animate:false}); } }
 bgSwitch.addEventListener("click", ()=>{ userTouched=true; state.removeBg=!state.removeBg; bgSwitch.classList.toggle("on",state.removeBg); optionChanged(); });
-if(sunSwitch) sunSwitch.addEventListener("click", ()=>{ userTouched=true; state.sunglasses=!state.sunglasses; sunSwitch.classList.toggle("on",state.sunglasses); optionChanged(); });
+// Sunglasses control. ONE subject -> a simple on/off toggle. A GROUP -> per-subject: tap
+// exactly which people wear sunglasses (left-to-right), so their lenses render solid and
+// everyone else keeps their real eyes. Rebuilt whenever the detected face count changes.
+function _sunLabel(i, n){ return n===2 ? (i===0?"Left":"Right") : ("#"+(i+1)); }
+function buildSunControl(){
+  const row=$("#sunRow"); if(!row) return;
+  const n=Math.max(1, state.faceCount||1);
+  const sel=()=>state.sunglassFaces||[];
+  if(n<=1){
+    row.innerHTML='<div><div class="t-lbl">Subject is wearing sunglasses</div>'
+      +'<div class="t-sub">Renders the lenses solid instead of drawing eyes behind them.</div></div>'
+      +'<div id="sunSwitch" class="sw-switch'+(sel().length?' on':'')+'"></div>';
+    const sw=$("#sunSwitch");
+    if(sw) sw.addEventListener("click", ()=>{
+      userTouched=true;
+      state.sunglassFaces = sel().length ? [] : [0];
+      sw.classList.toggle("on", sel().length>0);
+      optionChanged();
+    });
+  } else {
+    row.innerHTML='<div style="width:100%">'
+      +'<div class="t-lbl">Who’s wearing sunglasses?</div>'
+      +'<div class="t-sub">Tap each person wearing sunglasses — their lenses render solid; everyone else keeps their real eyes.</div>'
+      +'<div id="sunFaces" class="sunfaces"></div></div>';
+    const wrap=$("#sunFaces");
+    for(let i=0;i<n;i++){
+      const b=document.createElement("button"); b.type="button";
+      b.className="sunface"+(sel().indexOf(i)>=0?" on":"");
+      b.textContent=_sunLabel(i,n);
+      b.addEventListener("click", ()=>{
+        userTouched=true;
+        const s=new Set(sel());
+        if(s.has(i)) s.delete(i); else s.add(i);
+        state.sunglassFaces=[...s].sort((x,y)=>x-y);
+        b.classList.toggle("on", s.has(i));
+        optionChanged();
+      });
+      wrap.append(b);
+    }
+  }
+}
+buildSunControl();
 // Letter case: render the words ALL CAPS, or exactly as the user typed them.
 const caseSeg=$("#caseSeg");
 if(caseSeg){ caseSeg.addEventListener("click", e=>{
@@ -1548,6 +1594,10 @@ function measureSubject(f){
   fetch("/measure",{method:"POST",body:fd}).then(r=>r.json())
     .then(d=>{ if(d&&d.ok){
         applySizes(d.sizes, d.default);
+        // Track the face count so the sunglasses control switches between a single toggle and
+        // the per-subject picker. Reset the selection when the count changes (indices shift).
+        const _nf = Math.max(1, d.faces||1);
+        if(_nf !== state.faceCount){ state.faceCount = _nf; state.sunglassFaces = []; buildSunControl(); }
         // Multi-face is fully supported -- the sculpt renders EVERY subject (displacement.py
         // builds from an.faces). So instead of the old "we'll feature the largest / crop to
         // one person" warning, reassure warmly on a group photo. Guarded by !_lowResUpload so
@@ -1762,7 +1812,7 @@ async function renderSizeThumb(mf){
   const myGen=gen;
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
-  const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); if(state.sunglasses) fd.append("sunglasses","1"); fd.append("message",words.value.trim());
+  const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(mf));
   fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
@@ -2389,7 +2439,7 @@ async function render(ink,{animate=false,background=false,thumb=false,hires=fals
   if(!background && !thumb && !hires) showBusy(animate);
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
-  const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); if(state.sunglasses) fd.append("sunglasses","1"); fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
+  const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(state.minFont||20));
   if(thumb){
@@ -2509,7 +2559,7 @@ function applyZoom(){ zoomImg.style.width=(zScale*100)+"%"; zoomImg.style.cursor
 // via the loupe flag) on every brand -- memorial's 900px light preview and generic's 1400px
 // preview both sharpen. Cached per variant so reopening is instant.
 let zoomHiCache={};
-function zoomKey(){ return [gen,state.ink,state.inkHex,state.backdrop,state.style,state.minFont,state.sunglasses].join("|"); }
+function zoomKey(){ return [gen,state.ink,state.inkHex,state.backdrop,state.style,state.minFont,(state.sunglassFaces||[]).join(",")].join("|"); }
 function setZoomLoading(on){ const el=$("#zoomLoad"); if(el) el.style.display = on ? "" : "none"; }
 async function loadZoomHiRes(){
   if(!state.file) return;
@@ -2941,7 +2991,7 @@ function fetchWithTimeout(url, opts, ms){
       if(state.crop) fd.append("crop", state.crop);
       fd.append("title", $g("gatherName").value.trim()||"In their words");
       fd.append("words", words.value.trim());
-      fd.append("style", vp.style); fd.append("ink", vp.ink); fd.append("ground", vp.ground); if(vp.backdrop) fd.append("backdrop", vp.backdrop); if(state.sunglasses) fd.append("sunglasses", "1");
+      fd.append("style", vp.style); fd.append("ink", vp.ink); fd.append("ground", vp.ground); if(vp.backdrop) fd.append("backdrop", vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); }
       fd.append("min_font", String(state.minFont||20));
       const r=await fetch("/api/gather/create",{method:"POST",body:fd});
       const d=await r.json();

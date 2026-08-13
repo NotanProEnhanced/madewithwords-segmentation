@@ -316,6 +316,11 @@ def render_displacement_portrait(
                                   # False (default) => NO face is ever dark-lensed, real eyes are
                                   # never blacked out; True => every detected face's eye region is
                                   # rendered as an opaque lens.
+    sunglass_faces: Optional[Sequence[int]] = None,  # PER-SUBJECT sunglasses: left-to-right face
+                                  # indices the user explicitly marked. When given (not None) this
+                                  # is AUTHORITATIVE -- lens EXACTLY those faces, unconditionally,
+                                  # and never touch anyone else. No brightness guessing. Overrides
+                                  # the global `sunglasses` flag. [] => nobody wears sunglasses.
     _diag: Optional[dict] = None,  # test hook: if a dict is passed, the per-face eye
                                   # classification counts are recorded into it (no effect on
                                   # output). Lets a regression test assert e.g. that a bright
@@ -418,7 +423,16 @@ def render_displacement_portrait(
     # heuristics cannot separate a tinted lens from a real eye and kept mis-firing (black
     # holes on real eyes, or fabricated eyes on real sunglasses). TYPO_DARKLENS stays only
     # as a hard kill-switch that can force it off even if a caller passes True.
-    _dl_on = bool(sunglasses) and os.environ.get("TYPO_DARKLENS", "1").strip().lower() not in ("0", "false", "off", "no", "")
+    _darklens_ok = os.environ.get("TYPO_DARKLENS", "1").strip().lower() not in ("0", "false", "off", "no", "")
+    _dl_on = bool(sunglasses) and _darklens_ok
+    # PER-SUBJECT sunglasses: the user tapped WHICH faces wear them (left-to-right indices). When
+    # provided this is authoritative -- lens exactly those, never guess. Map each face to its
+    # left-to-right rank (rank 0 = leftmost) so the client's "Left / Right / Nth-from-left"
+    # labels line up with the faces the renderer sees, regardless of MediaPipe's primary-first order.
+    _sel_faces = (set(int(i) for i in sunglass_faces) if (sunglass_faces is not None and _darklens_ok) else None)
+    _face_cx = [float(np.mean(np.asarray(_p)[:, 0])) for _p in all_pts]
+    _lr_order = sorted(range(len(all_pts)), key=lambda i: _face_cx[i])
+    _rank_of = {i: r for r, i in enumerate(_lr_order)}     # all_pts index -> left-to-right rank
     irises: List[Tuple[float, float, float]] = []
     eye_centers: List[Tuple[float, float, float]] = []
     _eye_face_pts = []            # faces whose eyes ARE rendered (drive the sclera/anchor hulls)
@@ -426,7 +440,7 @@ def render_displacement_portrait(
     _dark_lens_eyes = []
     _dark_lens_face_pts = []      # shaded faces (drive the opaque-lens fill)
     _misfit_face_pts = []         # meshes fit so badly the eyes can't be trusted (skip entirely)
-    for _fp in all_pts:
+    for _pi, _fp in enumerate(all_pts):
         if len(_fp) < 478:
             continue
         # Anatomical sanity: a real iris sits BELOW its own eyebrow. On a busy group a
@@ -479,11 +493,21 @@ def render_displacement_portrait(
             return v / (2.0 * horiz)
         if min(_ear(33, 160, 158, 133, 153, 144), _ear(362, 385, 387, 263, 373, 380)) < _EYE_OPEN_EAR:
             continue
-        # MANUAL sunglasses: the caller flagged this render as having tinted lenses. Pixels
-        # can't reliably tell a lens from a real eye, so honour the flag -- render this face's
-        # eye region as an opaque lens. Off (default) => this never runs, so a real eye can
-        # never be blacked out by a mis-detection.
-        if _dl_on:
+        # PER-SUBJECT sunglasses (authoritative): the user tapped exactly which faces wear them.
+        # Lens the selected faces unconditionally; leave everyone else with their real eyes. No
+        # brightness heuristic runs at all -- this is what ends the "dark circles on a bare face"
+        # class of bug for good.
+        if _sel_faces is not None:
+            if _rank_of.get(_pi) in _sel_faces:
+                _dark_lens_active = True
+                _dark_lens_eyes.extend(_fi)
+                _dark_lens_face_pts.append(_fp)
+                continue
+            # not selected -> a bare-eyed subject: skip the lens entirely, render real eyes below.
+        # MANUAL sunglasses (legacy global flag): the caller flagged the whole render as having
+        # tinted lenses. Pixels can't reliably tell a lens from a real eye, so this heuristic path
+        # is only used when no per-face selection was given (old clients / stored records).
+        elif _dl_on:
             # The flag is GLOBAL (the whole render), but it must pick WHICH faces actually wear
             # a tinted lens -- in a mixed group one subject may be bare-eyed, and blacking those
             # eyes out paints "dark circles" over a real face. Sample each eye region and decide.

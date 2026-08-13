@@ -1405,6 +1405,7 @@ async def render(
     mask: Optional[str] = Form(None),
     aspect: float = Form(0.8),          # output width/height: 0.8 portrait (4:5) | 1.0 square | 1.25 landscape
     sunglasses: str = Form(""),         # "1"/"true" => subject wears sunglasses: render opaque lenses (no fabricated eyes)
+    sunglass_faces: str = Form(""),     # PER-SUBJECT: comma-separated left-to-right face indices the user marked
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
@@ -1420,6 +1421,15 @@ async def render(
         aspect_choice = 0.8
     aspect_choice = min(2.0, max(0.5, aspect_choice))
     sunglasses_on = str(sunglasses or "").strip().lower() in ("1", "true", "yes", "on")  # manual opaque-lens flag
+    # Per-subject sunglasses: parse the left-to-right face indices the user tapped. None => not
+    # provided (fall back to the global flag / heuristic); a list (possibly empty) => authoritative.
+    sunglass_faces_sel = None
+    _sgf_raw = (sunglass_faces or "").strip()
+    if _sgf_raw:
+        try:
+            sunglass_faces_sel = sorted({int(x) for x in _sgf_raw.split(",") if x.strip() != "" and int(x) >= 0})
+        except ValueError:
+            sunglass_faces_sel = None
     ref_clean = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40]     # referral/source tag (persists)
     brand_clean = re.sub(r"[^A-Za-z0-9_-]", "", brand or "")[:40]  # ACTIVE brand skin (gates brand UX)
     img_bytes = await image.read()
@@ -1594,7 +1604,7 @@ async def render(
                 # Word-variety dial: per-style (Mosaic flattens to a varied cloud). MUST
                 # match the paid render in _ensure_clean_png or the preview misrepresents it.
                 variety=disp_variety_eff, print_aspect=aspect_choice, backdrop=backdrop_choice,
-                sunglasses=sunglasses_on)
+                sunglasses=sunglasses_on, sunglass_faces=sunglass_faces_sel)
             runs, ground_hex, mask_svg = [], None, None
         else:
             png_bytes, runs, ground_hex, mask_svg = await _bounded_to_thread(
@@ -1693,6 +1703,7 @@ async def render(
             "disp_route": bool(disp_route),   # Mosaic/Passage rendered via the Lifelike engine -> download must too
             "aspect": aspect_choice,   # output shape (w/h) -> digital download recomposes to match
             "sunglasses": bool(sunglasses_on),   # manual opaque-lens flag -> paid recompose must match
+            "sunglass_faces": sunglass_faces_sel,   # per-subject lens selection -> paid recompose must match
             "ref": ref_clean, "brand": brand_clean,
         }), encoding="utf-8")
 
@@ -3564,6 +3575,8 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
         # the preview.
         dl_custom = custom_poster(r.get("ink_hex")) if (r.get("ink") == "custom" and r.get("ink_hex")) else None
         dl_sun = bool(r.get("sunglasses"))     # manual opaque-lens flag -> match the preview
+        _dlsf = r.get("sunglass_faces")        # per-subject lens selection -> match the preview
+        dl_sunf = list(_dlsf) if isinstance(_dlsf, (list, tuple)) else None
         warns2 = WarningCollector()
         _bgmask = None
         _bgm_path = PRIVATE_DIR / f"{job}.bgmask.png"
@@ -3591,7 +3604,7 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
                 # routed Mosaic flattens to a varied word-cloud, like the preview).
                 breathe=STUDIO_BREATHE,
                 variety=(1.0 if (r.get("disp_route") and r.get("style") == "words") else WORD_VARIETY),
-                sunglasses=dl_sun)
+                sunglasses=dl_sun, sunglass_faces=dl_sunf)
             if not png_bytes:
                 return None
             path.write_bytes(png_bytes)
