@@ -130,11 +130,34 @@ def _u2net_mask(bgr):
         return None
 
 
+def _solidify_matte(m, w):
+    """Keep the WHOLE subject. U2-Net gives a LIGHT-fur-on-WHITE neck/chest low confidence, so it
+    drops out -> a 'floating head'. Threshold to a solid silhouette (largest component + filled
+    interior holes), feather it, then UNION with the confident soft matte so wispy fur edges
+    survive. PET_MATTE_FILL is the keep threshold (0 disables)."""
+    thr = float(os.environ.get("PET_MATTE_FILL", "0.12") or 0.12)
+    if thr <= 0:
+        return m
+    b = (m > thr).astype(np.uint8)
+    if int(b.sum()) < 20:
+        return m
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(b, 8)
+    if n > 1:
+        b = (lab == (1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA])))).astype(np.uint8)
+    ff = b.copy()                                             # fill interior holes (flood from a corner)
+    cv2.floodFill(ff, np.zeros((b.shape[0] + 2, b.shape[1] + 2), np.uint8), (0, 0), 1)
+    b = np.clip(b + (ff == 0).astype(np.uint8), 0, 1)
+    solid = cv2.GaussianBlur(b.astype(np.float32), (0, 0), sigmaX=max(1.0, w * 0.006))
+    return np.clip(np.maximum(m, solid), 0, 1)
+
+
 def _foreground_mask(bgr):
-    """Real matte first (U2-Net, clean fur-vs-background even white-on-white); GrabCut only
-    as a fallback when the model is unavailable."""
+    """Real matte first (U2-Net); GrabCut fallback when the model is unavailable. Solidified so a
+    light-fur-on-white body is kept (no 'floating head')."""
     m = _u2net_mask(bgr)
-    return m if m is not None else _grabcut_mask(bgr)
+    if m is None:
+        m = _grabcut_mask(bgr)
+    return _solidify_matte(m, bgr.shape[1])
 
 
 def _detail_map(gray):
