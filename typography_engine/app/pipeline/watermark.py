@@ -32,6 +32,7 @@ _BRAND_MARK = {
     "lovedinwords": "LovedInWords.com",
     "keepsake": "LovedInWords.com",
     "everloved": "Ever Loved",
+    "pawsinwords": "PawsInWords.com",
 }
 
 

@@ -237,6 +237,14 @@
     color:var(--ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer;line-height:1;
     -webkit-tap-highlight-color:transparent}
   .sunface.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+  /* Paws in Words: quick-add word chips + composition guidance */
+  .petchips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .petchip{padding:7px 13px;border-radius:20px;border:1.5px solid var(--line);background:var(--card,#fff);
+    color:var(--ink);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;line-height:1;
+    -webkit-tap-highlight-color:transparent}
+  .petchip:hover{border-color:var(--navy);color:var(--navy)}
+  .petguide{margin-top:14px;display:flex;flex-direction:column;gap:6px;font-size:12.5px;line-height:1.45}
+  .petguide .pg-yes{color:#3f8f63}.petguide .pg-no{color:#c2543a}
   /* Paper is hidden outside Lifelike in buildSwatches -- no dimmed/struck-through clutter. */
   .thumb-status{display:flex;align-items:center;justify-content:center;gap:8px;min-height:18px;
     text-align:center;color:var(--muted);font-size:13px;margin-top:10px;opacity:0;transition:opacity .2s}
@@ -974,6 +982,31 @@ const BRAND=BRANDS[BRAND_ID]||null;
 const _isMemorialBrand=!!(BRAND && BRAND.memorial);
 const _isPet=!!(BRAND && BRAND.pet);   // Paws in Words -> render via the pet engine
 if(_isPet && !state.petGround) state.petGround="dark";   // gallery-dark hero by default
+// Pet-clean studio: hide the human-only controls, repurpose the Background axis as the pet
+// "Look", add word chips + composition guidance. Gated on _isPet -> other brands untouched.
+function _petSetup(){
+  try{
+    ["styleGallery","inkGroup","sizeFilm","caseCtl","sunRow"].forEach(function(id){ var e=document.getElementById(id); if(e) e.style.display="none"; });
+    var _bl=document.querySelector("#bgGroup .ctl-lbl"); if(_bl) _bl.textContent="Look";
+    var _bh=document.querySelector("#bgGroup .ctl-hint"); if(_bh) _bh.textContent="The gallery ground your portrait sits on.";
+    var _wl=document.getElementById("wordsLbl"); if(_wl) _wl.innerHTML="Their name &amp; the words that are <em>theirs</em>";
+    var _wt=document.getElementById("words"); if(_wt) _wt.setAttribute("placeholder","Their name first, then the words that are theirs…");
+    var CHIPS=["GOOD BOY","GOOD GIRL","RESCUE","ZOOMIES","CUDDLES","LOYAL","GOOFBALL","BEST FRIEND","FETCH","SNUGGLES"];
+    if(_wt && !document.getElementById("petChips")){
+      var wrap=document.createElement("div"); wrap.id="petChips"; wrap.className="petchips";
+      CHIPS.forEach(function(w){ var b=document.createElement("button"); b.type="button"; b.className="petchip"; b.textContent=w;
+        b.addEventListener("click",function(){ var cur=(_wt.value||"").trim(); var parts=cur?cur.split(/\s*,\s*/):[]; if(parts.map(function(p){return p.toUpperCase();}).indexOf(w)<0){ parts.push(w); _wt.value=parts.join(", "); _wt.dispatchEvent(new Event("input",{bubbles:true})); } });
+        wrap.append(b); });
+      _wt.parentNode.insertBefore(wrap, _wt.nextSibling);
+    }
+    var drop=document.getElementById("drop");
+    if(drop && !document.getElementById("petGuide")){
+      var g=document.createElement("div"); g.id="petGuide"; g.className="petguide";
+      g.innerHTML='<div class="pg-yes">✓ A front-facing close-up — their face filling the frame, eyes clear</div><div class="pg-no">✗ Not full-body, side profiles, or far-away shots</div>';
+      drop.appendChild(g);
+    }
+  }catch(e){}
+}
 // The gallery (Bible Collection, Holidays) is the generic Typortrait storefront —
 // not the memorial skins. Reveal the header link only on the unbranded studio AND
 // only when the gallery is actually live (probe /gallery; it 404s when the
@@ -1033,6 +1066,7 @@ if(BRAND){
     const _FAV={lovedinwords:1,everloved:1,keepsake:1,faithinwords:1,pawsinwords:1};
     if(_FAV[BRAND_ID]) document.querySelectorAll('link[rel*="icon"]').forEach(function(l){
       const h=l.getAttribute("href"); if(h) l.setAttribute("href", h.replace("/favicons/typortrait/","/favicons/"+BRAND_ID+"/")); });
+    if(_isPet) _petSetup();
   }catch(e){}
 }
 // Every render is presented as a framed keepsake in a room: a portrait shot
@@ -1062,7 +1096,13 @@ function currentSwatches(){ return _isMemorialBrand ? MEMORIAL_INKS : GENERIC_IN
 // keep the room-matching grounds (Studio/Sand/Slate) but drop "Cutout" -- a transparent
 // PNG is a creative/merch feature, off-tone for a remembrance portrait. The generic
 // studio keeps the full set.
-function currentBackgrounds(){ return _isMemorialBrand ? BACKGROUNDS.filter(b=>b[0]!=="transparent") : BACKGROUNDS; }
+// Paws in Words: the pet engine has its own grounds (not human backgrounds). The Background
+// axis is repurposed as the pet "Look" selector -> drives state.petGround.
+const PET_GROUNDS=[["dark","#1b1e25","Gallery Dark"],["mid","#8b9099","Neutral"],["paper","#efe7d6","Paper"]];
+function currentBackgrounds(){
+  if(_isPet) return PET_GROUNDS;
+  return _isMemorialBrand ? BACKGROUNDS.filter(b=>b[0]!=="transparent") : BACKGROUNDS;
+}
 function variantPost(id){
   // `id` is the selected TYPE COLOUR (photo / mono / custom). The BACKGROUND is an
   // independent axis (state.backdrop), layered on top -- so e.g. Noir type can sit on a
@@ -1662,10 +1702,17 @@ function buildBgSwatches(){
 }
 function markBgSel(){
   if(!bgSwatchEl) return;
-  [...bgSwatchEl.children].forEach(c=>c.classList.toggle("sel",(c.dataset.bg||"")===(state.backdrop||"")));
+  const sel = _isPet ? (state.petGround||"dark") : (state.backdrop||"");
+  [...bgSwatchEl.children].forEach(c=>c.classList.toggle("sel",(c.dataset.bg||"")===sel));
 }
 function selectBackground(bg){
   bg = bg || null;
+  if(_isPet){                       // pet "Look" -> re-render on the chosen ground; no ink thumbnails
+    if((state.petGround||"dark")===(bg||"dark")) return;
+    userTouched=true; state.petGround=bg||"dark"; markBgSel();
+    invalidate(); render(state.ink,{animate:false});
+    return;
+  }
   if((state.backdrop||null)===(bg||null)) return;
   userTouched=true; state.backdrop=bg; markBgSel();
   { const _st=$("#stage"); if(_st) _st.classList.toggle("cutout", bg==="transparent"); }
@@ -1821,7 +1868,7 @@ function updateSizeThumb(mf){
   if(Number(mf)===Number(state.minFont)) src=(cache[state.ink]&&cache[state.ink].preview)||src;
   if(src){ pic.style.backgroundImage=`url(${src})`; pic.style.backgroundSize="cover"; pic.style.backgroundPosition="center"; pic.classList.remove("loading"); }
 }
-function refreshSizeStrip(){ markSizeSel(); allowedMf.forEach(mf=>updateSizeThumb(mf)); }
+function refreshSizeStrip(){ if(_isPet) return; markSizeSel(); allowedMf.forEach(mf=>updateSizeThumb(mf)); }
 function resetSizeThumbs(){ if(sizeStripEl) sizeStripEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.remove("loading"); }); }
 async function renderSizeThumb(mf){
   if(!state.file) return;
@@ -1845,7 +1892,7 @@ let prewarmingSizes=false;
 // render on demand when the user taps a swatch/size. Set false to restore eager
 // prewarming.
 const LAZY_THUMBS = true;
-async function prewarmSizes(){
+async function prewarmSizes(){ if(_isPet) return;
   if(LAZY_THUMBS) return;
   if(prewarmingSizes || resultView.style.display!=="block" || state.style==="displacement" || state.style==="letter" || state.style==="message") return;
   prewarmingSizes=true;
@@ -2529,7 +2576,7 @@ function setThumbStatus(label){
   else { thumbStatus.classList.remove("on"); thumbStatus.textContent=""; }
 }
 let prewarming=false, prewarmAgain=false;
-async function prewarm(){
+async function prewarm(){ if(_isPet) return;
   if(LAZY_THUMBS) return;                 // thumbnails render on tap, not eagerly
   // Don't run two passes at once -- but if a prewarm is requested WHILE one is
   // running, flag a re-run instead of dropping it. That covers a style/variant
