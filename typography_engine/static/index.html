@@ -1422,7 +1422,7 @@ bgSwitch.addEventListener("click", ()=>{ userTouched=true; state.removeBg=!state
 // Sunglasses control. ONE subject -> a simple on/off toggle. A GROUP -> per-subject: tap
 // exactly which people wear sunglasses (left-to-right), so their lenses render solid and
 // everyone else keeps their real eyes. Rebuilt whenever the detected face count changes.
-function _sunLabel(i, n){ return n===2 ? (i===0?"Left":"Right") : ("#"+(i+1)); }
+function _sunLabel(i, n){ return n===2 ? (i===0?"Left person":"Right person") : ("#"+(i+1)+" from left"); }
 function buildSunControl(){
   const row=$("#sunRow"); if(!row) return;
   const n=Math.max(1, state.faceCount||1);
@@ -1441,19 +1441,19 @@ function buildSunControl(){
   } else {
     row.innerHTML='<div style="width:100%">'
       +'<div class="t-lbl">Who’s wearing sunglasses?</div>'
-      +'<div class="t-sub">Tap each person wearing sunglasses — their lenses render solid; everyone else keeps their real eyes.</div>'
+      +'<div class="t-sub">Use the buttons below — one per person, left-to-right as they appear in your photo. Select each one wearing sunglasses; their lenses render solid, everyone else keeps their real eyes.</div>'
       +'<div id="sunFaces" class="sunfaces"></div></div>';
     const wrap=$("#sunFaces");
     for(let i=0;i<n;i++){
       const b=document.createElement("button"); b.type="button";
-      b.className="sunface"+(sel().indexOf(i)>=0?" on":"");
-      b.textContent=_sunLabel(i,n);
+      const paint=()=>{ const on=sel().indexOf(i)>=0; b.className="sunface"+(on?" on":""); b.textContent=(on?"✓ ":"")+_sunLabel(i,n); };
+      paint();
       b.addEventListener("click", ()=>{
         userTouched=true;
         const s=new Set(sel());
         if(s.has(i)) s.delete(i); else s.add(i);
         state.sunglassFaces=[...s].sort((x,y)=>x-y);
-        b.classList.toggle("on", s.has(i));
+        paint();
         optionChanged();
       });
       wrap.append(b);
