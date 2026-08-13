@@ -934,7 +934,14 @@ const BRANDS={
   // pass -- easy to tune.)
   faithinwords:{ name:"Faith in Words", owned:true, tag:"A sacred portrait, in the words of Scripture.", title:"Faith in Words — a sacred portrait made from Scripture", host:"faithinwords.com",
     style:"displacement", ink:"photo", pinStyle:true, glyph:"cross",
-    theme:{ "--navy":"#33405f", "--ink":"#2a2f40", "--paper":"#f4f0e6", "--card":"#fffdf7", "--line":"#e7dfca", "--muted":"#77705f" } }
+    theme:{ "--navy":"#33405f", "--ink":"#2a2f40", "--paper":"#f4f0e6", "--card":"#fffdf7", "--line":"#e7dfca", "--muted":"#77705f" } },
+  // Paws in Words (pawsinwords.com) -- pet word-portraits. NOT the human face engine:
+  // `pet:true` + style "pet" route rendering to the landmark-free pet renderer (U2-Net matte,
+  // saliency drape, photographic eyes) which works on any animal. Warm/premium skin (gallery
+  // frames on cream); paw glyph + favicon. Host-mapped so a direct visit brands correctly.
+  pawsinwords:{ name:"Paws in Words", owned:true, pet:true, tag:"Your best friend, made from the words that describe them.", title:"Paws in Words — a pet portrait made from the words that describe them", host:"pawsinwords.com",
+    style:"pet", ink:"photo", pinStyle:true, glyph:"paw",
+    theme:{ "--navy":"#c2543a", "--ink":"#22201b", "--paper":"#f7f1e6", "--card":"#fffaf0", "--line":"#e7ddca", "--muted":"#6f6656" } }
 };
 function _brandFromReferrer(){
   try{
@@ -965,6 +972,8 @@ if(REF){ try{ localStorage.setItem("typo_ref", REF); }catch(e){} }
 const BRAND=BRANDS[BRAND_ID]||null;
 // Any brand flagged memorial gets the full grief-keepsake experience (see BRANDS).
 const _isMemorialBrand=!!(BRAND && BRAND.memorial);
+const _isPet=!!(BRAND && BRAND.pet);   // Paws in Words -> render via the pet engine
+if(_isPet && !state.petGround) state.petGround="dark";   // gallery-dark hero by default
 // The gallery (Bible Collection, Holidays) is the generic Typortrait storefront —
 // not the memorial skins. Reveal the header link only on the unbranded studio AND
 // only when the gallery is actually live (probe /gallery; it 404s when the
@@ -1015,9 +1024,13 @@ if(BRAND){
       const _h=document.querySelector(".brand-heart");
       if(_h){ _h.innerHTML='<svg viewBox="0 0 64 64" width="26" height="26" fill="none"><path d="M26 8 H38 V22 H52 V34 H38 V56 H26 V34 H12 V22 H26 Z" stroke="#b0863a" stroke-width="3.2" stroke-linejoin="round"/></svg>'; _h.style.display="inline-flex"; }
     }
+    if(BRAND.glyph==="paw"){
+      const _h=document.querySelector(".brand-heart");
+      if(_h){ _h.innerHTML='<svg viewBox="0 0 64 64" width="26" height="26"><g fill="#c2543a"><ellipse cx="18" cy="24" rx="5.5" ry="7.5"/><ellipse cx="28" cy="18" rx="5.5" ry="8"/><ellipse cx="39" cy="18" rx="5.5" ry="8"/><ellipse cx="49" cy="24" rx="5.5" ry="7.5"/><path d="M33.5 31c-8.5 0-15 5.5-15 12.5 0 6 6 9.5 15 9.5s15-3.5 15-9.5c0-7-6.5-12.5-15-12.5z"/></g></svg>'; _h.style.display="inline-flex"; }
+    }
     if(BRAND.theme){ const rs=document.documentElement.style; for(const k in BRAND.theme) rs.setProperty(k, BRAND.theme[k]); }
     // Swap the favicon to this brand's mark (default is the generic Typortrait T).
-    const _FAV={lovedinwords:1,everloved:1,keepsake:1,faithinwords:1};
+    const _FAV={lovedinwords:1,everloved:1,keepsake:1,faithinwords:1,pawsinwords:1};
     if(_FAV[BRAND_ID]) document.querySelectorAll('link[rel*="icon"]').forEach(function(l){
       const h=l.getAttribute("href"); if(h) l.setAttribute("href", h.replace("/favicons/typortrait/","/favicons/"+BRAND_ID+"/")); });
   }catch(e){}
@@ -1057,6 +1070,9 @@ function variantPost(id){
   // in the chosen ink; the backdrop only recolours (or clears) the region behind them.
   // Letter/Lifelike are the words sculpt (style "displacement"); Passage keeps "message"
   // so the server streams the passage in written order. The flow flag is sent in render().
+  // Paws in Words: the pet engine uses its own grounds (dark/mid/paper…), driven off the pet
+  // flag on the server. Send the chosen pet ground; backdrop/ink don't apply.
+  if(_isPet) return {ink:"photo", style:"pet", ground:(state.petGround||"dark")};
   const base = (state.style==="displacement" || state.style==="letter")
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
     : {ink:(id||"photo"), style:state.style, ground:"navy"};
@@ -1812,7 +1828,7 @@ async function renderSizeThumb(mf){
   const myGen=gen;
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
-  const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } fd.append("message",words.value.trim());
+  const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_isPet) fd.append("pet","1"); fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(mf));
   fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
@@ -2439,7 +2455,7 @@ async function render(ink,{animate=false,background=false,thumb=false,hires=fals
   if(!background && !thumb && !hires) showBusy(animate);
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
-  const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
+  const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_isPet) fd.append("pet","1"); fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(state.minFont||20));
   if(thumb){
@@ -2991,7 +3007,7 @@ function fetchWithTimeout(url, opts, ms){
       if(state.crop) fd.append("crop", state.crop);
       fd.append("title", $g("gatherName").value.trim()||"In their words");
       fd.append("words", words.value.trim());
-      fd.append("style", vp.style); fd.append("ink", vp.ink); fd.append("ground", vp.ground); if(vp.backdrop) fd.append("backdrop", vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); }
+      fd.append("style", vp.style); fd.append("ink", vp.ink); fd.append("ground", vp.ground); if(vp.backdrop) fd.append("backdrop", vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_isPet) fd.append("pet","1");
       fd.append("min_font", String(state.minFont||20));
       const r=await fetch("/api/gather/create",{method:"POST",body:fd});
       const d=await r.json();

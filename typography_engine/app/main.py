@@ -1406,6 +1406,7 @@ async def render(
     aspect: float = Form(0.8),          # output width/height: 0.8 portrait (4:5) | 1.0 square | 1.25 landscape
     sunglasses: str = Form(""),         # "1"/"true" => subject wears sunglasses: render opaque lenses (no fabricated eyes)
     sunglass_faces: str = Form(""),     # PER-SUBJECT: comma-separated left-to-right face indices the user marked
+    pet: str = Form(""),                # "1"/"true" => Paws in Words: render via the landmark-free PET engine
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
@@ -1430,6 +1431,13 @@ async def render(
             sunglass_faces_sel = sorted({int(x) for x in _sgf_raw.split(",") if x.strip() != "" and int(x) >= 0})
         except ValueError:
             sunglass_faces_sel = None
+    # Paws in Words: route to the landmark-free pet engine (no face mesh). The human path is
+    # byte-identical when pet_on is False, so the live brands are unaffected.
+    pet_on = str(pet or "").strip().lower() in ("1", "true", "yes", "on")
+    _PET_GROUNDS = ("dark", "mid", "charcoal", "paper", "slate")
+    pet_ground_sel = (ground or "dark").strip().lower()
+    if pet_ground_sel not in _PET_GROUNDS:
+        pet_ground_sel = "dark"
     ref_clean = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40]     # referral/source tag (persists)
     brand_clean = re.sub(r"[^A-Za-z0-9_-]", "", brand or "")[:40]  # ACTIVE brand skin (gates brand UX)
     img_bytes = await image.read()
@@ -1581,7 +1589,15 @@ async def render(
         _is_loupe = str(loupe or "").strip().lower() in ("1", "true", "yes", "on")
         _preview_cap = LOUPE_PNG_WIDTH if _is_loupe else PREVIEW_PNG_WIDTH
         preview_w = min(int(png_width), _preview_cap)
-        if is_displacement or disp_route:
+        if pet_on:
+            # PET engine: landmark-free (U2-Net matte + saliency drape + photographic eyes).
+            # Skips the whole face pipeline; `an` above is unused for pets.
+            from .pet_proto import render_pet_portrait
+            png_bytes = await _bounded_to_thread(
+                render_pet_portrait, img_bytes, text, pet_ground_sel,
+                int(min(1500, max(700, preview_w))))
+            runs, ground_hex, mask_svg = [], None, None
+        elif is_displacement or disp_route:
             from .pipeline.displacement import render_displacement_portrait
             # Routed Mosaic/Passage: source the words from `text` exactly as the paid
             # download does (text.split()), so preview and paid file never diverge --
@@ -1704,6 +1720,8 @@ async def render(
             "aspect": aspect_choice,   # output shape (w/h) -> digital download recomposes to match
             "sunglasses": bool(sunglasses_on),   # manual opaque-lens flag -> paid recompose must match
             "sunglass_faces": sunglass_faces_sel,   # per-subject lens selection -> paid recompose must match
+            "pet": bool(pet_on),   # Paws in Words -> paid recompose renders via the pet engine
+            "pet_ground": pet_ground_sel if pet_on else None,
             "ref": ref_clean, "brand": brand_clean,
         }), encoding="utf-8")
 
@@ -3637,6 +3655,19 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
         dl_sun = bool(r.get("sunglasses"))     # manual opaque-lens flag -> match the preview
         _dlsf = r.get("sunglass_faces")        # per-subject lens selection -> match the preview
         dl_sunf = list(_dlsf) if isinstance(_dlsf, (list, tuple)) else None
+        if r.get("pet"):
+            # Paws in Words: paid file via the pet engine, on a 4:5 gallery print canvas at
+            # download resolution. Skips the face pipeline entirely.
+            from .pet_proto import render_pet_portrait
+            png_bytes = render_pet_portrait(
+                src_path.read_bytes(), (r.get("text", "") or ""),
+                ground=(r.get("pet_ground") or "dark"),
+                height=int(round(DOWNLOAD_PNG_WIDTH / max(0.5, aspect))),
+                print_aspect=aspect)
+            if not png_bytes:
+                return None
+            path.write_bytes(png_bytes)
+            return path
         warns2 = WarningCollector()
         _bgmask = None
         _bgm_path = PRIVATE_DIR / f"{job}.bgmask.png"
