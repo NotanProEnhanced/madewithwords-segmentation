@@ -583,6 +583,11 @@ def index(request: Request) -> Response:
     brand_q = (request.query_params.get("brand", "") or "").lower()
     if "lovedinwords" in host or brand_q == "lovedinwords":
         return HTMLResponse(_liw_landing_html(request))
+    # Paws in Words serves its marketing landing at the root; its CTAs forward into the studio.
+    if "pawsinwords" in host or brand_q == "pawsinwords":
+        _paws = STATIC_DIR / "pawsinwords" / "index.html"
+        if _paws.exists():
+            return FileResponse(str(_paws), media_type="text/html")
     q = request.url.query
     return RedirectResponse(url="/static/index.html" + (f"?{q}" if q else ""))
 
