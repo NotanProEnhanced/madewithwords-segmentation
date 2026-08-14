@@ -1012,7 +1012,7 @@ function _petSetup(){
 // only when the gallery is actually live (probe /gallery; it 404s when the
 // TYPO_GALLERY_ENABLED flag is off, so the link tracks the flag automatically).
 if(!_isMemorialBrand){
-  fetch("/gallery",{method:"HEAD"}).then(r=>{ if(r.ok){ const _gl=document.getElementById("galleryLink"); if(_gl) _gl.style.display="inline-block"; } }).catch(()=>{});
+  fetch("/gallery",{method:"HEAD"}).then(r=>{ if(r.ok && !_isPet){ const _gl=document.getElementById("galleryLink"); if(_gl) _gl.style.display="inline-block"; } }).catch(()=>{});   // pet brand has no sacred/holiday gallery -> never show it
 }
 // Memorial skins keep a calmer flow and name the styles by WHAT THE VISITOR PROVIDES --
 // Words / Passage / Letter (short -> long) -- rather than by abstract style jargon. It's
