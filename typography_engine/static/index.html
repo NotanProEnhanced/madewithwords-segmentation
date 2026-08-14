@@ -149,6 +149,27 @@
   /* Before/after slider works inside the mat: the "before" photo letterboxes the
      same way the render does (shared aspect), so the two line up pixel-for-pixel. */
   #result.kp-desk #beforeImg{object-fit:contain}
+  /* Paws in Words framed-room scene: the pet portrait drops into a real black
+     frame with a white mat, hung above a cream sofa in a warm, sunlit living
+     room. Mirrors the kp-desk mechanism but with a scene + mat opening measured
+     from static/pawsinwords/scene-room.jpg. Gated by .paws-room on #result, set
+     only for the pet brand -- other brands keep kp-desk. PREVIEW ONLY: the file
+     the customer downloads/prints is the clean portrait, untouched. */
+  #result.paws-room .frame{position:relative;margin-top:16px;padding:0;border-radius:6px;overflow:hidden;
+    aspect-ratio:1122/1402;background:#e9ddc9 url('/static/pawsinwords/scene-room.jpg') center/cover no-repeat;
+    box-shadow:0 22px 54px rgba(40,30,18,.20)}
+  /* Mat opening measured from the source scene (inner bevel of the white mat):
+     left 43.8%, right 34.9%, top 22.9%, bottom 54.5%. object-fit:cover fills it
+     edge-to-edge -- the 4:5 render crops a hair top/bottom, no white gaps. */
+  #result.paws-room .mat{position:absolute;top:22.9%;left:43.8%;right:34.9%;bottom:54.5%;
+    padding:0;border-radius:0;background:#0d0d0f;box-shadow:none;display:flex;align-items:center;justify-content:center}
+  #result.paws-room .stage{width:100%;height:100%;min-height:0;border:none;background:#0d0d0f}
+  #result.paws-room .compare{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+  #result.paws-room #portrait{width:100%;height:100%;object-fit:cover}
+  #result.paws-room .busy{background:#0d0d0f}
+  #result.paws-room .busy .msg{color:#f3efe8;font-size:12px;line-height:1.5;padding:0 8px;text-align:center}
+  #result.paws-room .busy .spin{border-color:rgba(255,255,255,.22);border-top-color:#fff}
+  #result.paws-room #beforeImg{object-fit:cover}
   #result.kp-leaf{position:relative;margin-top:16px;padding:30px 26px;border-radius:16px;overflow:hidden;
     background:radial-gradient(125% 120% at 50% 0%,#f4f1ea 0%,#e9e4da 52%,#dcd5c8 100%)}
   #result.kp-leaf .frame{position:relative;z-index:2;margin-top:0;max-width:86%;margin-left:auto;margin-right:auto}
@@ -184,6 +205,7 @@
   .busy-prog line:nth-child(8){animation-delay:-.1125s}
   @keyframes tickfade{0%{opacity:1}100%{opacity:.18}}
   #result.kp-desk .busy-prog{color:#fff}
+  #result.paws-room .busy-prog{color:#fff}
   .compose-status{display:none;flex-direction:column;align-items:center;margin-top:16px}
   .compose-status.on{display:flex}
   .compose-status .cs-line{display:flex;align-items:center;gap:10px;font-family:var(--serif);color:var(--navy);font-size:16px}
@@ -2028,7 +2050,11 @@ function applyKeepsake(prelim){
   // beveled frame on the eucalyptus backdrop (kp-leaf), which sizes to the render's own
   // aspect instead of letterboxing it inside a portrait mat.
   const portrait = CROP_AR <= 0.95;
-  resultView.classList.toggle("kp-desk", portrait);
+  // Pet brand shows its own warm living-room scene (paws-room) for portrait
+  // renders instead of the memorial candle-desk; everything else is unchanged.
+  const petRoom = _isPet && portrait;
+  resultView.classList.toggle("paws-room", petRoom);
+  resultView.classList.toggle("kp-desk", portrait && !_isPet);
   resultView.classList.toggle("kp-leaf", !portrait);
   if(!portrait) resultView.style.setProperty("--kp-ar", String(CROP_AR));  // stage holds the render's shape (compose slot + fit)
   if(typeof buildPicker==="function") buildPicker();   // offer only prints matching this render's orientation
