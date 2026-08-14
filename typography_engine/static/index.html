@@ -262,7 +262,13 @@ const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce
 const ANIM_CAP = 2600;                 // max glyphs animated (perf); image shows all
 const INKS = [["mono","#555555","Noir"],["gold_noir","gold","Ember"],["navy","#0d1b3a","Navy"],
   ["sepia","#5a3a1a","Sepia"],["burgundy","#4a0d18","Rose"],["forest","#0f2e1e","Sage"],
-  ["spectrum","spectrum","Spectrum"],["aurora","aurora","Aurora"],["photo","conic","Photo"]];
+  ["spectrum","spectrum","Spectrum"],["aurora","aurora","Aurora"]];
+// The "photo" palette tinted the text with the source photo's own colours.
+// Removed from the picker because it read as "photo with type over it," not
+// "portrait made of words" -- the PawsInWords cat critique landed on this
+// exact failure mode. Engine paths (_CALLIGRAM["photo"], _POSTER["photo"])
+// are intentionally preserved in tonal.py so old paid jobs still recompose
+// on /download. To restore in UI, add ["photo","conic","Photo"] back.
 function placeholderBg(col){
   if(col==="conic") return "conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)";
   if(col==="gold") return "radial-gradient(circle at 50% 42%, #e8c66a 0 40%, #0d0f13 44%)";
