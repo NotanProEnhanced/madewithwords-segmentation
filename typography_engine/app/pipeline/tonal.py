@@ -166,6 +166,14 @@ _FEATURE_GROUPS = (_EYE_L, _EYE_R, _BROW_L, _BROW_R, _LIPS, _NOSE)
 # stay sculpted; the loss is only in specular highlights we don't want.
 _SHARPEN_MAX = 230
 
+# Width in pixels of the fade band at the silhouette edge on dark grounds.
+# The tint smoothstep-fades from the interior toward the ground color over
+# this distance so letters straddling the boundary don't read as a scissor
+# cut. Too small (< 2) = still visible cut-out; too large (> 6) = the whole
+# subject looks vignetted. 4 is the tested minimum that removes the halo on
+# marketing/sample-{1,2,3} + hero-before at the current render widths.
+_EDGE_FEATHER_PX = 4
+
 
 def _sharpen(gray: np.ndarray) -> np.ndarray:
     """Local-contrast (CLAHE) + unsharp mask so features keep their edges.
@@ -1109,7 +1117,24 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         m = an.silhouette.mask
         if m.shape[:2] != (H, W):
             m = cv2.resize(m, (W, H), interpolation=cv2.INTER_NEAREST)
-        out[m <= 127] = ground
+        # Distance-transform ramp at the silhouette edge. A hard binary cut
+        # (out[m<=127] = ground) leaves letters that straddle the edge with
+        # half-inside/half-outside pixels, which reads as the "cut-out /
+        # gray edge glow" the PawsInWords critique flagged. Smoothstepping
+        # the mask alpha over _EDGE_FEATHER_PX turns the boundary into a
+        # short, intentional fade from tint into ground instead of a scissor
+        # cut. On light paper the effect is unnecessary (paper == ground ==
+        # near-white, so a fade to it is invisible), so keep the hard cut
+        # there for a cleaner engraving look.
+        inside = (m > 127).astype(np.uint8)
+        if not light and _EDGE_FEATHER_PX > 0 and int(inside.sum()) > 0:
+            d = cv2.distanceTransform(inside, cv2.DIST_L2, 3).astype(np.float32)
+            alpha = np.clip(d / float(_EDGE_FEATHER_PX), 0.0, 1.0)
+            # smoothstep(alpha) so the fade eases instead of ramping linearly
+            alpha = alpha * alpha * (3.0 - 2.0 * alpha)
+            out = ground + (out - ground) * alpha[..., None]
+        else:
+            out[m <= 127] = ground
     return out.clip(0, 255).astype(np.uint8)
 
 
