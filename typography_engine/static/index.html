@@ -1013,7 +1013,7 @@ function _petSetup(){
   try{
     ["styleGallery","inkGroup","sizeFilm","caseCtl","sunRow","dropTips"].forEach(function(id){ var e=document.getElementById(id); if(e) e.style.display="none"; });
     var _bl=document.querySelector("#bgGroup .ctl-lbl"); if(_bl) _bl.textContent="Look";
-    var _bh=document.querySelector("#bgGroup .ctl-hint"); if(_bh) _bh.textContent="The gallery ground your portrait sits on.";
+    var _bh=document.querySelector("#bgGroup .ctl-hint"); if(_bh) _bh.textContent="The background colour behind your pet.";
     // Typography size: Small (fine detail) / Medium / Large (bold & graphic). Drives
     // state.petType -> pet_type on the render POST -> tier scale in the pet engine.
     var _bg=document.getElementById("bgGroup");
@@ -1885,6 +1885,10 @@ let allowedMf=[120,57,27,13];
 let sizeThumbCache={};                 // coarse renders of the CURRENT ink, keyed by size
 function buildSizeStrip(){
   if(!sizeStripEl) return;
+  // Pet brand has its OWN typography control (state.petType, the Small/Medium/Large seg in
+  // _petSetup). The legacy Word-size filmstrip drives min_font, which the pet engine ignores
+  // -> it's a dead, duplicate control here. Keep it hidden so pets see ONE size control.
+  if(_isPet){ if(sizeFilmEl) sizeFilmEl.style.display="none"; return; }
   // Sculpted is auto-scaled; Message auto-sizes from text length (build_poster
   // repeats to fill, so the type size is the renderer's call, not the user's).
   if(state.style==="displacement" || state.style==="letter" || state.style==="message"){ if(sizeFilmEl) sizeFilmEl.style.display="none"; return; }  // no size control (Letter = displacement: auto-scaled, ignores min_font)
