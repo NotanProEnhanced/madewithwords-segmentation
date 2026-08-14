@@ -89,6 +89,7 @@ services:
       - PET_ROW_GAP=${PET_ROW_GAP:-}
       - PET_TRACK=${PET_TRACK:-}
       - PET_EYE_POP=${PET_EYE_POP:-}
+      - PET_MAX_RENDER_PX=${PET_MAX_RENDER_PX:-}
       # Persist the matte model on the bind-mounted /app/data so it survives rebuilds.
       - PET_MATTE_DIR=/app/data/pet-models
       - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}

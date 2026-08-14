@@ -454,13 +454,23 @@ def render_pet_portrait(image_bytes: bytes, words: str, ground: str = "dark", he
     bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if bgr is None:
         raise ValueError("could not decode image")
-    if bgr.shape[0] != height:
-        bgr = cv2.resize(bgr, (max(1, int(bgr.shape[1] * height / bgr.shape[0])), height),
+    # Cap the WORKING render resolution. The sculpt cost scales with pixel count: a full 4500px
+    # print render takes ~70s -- past the request/proxy timeout, so /download hangs and the buyer
+    # sees "preparing files" forever. Render at a capped height, then upscale the finished portrait
+    # to the requested print height (the human engine uses the same render-then-upscale pattern).
+    # PET_MAX_RENDER_PX tunes the cap; the preview (<=1600) is already below it and unaffected.
+    cap = int(os.environ.get("PET_MAX_RENDER_PX", "2400") or 2400)
+    work_h = min(height, cap) if height and height > 0 else height
+    if bgr.shape[0] != work_h:
+        bgr = cv2.resize(bgr, (max(1, int(bgr.shape[1] * work_h / bgr.shape[0])), work_h),
                          interpolation=cv2.INTER_AREA)
     mask = _foreground_mask(bgr)
     if print_aspect:
         bgr, mask = _fit_print_aspect(bgr, mask, float(print_aspect))
     out_rgb = _render_word_portrait(bgr, mask, words, ground=ground, type_scale=type_scale)
+    if work_h < height:                                   # upscale the finished portrait to print size
+        out_w = int(round(out_rgb.shape[1] * height / out_rgb.shape[0]))
+        out_rgb = cv2.resize(out_rgb, (max(1, out_w), height), interpolation=cv2.INTER_LANCZOS4)
     ok, buf = cv2.imencode(".png", cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR))
     if not ok:
         raise ValueError("encode failed")
