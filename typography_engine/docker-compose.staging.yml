@@ -101,6 +101,7 @@ services:
       - PET_SHADOW_LIFT=${PET_SHADOW_LIFT:-}
       - PET_MATTE_MODEL=${PET_MATTE_MODEL:-}
       - PET_MATTE_FILL=${PET_MATTE_FILL:-}
+      - PET_FEATURE_PROTECT=${PET_FEATURE_PROTECT:-}
       # Persist the U2-Net matte model on the bind-mounted /app/data so it survives rebuilds.
       - PET_MATTE_DIR=/app/data/pet-models
       # Background lightening: render the image background lighter than the subject's

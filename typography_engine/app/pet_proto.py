@@ -282,6 +282,19 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # flat dark pupil has ~0 local detail but sits inside a high-detail rim -- inherit their
     # rim's protection and don't get warped into a corrupted blob. Then damp the drape there.
     featdamp = np.clip(cv2.GaussianBlur(det, (0, 0), sigmaX=max(1.0, W * 0.010)) * 1.9, 0, 1)
+    # LOCAL-DARKNESS feature guard: large flat dark features (eyes, a wet nose) inside BRIGHT
+    # fur have almost no edge detail at their centre, so the detail-based protection above
+    # misses them -- they warp into a corrupted micro-text "melt" (worst on light-furred pets
+    # on the paper/light grounds). Detect pixels markedly darker than their BROAD neighbourhood
+    # (so a uniformly dark dog scores ~0 and is NOT over-photographed) and fold that into the
+    # protection. PET_FEATURE_PROTECT scales it (0 reverts to detail-only protection).
+    _fp = float(os.environ.get("PET_FEATURE_PROTECT", "0.7") or 0.7)
+    localdark = np.zeros_like(gray)                                         # 0..1 feature field (eyes/nose)
+    if _fp > 0.0:
+        broad = cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, W * 0.06))   # neighbourhood luminance
+        localdark = np.clip((broad - gray) / 55.0, 0, 1) * mask             # darker than surroundings -> feature
+        localdark = np.clip(cv2.GaussianBlur(localdark, (0, 0), sigmaX=max(1.0, W * 0.012)) * 1.6, 0, 1)
+        featdamp = np.maximum(featdamp, localdark * _fp)                    # protect the feature interior from the drape
     amp = float(os.environ.get("PET_DRAPE", "68") or 68.0) * sc * (1.0 - 0.92 * featdamp)
     my = (yy + amp * dn).astype(np.float32)
     mx = xx
@@ -332,7 +345,13 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         # Spread the weight into the feature interiors (same reason as featdamp) so the eyes/nose
         # read as the REAL photo -- covering any residual warp -- while the body stays words.
         wgt = cv2.GaussianBlur(np.clip(det * 1.6, 0, 1), (0, 0), sigmaX=max(1.0, W * 0.008)) * mask
-        wgt = (wgt * _pf)[..., None]
+        wgt = (wgt * _pf)
+        # Cover the dark-feature interiors (eyes/nose) with the real photo MORE strongly than the
+        # rim -- that's where the corrupted warp fully shows through -- so they read photographic.
+        # Uses the SAME local-darkness field as the drape guard, so a uniformly dark dog (field
+        # ~0) is never over-photographed. Capped below 1 so a whisker of typography remains.
+        wgt = np.maximum(wgt, localdark * _fp * 0.9)
+        wgt = wgt[..., None]
         out = out * (1.0 - wgt) + photo_rgb * wgt
 
     # 7) Tonal depth: deepen shadows + lift highlights within the subject so black fur reads
