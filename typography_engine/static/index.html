@@ -156,12 +156,14 @@
      only for the pet brand -- other brands keep kp-desk. PREVIEW ONLY: the file
      the customer downloads/prints is the clean portrait, untouched. */
   #result.paws-room .frame{position:relative;margin-top:16px;padding:0;border-radius:6px;overflow:hidden;
-    aspect-ratio:1122/1402;background:#e9ddc9 url('/static/pawsinwords/scene-room.jpg') center/cover no-repeat;
+    aspect-ratio:476/596;background:#e9ddc9 url('/static/pawsinwords/scene-room.jpg') center/cover no-repeat;
     box-shadow:0 22px 54px rgba(40,30,18,.20)}
-  /* Mat opening measured from the source scene (inner bevel of the white mat):
-     left 43.8%, right 34.9%, top 22.9%, bottom 54.5%. object-fit:cover fills it
-     edge-to-edge -- the 4:5 render crops a hair top/bottom, no white gaps. */
-  #result.paws-room .mat{position:absolute;top:22.9%;left:43.8%;right:34.9%;bottom:54.5%;
+  /* Scene cropped tight around the frame so the art -- and its typography --
+     reads large; only a sliver of wall/sofa remains for context. Mat opening
+     (inner bevel of the white mat) in the cropped scene: left 24.2%, right
+     25.6%, top 21.0%, bottom 26.0%. object-fit:cover fills it edge-to-edge --
+     the 4:5 render crops a hair top/bottom, no white gaps. */
+  #result.paws-room .mat{position:absolute;top:21.0%;left:24.2%;right:25.6%;bottom:26.0%;
     padding:0;border-radius:0;background:#0d0d0f;box-shadow:none;display:flex;align-items:center;justify-content:center}
   #result.paws-room .stage{width:100%;height:100%;min-height:0;border:none;background:#0d0d0f}
   #result.paws-room .compare{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
