@@ -297,12 +297,20 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # (so a uniformly dark dog scores ~0 and is NOT over-photographed) and fold that into the
     # protection. PET_FEATURE_PROTECT scales it (0 reverts to detail-only protection).
     _fp = float(os.environ.get("PET_FEATURE_PROTECT", "0.7") or 0.7)
-    localdark = np.zeros_like(gray)                                         # 0..1 feature field (eyes/nose)
+    feat = np.zeros_like(gray)                                             # 0..1 feature field (eyes/nose)
     if _fp > 0.0:
         broad = cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, W * 0.06))   # neighbourhood luminance
-        localdark = np.clip((broad - gray) / 55.0, 0, 1) * mask             # darker than surroundings -> feature
-        localdark = np.clip(cv2.GaussianBlur(localdark, (0, 0), sigmaX=max(1.0, W * 0.012)) * 1.6, 0, 1)
-        featdamp = np.maximum(featdamp, localdark * _fp)                    # protect the feature interior from the drape
+        # A feature (eye, nose) reads markedly DIFFERENT from its broad neighbourhood -- either
+        # DARKER (a pupil, a wet nose, a dark-eyed dog) or BRIGHTER (a light green/amber cat iris,
+        # a catchlight). Taking BOTH directions makes the guard colour-agnostic, so a light-eyed
+        # cat's iris is caught too; a uniform coat (dark dog / white dog) sits ~= its neighbourhood
+        # and scores ~0, so it is never over-processed. Bright side is less sensitive (÷70) so
+        # ordinary fur variation and tabby striping don't register as features.
+        localdark = np.clip((broad - gray) / 55.0, 0, 1) * mask            # darker than surroundings
+        locallight = np.clip((gray - broad) / 70.0, 0, 1) * mask           # brighter than surroundings (light iris)
+        feat = np.clip(cv2.GaussianBlur(np.maximum(localdark, locallight), (0, 0),
+                                        sigmaX=max(1.0, W * 0.012)) * 1.6, 0, 1)
+        featdamp = np.maximum(featdamp, feat * _fp)                        # protect the feature interior from the drape
     amp = float(os.environ.get("PET_DRAPE", "68") or 68.0) * sc * (1.0 - 0.92 * featdamp)
     my = (yy + amp * dn).astype(np.float32)
     mx = xx
@@ -312,8 +320,10 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
 
     wL, wM, wF, wMi = R(tL), R(tM), R(tF), R(tMi)
 
-    # 3) Blend tiers by the detail field: coarse text on flat body, fine on features.
-    df = np.clip(det, 0, 1)
+    # 3) Blend tiers by the detail field: coarse text on flat body, fine on features. The feature
+    #    field is unioned in so an eye/nose INTERIOR (smooth -> low raw detail -> would otherwise
+    #    get the COARSE tier and show big words) is pushed to the FINE tier like its detailed rim.
+    df = np.clip(np.maximum(det, feat), 0, 1)
     warped = wL.copy()
     for a0, b0, ia, ib in ((0.0, 0.45, wL, wM), (0.45, 0.75, wM, wF), (0.75, 1.0001, wF, wMi)):
         bt = np.clip((df - a0) / (b0 - a0), 0, 1)
@@ -354,11 +364,11 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         # read as the REAL photo -- covering any residual warp -- while the body stays words.
         wgt = cv2.GaussianBlur(np.clip(det * 1.6, 0, 1), (0, 0), sigmaX=max(1.0, W * 0.008)) * mask
         wgt = (wgt * _pf)
-        # Cover the dark-feature interiors (eyes/nose) with the real photo MORE strongly than the
-        # rim -- that's where the corrupted warp fully shows through -- so they read photographic.
-        # Uses the SAME local-darkness field as the drape guard, so a uniformly dark dog (field
-        # ~0) is never over-photographed. Capped below 1 so a whisker of typography remains.
-        wgt = np.maximum(wgt, localdark * _fp * 0.9)
+        # Cover the feature interiors (eyes of any iris colour, wet nose) with the real photo MORE
+        # strongly than the rim -- that's where big words / residual warp otherwise show through --
+        # so they read photographic. Uses the SAME feature field as the drape guard, so a uniform
+        # coat (field ~0) is never over-photographed. Capped below 1 so a whisker of type remains.
+        wgt = np.maximum(wgt, feat * _fp * 0.9)
         wgt = wgt[..., None]
         out = out * (1.0 - wgt) + photo_rgb * wgt
 
@@ -380,16 +390,16 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         blur = cv2.GaussianBlur(out, (0, 0), sigmaX=1.2)
         out = out * (1.0 - m3) + np.clip(out + _shp * (out - blur), 0, 255) * m3
 
-    # 8b) Eye/feature POP: make the eyes read alive and the nose glisten. Within the dark-feature
-    #     field (localdark -> eyes, wet nose), add crisp local contrast AND amplify the existing
+    # 8b) Eye/feature POP: make the eyes read alive and the nose glisten. Within the feature field
+    #     (eyes of any iris colour, wet nose), add crisp local contrast AND amplify the existing
     #     catchlight/shine (the bright specular point already in the photo). Landmark-free: it
-    #     rides the same localdark field, so a uniformly dark dog (field ~0) is untouched.
+    #     rides the same feature field, so a uniform coat (field ~0) is untouched.
     #     PET_EYE_POP scales it (0 disables).
     _pop = float(os.environ.get("PET_EYE_POP", "0.6") or 0.6)
-    if _pop > 0.0 and _fp > 0.0 and float(localdark.max()) > 0.05:
+    if _pop > 0.0 and _fp > 0.0 and float(feat.max()) > 0.05:
         g2 = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
         hp = g2 - cv2.GaussianBlur(g2, (0, 0), sigmaX=max(1.0, W * 0.006))   # high-freq detail
-        fpk = (localdark * _pop)[..., None]
+        fpk = (feat * _pop)[..., None]
         out = np.clip(out + hp[..., None] * fpk * 1.3, 0, 255)               # snap the feature detail
         spec = np.clip((g2 - 175.0) / 60.0, 0, 1)[..., None]                 # existing catchlight / nose shine
         out = np.clip(out + spec * fpk * 95.0, 0, 255)                       # lift it -> a living glint
