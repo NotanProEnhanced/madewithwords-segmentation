@@ -157,14 +157,27 @@ _NOSE = (1, 2, 98, 327, 97, 326, 5, 4, 275, 440, 220, 45)
 _FEATURE_GROUPS = (_EYE_L, _EYE_R, _BROW_L, _BROW_R, _LIPS, _NOSE)
 
 
+# Cap on the sharpened image's brightest pixels. Thin high-contrast features
+# (whiskers, hair strands, catchlights, edge highlights) survive CLAHE +
+# unsharp near 255 and then dominate the composite -- they read as photo, not
+# type, because a 255-white pixel obviously isn't a letter. Capping at 230
+# keeps the sharpening headroom for real detail while denying pure-white
+# streaks. Verified on marketing/sample-{1,2,3} + hero-before that faces
+# stay sculpted; the loss is only in specular highlights we don't want.
+_SHARPEN_MAX = 230
+
+
 def _sharpen(gray: np.ndarray) -> np.ndarray:
     """Local-contrast (CLAHE) + unsharp mask so features keep their edges.
 
     A fairly strong CLAHE deepens the subtle shadows on soft, evenly-lit faces
-    (eyes, nose, smile lines) so flat subjects don't render washed-out."""
+    (eyes, nose, smile lines) so flat subjects don't render washed-out. The
+    output is clamped to _SHARPEN_MAX so thin white features (whiskers, hair
+    strands, catchlights) cannot survive as pure white into the composite."""
     clahe = cv2.createCLAHE(clipLimit=3.2, tileGridSize=(7, 7)).apply(gray)
     blur = cv2.GaussianBlur(clahe, (0, 0), 2.4)
-    return cv2.addWeighted(clahe, 1.8, blur, -0.8, 0)
+    out = cv2.addWeighted(clahe, 1.8, blur, -0.8, 0)
+    return np.minimum(out, _SHARPEN_MAX)
 
 
 def _tone_field(gray: np.ndarray, mask: np.ndarray, gamma: float, floor: float) -> np.ndarray:
