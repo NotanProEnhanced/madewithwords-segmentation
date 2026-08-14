@@ -244,7 +244,7 @@ def _edge_ink(gray):
     return np.clip(cv2.GaussianBlur(e, (0, 0), sigmaX=1.1), 0, 1)
 
 
-def _render_word_portrait(bgr, mask, words, ground="dark"):
+def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     """Sculpted landmark-free word-portrait: word rows are WARPED by the photo's luminance so
     the type drapes over the subject's form, blended across detail tiers (fine on features,
     coarse on the body), then coloured by the photo. Ported from the human displacement engine
@@ -259,8 +259,10 @@ def _render_word_portrait(bgr, mask, words, ground="dark"):
     det = _detail_map(gray.astype(np.uint8))                # 0..1 saliency: high on features/edges
     sc = W / 900.0                                          # size reference
 
-    # 1) Four ink-coverage tiers, coarse -> micro. PET_TYPE_SCALE (<1 = finer type).
-    _tsc = float(os.environ.get("PET_TYPE_SCALE", "0.42") or 0.42)
+    # 1) Four ink-coverage tiers, coarse -> micro. type_scale (<1 = finer type) sets the
+    #    typography size the buyer picked (Small/Medium/Large -> ~0.30/0.42/0.56); when the
+    #    caller doesn't pass one, fall back to the PET_TYPE_SCALE env default.
+    _tsc = float(type_scale) if type_scale is not None else float(os.environ.get("PET_TYPE_SCALE", "0.42") or 0.42)
     tL = _rows(stream, W, H, 64 * sc * _tsc, rng)
     tM = _rows(stream, W, H, 40 * sc * _tsc, rng)
     tF = _rows(stream, W, H, 26 * sc * _tsc, rng)
@@ -392,10 +394,11 @@ def _fit_print_aspect(bgr, mask, aspect):
 
 
 def render_pet_portrait(image_bytes: bytes, words: str, ground: str = "dark", height: int = 900,
-                        print_aspect: float | None = None) -> bytes:
+                        print_aspect: float | None = None, type_scale: float | None = None) -> bytes:
     """Decode a photo, render a landmark-free word-portrait, return PNG bytes. `height` sets the
     render resolution (preview ~900; print ~4500). `print_aspect` (e.g. 0.8 for 4:5) pads the
-    subject onto a gallery canvas for print -- omit for the raw preview crop."""
+    subject onto a gallery canvas for print -- omit for the raw preview crop. `type_scale` sets
+    the typography size (Small/Medium/Large); None uses the PET_TYPE_SCALE env default."""
     arr = np.frombuffer(image_bytes, np.uint8)
     bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if bgr is None:
@@ -406,7 +409,7 @@ def render_pet_portrait(image_bytes: bytes, words: str, ground: str = "dark", he
     mask = _foreground_mask(bgr)
     if print_aspect:
         bgr, mask = _fit_print_aspect(bgr, mask, float(print_aspect))
-    out_rgb = _render_word_portrait(bgr, mask, words, ground=ground)
+    out_rgb = _render_word_portrait(bgr, mask, words, ground=ground, type_scale=type_scale)
     ok, buf = cv2.imencode(".png", cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR))
     if not ok:
         raise ValueError("encode failed")

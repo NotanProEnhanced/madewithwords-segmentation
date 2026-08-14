@@ -1412,6 +1412,7 @@ async def render(
     sunglasses: str = Form(""),         # "1"/"true" => subject wears sunglasses: render opaque lenses (no fabricated eyes)
     sunglass_faces: str = Form(""),     # PER-SUBJECT: comma-separated left-to-right face indices the user marked
     pet: str = Form(""),                # "1"/"true" => Paws in Words: render via the landmark-free PET engine
+    pet_type: str = Form(""),           # PET typography size: small | medium | large (finer -> bolder)
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
@@ -1443,6 +1444,13 @@ async def render(
     pet_ground_sel = (ground or "dark").strip().lower()
     if pet_ground_sel not in _PET_GROUNDS:
         pet_ground_sel = "dark"
+    # PET typography size -> tier scale (<1 = finer type). Small adds fine detail; Large
+    # reads bold and graphic. Stored in the recipe so the paid download matches the preview.
+    _PET_TYPE_SCALES = {"small": 0.30, "medium": 0.42, "large": 0.56}
+    pet_type_sel = (pet_type or "medium").strip().lower()
+    if pet_type_sel not in _PET_TYPE_SCALES:
+        pet_type_sel = "medium"
+    pet_type_scale = _PET_TYPE_SCALES[pet_type_sel]
     ref_clean = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40]     # referral/source tag (persists)
     brand_clean = re.sub(r"[^A-Za-z0-9_-]", "", brand or "")[:40]  # ACTIVE brand skin (gates brand UX)
     img_bytes = await image.read()
@@ -1605,7 +1613,7 @@ async def render(
             from .pet_proto import render_pet_portrait
             png_bytes = await _bounded_to_thread(
                 render_pet_portrait, img_bytes, text, pet_ground_sel,
-                int(min(1500, max(700, preview_w))))
+                int(min(1500, max(700, preview_w))), None, pet_type_scale)
             runs, ground_hex, mask_svg = [], None, None
         elif is_displacement or disp_route:
             from .pipeline.displacement import render_displacement_portrait
@@ -1732,6 +1740,7 @@ async def render(
             "sunglass_faces": sunglass_faces_sel,   # per-subject lens selection -> paid recompose must match
             "pet": bool(pet_on),   # Paws in Words -> paid recompose renders via the pet engine
             "pet_ground": pet_ground_sel if pet_on else None,
+            "pet_type": pet_type_sel if pet_on else None,   # typography size (small/medium/large)
             "ref": ref_clean, "brand": brand_clean,
         }), encoding="utf-8")
 
@@ -3669,11 +3678,12 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
             # Paws in Words: paid file via the pet engine, on a 4:5 gallery print canvas at
             # download resolution. Skips the face pipeline entirely.
             from .pet_proto import render_pet_portrait
+            _dl_pt = {"small": 0.30, "medium": 0.42, "large": 0.56}.get(r.get("pet_type") or "medium")
             png_bytes = render_pet_portrait(
                 src_path.read_bytes(), (r.get("text", "") or ""),
                 ground=(r.get("pet_ground") or "dark"),
                 height=int(round(DOWNLOAD_PNG_WIDTH / max(0.5, aspect))),
-                print_aspect=aspect)
+                print_aspect=aspect, type_scale=_dl_pt)
             if not png_bytes:
                 return None
             path.write_bytes(png_bytes)
