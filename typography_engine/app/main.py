@@ -1611,9 +1611,11 @@ async def render(
             # PET engine: landmark-free (U2-Net matte + saliency drape + photographic eyes).
             # Skips the whole face pipeline; `an` above is unused for pets.
             from .pet_proto import render_pet_portrait
+            # First preview renders sharper (higher floor) so the initial view isn't soft --
+            # the loupe/paid pass still goes higher. Floor 1050 (was 700), cap 1600 (was 1500).
             png_bytes = await _bounded_to_thread(
                 render_pet_portrait, img_bytes, text, pet_ground_sel,
-                int(min(1500, max(700, preview_w))), None, pet_type_scale)
+                int(min(1600, max(1050, preview_w))), None, pet_type_scale)
             runs, ground_hex, mask_svg = [], None, None
         elif is_displacement or disp_route:
             from .pipeline.displacement import render_displacement_portrait

@@ -213,13 +213,21 @@ def _rows(stream, W, H, fs, rng):
     font = ImageFont.truetype(_FONT, fs) if _FONT else ImageFont.load_default()
     im = Image.new("L", (W, H), 255)
     d = ImageDraw.Draw(im)
-    base = ", ".join(stream) + ",  "
+    # Subtle letter tracking so glyphs in a row don't crowd -- a hair of space between words
+    # opens the type up (reads less like a solid mass). PET_TRACK adds inter-phrase spacing.
+    _trk = float(os.environ.get("PET_TRACK", "1.0") or 1.0)
+    sep = "," + (" " * max(1, int(round(2 * _trk))))
+    base = sep.join(stream) + "," + (" " * max(2, int(round(2 * _trk))))
     bw = max(1.0, float(d.textlength(base, font=font)))
     line = base * max(2, int((W + fs * 7) / bw) + 2)
+    # Row gap: leave a sliver of ground between rows so lines breathe instead of colliding
+    # into a busy wall of text. PET_ROW_GAP multiplies the line step (1.0 = touching).
+    _gap = float(os.environ.get("PET_ROW_GAP", "1.12") or 1.12)
+    step = max(6, int(round(fs * _gap)))
     y = 0
     while y < H + fs:
         d.text((-rng.randint(0, int(fs * 6)), y), line, font=font, fill=0)
-        y += max(6, int(fs))
+        y += step
     return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
 
 
@@ -371,6 +379,20 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         m3 = mask[..., None]
         blur = cv2.GaussianBlur(out, (0, 0), sigmaX=1.2)
         out = out * (1.0 - m3) + np.clip(out + _shp * (out - blur), 0, 255) * m3
+
+    # 8b) Eye/feature POP: make the eyes read alive and the nose glisten. Within the dark-feature
+    #     field (localdark -> eyes, wet nose), add crisp local contrast AND amplify the existing
+    #     catchlight/shine (the bright specular point already in the photo). Landmark-free: it
+    #     rides the same localdark field, so a uniformly dark dog (field ~0) is untouched.
+    #     PET_EYE_POP scales it (0 disables).
+    _pop = float(os.environ.get("PET_EYE_POP", "0.6") or 0.6)
+    if _pop > 0.0 and _fp > 0.0 and float(localdark.max()) > 0.05:
+        g2 = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
+        hp = g2 - cv2.GaussianBlur(g2, (0, 0), sigmaX=max(1.0, W * 0.006))   # high-freq detail
+        fpk = (localdark * _pop)[..., None]
+        out = np.clip(out + hp[..., None] * fpk * 1.3, 0, 255)               # snap the feature detail
+        spec = np.clip((g2 - 175.0) / 60.0, 0, 1)[..., None]                 # existing catchlight / nose shine
+        out = np.clip(out + spec * fpk * 95.0, 0, 255)                       # lift it -> a living glint
 
     # 9) Vibrance: boost less-saturated colours more so warm fur glows without going garish.
     _vib = float(os.environ.get("PET_VIBRANCE", "0.35") or 0.35)

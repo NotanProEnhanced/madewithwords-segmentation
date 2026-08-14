@@ -1144,7 +1144,9 @@ function currentSwatches(){ return _isMemorialBrand ? MEMORIAL_INKS : GENERIC_IN
 // studio keeps the full set.
 // Paws in Words: the pet engine has its own grounds (not human backgrounds). The Background
 // axis is repurposed as the pet "Look" selector -> drives state.petGround.
-const PET_GROUNDS=[["dark","#1b1e25","Gallery Dark"],["mid","#8b9099","Neutral"],["paper","#efe7d6","Paper"]];
+// Paper dropped: it washes out light/white fur (only the Dark ground shows it), so it's a
+// trap for a big share of pets. Dark (hero) + a neutral grey remain.
+const PET_GROUNDS=[["dark","#1b1e25","Gallery Dark"],["mid","#8b9099","Neutral"]];
 function currentBackgrounds(){
   if(_isPet) return PET_GROUNDS;
   return _isMemorialBrand ? BACKGROUNDS.filter(b=>b[0]!=="transparent") : BACKGROUNDS;
