@@ -75,6 +75,11 @@ git push || echo "⚠ push failed — merge is local; fix auth and 'git push' la
 echo "→ Rebuilding production container…"
 docker compose up -d --build
 
+# Reclaim space from the now-dangling OLD image layers the rebuild superseded, so
+# repeated promotes don't fill the disk. Dangling (untagged) images only — never a
+# tagged image in use. Best-effort; never fails the promote.
+docker image prune -f >/dev/null 2>&1 || true
+
 echo
 echo "✓ Promoted and live. Recent prod logs:"
 docker compose logs --tail=15
