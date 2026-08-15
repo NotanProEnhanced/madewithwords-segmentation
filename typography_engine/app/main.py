@@ -3489,6 +3489,8 @@ def list_products(brand: str = "", gallery: int = 0) -> JSONResponse:
 # falls back to the Typortrait name.
 _CHECKOUT_BRANDS = {
     "lovedinwords": {"name": "Loved in Words"},
+    "faithinwords": {"name": "Faith in Words"},
+    "pawsinwords": {"name": "Paws in Words"},
 }
 
 
@@ -3530,13 +3532,19 @@ def checkout(
     # composed from them lazily at download / fulfillment time.
     if not (PRIVATE_DIR / f"{job}.json").exists():
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
-    try:  # referral/source tag captured at render time (partner attribution)
-        ref = str(json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("ref", ""))[:40]
+    ref, recipe_brand = "", ""
+    try:  # referral/source tag + active brand skin, both captured at render time
+        _rec = json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8"))
+        ref = str(_rec.get("ref", ""))[:40]                # partner attribution (also drives memorial pricing)
+        recipe_brand = str(_rec.get("brand", ""))[:40]     # active skin (pawsinwords / faithinwords / …)
     except Exception:  # noqa: BLE001
-        ref = ""
+        ref, recipe_brand = "", ""
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
-    brand = _checkout_brand(ref)   # per-brand statement descriptor + line-item name
+    # Charge branding: a direct visitor (e.g. pawsinwords.com) has no `ref`, so fall back to the
+    # active brand skin -> the Stripe page + card statement read "Paws in Words", not "Typortrait".
+    # `ref` is still what drives pricing/attribution below; only the DISPLAY name uses the fallback.
+    brand = _checkout_brand(ref if (ref or "").strip().lower() in _CHECKOUT_BRANDS else recipe_brand)
     _desc = _stmt_desc(brand["name"])
     eff_price, eff_ship = products.price_for(product, products.is_memorial_channel(ref))   # memorial/EverLoved channel = commission-adjusted price
 
