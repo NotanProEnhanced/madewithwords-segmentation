@@ -260,12 +260,67 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     H, W = bgr.shape[:2]
     gbgr = GROUNDS.get(ground, GROUNDS["dark"])
     fade = ground in _FADE_GROUNDS
+    # --- Preprocess the PHOTO first, so the portrait is built from WORDS, not a photo with type
+    #     laid over it: the coat should read as type; only the eyes/nose stay photographic. ---
     bgr = _enhance_contrast(bgr, mask)                       # punch up the tonal range first
-    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
     rng = random.Random(20260813)                           # fixed seed -> deterministic
     stream = _weighted_stream(words)                        # name + lead words weighted -> findable
-    det = _detail_map(gray.astype(np.uint8))                # 0..1 saliency: high on features/edges
     sc = W / 900.0                                          # size reference
+
+    # EDGE TIGHTEN: the soft matte alpha leaves a faint semi-transparent RING at the silhouette
+    # where words half-mix with the ground -> a grey "cut-out" glow. Steepen the low end of the
+    # alpha so that halo drops to 0 while the core stays 1 (a clean edge, not a hard cutout).
+    _et = float(os.environ.get("PET_EDGE_TIGHTEN", "0.18") or 0.0)
+    if _et > 0.0:
+        mask = np.clip((mask - _et) / max(1e-3, 1.0 - _et), 0.0, 1.0)
+
+    gray0 = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32)
+
+    # FEATURE FIELD (eyes/nose), colour-agnostic: markedly DARKER (pupil, wet nose, dark-eyed dog)
+    # OR BRIGHTER (light iris, catchlight) than the broad neighbourhood. Computed UP FRONT so it can
+    # PROTECT the eyes from the de-whisker and CONFINE the photographic blend to the features. A
+    # uniform coat sits ~= its neighbourhood and scores ~0, so it is never over-processed.
+    _fp = float(os.environ.get("PET_FEATURE_PROTECT", "0.7") or 0.7)
+    feat = np.zeros_like(gray0)                                            # 0..1 feature field (eyes/nose)
+    broad = cv2.GaussianBlur(gray0, (0, 0), sigmaX=max(1.0, W * 0.06))     # neighbourhood luminance
+    if _fp > 0.0:
+        localdark = np.clip((broad - gray0) / 55.0, 0, 1) * mask
+        locallight = np.clip((gray0 - broad) / 70.0, 0, 1) * mask          # bright side less sensitive (÷70) -> fur/stripes don't register
+        raw = np.maximum(localdark, locallight)
+        # A feature is a COMPACT region (eye, nose); a whisker or ear-line is a THIN stroke that
+        # also stands out from its neighbourhood. Morphologically OPEN with a kernel wider than a
+        # whisker: compact features survive, thin strokes are erased. This keeps whiskers OUT of the
+        # feature field, so they are neither photo-painted nor shielded from the de-whisker below.
+        ok = int(max(3, round(W * 0.011))) | 1
+        raw = cv2.morphologyEx(raw, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ok, ok)))
+        feat = np.clip(cv2.GaussianBlur(raw, (0, 0), sigmaX=max(1.0, W * 0.012)) * 1.6, 0, 1)
+
+    # DE-WHISKER: thin bright strokes (whiskers, the diagonal lines inside ears) read as real fur,
+    # not type, and overpower the words. A white top-hat isolates bright structures THINNER than the
+    # kernel; replace those with a median (line-free) version so they dissolve into the coat. The
+    # feature field is subtracted so eye catchlights (also small + bright) survive. PET_DEWHISKER scales it.
+    _dw = float(os.environ.get("PET_DEWHISKER", "0.85") or 0.0)
+    if _dw > 0.0:
+        kk = int(max(3, round(W * 0.006))) | 1
+        opened = cv2.morphologyEx(gray0.astype(np.uint8), cv2.MORPH_OPEN,
+                                  cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kk, kk)))
+        tophat = np.clip((gray0 - opened.astype(np.float32)) / 32.0, 0, 1)  # thin bright structures
+        thin = np.clip(tophat * mask * (1.0 - feat) * _dw, 0, 1)[..., None]
+        med = cv2.medianBlur(np.clip(bgr, 0, 255).astype(np.uint8), kk).astype(np.float32)
+        bgr = bgr * (1.0 - thin) + med * thin
+
+    # LOCAL CONTRAST: lift local separation (CLAHE on L) so the darker muzzle / lower face doesn't go
+    # muddy -- letters keep structure against the ground instead of smearing. PET_LOCAL_CONTRAST blends.
+    _lc = float(os.environ.get("PET_LOCAL_CONTRAST", "0.4") or 0.0)
+    if _lc > 0.0:
+        lab = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2LAB)
+        Lc = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(lab[..., 0])
+        lab[..., 0] = np.clip(lab[..., 0].astype(np.float32) * (1.0 - _lc) + Lc.astype(np.float32) * _lc, 0, 255).astype(np.uint8)
+        bgr = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR).astype(np.float32)
+
+    # Luminance + detail from the PROCESSED photo (de-whiskered, contrast-lifted).
+    gray = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32)
+    det = _detail_map(gray.astype(np.uint8))                # 0..1 saliency: high on features/edges
 
     # 1) Four ink-coverage tiers, coarse -> micro. type_scale (<1 = finer type) sets the
     #    typography size the buyer picked (Small/Medium/Large -> ~0.30/0.42/0.56); when the
@@ -277,40 +332,16 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     tMi = _rows(stream, W, H, 16 * sc * _tsc, rng)
 
     # 2) Drape: warp the rows VERTICALLY by smoothed luminance so they ride the form. Damp the
-    #    warp on high-detail features (eyes/nose) so they stay crisp -- the saliency stand-in
-    #    for the human engine's feature band. PET_DRAPE tunes the wrap depth.
-    # Smooth the drape FIELD generously so the type rides the broad form, not sharp local
-    # features -- a hard bright-fur -> dark-nose edge otherwise SHEARS the warp into a glitchy
-    # blob (worst on light-furred pets with a dark nose). PET_DRAPE_SMOOTH tunes it.
+    #    warp on high-detail features (eyes/nose) so they stay crisp. PET_DRAPE tunes wrap depth;
+    #    PET_DRAPE_SMOOTH smooths the field so type rides the broad form, not sharp local edges.
     _dsm = float(os.environ.get("PET_DRAPE_SMOOTH", "0.045") or 0.045)
     D = cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, W * _dsm))
     dn = np.tanh((D / 255.0 - 0.5) * 2.4) * 0.85            # soft-limit: no over-stretch on the darkest/brightest fur (kills the 'melt')
     xx, yy = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
-    # Feature protection: SPREAD the detail edges inward (blur) so the eye/nose INTERIORS -- a
-    # flat dark pupil has ~0 local detail but sits inside a high-detail rim -- inherit their
-    # rim's protection and don't get warped into a corrupted blob. Then damp the drape there.
+    # Spread the detail edges inward, then UNION the feature field, so eye/nose interiors inherit
+    # their rim's drape-protection and stay crisp instead of warping into a corrupted blob.
     featdamp = np.clip(cv2.GaussianBlur(det, (0, 0), sigmaX=max(1.0, W * 0.010)) * 1.9, 0, 1)
-    # LOCAL-DARKNESS feature guard: large flat dark features (eyes, a wet nose) inside BRIGHT
-    # fur have almost no edge detail at their centre, so the detail-based protection above
-    # misses them -- they warp into a corrupted micro-text "melt" (worst on light-furred pets
-    # on the paper/light grounds). Detect pixels markedly darker than their BROAD neighbourhood
-    # (so a uniformly dark dog scores ~0 and is NOT over-photographed) and fold that into the
-    # protection. PET_FEATURE_PROTECT scales it (0 reverts to detail-only protection).
-    _fp = float(os.environ.get("PET_FEATURE_PROTECT", "0.7") or 0.7)
-    feat = np.zeros_like(gray)                                             # 0..1 feature field (eyes/nose)
-    if _fp > 0.0:
-        broad = cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, W * 0.06))   # neighbourhood luminance
-        # A feature (eye, nose) reads markedly DIFFERENT from its broad neighbourhood -- either
-        # DARKER (a pupil, a wet nose, a dark-eyed dog) or BRIGHTER (a light green/amber cat iris,
-        # a catchlight). Taking BOTH directions makes the guard colour-agnostic, so a light-eyed
-        # cat's iris is caught too; a uniform coat (dark dog / white dog) sits ~= its neighbourhood
-        # and scores ~0, so it is never over-processed. Bright side is less sensitive (÷70) so
-        # ordinary fur variation and tabby striping don't register as features.
-        localdark = np.clip((broad - gray) / 55.0, 0, 1) * mask            # darker than surroundings
-        locallight = np.clip((gray - broad) / 70.0, 0, 1) * mask           # brighter than surroundings (light iris)
-        feat = np.clip(cv2.GaussianBlur(np.maximum(localdark, locallight), (0, 0),
-                                        sigmaX=max(1.0, W * 0.012)) * 1.6, 0, 1)
-        featdamp = np.maximum(featdamp, feat * _fp)                        # protect the feature interior from the drape
+    featdamp = np.maximum(featdamp, feat * _fp)
     amp = float(os.environ.get("PET_DRAPE", "68") or 68.0) * sc * (1.0 - 0.92 * featdamp)
     my = (yy + amp * dn).astype(np.float32)
     mx = xx
@@ -353,22 +384,16 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     k = float(os.environ.get("PET_EDGE_INK", "0.62") or 0.62)
     out = out * (1.0 - k * edge) + ink * (k * edge)
 
-    # 6) Photographic FEATURE realism: blend the real (contrast-enhanced) photo into the render
-    #    weighted by DETAIL, so the eyes / nose / whiskers gain photographic definition while the
-    #    flat body stays words -- the landmark-free analogue of the human engine's real-photo eyes.
-    #    PET_PHOTO scales it (0 = pure typography; higher = more photographic).
-    _pf = float(os.environ.get("PET_PHOTO", "0.45") or 0.45)
-    if _pf > 0.0:
+    # 6) Photographic realism -- CONFINED to the features. The coat must read as WORDS, not a photo
+    #    with type on top: general fur detail gets only a WHISPER of real photo (PET_PHOTO_FUR), while
+    #    the eyes/nose keep the strong photographic blend that anchors the piece (feat field, scaled
+    #    by PET_PHOTO). A uniform coat scores feat~0, so it is never over-photographed.
+    _pf = float(os.environ.get("PET_PHOTO", "0.45") or 0.0)          # eyes/nose photographic anchor
+    _pfur = float(os.environ.get("PET_PHOTO_FUR", "0.10") or 0.0)    # residual coat photo -- keep low
+    if _pf > 0.0 or _pfur > 0.0:
         photo_rgb = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2RGB).astype(np.float32)
-        # Spread the weight into the feature interiors (same reason as featdamp) so the eyes/nose
-        # read as the REAL photo -- covering any residual warp -- while the body stays words.
-        wgt = cv2.GaussianBlur(np.clip(det * 1.6, 0, 1), (0, 0), sigmaX=max(1.0, W * 0.008)) * mask
-        wgt = (wgt * _pf)
-        # Cover the feature interiors (eyes of any iris colour, wet nose) with the real photo MORE
-        # strongly than the rim -- that's where big words / residual warp otherwise show through --
-        # so they read photographic. Uses the SAME feature field as the drape guard, so a uniform
-        # coat (field ~0) is never over-photographed. Capped below 1 so a whisker of type remains.
-        wgt = np.maximum(wgt, feat * _fp * 0.9)
+        wgt = cv2.GaussianBlur(np.clip(det * 1.6, 0, 1), (0, 0), sigmaX=max(1.0, W * 0.008)) * mask * _pfur
+        wgt = np.clip(np.maximum(wgt, feat * _pf * 1.4), 0, 1)
         wgt = wgt[..., None]
         out = out * (1.0 - wgt) + photo_rgb * wgt
 

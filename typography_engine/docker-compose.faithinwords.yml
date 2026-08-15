@@ -83,6 +83,10 @@ services:
       - PET_TRACK=${PET_TRACK:-}
       - PET_EYE_POP=${PET_EYE_POP:-}
       - PET_MAX_RENDER_PX=${PET_MAX_RENDER_PX:-}
+      - PET_PHOTO_FUR=${PET_PHOTO_FUR:-}
+      - PET_DEWHISKER=${PET_DEWHISKER:-}
+      - PET_EDGE_TIGHTEN=${PET_EDGE_TIGHTEN:-}
+      - PET_LOCAL_CONTRAST=${PET_LOCAL_CONTRAST:-}
       # Persist the U2-Net matte model on the bind-mounted /app/data so it survives rebuilds.
       - PET_MATTE_DIR=/app/data/pet-models
       # Background lightening: image background lighter than the subject's dark
