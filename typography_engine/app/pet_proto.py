@@ -267,12 +267,8 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     stream = _weighted_stream(words)                        # name + lead words weighted -> findable
     sc = W / 900.0                                          # size reference
 
-    # EDGE TIGHTEN: the soft matte alpha leaves a faint semi-transparent RING at the silhouette
-    # where words half-mix with the ground -> a grey "cut-out" glow. Steepen the low end of the
-    # alpha so that halo drops to 0 while the core stays 1 (a clean edge, not a hard cutout).
-    _et = float(os.environ.get("PET_EDGE_TIGHTEN", "0.18") or 0.0)
-    if _et > 0.0:
-        mask = np.clip((mask - _et) / max(1e-3, 1.0 - _et), 0.0, 1.0)
+    # (The silhouette "halo/glow" -- a ring of the original background the matte let bleed in --
+    #  is removed at the very END by fading the outer band into the ground; see EDGE FADE below.)
 
     gray0 = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32)
 
@@ -445,6 +441,18 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         r = np.sqrt(((xx - cx0) / (0.72 * W)) ** 2 + ((yy - cy0) / (0.72 * H)) ** 2)
         vig = np.clip(1.0 - _vg * np.clip(r - 0.45, 0, 1) ** 1.4, 0.45, 1.0)
         out = out * vig[..., None]
+
+    # 11) EDGE FADE: dissolve the silhouette's OUTER band into the ground. The matte's background
+    #     bleed (the pale "halo/glow") sits exactly at the mask perimeter, so fading from ground at
+    #     the very edge up to the full render a short way in erases it -- and reads as a tasteful
+    #     soft gallery edge, not a hard cutout. PET_EDGE_TIGHTEN sets the band width (0 disables).
+    _et = float(os.environ.get("PET_EDGE_TIGHTEN", "0.18") or 0.0)
+    if _et > 0.0:
+        dist = cv2.distanceTransform((mask > 0.35).astype(np.uint8), cv2.DIST_L2, 3)  # px inward from the edge
+        bandw = max(2.0, W * 0.11 * _et)                                              # band width scales with the knob
+        ef = np.clip(dist / bandw, 0.0, 1.0)[..., None]
+        ground_rgb = np.full((H, W, 3), gbgr[::-1], np.float32)
+        out = ground_rgb * (1.0 - ef) + out * ef
 
     return np.clip(out, 0, 255).astype(np.uint8)
 
