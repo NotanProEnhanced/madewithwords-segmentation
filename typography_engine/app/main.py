@@ -3488,9 +3488,9 @@ def list_products(brand: str = "", gallery: int = 0) -> JSONResponse:
 # a per-charge override would fight the account-wide value. Unknown/empty source
 # falls back to the Typortrait name.
 _CHECKOUT_BRANDS = {
-    "lovedinwords": {"name": "Loved in Words"},
-    "faithinwords": {"name": "Faith in Words"},
-    "pawsinwords": {"name": "Paws in Words"},
+    "lovedinwords": {"name": "Loved in Words", "home": "https://lovedinwords.com"},
+    "faithinwords": {"name": "Faith in Words", "home": "https://faithinwords.com"},
+    "pawsinwords": {"name": "Paws in Words", "home": "https://pawsinwords.com"},
 }
 
 
@@ -5442,8 +5442,13 @@ def share_page(job: str):
         brand_id = str(json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("brand") or "")
     except Exception:  # noqa: BLE001
         brand_id = ""
-    brand_name = _checkout_brand(brand_id)["name"]
-    home = PUBLIC_BASE_URL
+    _b = _checkout_brand(brand_id)
+    brand_name = _b["name"]
+    # "Make your own" -> the BRAND's own marketing site (from the recipe brand), so a pet portrait
+    # shared from a container that also serves typortrait still sends people to pawsinwords.com. Falls
+    # back to this container's public URL for the generic brand. (og:image stays on PUBLIC_BASE_URL --
+    # that's where the preview file actually lives.)
+    home = _b.get("home") or PUBLIC_BASE_URL
     prev = OUTPUTS_DIR / f"{job}_preview.png"
     img = (f"{PUBLIC_BASE_URL}/outputs/{job}_preview.png" if prev.exists()
            else f"{PUBLIC_BASE_URL}/og.png")
