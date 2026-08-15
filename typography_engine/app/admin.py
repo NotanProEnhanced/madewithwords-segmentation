@@ -673,16 +673,19 @@ def record_save_capture(job: str, email: str, emailed: bool = False) -> dict:
     return rec
 
 
-def send_save_link_email(job: str, to_email: str) -> bool:
+def send_save_link_email(job: str, to_email: str, brand_name: str = "Typortrait") -> bool:
     """Customer-facing email: deliver a private link back to a portrait the
     user previewed but didn't buy, so they can return before the ~RETENTION_DAYS
-    auto-delete. Reuses the same Gmail SMTP path as the admin mailer."""
+    auto-delete. Reuses the same Gmail SMTP path as the admin mailer. `brand_name`
+    keeps the copy brand-specific (Paws in Words / Loved in Words / …)."""
     if not smtp_configured():
         _log(f"send_save_link_email skipped (smtp not configured): job={job}")
         return False
+    # "Your Typortrait" reads fine for the generic brand; a sub-brand becomes "Your <Brand> portrait".
+    saved_label = "Typortrait" if brand_name == "Typortrait" else f"{brand_name} portrait"
     link = f"{PUBLIC_BASE_URL}/resume/{html.escape(job)}"
     body_html = f"""<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#16203a;max-width:520px">
-<h2 style="font-family:Georgia,'Times New Roman',serif;color:#0d1b3a;margin:0 0 6px">Your portrait is saved.</h2>
+<h2 style="font-family:Georgia,'Times New Roman',serif;color:#0d1b3a;margin:0 0 6px">Your {html.escape(saved_label)} is saved.</h2>
 <p style="color:#2b3550;font-size:15px;line-height:1.6">Here's your private link — open it anytime to come back, download your high-res file, or order a print.</p>
 <p style="margin:18px 0">
   <a href="{link}" style="background:#0d1b3a;color:#fff;padding:13px 28px;border-radius:999px;text-decoration:none;display:inline-block;font-weight:700">Open my portrait</a>
@@ -691,7 +694,7 @@ def send_save_link_email(job: str, to_email: str) -> bool:
 <p style="color:#9aa1ac;font-size:12px;line-height:1.6;margin-top:14px">You're in control of your data &mdash; <a href="{PUBLIC_BASE_URL}/data-request" style="color:#6b7280">manage or delete it anytime</a>.</p>
 </div>"""
     body_text = (
-        "Your Typortrait is saved.\n\n"
+        f"Your {saved_label} is saved.\n\n"
         f"Open it anytime: {link}\n\n"
         f"Heads-up: we auto-delete uploaded photos and generated files after about "
         f"{RETENTION_DAYS} days, so don't wait too long.\n\n"
@@ -699,7 +702,7 @@ def send_save_link_email(job: str, to_email: str) -> bool:
         "If this wasn't you, just ignore this email.\n"
     )
     msg = EmailMessage()
-    msg["Subject"] = "Your Typortrait is saved — here's your link"
+    msg["Subject"] = f"Your {saved_label} is saved — here's your link"
     msg["From"] = _from_header()
     msg["To"] = to_email
     msg.set_content(body_text)

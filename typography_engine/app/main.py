@@ -4558,6 +4558,7 @@ _SITE_BRANDS = {
     "keepsake":     ("Loved in Words", "https://lovedinwords.com", "lovedinwords"),
     "everloved":    ("Ever Loved",     "https://everloved.com",    "everloved"),
     "faithinwords": ("Faith in Words", "https://faithinwords.com", "faithinwords"),
+    "pawsinwords":  ("Paws in Words",  "https://pawsinwords.com",  "pawsinwords"),
 }
 
 
@@ -5499,7 +5500,7 @@ async def save_link(email: str = Form(...), job: str = Form(...)) -> JSONRespons
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
     if not _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
         return JSONResponse({"ok": False, "error": "bad_email"}, status_code=400)
-    sent = admin_mod.send_save_link_email(job, email)
+    sent = admin_mod.send_save_link_email(job, email, _site_brand(_recipe_brand(job))["name"])
     admin_mod.record_save_capture(job, email, emailed=sent)
     return JSONResponse({"ok": True, "emailed": sent})
 
