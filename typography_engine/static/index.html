@@ -843,7 +843,7 @@
       </div>
     </div>
   </div>
-  <footer>Typortrait · typortrait.com<br><a href="/terms" target="_blank" rel="noopener">Terms of Use</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> · <a href="/refunds" target="_blank" rel="noopener">Refund Policy</a> · <a href="/biometric-policy" target="_blank" rel="noopener">Biometric Data Policy</a> · <a href="/data-request" target="_blank" rel="noopener">Manage my data</a></footer>
+  <footer><span id="footBrand">Typortrait · typortrait.com</span><br><a href="/terms" target="_blank" rel="noopener">Terms of Use</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> · <a href="/refunds" target="_blank" rel="noopener">Refund Policy</a> · <a href="/biometric-policy" target="_blank" rel="noopener">Biometric Data Policy</a> · <a href="/data-request" target="_blank" rel="noopener">Manage my data</a></footer>
 </div>
 
 <div id="zoomView" class="zoomview">
@@ -1016,6 +1016,7 @@ const BRAND_ID=((_qp.get("brand")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40)
 const REF=(_qp.get("ref")||BRAND_ID||localStorage.getItem("typo_ref")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
 if(REF){ try{ localStorage.setItem("typo_ref", REF); }catch(e){} }
 const BRAND=BRANDS[BRAND_ID]||null;
+const BRANDNAME=(BRAND&&BRAND.name)||"Typortrait";   // customer-facing brand name (generic = Typortrait)
 // Any brand flagged memorial gets the full grief-keepsake experience (see BRANDS).
 const _isMemorialBrand=!!(BRAND && BRAND.memorial);
 const _isPet=!!(BRAND && BRAND.pet);   // Paws in Words -> render via the pet engine
@@ -1134,6 +1135,9 @@ if(BRAND){
   try{
     document.title=BRAND.title||BRAND.name;
     const _bn=document.querySelector("header .brand-name"); if(_bn) _bn.textContent=BRAND.name+(BRAND.owned?"™":"");   // TM only on OUR marks (not partner skins)
+    // Footer identity + the "after" compare tag follow the brand too (static HTML defaults to Typortrait).
+    const _fb=document.getElementById("footBrand"); if(_fb) _fb.textContent=BRAND.name+(BRAND.host?(" · "+BRAND.host):"");
+    document.querySelectorAll(".cmp-tag-r").forEach(function(e){ e.textContent=BRAND.name; });
     const _tg=document.querySelector("header .tag"); if(_tg) _tg.textContent=BRAND.tag;
     if(_isMemorialBrand){
       const _h=document.querySelector(".brand-heart"); if(_h) _h.style.display="inline-flex";   // heart lockup = memorial brands
@@ -1660,7 +1664,7 @@ function syncBioLock(){
   });
 })();
 function setFile(f){
-  if(window.__regionBlocked){ inputErr("Sorry — Typortrait isn’t available in your location."); return; }
+  if(window.__regionBlocked){ inputErr("Sorry — "+BRANDNAME+" isn’t available in your location."); return; }
   if(!f.type.startsWith("image/")){ inputErr("That file isn't an image — please choose a JPG, PNG or HEIC photo."); return; }
   if(f.size>MAX_UPLOAD_BYTES){ inputErr("That photo is too large (max 25 MB). Try a smaller image or a screenshot."); return; }
   // Biometric consent must be given BEFORE the face is analysed (BIPA/GDPR).
@@ -2674,7 +2678,7 @@ async function render(ink,{animate=false,background=false,thumb=false,hires=fals
 const thumbStatus=$("#thumbStatus");
 function setThumbStatus(label){
   if(!thumbStatus) return;
-  if(label){ thumbStatus.innerHTML=`<span class="dot"></span><span>Typortrait is rendering your <b>${label}</b> portrait — a second or two…</span>`; thumbStatus.classList.add("on"); }
+  if(label){ thumbStatus.innerHTML=`<span class="dot"></span><span>${BRANDNAME} is rendering your <b>${label}</b> portrait — a second or two…</span>`; thumbStatus.classList.add("on"); }
   else { thumbStatus.classList.remove("on"); thumbStatus.textContent=""; }
 }
 let prewarming=false, prewarmAgain=false;
@@ -2750,7 +2754,7 @@ window.addEventListener("keydown", e=>{ if(e.key==="Escape") closeZoom(); });
 
 /* ---------- share ---------- */
 const sharePanel=$("#sharePanel"), shareHint=$("#shareHint");
-const SHARE_TEXT="Someone I love, made from our words — with Typortrait.";
+const SHARE_TEXT="Made from the words that describe them — with "+BRANDNAME+".";
 // Use the native OS share sheet only on touch/mobile (where it surfaces real
 // apps like Instagram/TikTok). On desktop the OS sheet has no social targets,
 // so we show explicit web buttons instead.
@@ -2763,7 +2767,7 @@ async function nativeShareImage(){
   try{
     const blob=await (await fetch(prev)).blob();
     const file=new File([blob],"typortrait.png",{type:"image/png"});
-    if(navigator.canShare({files:[file]})){ await navigator.share({title:"Typortrait",text:SHARE_TEXT,url:shareUrl(),files:[file]}); return true; }
+    if(navigator.canShare({files:[file]})){ await navigator.share({title:BRANDNAME,text:SHARE_TEXT,url:shareUrl(),files:[file]}); return true; }
   }catch(e){ if(e && e.name==="AbortError") return true; }
   return false;
 }
@@ -2790,7 +2794,7 @@ sharePanel.addEventListener("click", async e=>{
   }
   if(kind==="native"){ await nativeShareImage(); return; }
   const map={
-    email:"mailto:?subject="+encodeURIComponent("A Typortrait for you")+"&body="+t+"%20"+u,
+    email:"mailto:?subject="+encodeURIComponent("A "+BRANDNAME+" for you")+"&body="+t+"%20"+u,
     x:"https://twitter.com/intent/tweet?text="+t+"&url="+u,
     facebook:"https://www.facebook.com/sharer/sharer.php?u="+u,
     pinterest:"https://pinterest.com/pin/create/button/?url="+u+"&media="+encodeURIComponent(previewAbs())+"&description="+t

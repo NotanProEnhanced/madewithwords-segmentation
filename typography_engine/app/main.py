@@ -3763,19 +3763,24 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
 
 
 def _bundle_label(job: str) -> str:
-    """Brand name stamped on the digital-bundle files, from the job's recipe brand.
-    Memorial skins present as 'LovedInWords'; the generic studio as 'Typortrait'."""
+    """Brand name stamped on the digital-bundle files (download filename + readme),
+    from the job's recipe brand. Each sub-brand gets its own label; the generic
+    studio stays 'Typortrait'."""
     try:
         b = str(json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("brand") or "")
     except Exception:  # noqa: BLE001
         b = ""
-    return "LovedInWords" if b in ("keepsake", "lovedinwords", "everloved") else "Typortrait"
+    return {
+        "lovedinwords": "LovedInWords", "keepsake": "LovedInWords", "everloved": "LovedInWords",
+        "faithinwords": "FaithInWords", "pawsinwords": "PawsInWords",
+    }.get(b, "Typortrait")
 
 
 def _bundle_readme(label: str) -> str:
-    site = {"LovedInWords": "LovedInWords.com", "FaithInWords": "FaithInWords.com"}.get(label, "Typortrait.com")
+    site = {"LovedInWords": "LovedInWords.com", "FaithInWords": "FaithInWords.com",
+            "PawsInWords": "PawsInWords.com"}.get(label, "Typortrait.com")
     signoff = (f"With gratitude,\n{site}  ·  powered by Typortrait\n"
-               if label in ("LovedInWords", "FaithInWords") else f"Thank you,\n{site}\n")
+               if label in ("LovedInWords", "FaithInWords", "PawsInWords") else f"Thank you,\n{site}\n")
     return (
         f"Your {label} Keepsake — Digital Files\n"
         "==========================================\n\n"
@@ -4767,6 +4772,7 @@ def _reel_maker_block(job: str, session_id: str) -> str:
         _ref = str(json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("brand") or "")
     except Exception:  # noqa: BLE001
         _ref = ""
+    _rn = _checkout_brand(_ref)["name"]   # brand name for the share sheet
     if _ref == "lovedinwords":
         reel_title = "Create a tribute video"
         reel_sub = "Turn the portrait into a short remembrance video — their face forming from your words — to keep or share with family."
@@ -4842,7 +4848,7 @@ def _reel_maker_block(job: str, session_id: str) -> str:
         'var mt=j.mp4_url?"video/mp4":"image/gif";'
         'fetch(u).then(function(r){return r.blob();}).then(function(bl){'
         'var f=new File([bl],nm,{type:mt});'
-        'if(navigator.canShare({files:[f]}))return navigator.share({title:"Typortrait",text:"Made from our words \\u2014 with Typortrait.",url:shareUrl,files:[f]});'
+        'if(navigator.canShare({files:[f]}))return navigator.share({title:' + json.dumps(_rn) + ',text:' + json.dumps(f"Made from our words — with {_rn}.") + ',url:shareUrl,files:[f]});'
         'throw 0;}).catch(function(){if(navigator.clipboard){navigator.clipboard.writeText(shareUrl);rlSh.textContent="Link copied";}});};}'
         '}).catch(function(){mk.disabled=false;mk.innerHTML=' + json.dumps(reel_btn) + ';'
         'rlSub.textContent="Network error \\u2014 please try again.";rlOut.style.display="block";});};'
@@ -4909,7 +4915,7 @@ def order_status(request: Request, order_id: str, session_id: Optional[str] = No
     status_msg = {
         "pending_payment": "Waiting for payment confirmation…",
         "paid": "Payment received. Preparing your order for fulfillment…",
-        "fulfilling": "We've sent your Typortrait to the press. You'll get an email when it ships.",
+        "fulfilling": f"We've sent your {_b['name']} portrait to the press. You'll get an email when it ships.",
         "shipped": "Your order has shipped!",
         "delivered": "Delivered. Thank you!",
         "error": "We hit a snag fulfilling this order. We'll be in touch — please reply to your receipt.",
@@ -5370,7 +5376,7 @@ def success(job: str, session_id: str):
             'var mt=j.mp4_url?"video/mp4":"image/gif";'
             'fetch(u).then(function(r){return r.blob();}).then(function(bl){'
             'var f=new File([bl],nm,{type:mt});'
-            'if(navigator.canShare({files:[f]}))return navigator.share({title:"Typortrait",text:"Made from our words \\u2014 with Typortrait.",url:shareUrl,files:[f]});'
+            'if(navigator.canShare({files:[f]}))return navigator.share({title:' + _json.dumps(_brand_name) + ',text:' + _json.dumps(f"Made from our words — with {_brand_name}.") + ',url:shareUrl,files:[f]});'
             'throw 0;}).catch(function(){if(navigator.clipboard){navigator.clipboard.writeText(shareUrl);rlSh.textContent="Link copied";}});};}'
             '}).catch(function(){mk.disabled=false;mk.innerHTML="Make my reel";'
             'rlSub.textContent="Network error \\u2014 please try again.";rlOut.style.display="block";});};'
@@ -5388,7 +5394,7 @@ def success(job: str, session_id: str):
     page = (
         "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>" + _fav_links(fav_brand) +
-        "<title>Typortrait — your download</title><link rel='stylesheet' href='/static/inter.css'><style>"
+        f"<title>{_checkout_brand(fav_brand)['name']} — your download</title><link rel='stylesheet' href='/static/inter.css'><style>"
         ":root{--navy:#0d1b3a;--muted:#6b7280;--line:#ece9e3}"
         "*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;"
         "background:#faf9f7;color:#16203a;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:24px}"
