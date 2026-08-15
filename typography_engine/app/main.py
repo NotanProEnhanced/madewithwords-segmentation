@@ -4619,7 +4619,9 @@ def _make_another(job: str) -> tuple:
         return ("/static/index.html?brand=lovedinwords", "Make another Tribute Portrait")
     if brand:
         from urllib.parse import quote
-        return (f"/static/index.html?brand={quote(brand, safe='')}", "Make another Typortrait")
+        name = _checkout_brand(brand)["name"]   # Paws in Words / Faith in Words / …
+        label = "Make another Typortrait" if name == "Typortrait" else f"Make another {name} portrait"
+        return (f"/static/index.html?brand={quote(brand, safe='')}", label)
     return ("/static/index.html", "Make another Typortrait")
 
 
@@ -5195,6 +5197,7 @@ def success(job: str, session_id: str):
             _ref = ""
         is_memorial = _ref == "lovedinwords"
         fav_brand = _ref or "typortrait"
+        _brand_name = _checkout_brand(_ref)["name"]   # display name: Paws in Words / Loved in Words / Faith in Words / Typortrait
         if is_memorial:
             reel_noun = "tribute video"
             reel_title = "Create a tribute video"
@@ -5224,14 +5227,17 @@ def success(job: str, session_id: str):
         # phone/desktop/square wallpapers); the generic studio keeps the single PNG.
         if show_card:
             dl_url = f"/download?job={jq}&fmt=zip&session_id={sq}"
-            dl_fname = "LovedInWords-Keepsake.zip"
-            dl_h1 = "Your keepsake is ready"
+            dl_fname = f"{_bundle_label(job)}-Keepsake.zip"
+            dl_h1 = f"Your {_brand_name} keepsake" if _brand_name != "Typortrait" else "Your keepsake"   # no premature "is ready" -- built on first download
             dl_btn = "Download your keepsake"
             dl_note = ("Your portrait &mdash; plus phone &amp; desktop wallpapers, so they&rsquo;re "
                        "with you everywhere. Watermark-free, print-quality.")
         else:
-            dl_url = f"/download?job={jq}&fmt=zip&session_id={sq}"; dl_fname = "Typortrait-Keepsake.zip"
-            dl_h1 = "Your Typortrait is ready"; dl_btn = "Download your files"
+            dl_url = f"/download?job={jq}&fmt=zip&session_id={sq}"; dl_fname = f"{_bundle_label(job)}-Keepsake.zip"
+            # Brand-specific, and no premature "is ready" -- the high-res file is composed on the
+            # first /download request (the button shows "Preparing…" until it's actually built).
+            dl_h1 = "Your Typortrait" if _brand_name == "Typortrait" else f"Your {_brand_name} portrait"
+            dl_btn = "Download your files"
             dl_note = ("Your portrait &mdash; plus phone &amp; desktop wallpapers, all included. "
                        "Watermark-free, print-quality.")
         card_html = ""
@@ -5331,12 +5337,12 @@ def success(job: str, session_id: str):
             'btn.disabled=false;btn.innerHTML=' + _json.dumps(dl_btn) + ';btn.onclick=function(){save(b);};'
             'sub.textContent="Done! Tap below to save it.";}).catch(function(){'
             'btn.disabled=false;btn.innerHTML=' + _json.dumps(dl_btn) + ';btn.onclick=function(){location.href=url;};'
-            'sub.textContent="Your portrait is ready.";});'
-            'sh.onclick=function(){var t="Someone I love, made from our words — with Typortrait.";'
+            'sub.textContent="Tap the button to download your file.";});'
+            'sh.onclick=function(){var t=' + _json.dumps(f"Made from the words that describe them — with {_brand_name}.") + ';'
             'var mob=(window.matchMedia&&matchMedia("(pointer:coarse)").matches)||/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");'
             '(mob&&navigator.canShare?fetch(prevUrl).then(function(r){return r.blob();}).then(function(bl){'
             'var f=new File([bl],"typortrait.png",{type:"image/png"});'
-            'if(navigator.canShare({files:[f]}))return navigator.share({title:"Typortrait",text:t,url:shareUrl,files:[f]});'
+            'if(navigator.canShare({files:[f]}))return navigator.share({title:' + _json.dumps(_brand_name) + ',text:t,url:shareUrl,files:[f]});'
             'throw 0;}):Promise.reject())'
             '.catch(function(){if(navigator.clipboard){navigator.clipboard.writeText(shareUrl);sh.textContent="Link copied — paste anywhere";}else{prompt("Copy this link:",shareUrl);}});};'
             # ---- Reel maker JS ----
@@ -5430,11 +5436,19 @@ def share_page(job: str):
     (og:image) and offers a 'make your own' CTA."""
     import html, re as _re
     job = _re.sub(r"[^a-zA-Z0-9]", "", job)[:40]
+    # Brand the share page from the recipe: the "Make your own" CTA points at THIS brand's own site
+    # (PUBLIC_BASE_URL = the domain this container serves), never a hard-coded typortrait.com.
+    try:
+        brand_id = str(json.loads((PRIVATE_DIR / f"{job}.json").read_text(encoding="utf-8")).get("brand") or "")
+    except Exception:  # noqa: BLE001
+        brand_id = ""
+    brand_name = _checkout_brand(brand_id)["name"]
+    home = PUBLIC_BASE_URL
     prev = OUTPUTS_DIR / f"{job}_preview.png"
     img = (f"{PUBLIC_BASE_URL}/outputs/{job}_preview.png" if prev.exists()
-           else "https://typortrait.com/og.png")
-    title = "Someone you love, made from your words — Typortrait"
-    desc = "A portrait made entirely of words. Create your own at Typortrait.com."
+           else f"{PUBLIC_BASE_URL}/og.png")
+    title = f"Made from the words that describe them — {brand_name}"
+    desc = f"A portrait made entirely of words. Create your own with {brand_name}."
     page = (
         "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>" + _fav_links() +
@@ -5457,10 +5471,10 @@ def share_page(job: str):
         "p{color:#b9b6ae;font-size:15px;margin:0 0 20px}"
         "a{display:inline-block;background:#f5f3ec;color:#0a0a0c;font-weight:700;text-decoration:none;"
         "padding:14px 28px;border-radius:999px;font-size:16px}</style></head><body><div class='w'>"
-        f"<img src=\"{html.escape(img)}\" alt=\"A Typortrait\"/>"
-        "<h1>Someone you love, made from your words.</h1>"
+        f"<img src=\"{html.escape(img)}\" alt=\"A {html.escape(brand_name)} portrait\"/>"
+        "<h1>Made from the words that describe them.</h1>"
         "<p>A portrait composed entirely of the words that matter.</p>"
-        "<a href='https://typortrait.com'>Make your own &rarr;</a>"
+        f"<a href=\"{html.escape(home)}\">Make your own &rarr;</a>"
         "</div></body></html>"
     )
     return HTMLResponse(page)
