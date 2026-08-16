@@ -4758,6 +4758,46 @@ async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Hea
     return JSONResponse({"ok": True})
 
 
+def _reel_caption(brand_id: str) -> str:
+    """A ready-to-paste social caption for the reel — brand-voiced, with hashtags and the
+    brand's own URL for attribution. Removes the #1 friction to posting a share."""
+    dom = {"lovedinwords": "LovedInWords.com", "everloved": "EverLoved.com",
+           "faithinwords": "FaithInWords.com", "pawsinwords": "PawsInWords.com"}.get(brand_id, "Typortrait.com")
+    if brand_id == "pawsinwords":
+        return ("Made from the words that describe my best friend. \U0001F43E\n"
+                "#petsofinstagram #dogsofinstagram #catsofinstagram #petportrait · " + dom)
+    if brand_id == "lovedinwords":
+        return ("Made from the words we used to describe them. \U0001F90D\n"
+                "#inlovingmemory #memorial #keepsake · " + dom)
+    if brand_id == "faithinwords":
+        return ("Made from the words of my faith. ✝\n"
+                "#faith #scripture #christianart · " + dom)
+    return ("Made from the words that describe someone I love.\n"
+            "#wordart #portrait · " + dom)
+
+
+# Shared inline styles + copy JS for the "caption to paste" box, dropped into any reel-ready UI.
+def _caption_box_html(caption: str) -> str:
+    safe = caption.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return (
+        '<div style="margin-top:14px;text-align:left">'
+        '<div style="font-size:12px;color:#6b7280;margin-bottom:6px">Caption &mdash; tap to copy, then paste into TikTok / Instagram</div>'
+        '<div id="rlCap" style="white-space:pre-wrap;background:#f6f5f2;border:1px solid #e6e3dc;border-radius:10px;'
+        'padding:11px 13px;font-size:13.5px;line-height:1.5;color:#16203a">' + safe + '</div>'
+        '<button class="btn ghost" id="rlCapBtn" type="button" style="margin-top:9px">Copy caption</button>'
+        '</div>'
+    )
+
+
+_CAPTION_COPY_JS = (
+    'var rlCapBtn=document.getElementById("rlCapBtn");'
+    'if(rlCapBtn){rlCapBtn.onclick=function(){var t=document.getElementById("rlCap").innerText;'
+    'function done(){rlCapBtn.textContent="Copied \\u2713";setTimeout(function(){rlCapBtn.textContent="Copy caption";},1800);}'
+    'if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(done,done);}'
+    'else{var ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");}catch(e){}ta.remove();done();}};}'
+)
+
+
 def _reel_maker_block(job: str, session_id: str) -> str:
     """Self-contained 'Make a reel' card (HTML + scoped CSS + JS) for any paid
     job. Identical dual-consent flow and /reel call as the digital success
@@ -4821,6 +4861,7 @@ def _reel_maker_block(job: str, session_id: str) -> str:
         '<a class="btn" id="rlMp4" download="typortrait-reel.mp4" style="display:none">Download MP4</a>'
         '<a class="btn ghost" id="rlGif" download="typortrait-reel.gif">Download GIF</a>'
         '<button class="btn ghost" id="rlSh" style="display:none">' + share_label + '</button>'
+        + _caption_box_html(_reel_caption(_ref)) +
         '</div>'
         '<script>(function(){'
         'var job=' + j + ',sid=' + s + ',o=location.origin;'
@@ -4828,6 +4869,7 @@ def _reel_maker_block(job: str, session_id: str) -> str:
         'var cp=document.getElementById("cp"),ct=document.getElementById("ct"),mk=document.getElementById("mk");'
         'var rlOut=document.getElementById("rlOut"),rlSub=document.getElementById("rlSub");'
         'var rlGif=document.getElementById("rlGif"),rlMp4=document.getElementById("rlMp4"),rlSh=document.getElementById("rlSh");'
+        + _CAPTION_COPY_JS +
         'cp.onchange=function(){mk.disabled=!cp.checked;};'
         'mk.onclick=function(){if(!cp.checked)return;'
         'mk.disabled=true;mk.innerHTML=\'<span class="rl-spin"></span>' + making_label + '\';'
@@ -5340,11 +5382,13 @@ def success(job: str, session_id: str):
             '<a class="btn" id="rlMp4" download="typortrait-reel.mp4" style="display:none">Download MP4</a>'
             '<a class="btn ghost" id="rlGif" download="typortrait-reel.gif">Download GIF</a>'
             '<button class="btn ghost" id="rlSh" style="display:none">' + share_label + '</button>'
+            + _caption_box_html(_reel_caption(_ref)) +
             '</div>' + card_html +
             '<script>(function(){var url=' + _json.dumps(dl_url) + ';'
             'var job=' + _json.dumps(job) + ',sid=' + _json.dumps(session_id) + ',o=location.origin;'
             'var shareUrl=o+"/p/"+job,prevUrl=o+"/outputs/"+job+"_preview.png";'
             'var btn=document.getElementById("dl"),sub=document.getElementById("sub"),sh=document.getElementById("sh");'
+            + _CAPTION_COPY_JS +
             'function save(b){var a=document.createElement("a");a.href=URL.createObjectURL(b);'
             'a.download=' + _json.dumps(dl_fname) + ';document.body.appendChild(a);a.click();a.remove();}'
             'fetch(url).then(function(r){if(!r.ok)throw 0;return r.blob();}).then(function(b){'
