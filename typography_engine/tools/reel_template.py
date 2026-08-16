@@ -13,7 +13,7 @@ cfg keys:
   fps    (int, default 10)
 """
 import os, math, random
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 
 def _cover_square(path, size):
     """Load an image and center-crop it to a `size`x`size` square WITHOUT
@@ -122,9 +122,16 @@ def build_reel(cfg):
             before = _load_fit(cfg["before"], IW, IH); after = _load_fit(cfg["after"], IW, IH)
         except Exception:
             scene_img = None
+    # Cohesive vertical fill: a heavily blurred, canvas-filling copy of the scene sits behind
+    # the sharp framed scene, so the reel reads as one continuous image instead of the scene
+    # centred on a cream slab with hard grey/white bands top and bottom.
+    scene_bg = None
+    if scene_img is not None:
+        scene_bg = ImageOps.fit(scene_img, (W, H), Image.LANCZOS).filter(ImageFilter.GaussianBlur(34))
     words  = [w for w in (cfg.get("words") or ["love"]) if w]
     brand  = cfg.get("brand", "Typortrait")
     credit = cfg.get("credit", "Typortrait.com")
+    endcard = cfg.get("endcard", "")   # final-hold CTA, e.g. "Make your own · PawsInWords.com"
     cta    = "" if minimal else cfg.get("cta", "Create yours free")
     fps    = cfg.get("fps", 10)
     out    = cfg["out"]
@@ -146,6 +153,13 @@ def build_reel(cfg):
     f_foot=font(SERIF_B,23)
     def ctext(d,cx,y,txt,fnt,fill):
         b=d.textbbox((0,0),txt,font=fnt); d.text((cx-(b[2]-b[0])/2,y),txt,font=fnt,fill=fill)
+    def endcard_banner(d):
+        # A solid navy pill near the bottom on the final hold — the traffic-driving CTA. Solid
+        # fill keeps it readable over any background (blurred scene included).
+        b=d.textbbox((0,0),endcard,font=f_cta); cw=b[2]-b[0]
+        px0=(W-cw)//2-20; py0=H-92
+        d.rounded_rectangle([px0,py0,px0+cw+40,py0+46], radius=23, fill=INK)
+        d.text(((W-cw)//2,py0+12), endcard, font=f_cta, fill=(250,249,247))
 
     # The buyer's words, shown as a tidy centered block — uniform font, size and
     # colour, no overlap, every word fully inside the frame. Greedy-wrapped into
@@ -212,11 +226,13 @@ def build_reel(cfg):
         if scene_img is not None:
             # Framed-on-a-desk presentation: the real scene with the portrait (and
             # its before/after slider) playing inside the frame's mat opening.
+            if scene_bg is not None:
+                im.paste(scene_bg, (0, 0))          # cohesive blurred fill -> no grey/white bands
             im.paste(scene_img, scene_pos)
             im.paste(img_for(t), (IMG_X, IMG_Y))
             d = ImageDraw.Draw(im)
-            if t >= SLIDER_END:
-                ctext(d, W/2, scene_pos[1] + scene_img.height + 16, wordlist, f_small, MUTED)
+            if t >= SLIDER_END and endcard:
+                endcard_banner(d)                   # final hold: "Make your own · <brand>"
             ctext(d, W/2, H-30, credit, f_small, MUTED)
             return im
         if not minimal:
@@ -236,7 +252,8 @@ def build_reel(cfg):
             # words at the end; only a discreet credit sits at the very bottom.
             if t >= SLIDER_END:
                 ctext(d,W/2,cy,wordlist,f_small,MUTED)
-            ctext(d,W/2,H-30,"Typortrait.com",f_small,MUTED)
+                if endcard: endcard_banner(d)
+            ctext(d,W/2,H-30,credit,f_small,MUTED)
         else:
             if t < P1_END:    ctext(d,W/2,cy,"Start with a photo.",f_tag,MUTED)
             elif t < REVEAL0: ctext(d,W/2,cy,"Then, add the words that matter.",f_tag,MUTED)
@@ -249,7 +266,7 @@ def build_reel(cfg):
                 d.rounded_rectangle([px0,py0,px0+cw+44,py0+50], radius=25, fill=INK)
                 d.text(((W-cw)//2,py0+13), cta, font=f_cta, fill=(250,249,247))
             # Persistent brand watermark — centered along the bottom of every frame.
-            ctext(d,W/2,H-34,"Typortrait.com",f_foot,INK)
+            ctext(d,W/2,H-34,credit,f_foot,INK)
         return im
 
     n=int(DUR*fps)

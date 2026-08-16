@@ -5170,6 +5170,7 @@ def make_reel(
             "minimal": True,               # no CTA / promo captions — just a discreet credit
             "scene":  str(_scene) if _scene.exists() else None,
             "credit": _credit,
+            "endcard": f"Make your own · {_credit}",   # final-hold CTA that drives shared views to the site
         })
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "reel_build_failed", "detail": str(e)}, status_code=500)
