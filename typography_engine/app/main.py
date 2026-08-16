@@ -5106,12 +5106,19 @@ def make_reel(
         return JSONResponse({"ok": False, "error": "reel_import_failed", "detail": str(e)}, status_code=500)
 
     try:
-        _memorial = str(recipe.get("brand") or "") == "lovedinwords"
+        _brand_id = str(recipe.get("brand") or "")
+        _memorial = _brand_id == "lovedinwords"
         # Both brands present the portrait inside a real framed-on-a-desk scene,
         # tonally matched: Loved in Words gets the candle-lit memorial scene; every
         # other subject (pets, weddings, graduates) gets a brighter, candle-free
         # desk so the mood fits. Same fixed 4:5 mat opening; credit per brand.
         _scene = (STATIC_DIR / "everloved" / "scene-desk.jpg") if _memorial else (STATIC_DIR / "scene-desk-plain.jpg")
+        # Credit stamped on the reel = the attribution URL every viewer sees. MUST be the
+        # brand's own domain, or a shared/viral pet reel drives traffic to typortrait.com.
+        _credit = {
+            "lovedinwords": "LovedInWords.com", "everloved": "EverLoved.com",
+            "faithinwords": "FaithInWords.com", "pawsinwords": "PawsInWords.com",
+        }.get(_brand_id, "Typortrait.com")
         build_reel({
             "before": str(src_path),       # original photo, kept at its real aspect ratio
             "after":  str(portrait_path),
@@ -5120,7 +5127,7 @@ def make_reel(
             "aspect": "source",            # personal reel preserves the original aspect ratio
             "minimal": True,               # no CTA / promo captions — just a discreet credit
             "scene":  str(_scene) if _scene.exists() else None,
-            "credit": "lovedinwords.com" if _memorial else "Typortrait.com",
+            "credit": _credit,
         })
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "reel_build_failed", "detail": str(e)}, status_code=500)
