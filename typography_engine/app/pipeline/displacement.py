@@ -357,12 +357,16 @@ def render_displacement_portrait(
     if pts0 is None:
         raise ValueError("displacement_needs_face")
 
-    # A floral frame is chosen via the `backdrop` slot; it pairs ONLY with the Paper sculpt
-    # (dark ink on warm ivory), so force that ground here regardless of what the caller sent.
+    # A floral frame is chosen via the `backdrop` slot. It must frame the SAME rich sculpt as
+    # the default Original look -- the dense photographic word-portrait on the hero dark ground
+    # -- NOT the muted ink-on-ivory Paper treatment (which caps brightness/boosts ink and reads
+    # flat and washed). So force the hero DARK ground here: the subject renders exactly like a
+    # normal Original portrait, and the floral frame (composited below) fills everything OUTSIDE
+    # the silhouette with the cream watercolour mat, so the visible background is cream, not navy.
     _floral_key = (backdrop or "").strip().lower()
     _floral_key = _floral_key if _floral_key in _FLORAL_KEYS else None
     if _floral_key:
-        ground = "paper"
+        ground = "navy"
     g = GROUNDS.get(ground, GROUNDS["navy"])
     rng = random.Random(seed)
     vocab = _normalize_words(words, uppercase, keep_punct=flow)   # keep sentence punctuation only for a flowing Passage/Letter
