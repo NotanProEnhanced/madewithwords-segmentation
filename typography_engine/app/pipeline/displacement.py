@@ -1270,13 +1270,7 @@ def render_displacement_portrait(
             hsv[..., 2] = np.clip(hsv[..., 2] * 1.14 + 14, 0, 255)      # lift value vs dark ground
         ink_col = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
         out = np.array(g["bg"], np.float32) * (1 - al) + ink_col * al
-        # The polarity model was built for the DARK-ground Lifelike look; it does NOT apply
-        # the paper dark-value cap, so on the ivory Paper ground it leaves bright skin bright
-        # at low word-coverage and the piece reads as a PHOTO, not ink-on-ivory type. A floral
-        # frame FORCES the Paper ground (above), so gate polarity off whenever a floral is
-        # active -- the render then uses the intended coloured-type-on-ivory ink drawing and
-        # the typography is visible inside the floral mat.
-        if not _floral_key and os.environ.get("TYPO_POLARITY", "0").strip().lower() in ("1", "true", "on", "yes"):
+        if os.environ.get("TYPO_POLARITY", "0").strip().lower() in ("1", "true", "on", "yes"):
             # Polarity model (the paper-grade shadow behaviour, brought to the dark-ground
             # Lifelike look). Instead of "light ink whose COVERAGE follows brightness"
             # (shadow -> no ink -> ground shows -> absence), make the type present at HIGH
