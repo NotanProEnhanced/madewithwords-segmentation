@@ -73,16 +73,38 @@ _FLORAL_DIR = (os.environ.get("TYPO_FLORAL_DIR", "").strip()
 _floral_cache: Dict[str, Optional[np.ndarray]] = {}
 
 
+def _pad_floral_4x5(img: np.ndarray) -> np.ndarray:
+    """Pad a floral frame to EXACTLY 4:5 (w:h) with the cream ground. The compositor resizes the
+    frame to the 4:5 print canvas, so art generated at a slightly different aspect (AI output is
+    rarely exact) would otherwise be STRETCHED. The frame's ground is cream, so padding is
+    seamless -- edge blooms just sit a hair off the very border instead of being distorted."""
+    h, w = img.shape[:2]
+    if h <= 0 or w <= 0:
+        return img
+    tgt = 4.0 / 5.0                                   # target width/height
+    r = w / float(h)
+    if abs(r - tgt) < 0.004:                          # already 4:5 -> untouched
+        return img
+    cream = np.array(_FLORAL_CREAM, np.float32)
+    if r < tgt:                                       # too tall -> pad left/right (widen)
+        nw = int(round(h * tgt)); l = max(0, (nw - w) // 2)
+        out = np.full((h, nw, 3), cream, np.float32); out[:, l:l + w] = img
+    else:                                             # too wide -> pad top/bottom (heighten)
+        nh = int(round(w / tgt)); t = max(0, (nh - h) // 2)
+        out = np.full((nh, w, 3), cream, np.float32); out[t:t + h] = img
+    return out
+
+
 def _load_floral(key: str) -> Optional[np.ndarray]:
-    """Return the floral frame as a float32 BGR image (H, W, 3), or None if unavailable
-    (missing file / unreadable) so the caller can fall back to a plain cream mat."""
+    """Return the floral frame as a float32 BGR image (H, W, 3), padded to exact 4:5, or None if
+    unavailable (missing file / unreadable) so the caller can fall back to a plain cream mat."""
     key = (key or "").strip().lower()
     if key not in _FLORAL_KEYS:
         return None
     if key not in _floral_cache:
         path = os.path.join(_FLORAL_DIR, key + ".png")
         img = cv2.imread(path, cv2.IMREAD_COLOR)   # BGR; alpha (if any) dropped onto the frame's own ground
-        _floral_cache[key] = None if img is None else img.astype(np.float32)
+        _floral_cache[key] = None if img is None else _pad_floral_4x5(img.astype(np.float32))
     return _floral_cache[key]
 
 # Paper = an INK-DRAWING on warm ivory. Colouring words by the photo's brightness
