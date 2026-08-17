@@ -1233,13 +1233,22 @@ def render_displacement_portrait(
     # (default 0.30; 0 disables). Paper ground only -- dark grounds are unaffected.
     if ground in PAPER_FAMILY:
         _pf = float(os.environ.get("TYPO_PAPER_FACE", "0.30") or 0.30)
+        _ph = float(os.environ.get("TYPO_PAPER_HAIR", "0.35") or 0.35)
+        if _floral_key:
+            # A floral FORCES the Paper ground onto whatever face the buyer uploaded -- often a
+            # fair, older subject that is nearly all highlight, so the default paper ink density
+            # falls away and the bright planes (forehead, cheeks) dissolve into the cream mat,
+            # leaving a washed-out ghost. Raise the face + hair ink floors for floral renders so
+            # the whole likeness stays densely typographic on the ivory. Tonal modelling still
+            # rides ABOVE the floor (shadows go darker), so the portrait keeps its form.
+            _pf = max(_pf, float(os.environ.get("TYPO_FLORAL_FACE", "0.58") or 0.58))
+            _ph = max(_ph, float(os.environ.get("TYPO_FLORAL_HAIR", "0.50") or 0.50))
         if _pf > 0.0:
             a = np.maximum(a, w2 * _pf * np.clip(face_norm, 0, 1))
         # Light-hair floor: silver/blonde hair on the ivory washes out (light on light), so a
         # silver-haired subject reads as a floating face. Give the HAIR region an ink-density
         # floor so light hair renders as delicate grey words instead of vanishing. Dark hair
         # already has density (max() leaves it untouched). TYPO_PAPER_HAIR (default 0.35; 0 off).
-        _ph = float(os.environ.get("TYPO_PAPER_HAIR", "0.35") or 0.35)
         if _ph > 0.0:
             _yy2 = np.arange(H, dtype=np.float32)[:, None]
             _chin2 = max(float(_p[:, 1].max()) for _p in all_pts)
