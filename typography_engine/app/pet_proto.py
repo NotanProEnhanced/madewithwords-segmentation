@@ -105,7 +105,15 @@ def _u2net_session():
             if not path:
                 _U2_FAILED = True
                 return None
-            _U2_SESSION = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+            # Trim onnxruntime's resident footprint: disable the CPU memory arena
+            # (it pre-reserves and holds a large pool) and cap threads so the matte
+            # session doesn't balloon RAM on a shared, multi-brand box.
+            _so = ort.SessionOptions()
+            _so.enable_cpu_mem_arena = False
+            _so.enable_mem_pattern = False
+            _so.intra_op_num_threads = max(1, (os.cpu_count() or 2) - 1)
+            _U2_SESSION = ort.InferenceSession(
+                path, sess_options=_so, providers=["CPUExecutionProvider"])
         except Exception:  # noqa: BLE001  -- any failure -> fall back to GrabCut
             _U2_FAILED = True
             _U2_SESSION = None

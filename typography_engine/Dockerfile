@@ -3,6 +3,13 @@
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+# glibc allocator tuning for a NumPy/OpenCV/MediaPipe workload. By default glibc
+# opens up to (8 * nCPU) malloc arenas and each render thread claims one it never
+# returns, so the resident set climbs and stays high. Cap the arenas and trim more
+# eagerly so freed render buffers actually go back to the OS -- the single biggest
+# lever for fitting multiple brand containers on one box. Pairs with the explicit
+# malloc_trim() after each render burst in app/main.py.
+ENV MALLOC_ARENA_MAX=2 MALLOC_TRIM_THRESHOLD_=131072
 WORKDIR /app
 
 # Native libraries: CairoSVG (cairo/pango/gdk-pixbuf), OpenCV + MediaPipe

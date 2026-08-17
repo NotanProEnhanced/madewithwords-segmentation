@@ -824,6 +824,31 @@ _render_sem = asyncio.Semaphore(RENDER_CONCURRENCY)
 _render_inflight = 0    # renders currently executing (holding a permit)
 _render_waiting = 0     # renders queued, waiting for a permit
 
+# --- Post-render memory reclaim ----------------------------------------------
+# A render churns large NumPy/OpenCV/MediaPipe buffers. glibc FREES them but keeps
+# the pages in per-thread arenas, so a container that has rendered even once stays
+# resident at ~2 GB forever -- and five brand containers then overflow an 8 GB box
+# into swap (measured). After the LAST in-flight render drains, force a gc sweep +
+# malloc_trim(0) to hand the freed heap back to the OS, so an idle brand shrinks
+# to its baseline instead of pinning RAM it isn't using. Best-effort: malloc_trim
+# is glibc-only (silently skipped elsewhere); guarded so it can never break a render.
+import ctypes  # noqa: E402
+import gc  # noqa: E402
+try:
+    _libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    _HAVE_MALLOC_TRIM = hasattr(_libc, "malloc_trim")
+except Exception:  # noqa: BLE001
+    _libc, _HAVE_MALLOC_TRIM = None, False
+
+
+def _reclaim_memory():
+    try:
+        gc.collect()
+        if _HAVE_MALLOC_TRIM:
+            _libc.malloc_trim(0)
+    except Exception:  # noqa: BLE001
+        pass
+
 
 async def _bounded_to_thread(fn, *args, **kwargs):
     """Run a blocking CPU-bound call in a worker thread, capped by _render_sem.
@@ -841,6 +866,10 @@ async def _bounded_to_thread(fn, *args, **kwargs):
     finally:
         _render_inflight -= 1
         _render_sem.release()
+        # Once the burst fully drains, return the freed render buffers to the OS so
+        # this container doesn't sit fat and starve the other brands on the box.
+        if _render_inflight == 0:
+            await asyncio.to_thread(_reclaim_memory)
 
 
 # --- Admin render studio (fine-tune gallery portraits) -----------------------

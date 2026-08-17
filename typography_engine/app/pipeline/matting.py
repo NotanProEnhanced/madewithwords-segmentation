@@ -61,6 +61,10 @@ def _get_session(warns: WarningCollector):
 
             so = ort.SessionOptions()
             so.intra_op_num_threads = max(1, (os.cpu_count() or 2) - 1)
+            # Keep onnxruntime's resident footprint small on a shared, multi-brand
+            # box: don't let it hold a big pre-reserved CPU arena / mem pattern pool.
+            so.enable_cpu_mem_arena = False
+            so.enable_mem_pattern = False
             _SESSION = ort.InferenceSession(
                 str(MATTE_MODEL), sess_options=so, providers=["CPUExecutionProvider"]
             )
