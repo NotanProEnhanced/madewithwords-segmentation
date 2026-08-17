@@ -1163,7 +1163,17 @@ if(BRAND){
     if(_FAV[BRAND_ID]) document.querySelectorAll('link[rel*="icon"]').forEach(function(l){
       const h=l.getAttribute("href"); if(h) l.setAttribute("href", h.replace("/favicons/typortrait/","/favicons/"+BRAND_ID+"/")); });
     if(_isPet) _petSetup();
+    if(_isMemorialBrand) _memorialSetup();
   }catch(e){}
+}
+// Memorial-clean studio: on a grief keepsake the Type colour axis is friction -- the
+// portrait uses the rich Lifelike ink and families don't want to fuss with word colour.
+// Hide it so the Background section rises directly under the style/word steps. Gated on
+// _isMemorialBrand -> every other brand keeps the full Type colour palette.
+function _memorialSetup(){
+  try{
+    var e=document.getElementById("inkGroup"); if(e) e.style.display="none";
+  }catch(_){}
 }
 // Every render is presented as a framed keepsake in a room: a portrait shot
 // drops into a real framed photo on a desk (candle + plant); a square/landscape
