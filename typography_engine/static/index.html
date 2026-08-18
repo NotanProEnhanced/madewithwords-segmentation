@@ -2297,11 +2297,82 @@ fetch("/compliance/region").then(r=>r.json()).then(g=>{
     var cb=document.getElementById("create"); if(cb) cb.disabled=true;
   }
 }).catch(()=>{});
-createBtn.addEventListener("click", ()=>{
+// --- Capture-first overflow (memorial) --------------------------------------
+// During a demand spike the server's render queue backs up. Rather than make a
+// grieving visitor wait on a spinner, offer to email the finished portrait. Fully
+// gated: only fires when /health reports the async queue ENABLED and in OVERFLOW,
+// so with the queue off (default) or shallow the normal live flow is unchanged.
+let _ovfChecked=0, _ovfState=false;
+async function queueOverflow(){
+  if(!_isMemorialBrand) return false;
+  const now=Date.now();
+  if(now-_ovfChecked<12000) return _ovfState;    // cache 12s so Create isn't blocked on the network
+  try{
+    const r=await fetch("/health",{cache:"no-store"}); const d=await r.json();
+    const q=d&&d.async_queue; _ovfState=!!(q&&q.enabled&&q.overflow); _ovfChecked=now;
+  }catch(_){ _ovfState=false; }
+  return _ovfState;
+}
+function buildQueueFD(email){
+  // Mirrors the live memorial preview FormData (image + crop + fields) so a queued
+  // render is identical to a live one, plus the email for delivery.
+  const fd=new FormData();
+  fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect",String(CROP_AR));
+  fd.append("words",words.value.trim()); fd.append("message",words.value.trim());
+  const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||"");
+  fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop);
+  const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(","));
+  fd.append("flow", state.style==="letter"?"true":"");
+  fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false");
+  if(REF) fd.append("ref",REF); if(BRAND_ID) fd.append("brand",BRAND_ID);
+  fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask",state.maskData);
+  fd.append("min_font_px", String(state.minFont||20));
+  fd.append("png_width","900"); fd.append("render_w","1500");
+  fd.append("email", email);
+  return fd;
+}
+function showQueueCapture(){
+  let m=document.getElementById("qcap");
+  if(!m){
+    m=document.createElement("div"); m.id="qcap";
+    m.style.cssText="position:fixed;inset:0;z-index:9998;background:rgba(13,27,58,.55);display:flex;align-items:center;justify-content:center;padding:20px";
+    m.innerHTML='<div style="background:#fff;max-width:420px;width:100%;border-radius:18px;padding:26px 22px;box-shadow:0 24px 60px rgba(13,27,58,.28);text-align:center">'
+      +'<div style="font-size:34px;line-height:1;margin-bottom:8px">✉️</div>'
+      +'<h3 style="margin:0 0 6px;color:#0d1b3a;font-size:20px">We’re creating their portrait</h3>'
+      +'<p id="qcapMsg" style="color:#4a5570;font-size:14.5px;line-height:1.55;margin:0 0 16px">So many families are here right now that we’re composing each portrait with care, one at a time. Leave your email and we’ll send yours in a few minutes — no waiting on this page.</p>'
+      +'<input id="qcapEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" style="width:100%;padding:13px 14px;border:1.5px solid #d9dbe3;border-radius:12px;font-size:15px;font-family:inherit;margin-bottom:10px">'
+      +'<button id="qcapSend" style="width:100%;background:#0d1b3a;color:#fff;border:none;border-radius:999px;padding:14px;font-size:15.5px;font-weight:700;font-family:inherit;cursor:pointer">Email me my portrait</button>'
+      +'<button id="qcapCancel" style="width:100%;background:none;border:none;color:#8a90a0;font-size:13px;margin-top:10px;cursor:pointer;font-family:inherit">Cancel</button>'
+      +'</div>';
+    document.body.appendChild(m);
+    m.querySelector("#qcapCancel").addEventListener("click",()=>{ m.style.display="none"; });
+    m.querySelector("#qcapSend").addEventListener("click",qcapSubmit);
+    m.querySelector("#qcapEmail").addEventListener("keydown",e=>{ if(e.key==="Enter") qcapSubmit(); });
+  }
+  m.style.display="flex";
+  setTimeout(()=>{ try{ m.querySelector("#qcapEmail").focus(); }catch(_){} },50);
+}
+async function qcapSubmit(){
+  const m=document.getElementById("qcap"); if(!m) return;
+  const inp=m.querySelector("#qcapEmail"), btn=m.querySelector("#qcapSend"), msg=m.querySelector("#qcapMsg");
+  const email=(inp.value||"").trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ inp.style.borderColor="#c0392b"; inp.focus(); return; }
+  inp.style.borderColor="#d9dbe3"; btn.disabled=true; const old=btn.textContent; btn.textContent="Sending…";
+  try{
+    const r=await fetch("/render/queue",{method:"POST",body:buildQueueFD(email)}); const d=await r.json();
+    if(d&&d.ok){
+      inp.style.display="none"; btn.style.display="none";
+      m.querySelector("#qcapCancel").textContent="Close";
+      msg.innerHTML="<b>On its way.</b> We’ll email <b>"+email.replace(/[<&]/g,"")+"</b> the moment their portrait is ready — usually just a few minutes.";
+    } else { msg.textContent=(d&&d.detail)||"Something went wrong — please try again."; btn.disabled=false; btn.textContent=old; }
+  }catch(_){ msg.textContent="Network error — please try again."; btn.disabled=false; btn.textContent=old; }
+}
+createBtn.addEventListener("click", async ()=>{
   if(!state.file){ showInputError("Add a photo to start — a clear head-and-shoulders shot works best.", "photo", {label:"Choose a photo", fn:pickPhoto}); return; }
   if(!words.value.trim()){ showInputError(state.style==="message" ? "Add the passage first — a letter, lyrics, a poem, or a tribute." : "Add a few words first — a name, traits, a date.", "words", null); setTimeout(()=>{ try{ words.focus({preventScroll:true}); }catch(_){ words.focus(); } }, 450); return; }
   if(!consent.checked){ showInputError("Please confirm you have the rights to this photo and agree to the Terms.", "consent", null); return; }
   errInput.style.display="none";
+  if(await queueOverflow()){ showQueueCapture(); return; }   // spike: shed to the email flow
   inputView.style.display="none"; resultView.style.display="block"; document.body.classList.add("result-active");
   window.scrollTo({top:0,behavior:"smooth"});
   requestAnimationFrame(updateCarouselArrows);   // strip now has real width -> set arrow visibility
