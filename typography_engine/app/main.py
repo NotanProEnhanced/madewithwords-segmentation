@@ -5719,6 +5719,16 @@ html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sa
 .sub{color:var(--muted);font-size:14px;text-align:center;margin:6px 0 0}
 .card{background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:0 10px 30px rgba(13,27,58,.06);padding:18px;margin-top:22px}
 .shot{width:100%;border-radius:12px;display:block}
+/* Memorial delivery: show the portrait in the same framed-photo-on-a-desk scene the
+   studio uses, so the render's ground reads as a framed print (candle + plant), not
+   dead space above/below. Mat opening is exactly 4:5, matching the print canvas -> a
+   portrait render fills it edge-to-edge. */
+.deskframe{position:relative;border-radius:8px;overflow:hidden;aspect-ratio:960/1200;
+  background:#efe9e1 url('/static/everloved/scene-desk.jpg') center/cover no-repeat;
+  box-shadow:0 22px 54px rgba(20,30,60,.20)}
+.deskmat{position:absolute;top:20.6%;left:21.9%;right:22.7%;bottom:24.0%;
+  background:#0d0d0f;display:flex;align-items:center;justify-content:center}
+.deskshot{width:100%;height:100%;object-fit:contain;display:block}
 .wm{color:var(--muted);font-size:12px;text-align:center;margin:10px 0 0}
 .t-lbl{font-weight:700;color:var(--navy);font-size:14px}
 .t-sub{color:var(--muted);font-size:12.5px;margin:2px 0 10px}
@@ -5741,7 +5751,7 @@ html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sa
 <div class="brand">__BRANDNAME__</div>
 <div class="sub">Welcome back &mdash; here&rsquo;s the portrait you saved.</div>
 <div class="card">
-<img class="shot" src="__IMG__" alt="Your saved portrait"/>
+__SHOTBLOCK__
 <p class="wm">Preview is watermarked &middot; your download and prints are clean, full-resolution.</p>
 </div>
 <div class="card" id="shop">
@@ -5831,9 +5841,19 @@ def resume_page(request: Request, job: str):
     _b = _site_brand(_recipe_brand(job), request.headers.get("host", ""))
     if not job or not recipe.exists() or not preview.exists():
         return HTMLResponse(_resume_expired_page(_b), status_code=404)
+    _img = f"/outputs/{job}_preview.png"
+    # Memorial brands present the portrait inside the framed desk scene (same as the
+    # studio); other brands keep the plain shot. object-fit:contain in the 4:5 mat means
+    # a portrait render fills it, and a square/landscape one letterboxes cleanly.
+    if _b.get("kind") == "memorial":
+        _shot = ('<div class="deskframe"><div class="deskmat">'
+                 f'<img class="deskshot" src="{_img}" alt="Your saved portrait"/></div></div>')
+    else:
+        _shot = f'<img class="shot" src="{_img}" alt="Your saved portrait"/>'
     page = (_RESUME_TPL.replace("__FAV__", _fav_links(_b["fav"]))
             .replace("__BRANDNAME__", _b["name"]).replace("__HOME__", _b["home"])
-            .replace("__JOB__", job).replace("__IMG__", f"/outputs/{job}_preview.png"))
+            .replace("__JOB__", job).replace("__SHOTBLOCK__", _shot)
+            .replace("__IMG__", _img))
     return HTMLResponse(page)
 
 

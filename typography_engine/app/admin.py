@@ -745,8 +745,17 @@ def send_ready_email(job: str, to_email: str, brand_name: str = "Typortrait") ->
         f"{RETENTION_DAYS} days.\n\n"
         "If this wasn't you, just ignore this email.\n"
     )
+    # A readable date+time in the subject is friendlier than a hex job id, and it
+    # makes each delivery a distinct email (Gmail threads identical subjects into one
+    # conversation, which hides repeat sends). Falls back gracefully if strftime's
+    # platform flags aren't supported.
+    from datetime import datetime as _dt
+    try:
+        _when = _dt.now().strftime("%b %-d · %-I:%M %p")
+    except ValueError:
+        _when = _dt.now().strftime("%b %d · %I:%M %p")
     msg = EmailMessage()
-    msg["Subject"] = f"Your {label} is ready"
+    msg["Subject"] = f"Your {label} is ready — {_when}"
     msg["From"] = _from_header()
     msg["To"] = to_email
     msg.set_content(body_text)
