@@ -1172,21 +1172,26 @@ _analysis_lock = _threading.Lock()
 _ANALYSIS_CACHE_MAX = 12                  # ~12 photos in flight; bounded memory
 
 
-def _analysis_key(img_bytes: bytes, manual_mask) -> str:
+def _analysis_key(img_bytes: bytes, manual_mask, compute_layered: bool = True) -> str:
     h = _hashlib.sha256(img_bytes).hexdigest()
     if manual_mask is not None:
         try:
             h += ":" + _hashlib.sha256(manual_mask.tobytes()).hexdigest()[:16]
         except Exception:  # noqa: BLE001
             h += ":mask"
+    # A "light" analysis (compute_layered=False) omits edges/regions, so it must NOT be
+    # served to a layered Words/Message render. Key on the flag so the two never collide;
+    # a displacement render reads/writes the light entry, a layered render the full one.
+    if not compute_layered:
+        h += ":light"
     return h
 
 
-def _cached_analyze(img_bytes, cfg, warns, manual_mask=None):
-    """analyze_image with an LRU cache keyed on the image+mask. Returns a deep
-    copy on a hit (so renderers can mutate freely). Degrades to a fresh analysis
+def _cached_analyze(img_bytes, cfg, warns, manual_mask=None, compute_layered=True):
+    """analyze_image with an LRU cache keyed on the image+mask (+ light flag). Returns a
+    deep copy on a hit (so renderers can mutate freely). Degrades to a fresh analysis
     if cloning ever fails -- correctness never depends on the cache."""
-    key = _analysis_key(img_bytes, manual_mask)
+    key = _analysis_key(img_bytes, manual_mask, compute_layered)
     with _analysis_lock:
         hit = _analysis_cache.get(key)
         if hit is not None:
@@ -1196,7 +1201,8 @@ def _cached_analyze(img_bytes, cfg, warns, manual_mask=None):
             return _copy.deepcopy(hit)
         except Exception:  # noqa: BLE001
             pass            # cached entry won't clone -> fall through to fresh
-    an = analyze_image(img_bytes, cfg, warns, manual_mask=manual_mask)
+    an = analyze_image(img_bytes, cfg, warns, manual_mask=manual_mask,
+                       compute_layered=compute_layered)
     try:
         pristine = _copy.deepcopy(an)
         with _analysis_lock:
@@ -1553,7 +1559,14 @@ async def render(
         an = None
     else:
         try:
-            an = await _bounded_to_thread(_cached_analyze, img_bytes, cfg, warns, manual_mask=manual_mask_arr)
+            # A pure displacement (Lifelike) render never reads edges/regions, so skip the
+            # Canny + region build for it (the CPU win). Words/Message keep the full analysis
+            # (they feed the layered renderer). A displacement route for Mosaic/Passage would
+            # also not need them, but we stay conservative -> only style=="displacement" is
+            # skipped, so we can never starve the layered renderer of what it needs.
+            _need_layered = (style != "displacement")
+            an = await _bounded_to_thread(_cached_analyze, img_bytes, cfg, warns,
+                                          manual_mask=manual_mask_arr, compute_layered=_need_layered)
         except ValueError as e:
             return JSONResponse({"ok": False, "error": str(e), "warnings": warns.as_list()}, status_code=400)
 
