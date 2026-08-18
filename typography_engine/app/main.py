@@ -5843,9 +5843,11 @@ def resume_page(request: Request, job: str):
         return HTMLResponse(_resume_expired_page(_b), status_code=404)
     _img = f"/outputs/{job}_preview.png"
     # Memorial brands present the portrait inside the framed desk scene (same as the
-    # studio); other brands keep the plain shot. object-fit:contain in the 4:5 mat means
-    # a portrait render fills it, and a square/landscape one letterboxes cleanly.
-    if _b.get("kind") == "memorial":
+    # studio); other brands keep the plain shot. _site_brand returns a `fav` slug (not a
+    # kind), and the memorial brands are exactly those with fav lovedinwords (lovedinwords
+    # + keepsake) or everloved. object-fit:contain in the 4:5 mat means a portrait render
+    # fills it, and a square/landscape one letterboxes cleanly.
+    if _b.get("fav") in ("lovedinwords", "everloved"):
         _shot = ('<div class="deskframe"><div class="deskmat">'
                  f'<img class="deskshot" src="{_img}" alt="Your saved portrait"/></div></div>')
     else:
