@@ -5728,7 +5728,16 @@ html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sa
   box-shadow:0 22px 54px rgba(20,30,60,.20)}
 .deskmat{position:absolute;top:20.6%;left:21.9%;right:22.7%;bottom:24.0%;
   background:#0d0d0f;display:flex;align-items:center;justify-content:center}
-.deskshot{width:100%;height:100%;object-fit:contain;display:block}
+.deskshot{width:100%;height:100%;object-fit:contain;display:block;cursor:zoom-in}
+.zoomhint{display:block;width:100%;text-align:center;color:var(--muted);font-size:12.5px;margin-top:10px;
+  cursor:pointer;background:none;border:none;font-family:var(--sans)}
+.zoomhint:hover{color:var(--navy)}
+.lightbox{position:fixed;inset:0;background:rgba(10,12,20,.93);display:none;align-items:center;
+  justify-content:center;z-index:9999;padding:20px;cursor:zoom-out}
+.lightbox.on{display:flex}
+.lightbox img{max-width:100%;max-height:92vh;border-radius:6px;box-shadow:0 24px 70px rgba(0,0,0,.55)}
+.lightbox .x{position:absolute;top:12px;right:18px;color:#fff;font-size:32px;line-height:1;
+  background:none;border:none;cursor:pointer;opacity:.85}
 .wm{color:var(--muted);font-size:12px;text-align:center;margin:10px 0 0}
 .t-lbl{font-weight:700;color:var(--navy);font-size:14px}
 .t-sub{color:var(--muted);font-size:12.5px;margin:2px 0 10px}
@@ -5753,7 +5762,9 @@ html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sa
 <div class="card">
 __SHOTBLOCK__
 <p class="wm">Preview is watermarked &middot; your download and prints are clean, full-resolution.</p>
+<button type="button" class="zoomhint" id="zoomBtn">&#128269; View up close</button>
 </div>
+<div class="lightbox" id="lightbox"><button class="x" aria-label="Close">&times;</button><img id="lbImg" alt="Portrait up close"/></div>
 <div class="card" id="shop">
 <div class="t-lbl" id="shopLbl" style="text-align:center;margin-bottom:12px">Choose your keepsake</div>
 <div class="t-sub" id="shopSub">Every keepsake comes with the high-res digital file &mdash; plus phone &amp; desktop wallpapers &mdash; free to keep, reprint, and share.</div>
@@ -5766,6 +5777,20 @@ __SHOTBLOCK__
 </div>
 <script>
 const JOB="__JOB__";
+// View-up-close lightbox: tap the portrait (or the link) to see the watermarked
+// preview enlarged; tap anywhere / Esc to close.
+(function(){
+  const src="__IMG__";
+  const lb=document.getElementById("lightbox"), lbi=document.getElementById("lbImg");
+  if(!lb||!lbi) return;
+  const open=()=>{ lbi.src=src; lb.classList.add("on"); };
+  const close=()=>{ lb.classList.remove("on"); };
+  const zb=document.getElementById("zoomBtn"); if(zb) zb.addEventListener("click",open);
+  const shot=document.querySelector(".deskshot")||document.querySelector(".shot");
+  if(shot) shot.addEventListener("click",open);
+  lb.addEventListener("click",close);
+  document.addEventListener("keydown",e=>{ if(e.key==="Escape") close(); });
+})();
 let CAT=[], sku="digital", size=null, busy=false;
 const buy=document.getElementById("buy"), note=document.getElementById("note"),
       list=document.getElementById("productList"), sizeRow=document.getElementById("sizeRow"),
