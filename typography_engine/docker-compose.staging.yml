@@ -196,6 +196,10 @@ services:
       # Worker PROCESSES (real throughput multiplier; GIL-bound render => N procs ~ N x rpm).
       # Default 1 = unchanged. Set UVICORN_WORKERS=N in .env to load-test multi-process throughput.
       - UVICORN_WORKERS=${UVICORN_WORKERS:-1}
+      # Capture-first async render queue (spike overflow). OFF by default. Set
+      # TYPO_ASYNC_QUEUE=1 in .env to test /render/queue + the background drainer.
+      - TYPO_ASYNC_QUEUE=${TYPO_ASYNC_QUEUE:-}
+      - TYPO_ASYNC_THRESHOLD=${TYPO_ASYNC_THRESHOLD:-20}
       # SVG->PNG backend: auto (CairoSVG, full fidelity, slower) | resvg (much
       # faster; identical output for the current solid-fill SVGs) | cairosvg.
       - TYPO_RASTERIZER=${TYPO_RASTERIZER:-auto}

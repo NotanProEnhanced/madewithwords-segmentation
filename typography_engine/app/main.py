@@ -297,6 +297,19 @@ def _start_admin_services() -> None:
     admin_mod.start_scanner()
 
 
+@app.on_event("startup")
+async def _start_async_queue_worker() -> None:
+    """Launch the background render-queue drainer (one per uvicorn worker process).
+    Inert unless TYPO_ASYNC_QUEUE is enabled -- the worker_loop() returns immediately
+    when the flag is off, so this is a no-op on every brand that hasn't opted in."""
+    from .config import ASYNC_QUEUE_ENABLED
+    if not ASYNC_QUEUE_ENABLED:
+        return
+    from .queueworker import worker_loop
+    import asyncio as _asyncio
+    _asyncio.create_task(worker_loop())
+
+
 def _brand_blurb(b: dict) -> str:
     """One-line brand description reused for schema / OG / llms.txt."""
     return {
@@ -606,8 +619,26 @@ def health() -> JSONResponse:
                 "in_flight": _render_inflight,
                 "queued": _render_waiting,
             },
+            "async_queue": _async_queue_health(),
         }
     )
+
+
+def _async_queue_health() -> dict:
+    """Async-queue status for the adaptive live-vs-email switch and monitoring.
+    `enabled=False` when the flag is off; `overflow` flips true once the backlog
+    reaches the threshold, which the front end uses to route new visitors to the
+    capture-first flow instead of a live render."""
+    from .config import ASYNC_QUEUE_ENABLED, ASYNC_QUEUE_THRESHOLD
+    if not ASYNC_QUEUE_ENABLED:
+        return {"enabled": False}
+    try:
+        from .queueworker import get_queue
+        depth = get_queue().depth()
+        return {"enabled": True, "threshold": ASYNC_QUEUE_THRESHOLD,
+                "depth": depth, "overflow": depth >= ASYNC_QUEUE_THRESHOLD}
+    except Exception as e:  # noqa: BLE001
+        return {"enabled": True, "error": str(e)[:120]}
 
 
 @app.get("/health/upstream")
@@ -1838,6 +1869,47 @@ async def render(
             "warnings": warns.as_list(),
         }
     )
+
+
+@app.post("/render/queue")
+async def render_queue(request: Request) -> JSONResponse:
+    """Capture-first accept: store a render job + email instantly and return, so a
+    visitor who arrives during a spike isn't held on a spinner. A background worker
+    renders it as capacity frees and emails a private link. Takes the SAME multipart
+    form as /render, plus an `email` field. 404s unless TYPO_ASYNC_QUEUE is enabled,
+    so brands that haven't opted in are unaffected."""
+    from .config import ASYNC_QUEUE_ENABLED
+    if not ASYNC_QUEUE_ENABLED:
+        return JSONResponse({"ok": False, "error": "queue_disabled"}, status_code=404)
+    form = await request.form()
+    email = (str(form.get("email") or "")).strip()
+    if "@" not in email or "." not in email.split("@")[-1]:
+        return JSONResponse({"ok": False, "error": "email_required",
+                             "detail": "Enter an email so we can send your finished portrait."},
+                            status_code=400)
+    up = form.get("image")
+    if up is None or not hasattr(up, "read"):
+        return JSONResponse({"ok": False, "error": "image_required"}, status_code=400)
+    image = await up.read()
+    if not image:
+        return JSONResponse({"ok": False, "error": "empty_upload"}, status_code=400)
+    if len(image) > MAX_UPLOAD_BYTES:
+        return JSONResponse({"ok": False, "error": "upload_too_large"}, status_code=400)
+    # Replay the exact render fields verbatim later; drop the image + email (handled here).
+    fields = {k: v for k, v in form.multi_items()
+              if k not in ("image", "email") and isinstance(v, str)}
+    try:
+        brand_name = _site_brand(fields.get("brand", "") or "")["name"]
+    except Exception:  # noqa: BLE001
+        brand_name = "Typortrait"
+    from .queueworker import enqueue_render, get_queue
+    try:
+        jid = enqueue_render(fields, image, email, brand_name)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "enqueue_failed", "detail": str(e)}, status_code=500)
+    return JSONResponse({"ok": True, "queued": True, "job": jid,
+                         "position": get_queue().depth(),
+                         "message": "We're creating your portrait — we'll email it to you shortly."})
 
 
 @app.get("/pricing")

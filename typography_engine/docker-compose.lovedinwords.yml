@@ -176,6 +176,12 @@ services:
       # Default 1 = unchanged. For a GMA-style event set UVICORN_WORKERS=4 in .env + pause the
       # quiet brands so this box's RAM/cores go to LovedInWords. Each worker loads its own models.
       - UVICORN_WORKERS=${UVICORN_WORKERS:-1}
+      # Capture-first async render queue (spike overflow). OFF by default -> the live
+      # /render path is unchanged. Set TYPO_ASYNC_QUEUE=1 to enable /render/queue + the
+      # background drainer; THRESHOLD is the backlog depth at which the front end should
+      # route new visitors to the email flow instead of a live render.
+      - TYPO_ASYNC_QUEUE=${TYPO_ASYNC_QUEUE:-}
+      - TYPO_ASYNC_THRESHOLD=${TYPO_ASYNC_THRESHOLD:-20}
       - TYPO_RASTERIZER=${TYPO_RASTERIZER:-auto}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - TYPO_MODERATION_MODEL=${TYPO_MODERATION_MODEL:-omni-moderation-latest}

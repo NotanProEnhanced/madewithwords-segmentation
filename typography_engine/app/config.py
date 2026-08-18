@@ -147,6 +147,20 @@ UMAMI_HOSTNAME = os.environ.get("UMAMI_HOSTNAME", "app.typortrait.com")
 PRIVATE_DIR = BASE_DIR / "private"
 PRIVATE_DIR.mkdir(exist_ok=True)
 
+# --- Async render queue (capture-first overflow) -----------------------------
+# Off by default -> the synchronous /render path is unchanged until deliberately
+# enabled per-brand. When on, /render/queue accepts a job + email instantly and a
+# background worker renders it as capacity frees, then emails the finished portrait.
+# Durable, cross-process store lives on the bind-mounted PRIVATE_DIR.
+ASYNC_QUEUE_ENABLED = (os.environ.get("TYPO_ASYNC_QUEUE", "").strip().lower()
+                       in ("1", "true", "yes", "on"))
+# Depth at/above which the FRONT of the app should route new visitors to the queue
+# instead of a live render (the adaptive switch reads this via /health).
+ASYNC_QUEUE_THRESHOLD = env_int("TYPO_ASYNC_THRESHOLD", 20)
+ASYNC_MAX_ATTEMPTS = env_int("TYPO_ASYNC_MAX_ATTEMPTS", 3)       # retries before a job is failed
+ASYNC_STALE_SECONDS = env_int("TYPO_ASYNC_STALE_S", 900)         # dead-worker recovery window
+ASYNC_QUEUE_DIR = os.environ.get("TYPO_QUEUE_DIR", "").strip() or str(PRIVATE_DIR / "asyncqueue")
+
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 DOWNLOAD_PRICE_CENTS = env_int("TYPO_PRICE_CENTS", 1499)     # e.g. 1499 = $14.99
 CURRENCY = os.environ.get("TYPO_CURRENCY", "usd")

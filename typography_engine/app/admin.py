@@ -719,6 +719,50 @@ def send_save_link_email(job: str, to_email: str, brand_name: str = "Typortrait"
         return False
 
 
+def send_ready_email(job: str, to_email: str, brand_name: str = "Typortrait") -> bool:
+    """Deliver a finished async-queued portrait: a private link to view, download,
+    or order. Sent by the background render worker when a queued job completes, so
+    a visitor who arrived during a spike gets their portrait moments later instead
+    of waiting on a spinner. Reuses the same Gmail SMTP path as the other mailers."""
+    if not smtp_configured():
+        _log(f"send_ready_email skipped (smtp not configured): job={job}")
+        return False
+    label = "Typortrait" if brand_name == "Typortrait" else f"{brand_name} portrait"
+    link = f"{PUBLIC_BASE_URL}/resume/{html.escape(job)}"
+    body_html = f"""<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#16203a;max-width:520px">
+<h2 style="font-family:Georgia,'Times New Roman',serif;color:#0d1b3a;margin:0 0 6px">Your {html.escape(label)} is ready.</h2>
+<p style="color:#2b3550;font-size:15px;line-height:1.6">Thank you for your patience — we've finished creating your portrait. Open it below to see it, download the high-res file, or order a print.</p>
+<p style="margin:18px 0">
+  <a href="{link}" style="background:#0d1b3a;color:#fff;padding:13px 28px;border-radius:999px;text-decoration:none;display:inline-block;font-weight:700">View my portrait</a>
+</p>
+<p style="color:#6b7280;font-size:13px;line-height:1.6">A heads-up: we automatically delete uploaded photos and generated files after about {RETENTION_DAYS} days. If this wasn't you, just ignore this email.</p>
+<p style="color:#9aa1ac;font-size:12px;line-height:1.6;margin-top:14px">You're in control of your data &mdash; <a href="{PUBLIC_BASE_URL}/data-request" style="color:#6b7280">manage or delete it anytime</a>.</p>
+</div>"""
+    body_text = (
+        f"Your {label} is ready.\n\n"
+        f"View it, download the high-res file, or order a print: {link}\n\n"
+        f"Heads-up: we auto-delete uploaded photos and generated files after about "
+        f"{RETENTION_DAYS} days.\n\n"
+        "If this wasn't you, just ignore this email.\n"
+    )
+    msg = EmailMessage()
+    msg["Subject"] = f"Your {label} is ready"
+    msg["From"] = _from_header()
+    msg["To"] = to_email
+    msg.set_content(body_text)
+    msg.add_alternative(body_html, subtype="html")
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
+            s.starttls()
+            s.login(SMTP_USER, SMTP_PASS)
+            s.send_message(msg)
+        _log(f"send_ready_email ok: job={job} to={to_email}")
+        return True
+    except Exception as e:  # noqa: BLE001
+        _log(f"send_ready_email FAILED: job={job} err={type(e).__name__}: {e}")
+        return False
+
+
 def keepsake_code_email_bodies(code_fmt: str, link: str, product_name: str = "", name: str = ""):
     """(html, text) for the buyer's 'here is your redemption code' email. SINGLE
     source of truth — the /admin/issue form and the CLI (tools/issue_code.py) both
