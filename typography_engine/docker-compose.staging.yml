@@ -193,6 +193,9 @@ services:
       - TYPO_HILIGHT_FINE=${TYPO_HILIGHT_FINE:-0.30}
       - TYPO_INK_SAT=${TYPO_INK_SAT:-1.02}
       - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}
+      # Worker PROCESSES (real throughput multiplier; GIL-bound render => N procs ~ N x rpm).
+      # Default 1 = unchanged. Set UVICORN_WORKERS=N in .env to load-test multi-process throughput.
+      - UVICORN_WORKERS=${UVICORN_WORKERS:-1}
       # SVG->PNG backend: auto (CairoSVG, full fidelity, slower) | resvg (much
       # faster; identical output for the current solid-fill SVGs) | cairosvg.
       - TYPO_RASTERIZER=${TYPO_RASTERIZER:-auto}

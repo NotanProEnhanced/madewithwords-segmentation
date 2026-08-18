@@ -172,6 +172,10 @@ services:
       - TYPO_HILIGHT_FINE=${TYPO_HILIGHT_FINE:-0.30}
       - TYPO_INK_SAT=${TYPO_INK_SAT:-1.02}
       - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}
+      # Worker PROCESSES (real throughput multiplier; GIL-bound render => N procs ~ N x rpm).
+      # Default 1 = unchanged. For a GMA-style event set UVICORN_WORKERS=4 in .env + pause the
+      # quiet brands so this box's RAM/cores go to LovedInWords. Each worker loads its own models.
+      - UVICORN_WORKERS=${UVICORN_WORKERS:-1}
       - TYPO_RASTERIZER=${TYPO_RASTERIZER:-auto}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - TYPO_MODERATION_MODEL=${TYPO_MODERATION_MODEL:-omni-moderation-latest}

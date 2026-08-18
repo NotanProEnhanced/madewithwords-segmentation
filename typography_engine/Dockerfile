@@ -51,4 +51,10 @@ COPY memorial_card.py ./memorial_card.py
 COPY tools ./tools
 
 EXPOSE 8077
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8077", "--workers", "1"]
+# Worker PROCESSES are the real throughput multiplier: MediaPipe/render work is
+# GIL-bound, so N processes ~= N x renders/min on an N-core box. Env-configurable
+# (default 1 -> unchanged) so an event box can run e.g. UVICORN_WORKERS=4 with no
+# code fork. Each worker loads its OWN models (N x RAM), so only raise it on a box
+# with headroom (dedicated brand / other brands paused) -- pairs with the malloc
+# reclaim + arena caps above. `exec` keeps uvicorn as PID 1 so SIGTERM still works.
+CMD ["sh", "-c", "exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8077 --workers ${UVICORN_WORKERS:-1}"]
