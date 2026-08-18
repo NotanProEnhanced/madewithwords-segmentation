@@ -306,6 +306,19 @@ _GALLERY_PRICE: Dict[str, int] = {
 # small, cheap keepsake still makes sense.
 _GALLERY_HIDE = {"print_5x7", "poster_8x10"}
 
+# Memorial channel is deliberately CURATED: a grieving family shouldn't face a print
+# matrix. We keep the Digital download (the default) plus a small, clear set of framed
+# keepsakes and one gallery canvas per aspect; everything else -- all posters, the tiny
+# 5x7, the redundant small canvases, the t-shirt, and the multi-print bundles -- is
+# hidden so the checkout is a calm handful of options, not a decision tree. Per the
+# render's aspect the UI then shows only that shape, so a portrait sees framed 16x20 /
+# framed 8x10 / canvas 16x20 / digital. Adjust this set to change the memorial offering.
+_MEMORIAL_HIDE = {
+    "poster_18x24", "poster_8x10", "poster_16x16", "poster_10x10", "poster_20x16",
+    "print_5x7", "canvas_8x10", "canvas_10x10", "tshirt_unisex",
+    "bundle_family", "bundle_share6",
+}
+
 
 def gallery_price_for(p: Product) -> Tuple[int, int]:
     """(price_cents, shipping_cents) for a product in the Sacred Collection channel."""
@@ -323,6 +336,8 @@ def public_catalog(memorial: bool = False, gallery: bool = False) -> List[dict]:
     out = []
     for p in CATALOG:
         if gallery and p.sku in _GALLERY_HIDE:
+            continue
+        if memorial and p.sku in _MEMORIAL_HIDE:
             continue
         price, ship = gallery_price_for(p) if gallery else price_for(p, memorial)
         out.append({

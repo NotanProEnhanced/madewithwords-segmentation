@@ -5835,7 +5835,7 @@ function render(data){
   });
   pick("digital");
 }
-fetch("/products").then(r=>r.json()).then(render).catch(()=>{ note.textContent="Couldn’t load options — refresh to try again."; });
+fetch("/products?brand="+encodeURIComponent("__BRANDID__")).then(r=>r.json()).then(render).catch(()=>{ note.textContent="Couldn’t load options — refresh to try again."; });
 buy.addEventListener("click", async ()=>{
   if(busy) return; busy=true; const old=buy.textContent;
   buy.disabled=true; buy.textContent="Opening secure checkout…"; note.textContent="";
@@ -5877,10 +5877,13 @@ def resume_page(request: Request, job: str):
                  f'<img class="deskshot" src="{_img}" alt="Your saved portrait"/></div></div>')
     else:
         _shot = f'<img class="shot" src="{_img}" alt="Your saved portrait"/>'
+    # Brand id (sanitized) so the products fetch requests the MEMORIAL channel -> the
+    # curated print set. Without it /products returns the full non-memorial catalog.
+    _bid = _re.sub(r"[^a-zA-Z0-9_-]", "", _recipe_brand(job) or "")[:40]
     page = (_RESUME_TPL.replace("__FAV__", _fav_links(_b["fav"]))
             .replace("__BRANDNAME__", _b["name"]).replace("__HOME__", _b["home"])
             .replace("__JOB__", job).replace("__SHOTBLOCK__", _shot)
-            .replace("__IMG__", _img))
+            .replace("__BRANDID__", _bid).replace("__IMG__", _img))
     return HTMLResponse(page)
 
 
