@@ -5820,7 +5820,9 @@ function render(data){
   }
   document.getElementById("shopLbl").style.display="";
   document.getElementById("shopSub").style.display="";
-  const order=CAT.slice().sort((a,b)=>(a.physical?1:0)-(b.physical?1:0));
+  // Show only prints matching THIS render's shape (portrait/square/landscape), like the
+  // studio -- otherwise a 4:5 portrait would be offered square + landscape prints too.
+  const order=CAT.filter(p=> !p.physical || p.orientation==="__ORI__").sort((a,b)=>(a.physical?1:0)-(b.physical?1:0));
   list.innerHTML="";
   order.forEach(p=>{
     const el=document.createElement("button");
@@ -5880,10 +5882,16 @@ def resume_page(request: Request, job: str):
     # Brand id (sanitized) so the products fetch requests the MEMORIAL channel -> the
     # curated print set. Without it /products returns the full non-memorial catalog.
     _bid = _re.sub(r"[^a-zA-Z0-9_-]", "", _recipe_brand(job) or "")[:40]
+    # The render's shape, so the picker offers only prints of that orientation.
+    try:
+        _asp = float(json.loads(recipe.read_text(encoding="utf-8")).get("aspect", 0.8))
+    except Exception:  # noqa: BLE001
+        _asp = 0.8
+    _ori = "portrait" if _asp < 0.95 else ("landscape" if _asp > 1.10 else "square")
     page = (_RESUME_TPL.replace("__FAV__", _fav_links(_b["fav"]))
             .replace("__BRANDNAME__", _b["name"]).replace("__HOME__", _b["home"])
             .replace("__JOB__", job).replace("__SHOTBLOCK__", _shot)
-            .replace("__BRANDID__", _bid).replace("__IMG__", _img))
+            .replace("__BRANDID__", _bid).replace("__ORI__", _ori).replace("__IMG__", _img))
     return HTMLResponse(page)
 
 
