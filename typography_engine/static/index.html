@@ -735,7 +735,7 @@
     </div>
     <div class="ctl swatchgroup" id="bgGroup">
       <div class="ctl-lbl">Background</div>
-      <div class="ctl-hint">What sits behind them — a studio wall, a soft colour, or none at all.</div>
+      <div class="ctl-hint" id="bgHint">What sits behind them — a studio wall, a soft colour, or none at all.</div>
       <div id="bgSwatches" class="swatches bgswatches"></div>
     </div>
     <div id="thumbStatus" class="thumb-status" aria-live="polite"></div>
@@ -1023,6 +1023,9 @@ const BRANDNAME=(BRAND&&BRAND.name)||"Typortrait";   // customer-facing brand na
 const _isMemorialBrand=!!(BRAND && BRAND.memorial);
 const _isPet=!!(BRAND && BRAND.pet);   // Paws in Words -> render via the pet engine
 if(_isMemorialBrand) state.backdrop="none";  // Memorial: no floral frame by default (clean Slate background)
+if(_isMemorialBrand){
+  var _bh=document.getElementById("bgHint"); if(_bh) _bh.textContent="Frame them in florals, or keep it simple and clean.";
+}
 if(_isPet && !state.petGround) state.petGround="dark";   // gallery-dark hero by default
 if(_isPet && !state.petType) state.petType="medium";     // typography size: small | medium | large
 // Pet-clean studio: hide the human-only controls, repurpose the Background axis as the pet
