@@ -393,6 +393,50 @@ def _ba_slider_html(before: str = "/static/lovedinwords/before.jpg",
 </script>'''
 
 
+def _liw_reviews_html() -> str:
+    """Featured-review band for the memorial landing. Renders only APPROVED + FEATURED +
+    consented reviews (moderated in /admin/reviews); returns '' when there are none yet,
+    so the section simply doesn't appear until the flywheel has something real to show."""
+    try:
+        revs = _reviews().list_public(brand="lovedinwords", limit=6)
+    except Exception:  # noqa: BLE001
+        revs = []
+    if not revs:
+        return ""
+    import html as _h
+    cards = []
+    for r in revs:
+        stars = "&#9733;" * max(1, int(r.get("rating") or 5))
+        name = _h.escape(r.get("name") or "A family we helped")
+        text = _h.escape((r.get("text") or "").strip())
+        if not text:
+            continue
+        cards.append(
+            f'<figure class="tmon-c"><div class="tmon-s">{stars}</div>'
+            f'<blockquote>&ldquo;{text}&rdquo;</blockquote>'
+            f'<figcaption>&mdash; {name}</figcaption></figure>')
+    if not cards:
+        return ""
+    return (
+        '<section class="band tmon"><div class="wrap">'
+        '<style>'
+        '.tmon .wrap{max-width:1000px}'
+        '.tmon h2{text-align:center;margin-bottom:6px}'
+        '.tmon .subq{text-align:center;color:#7a7264;font-size:16px;margin:0 auto 8px;max-width:520px}'
+        '.tmon-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(262px,1fr));gap:18px;margin-top:26px}'
+        '.tmon-c{margin:0;background:#fffdf8;border:1px solid #e9e2d5;border-radius:16px;'
+        'padding:22px 22px;box-shadow:0 14px 32px -22px rgba(20,16,10,.32)}'
+        '.tmon-s{color:#a3792f;letter-spacing:2px;font-size:15px}'
+        '.tmon-c blockquote{margin:11px 0 14px;font-family:Georgia,"Times New Roman",serif;'
+        'font-size:16.5px;line-height:1.6;color:#2b3550}'
+        '.tmon-c figcaption{font-size:13.5px;color:#7a7264;font-weight:600}'
+        '</style>'
+        '<h2 class="sec">In the words of families we&rsquo;ve helped</h2>'
+        '<p class="subq serif">The portraits speak for themselves &mdash; but they say it better.</p>'
+        f'<div class="tmon-g">{"".join(cards)}</div>'
+        '</div></section>')
+
+
 def _liw_landing_html(request: Request) -> str:
     """The Loved in Words marketing landing page (memorial brand). Grief-sensitive
     hero + before/after + how-it-works + keepsake, driving to the studio ('Create a
@@ -569,6 +613,7 @@ def _liw_landing_html(request: Request) -> str:
  </div>
 </div></section>
 
+{_liw_reviews_html()}
 <section class="band"><div class="wrap closing">
  <h2>Begin a tribute</h2>
  <p>It takes only a photo and a few words. See a free preview before you decide.</p>
