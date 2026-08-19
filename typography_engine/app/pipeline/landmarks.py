@@ -105,7 +105,11 @@ def detect_faces(img: LoadedImage, warns: WarningCollector) -> List[FaceLandmark
         for lms in (res.face_landmarks or []):
             pts = np.array([[lm.x * bw, lm.y * bh] for lm in lms], dtype=np.float32)
             # Average visibility (0..1) across all landmarks as face-detection confidence
-            conf = float(np.mean([lm.visibility for lm in lms])) if lms and hasattr(lms[0], 'visibility') else 1.0
+            if lms and hasattr(lms[0], 'visibility'):
+                visibilities = [lm.visibility for lm in lms if lm.visibility is not None]
+                conf = float(np.mean(visibilities)) if visibilities else 1.0
+            else:
+                conf = 1.0
             out.append((pts, conf))
         return out
 
