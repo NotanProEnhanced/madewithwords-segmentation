@@ -1659,6 +1659,15 @@ async def render(
                 status_code=422,
             )
 
+        # Face-detection confidence check: warn if the detected face is low-confidence
+        # (silhouettes, extreme angles, dark faces, etc). Non-blocking; render proceeds,
+        # but user sees a heads-up that the result might be poor.
+        if an.landmarks:
+            from .pipeline.landmarks import face_quality_issue
+            issue = face_quality_issue(an.landmarks, threshold=0.75)
+            if issue:
+                warns.warn("input", "low_confidence_face", issue)
+
     from .pipeline.tonal import _PALETTES, _GRADIENTS, render_layered_png, custom_poster, lifelike_route_on
     # "custom" = a user-picked colour (a (ground, ink) poster pair built from the
     # hex). Only the layered Words/Message renderer honours it; everything else
