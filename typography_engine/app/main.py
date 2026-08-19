@@ -1735,15 +1735,12 @@ async def render(
         _preview_cap = LOUPE_PNG_WIDTH if _is_loupe else PREVIEW_PNG_WIDTH
         preview_w = min(int(png_width), _preview_cap)
         if pet_on:
-            # PET engine: landmark-free (U2-Net matte + saliency drape + photographic eyes).
-            # Skips the whole face pipeline; `an` above is unused for pets.
-            from .pet_proto import render_pet_portrait
-            # First preview renders sharper (higher floor) so the initial view isn't soft --
-            # the loupe/paid pass still goes higher. Floor 1050 (was 700), cap 1600 (was 1500).
-            png_bytes = await _bounded_to_thread(
-                render_pet_portrait, img_bytes, text, pet_ground_sel,
-                int(min(1600, max(1050, preview_w))), None, pet_type_scale)
-            runs, ground_hex, mask_svg = [], None, None
+            # Pet rendering disabled (pet_proto prototype causing quality degradation).
+            # TODO: restore proper pet rendering engine.
+            return JSONResponse(
+                {"ok": False, "error": "pet_rendering_disabled",
+                 "detail": "Pet portrait rendering is temporarily unavailable. We're restoring the proper engine.",
+                 "warnings": warns.as_list()}, status_code=503)
         elif is_displacement or disp_route:
             from .pipeline.displacement import render_displacement_portrait
             # Routed Mosaic/Passage: source the words from `text` exactly as the paid
