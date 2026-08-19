@@ -1180,7 +1180,7 @@ async def admin_studio_preview(admin_session: Optional[str] = Cookie(None),
     # warns.as_list() yields {stage,code,message,severity} dicts; surface only the
     # real warning/error messages as plain strings (info is benign -> no red flash).
     warn_msgs = [str(w.get("message", "")) for w in warnings
-                 if isinstance(w, dict) and w.get("severity") in ("warning", "error") and w.get("message")]
+                 if isinstance(w, dict) and w.get("severity") in ("warn", "error") and w.get("message")]
     return JSONResponse({"ok": True,
                          "draft_url": f"/admin/studio/draft/{item_id}.png?t={int(_time.time())}",
                          "warnings": warn_msgs})

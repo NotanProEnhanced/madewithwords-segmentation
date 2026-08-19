@@ -14,7 +14,7 @@ class Warn:
     stage: str
     code: str
     message: str
-    severity: str = "warning"  # info | warning | error
+    severity: str = "warn"  # info | warn | error
 
 
 @dataclass
@@ -25,7 +25,7 @@ class WarningCollector:
         self.items.append(Warn(stage, code, message, "info"))
 
     def warn(self, stage: str, code: str, message: str) -> None:
-        self.items.append(Warn(stage, code, message, "warning"))
+        self.items.append(Warn(stage, code, message, "warn"))
 
     def error(self, stage: str, code: str, message: str) -> None:
         self.items.append(Warn(stage, code, message, "error"))
