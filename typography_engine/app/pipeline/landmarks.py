@@ -30,6 +30,7 @@ class FaceLandmarks:
     image_w: int
     image_h: int
     bbox: tuple                     # (x, y, w, h) in working coords
+    confidence: float = 1.0         # MediaPipe per-landmark visibility (0..1); 1.0 if unavailable
 
 
 def ensure_model(warns: WarningCollector, allow_download: bool = True) -> bool:
@@ -91,8 +92,8 @@ def detect_faces(img: LoadedImage, warns: WarningCollector) -> List[FaceLandmark
     h, w = img.bgr.shape[:2]
 
     def _detect_pts(bgr):
-        """Run the landmarker on a BGR (sub-)image; return landmark arrays in that
-        image's own pixel coords ([] on error / no face)."""
+        """Run the landmarker on a BGR (sub-)image; return (landmarks, confidence) tuples
+        in that image's own pixel coords ([] on error / no face)."""
         try:
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
             res = landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
@@ -100,10 +101,15 @@ def detect_faces(img: LoadedImage, warns: WarningCollector) -> List[FaceLandmark
             warns.warn("landmarks", "detect_failed", f"Landmark detection error: {e}")
             return []
         bh, bw = bgr.shape[:2]
-        return [np.array([[lm.x * bw, lm.y * bh] for lm in lms], dtype=np.float32)
-                for lms in (res.face_landmarks or [])]
+        out = []
+        for lms in (res.face_landmarks or []):
+            pts = np.array([[lm.x * bw, lm.y * bh] for lm in lms], dtype=np.float32)
+            # Average visibility (0..1) across all landmarks as face-detection confidence
+            conf = float(np.mean([lm.visibility for lm in lms])) if lms and hasattr(lms[0], 'visibility') else 1.0
+            out.append((pts, conf))
+        return out
 
-    all_pts = _detect_pts(img.bgr)                      # full frame
+    all_results = _detect_pts(img.bgr)                  # full frame: [(pts, conf), ...]
     # A busy group / wide photo can hide a face from the full-frame detector even
     # though it resolves fine in a tighter crop (measured: a 4-person shot detected
     # 3, missing the 2nd-from-right; a tile crop found it). Recover missed faces by
@@ -113,28 +119,28 @@ def detect_faces(img: LoadedImage, warns: WarningCollector) -> List[FaceLandmark
     # a single subject the busy full-frame pass missed often resolves in a tile, so we
     # recover it before the input-quality gate wrongly rejects the photo as "no face".
     # The clean single-face portrait (exactly 1 found, not wide) skips the extra passes.
-    if len(all_pts) != 1 or w > int(h * 1.2):
+    if len(all_results) != 1 or w > int(h * 1.2):
         i = 0
         while i * 0.30 < 1.0:
             x0 = int(i * 0.30 * w)
             x1 = int(min(1.0, i * 0.30 + 0.44) * w)
             if x1 - x0 >= 48:
-                for pts in _detect_pts(img.bgr[:, x0:x1]):
+                for pts, conf in _detect_pts(img.bgr[:, x0:x1]):
                     pts = pts.copy()
                     pts[:, 0] += x0                     # tile-local -> full-frame coords
-                    all_pts.append(pts)
+                    all_results.append((pts, conf))
             i += 1
 
-    if not all_pts:
+    if not all_results:
         warns.warn("landmarks", "no_face", "No face detected by MediaPipe.")
         return []
 
     faces: List[FaceLandmarks] = []
-    for pts in all_pts:
+    for pts, conf in all_results:
         x0, y0 = float(pts[:, 0].min()), float(pts[:, 1].min())
         x1, y1 = float(pts[:, 0].max()), float(pts[:, 1].max())
         faces.append(FaceLandmarks(points=pts, image_w=w, image_h=h,
-                                   bbox=(x0, y0, x1 - x0, y1 - y0)))
+                                   bbox=(x0, y0, x1 - x0, y1 - y0), confidence=conf))
     faces.sort(key=lambda f: f.bbox[2] * f.bbox[3], reverse=True)
 
     # Deduplicate overlapping detections: a face at a tile seam appears in two tiles,
@@ -160,6 +166,23 @@ def detect_landmarks(img: LoadedImage, warns: WarningCollector) -> Optional[Face
     """Primary (largest) face, for single-subject callers."""
     faces = detect_faces(img, warns)
     return faces[0] if faces else None
+
+
+def is_face_clear(face: FaceLandmarks, threshold: float = 0.75) -> bool:
+    """Check if detected face meets quality threshold for rendering. Threshold 0..1;
+    higher = stricter. 0.75 catches most silhouettes, extreme angles, and dark faces."""
+    return face.confidence >= threshold
+
+
+def face_quality_issue(face: FaceLandmarks, threshold: float = 0.75) -> Optional[str]:
+    """Return a user-friendly quality issue description, or None if acceptable."""
+    if face.confidence < 0.50:
+        return "Photo is too dark or blurry — try one with better lighting and clarity."
+    if face.confidence < 0.65:
+        return "Face angle or lighting might be challenging — a clearer photo works best."
+    if face.confidence < threshold:
+        return "Photo clarity could be better for optimal results."
+    return None
 
 
 def haar_face_bbox(img: LoadedImage, warns: WarningCollector) -> Optional[tuple]:
