@@ -1025,6 +1025,10 @@ const _isPet=!!(BRAND && BRAND.pet);   // Paws in Words -> render via the pet en
 if(_isMemorialBrand) state.backdrop="none";  // Memorial: no floral frame by default (clean Slate background)
 if(_isMemorialBrand){
   var _bh=document.getElementById("bgHint"); if(_bh) _bh.textContent="Frame them in florals, or keep it simple and clean.";
+  // Hide style chooser: one style is set by default (displacement/Lifelike), no choice needed
+  var _sg=document.getElementById("styleGallery"); if(_sg) _sg.style.display="none";
+  // Centre "Make it yours" heading
+  var _my=document.getElementById("makeYours"); if(_my) _my.style.textAlign="center";
 }
 if(_isPet && !state.petGround) state.petGround="dark";   // gallery-dark hero by default
 if(_isPet && !state.petType) state.petType="medium";     // typography size: small | medium | large
