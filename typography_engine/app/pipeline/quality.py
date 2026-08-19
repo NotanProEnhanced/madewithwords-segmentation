@@ -36,8 +36,8 @@ def assess_portrait_input(an: Analysis) -> List[Issue]:
     if an.face_source == "none":
         issues.append(Issue(
             "error", "no_face",
-            "We couldn't find a face. Upload a clear, front-facing "
-            "head-and-shoulders photo of one person.",
+            "We couldn't read this photo. Try one with better lighting, "
+            "or a clearer, closer view of their face.",
         ))
         return issues
 
@@ -47,14 +47,14 @@ def assess_portrait_input(an: Analysis) -> List[Issue]:
         if face_frac < 0.05:
             issues.append(Issue(
                 "error", "no_clear_portrait",
-                "We couldn't find a clear face to work from. This looks like a "
-                "scene or a distant subject -- try a close head-and-shoulders photo.",
+                "This photo is too zoomed out — their face is too small. "
+                "Try a closer shot where their face fills most of the frame.",
             ))
             return issues
         issues.append(Issue(
             "warn", "low_confidence",
-            "We couldn't lock onto the face precisely, so the likeness may be "
-            "rough. A clear, front-facing, well-lit photo works best.",
+            "This photo might be a bit unclear or at an angle. The portrait may "
+            "turn out softer than ideal — but let's see how it looks.",
         ))
 
     if cov < 0.08:
