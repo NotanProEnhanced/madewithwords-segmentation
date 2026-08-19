@@ -5773,6 +5773,7 @@ __SHOTBLOCK__
 <button class="btn" id="buy">Download</button>
 <p class="note" id="note"></p>
 </div>
+<a class="alt" href="/review/__JOB__">Loved your portrait? Share what it meant &rarr;</a>
 <a class="alt" href="__HOME__">Start a new portrait &rarr;</a>
 </div>
 <script>
@@ -5892,6 +5893,177 @@ def resume_page(request: Request, job: str):
             .replace("__BRANDNAME__", _b["name"]).replace("__HOME__", _b["home"])
             .replace("__JOB__", job).replace("__SHOTBLOCK__", _shot)
             .replace("__BRANDID__", _bid).replace("__ORI__", _ori).replace("__IMG__", _img))
+    return HTMLResponse(page)
+
+
+# --- Customer reviews / testimonials ----------------------------------------
+# Capture a family's reaction at the emotional moment (linked from /resume and the
+# delivery email), store it PENDING, and let the operator approve + feature it. For
+# a memorial brand nothing is ever shown publicly without human moderation.
+from .reviews import ReviewStore as _ReviewStore  # noqa: E402
+_REVIEWS_DIR = str(PRIVATE_DIR / "reviews")
+_review_store_singleton = None
+
+
+def _reviews():
+    global _review_store_singleton
+    if _review_store_singleton is None:
+        _review_store_singleton = _ReviewStore(_REVIEWS_DIR)
+    return _review_store_singleton
+
+
+_REVIEW_TPL = """<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+__FAV__
+<title>Share what it meant &mdash; __BRANDNAME__</title>
+<meta name='robots' content='noindex'>
+<link rel="stylesheet" href="/static/inter.css">
+<style>
+:root{--navy:#0d1b3a;--ink:#16203a;--paper:#faf9f7;--card:#fff;--muted:#6b7280;--line:#ece9e3;--gold:#a3792f}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:520px;margin:0 auto;padding:44px 22px 70px}
+.brand{font-size:24px;color:var(--navy);font-weight:700;text-align:center}
+h1{font-size:25px;color:var(--navy);text-align:center;margin:22px 0 6px;font-weight:700}
+.sub{color:var(--muted);text-align:center;margin:0 auto 22px;font-size:15px;line-height:1.55;max-width:400px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:0 10px 30px rgba(13,27,58,.06);padding:22px}
+.stars{display:flex;gap:6px;justify-content:center;margin-bottom:8px}
+.star{font-size:36px;color:#ddd7cb;cursor:pointer;line-height:1;background:none;border:none;padding:2px}
+.star.on{color:var(--gold)}
+label{display:block;font-weight:600;font-size:14px;color:var(--ink);margin:16px 0 6px}
+textarea,input[type=text]{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;font-size:15px;font-family:inherit;color:var(--ink)}
+textarea{min-height:120px;resize:vertical}
+.consent{display:flex;gap:10px;align-items:flex-start;margin-top:16px;font-size:13px;color:var(--muted);line-height:1.5}
+.consent input{margin-top:3px}
+.btn{display:block;width:100%;background:var(--navy);color:#fff;border:none;border-radius:999px;padding:15px;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:18px}
+.btn:disabled{opacity:.6}
+.done{text-align:center;padding:24px 0}
+.done .h{font-size:44px;color:#c99a94}
+.note{color:var(--muted);font-size:12.5px;text-align:center;margin-top:14px}
+a{color:var(--navy)}
+</style></head><body><div class="wrap">
+<div class="brand">__BRANDNAME__</div>
+<div id="rform">
+<h1>How did it feel?</h1>
+<p class="sub">If your portrait meant something to you, we&rsquo;d be honored if you shared it &mdash; your words help other families find their way here.</p>
+<div class="card">
+<div class="stars" id="stars">
+<button type="button" class="star" data-v="1">&#9733;</button><button type="button" class="star" data-v="2">&#9733;</button><button type="button" class="star" data-v="3">&#9733;</button><button type="button" class="star" data-v="4">&#9733;</button><button type="button" class="star" data-v="5">&#9733;</button>
+</div>
+<label for="rtext">Your words</label>
+<textarea id="rtext" placeholder="What did you feel when you saw it?"></textarea>
+<label for="rname">Your name (as you&rsquo;d like it shown)</label>
+<input type="text" id="rname" placeholder="e.g. The Alvarez family" autocomplete="name">
+<label class="consent"><input type="checkbox" id="rconsent" checked> You may share my words and name to comfort other grieving families.</label>
+<button class="btn" id="rsend">Share</button>
+<p class="note" id="rnote"></p>
+</div>
+</div>
+<div id="rthanks" class="done" style="display:none">
+<div class="h">&#9829;</div>
+<h1>Thank you.</h1>
+<p class="sub">Your words mean more than you know &mdash; to us, and to the families who&rsquo;ll find comfort in them.</p>
+<p class="note"><a href="__HOME__">Return to __BRANDNAME__</a></p>
+</div>
+</div>
+<script>
+const JOB="__JOB__",BRANDID="__BRANDID__";let rating=0;
+const stars=[].slice.call(document.querySelectorAll('.star'));
+function paint(){stars.forEach(function(s){s.classList.toggle('on',Number(s.dataset.v)<=rating);});}
+stars.forEach(function(s){s.addEventListener('click',function(){rating=Number(s.dataset.v);paint();});});
+const btn=document.getElementById('rsend'),note=document.getElementById('rnote');
+btn.addEventListener('click',async function(){
+  const text=document.getElementById('rtext').value.trim();
+  if(!rating&&!text){note.textContent="Add a star or a few words first.";return;}
+  btn.disabled=true;btn.textContent="Sharing…";
+  const fd=new FormData();fd.append('job',JOB);fd.append('rating',String(rating));
+  fd.append('text',text);fd.append('name',document.getElementById('rname').value.trim());
+  fd.append('brand',BRANDID);fd.append('consent',document.getElementById('rconsent').checked?'1':'');
+  try{const r=await fetch('/review',{method:'POST',body:fd});const d=await r.json();
+    if(d&&d.ok){document.getElementById('rform').style.display='none';document.getElementById('rthanks').style.display='block';return;}
+    note.textContent="Something went wrong — please try again.";}
+  catch(_){note.textContent="Network error — please try again.";}
+  btn.disabled=false;btn.textContent="Share";
+});
+</script></body></html>"""
+
+
+@app.get("/review/{job}", response_class=HTMLResponse)
+def review_page(request: Request, job: str):
+    import re as _re
+    job = _re.sub(r"[^a-zA-Z0-9]", "", job or "")[:40]
+    _b = _site_brand(_recipe_brand(job), request.headers.get("host", ""))
+    _bid = _re.sub(r"[^a-zA-Z0-9_-]", "", _recipe_brand(job) or "")[:40]
+    page = (_REVIEW_TPL.replace("__FAV__", _fav_links(_b["fav"]))
+            .replace("__BRANDNAME__", _b["name"]).replace("__HOME__", _b["home"])
+            .replace("__JOB__", job).replace("__BRANDID__", _bid))
+    return HTMLResponse(page)
+
+
+@app.post("/review")
+def submit_review(request: Request, job: str = Form(""), rating: int = Form(0),
+                  text: str = Form(""), name: str = Form(""), brand: str = Form(""),
+                  consent: str = Form(""), email: str = Form("")) -> JSONResponse:
+    import re as _re
+    job = _re.sub(r"[^a-zA-Z0-9]", "", job or "")[:40]
+    if not (text or "").strip() and not rating:
+        return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
+    _consent = (consent or "").strip().lower() in ("1", "true", "on", "yes")
+    _bid = _re.sub(r"[^a-zA-Z0-9_-]", "", brand or "")[:40]
+    try:
+        _reviews().submit(job=job, rating=rating, text=text, name=name, brand=_bid,
+                          consent=_consent, email=email)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "store_failed", "detail": str(e)}, status_code=500)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/admin/reviews", response_class=HTMLResponse)
+def admin_reviews(admin_session: Optional[str] = Cookie(None), action: str = "", rid: str = ""):
+    guard = admin_mod._require_admin(admin_session)
+    if guard:
+        return guard
+    import html as _h
+    import re as _re
+    rid = _re.sub(r"[^0-9a-f-]", "", rid or "")[:40]
+    if action and rid:
+        if action == "approve":
+            _reviews().set_status(rid, status="approved", featured=True)
+        elif action == "feature":
+            _reviews().set_status(rid, featured=True)
+        elif action == "unfeature":
+            _reviews().set_status(rid, featured=False)
+        elif action == "hide":
+            _reviews().set_status(rid, status="hidden", featured=False)
+    st = _reviews().stats()
+    rows = _reviews().list_all()
+    trs = []
+    for r in rows:
+        _rid = _h.escape(r.get("id", ""))
+        stars = "★" * int(r.get("rating") or 0) + "☆" * (5 - int(r.get("rating") or 0))
+        badge = ((" &middot; <b style='color:#2e7d32'>FEATURED</b>" if r.get("featured") else "")
+                 + (" &middot; consent" if r.get("consent") else " &middot; <span style='color:#b45'>no&nbsp;consent</span>"))
+        acts = (f"<a href='?action=approve&rid={_rid}'>approve+feature</a> &middot; "
+                f"<a href='?action=feature&rid={_rid}'>feature</a> &middot; "
+                f"<a href='?action=unfeature&rid={_rid}'>unfeature</a> &middot; "
+                f"<a href='?action=hide&rid={_rid}'>hide</a>")
+        trs.append(
+            f"<tr><td>{stars}</td><td><b>{_h.escape(r.get('name') or '—')}</b><br>"
+            f"<span style='color:#888;font-size:12px'>{_h.escape(r.get('status') or '')}{badge}</span></td>"
+            f"<td>{_h.escape(r.get('text') or '')}</td><td style='white-space:nowrap;font-size:12px'>{acts}</td></tr>")
+    page = (
+        "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Reviews</title>"
+        "<style>body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#f7f6f3;color:#16203a}"
+        ".w{max-width:960px;margin:0 auto;padding:28px 20px 60px}h1{font-size:22px}"
+        ".s{display:flex;gap:22px;margin:10px 0 20px;color:#555;font-size:14px}"
+        "table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e6e2d9;border-radius:10px;overflow:hidden}"
+        "td{padding:11px 12px;border-bottom:1px solid #efece5;vertical-align:top;font-size:14px}"
+        "a{color:#0d1b3a}</style></head><body><div class='w'>"
+        f"<h1>Customer reviews</h1><div class='s'><span><b>{st['total']}</b> total</span>"
+        f"<span><b>{st['pending']}</b> pending</span><span><b>{st['approved']}</b> approved</span>"
+        f"<span><b>{st['featured']}</b> featured</span><span>avg <b>{st['avg_rating'] or '—'}</b></span></div>"
+        "<table><tr><td><b>Rating</b></td><td><b>Who</b></td><td><b>Words</b></td><td><b>Actions</b></td></tr>"
+        + "".join(trs) + "</table></div></body></html>")
     return HTMLResponse(page)
 
 
