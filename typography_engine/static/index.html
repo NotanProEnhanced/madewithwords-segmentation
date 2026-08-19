@@ -915,7 +915,7 @@ const BACKGROUNDS = [
 // the same bind-mounted art the server composites, so a chip always matches its render.
 // "none" = no floral, silent Slate background. Prevents decision fatigue for grieving families.
 const FLORALS = [
-  ["none",        null,                              "No frame"],  // silent: uses Slate background
+  ["none",        null,                              "No florals"],  // silent: uses Slate background
   ["wildflowers", "/static/florals/wildflowers.png", "Wildflowers"],
   ["roses",       "/static/florals/roses.png",       "Soft Roses"],
   ["eucalyptus",  "/static/florals/eucalyptus.png",  "Eucalyptus"],
@@ -1806,9 +1806,9 @@ function buildBgSwatches(){
     bgSwatchEl.append(el);
   };
   currentBackgrounds().forEach(([bg,col,label])=>mk(bg,col,label));
-  // Florals + no-frame option: memorial only. "none" = Slate ground, no floral overlay.
+  // Florals + no-florals option: memorial only. "none" = Slate ground, no floral overlay.
   if(_isMemorialBrand && FLORALS.length){
-    const lab=document.createElement("div"); lab.className="bg-group"; lab.textContent="Framing";
+    const lab=document.createElement("div"); lab.className="bg-group"; lab.textContent="Floral Backgrounds";
     bgSwatchEl.append(lab);
     FLORALS.forEach(([bg,src,label])=>mk(bg,src?"img:"+src:"#d8dde2",label));  // "none" -> Slate colour tile
   }
