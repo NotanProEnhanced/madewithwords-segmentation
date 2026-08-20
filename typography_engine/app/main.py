@@ -4946,7 +4946,7 @@ def _reel_caption(brand_id: str) -> str:
 def _caption_box_html(caption: str) -> str:
     safe = caption.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     return (
-        '<div style="margin-top:14px;text-align:left">'
+        '<div style="margin-top:14px;text-align:center">'
         '<div style="font-size:12px;color:#6b7280;margin-bottom:6px">Caption &mdash; tap to copy, then paste into TikTok / Instagram</div>'
         '<div id="rlCap" style="white-space:pre-wrap;background:#f6f5f2;border:1px solid #e6e3dc;border-radius:10px;'
         'padding:11px 13px;font-size:13.5px;line-height:1.5;color:#16203a">' + safe + '</div>'
@@ -5562,7 +5562,7 @@ def success(job: str, session_id: str):
             'btn.disabled=false;btn.innerHTML=' + _json.dumps(dl_btn) + ';btn.onclick=function(){save(b);};'
             'sub.textContent="Done! Tap below to save it.";}).catch(function(){'
             'btn.disabled=false;btn.innerHTML=' + _json.dumps(dl_btn) + ';btn.onclick=function(){location.href=url;};'
-            'sub.textContent="Tap the button to download your file.";});'
+            'sub.textContent="Tap the button to download your files.";});'
             'sh.onclick=function(){var t=' + _json.dumps(f"Made from the words that describe them — with {_brand_name}.") + ';'
             'var mob=(window.matchMedia&&matchMedia("(pointer:coarse)").matches)||/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");'
             '(mob&&navigator.canShare?fetch(prevUrl).then(function(r){return r.blob();}).then(function(bl){'
