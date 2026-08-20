@@ -187,6 +187,69 @@ async def debug_regions(image: UploadFile = File(...)) -> JSONResponse:
     )
 
 
+def _ensure_wallpaper_bundle(job: str) -> Optional[Path]:
+	"""Build (once) the 'digital everywhere' ZIP for a job: the print master plus
+	phone / desktop / square wallpapers and a short read-me. Cached on disk next to
+	the other job artefacts, brand-labelled from the recipe. Returns None if the
+	clean master can't be produced or the bundle can't be built (callers fall back
+	to the single print PNG so a purchase is never broken by this value-add)."""
+	zip_path = PRIVATE_DIR / f"{job}.bundle.zip"
+	if zip_path.exists():
+		return zip_path
+	clean_png = PRIVATE_DIR / f"{job}.png"
+	if not clean_png.exists():
+		return None
+	try:
+		import zipfile
+		from .pipeline.wallpaper import build_wallpaper_set
+		label = _bundle_label(job)
+		master_bytes = clean_png.read_bytes()
+		wp = build_wallpaper_set(master_bytes)
+		tmp = zip_path.with_suffix(".zip.tmp")
+		with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+			z.writestr(f"{label} - Print (high-resolution).png", master_bytes)
+			z.writestr(f"{label} - Phone Wallpaper.png", wp["phone"])
+			z.writestr(f"{label} - Desktop Wallpaper.png", wp["desktop"])
+			z.writestr(f"{label} - Square (for sharing).png", wp["square"])
+			z.writestr("Read Me.txt", _bundle_readme(label))
+		tmp.replace(zip_path)
+		return zip_path
+	except Exception:  # noqa: BLE001
+		return None
+
+
+def _bundle_label(job: str) -> str:
+	"""Brand name stamped on the digital-bundle files, from the job's brand metadata."""
+	try:
+		brand_file = PRIVATE_DIR / f"{job}.brand"
+		if brand_file.exists():
+			brand_name = brand_file.read_text(encoding="utf-8").strip()
+			if brand_name in ("lovedinwords", "pawsinwords", "faithinwords"):
+				return {"lovedinwords": "LovedInWords", "pawsinwords": "PawsInWords", "faithinwords": "FaithInWords"}.get(brand_name, "Typortrait")
+	except Exception:  # noqa: BLE001
+		pass
+	return "Typortrait"
+
+
+def _bundle_readme(label: str) -> str:
+	site = {"LovedInWords": "LovedInWords.com", "PawsInWords": "PawsInWords.com", "FaithInWords": "FaithInWords.com"}.get(label, "Typortrait.com")
+	signoff = (f"With gratitude,\n{site}  ·  powered by Typortrait\n"
+			   if label in ("LovedInWords", "PawsInWords", "FaithInWords") else f"Thank you,\n{site}\n")
+	return (
+		f"Your {label} Keepsake — Digital Files\n"
+		"==========================================\n\n"
+		"Thank you. Inside this folder is your portrait, ready for every screen and for print:\n\n"
+		"  • Print (high-resolution).png  — full quality, no watermark. Print it at home or\n"
+		"    at any photo lab, up to poster size.\n"
+		"  • Phone Wallpaper.png          — sized for your phone's lock screen.\n"
+		"  • Desktop Wallpaper.png        — sized for a computer background.\n"
+		"  • Square (for sharing).png     — perfect for sharing.\n\n"
+		"To set the phone wallpaper: save the Phone image to your photos, then open\n"
+		"Settings → Wallpaper (iPhone), or long-press the home screen → Wallpapers (Android).\n\n"
+		+ signoff
+	)
+
+
 @app.post("/render")
 async def render(
     image: UploadFile = File(...),
@@ -298,6 +361,9 @@ async def render(
         preview_path.write_bytes(add_watermark(clean_png.read_bytes(), url=WATERMARK_URL))
     except Exception as e:  # noqa: BLE001
         warns.warn("render", "preview_failed", f"Preview export failed: {e}")
+
+    import threading
+    threading.Thread(target=_ensure_wallpaper_bundle, args=(job_id,), daemon=True).start()
 
     return JSONResponse(
         {
