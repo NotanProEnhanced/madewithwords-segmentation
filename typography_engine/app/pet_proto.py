@@ -16,9 +16,11 @@ finished look.
 """
 from __future__ import annotations
 
+import logging
 import os
 import random
 import re
+import sys
 import tempfile
 import urllib.request
 from threading import Lock
@@ -26,6 +28,8 @@ from threading import Lock
 import numpy as np
 import cv2
 from PIL import Image, ImageDraw, ImageFont
+
+_log = logging.getLogger(__name__)
 
 _FONT = next((p for p in (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -88,23 +92,38 @@ _U2_FAILED = False
 
 def _ensure_u2net():
     if os.path.exists(_MATTE_PATH) and os.path.getsize(_MATTE_PATH) > 1_000_000:
+        _log.info(f"U2-Net model found at {_MATTE_PATH} ({os.path.getsize(_MATTE_PATH) / 1e6:.1f}MB)")
         return _MATTE_PATH
+    _log.info(f"U2-Net model not found or too small; downloading from {_MATTE_URL}")
     os.makedirs(os.path.dirname(_MATTE_PATH) or ".", exist_ok=True)
-    urllib.request.urlretrieve(_MATTE_URL, _MATTE_PATH)
-    return _MATTE_PATH if (os.path.exists(_MATTE_PATH) and os.path.getsize(_MATTE_PATH) > 1_000_000) else None
+    try:
+        urllib.request.urlretrieve(_MATTE_URL, _MATTE_PATH)
+        size = os.path.getsize(_MATTE_PATH) if os.path.exists(_MATTE_PATH) else 0
+        _log.info(f"U2-Net model downloaded: {_MATTE_PATH} ({size / 1e6:.1f}MB)")
+        return _MATTE_PATH if size > 1_000_000 else None
+    except Exception as e:
+        _log.error(f"Failed to download U2-Net model from {_MATTE_URL}: {e}")
+        return None
 
 
 def _u2net_session():
     global _U2_SESSION, _U2_FAILED
     with _U2_LOCK:
         if _U2_SESSION is not None or _U2_FAILED:
+            if _U2_SESSION is not None:
+                _log.debug("U2-Net session reusing existing instance")
+            elif _U2_FAILED:
+                _log.debug("U2-Net session previously failed; using GrabCut fallback")
             return _U2_SESSION
         try:
+            _log.info(f"Initializing U2-Net matte session (model: {_MATTE_NAME}, path: {_MATTE_PATH})")
             import onnxruntime as ort  # already a project dependency
             path = _ensure_u2net()
             if not path:
+                _log.warning("U2-Net model unavailable; falling back to GrabCut")
                 _U2_FAILED = True
                 return None
+            _log.info(f"Loading U2-Net inference session from {path}")
             # Trim onnxruntime's resident footprint: disable the CPU memory arena
             # (it pre-reserves and holds a large pool) and cap threads so the matte
             # session doesn't balloon RAM on a shared, multi-brand box.
@@ -114,7 +133,9 @@ def _u2net_session():
             _so.intra_op_num_threads = max(1, (os.cpu_count() or 2) - 1)
             _U2_SESSION = ort.InferenceSession(
                 path, sess_options=_so, providers=["CPUExecutionProvider"])
-        except Exception:  # noqa: BLE001  -- any failure -> fall back to GrabCut
+            _log.info("U2-Net inference session initialized successfully")
+        except Exception as e:  # noqa: BLE001  -- any failure -> fall back to GrabCut
+            _log.error(f"Failed to initialize U2-Net session: {e}; falling back to GrabCut", exc_info=True)
             _U2_FAILED = True
             _U2_SESSION = None
     return _U2_SESSION
@@ -179,7 +200,10 @@ def _foreground_mask(bgr):
     light-fur-on-white body is kept (no 'floating head')."""
     m = _u2net_mask(bgr)
     if m is None:
+        _log.warning("U2-Net matte generation failed; using GrabCut fallback (quality will be degraded)")
         m = _grabcut_mask(bgr)
+    else:
+        _log.info("U2-Net matte generated successfully (high-quality foreground segmentation)")
     return _solidify_matte(m, bgr.shape[1])
 
 
@@ -491,10 +515,12 @@ def render_pet_portrait(image_bytes: bytes, words: str, ground: str = "dark", he
     render resolution (preview ~900; print ~4500). `print_aspect` (e.g. 0.8 for 4:5) pads the
     subject onto a gallery canvas for print -- omit for the raw preview crop. `type_scale` sets
     the typography size (Small/Medium/Large); None uses the PET_TYPE_SCALE env default."""
+    _log.info(f"render_pet_portrait: height={height}, ground={ground}, print_aspect={print_aspect}, type_scale={type_scale}")
     arr = np.frombuffer(image_bytes, np.uint8)
     bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if bgr is None:
         raise ValueError("could not decode image")
+    _log.info(f"Image decoded: {bgr.shape[0]}x{bgr.shape[1]}")
     # Cap the WORKING render resolution. The sculpt cost scales with pixel count: a full 4500px
     # print render takes ~70s -- past the request/proxy timeout, so /download hangs and the buyer
     # sees "preparing files" forever. Render at a capped height, then upscale the finished portrait
@@ -505,14 +531,18 @@ def render_pet_portrait(image_bytes: bytes, words: str, ground: str = "dark", he
     if bgr.shape[0] != work_h:
         bgr = cv2.resize(bgr, (max(1, int(bgr.shape[1] * work_h / bgr.shape[0])), work_h),
                          interpolation=cv2.INTER_AREA)
+        _log.info(f"Resized working image to {bgr.shape[0]}x{bgr.shape[1]}")
     mask = _foreground_mask(bgr)
     if print_aspect:
         bgr, mask = _fit_print_aspect(bgr, mask, float(print_aspect))
+        _log.info(f"Applied print aspect {print_aspect}: {bgr.shape[0]}x{bgr.shape[1]}")
     out_rgb = _render_word_portrait(bgr, mask, words, ground=ground, type_scale=type_scale)
     if work_h < height:                                   # upscale the finished portrait to print size
         out_w = int(round(out_rgb.shape[1] * height / out_rgb.shape[0]))
         out_rgb = cv2.resize(out_rgb, (max(1, out_w), height), interpolation=cv2.INTER_LANCZOS4)
+        _log.info(f"Upscaled render to {height}x{out_w}")
     ok, buf = cv2.imencode(".png", cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR))
     if not ok:
         raise ValueError("encode failed")
+    _log.info(f"render_pet_portrait completed successfully: PNG {len(buf.tobytes())} bytes")
     return buf.tobytes()
