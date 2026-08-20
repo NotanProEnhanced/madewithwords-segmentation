@@ -203,6 +203,7 @@ async def render(
     title: Optional[str] = Form(None),
     caption: Optional[str] = Form(None),
     png_width: int = Form(2000),
+    brand: str = Form("typortrait"),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
     warns = WarningCollector()
@@ -288,6 +289,7 @@ async def render(
     # Clean (paid) files go to the PRIVATE dir; only a watermarked preview is
     # served publicly. The clean art is never web-reachable without payment.
     (PRIVATE_DIR / f"{job_id}.svg").write_text(svg_out, encoding="utf-8")
+    (PRIVATE_DIR / f"{job_id}.brand").write_text(brand, encoding="utf-8")  # Store brand for checkout
     clean_png = PRIVATE_DIR / f"{job_id}.png"
     preview_path = OUTPUTS_DIR / f"{job_id}_preview.png"
     try:
@@ -339,6 +341,19 @@ def checkout(job: str = Form(...), fmt: str = Form("png")) -> JSONResponse:
     ext = "svg" if fmt == "svg" else "png"
     if not (PRIVATE_DIR / f"{job}.{ext}").exists():
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+
+    # Read brand from stored metadata
+    brand = "Typortrait"
+    brand_file = PRIVATE_DIR / f"{job}.brand"
+    if brand_file.exists():
+        brand_name = brand_file.read_text(encoding="utf-8").strip()
+        brand_map = {
+            "lovedinwords": "Loved in Words",
+            "pawsinwords": "Paws in Words",
+            "faithinwords": "Faith in Words",
+        }
+        brand = brand_map.get(brand_name, "Typortrait")
+
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
     try:
@@ -349,7 +364,7 @@ def checkout(job: str = Form(...), fmt: str = Form("png")) -> JSONResponse:
                 "price_data": {
                     "currency": CURRENCY,
                     "unit_amount": DOWNLOAD_PRICE_CENTS,
-                    "product_data": {"name": "Typortrait — high-resolution download"},
+                    "product_data": {"name": f"{brand} — high-resolution download"},
                 },
             }],
             metadata={"job": job, "fmt": ext},
