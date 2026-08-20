@@ -32,7 +32,7 @@ GOLD=(150/255,120/255,70/255); WHITE=(248/255,245/255,240/255)
 SERIF,SERIF_I,SERIF_B="Times-Roman","Times-Italic","Times-Bold"
 
 VERSES={
- "words":"Her portrait was made from the words of everyone who loved her - so her story stays close, always.",
+ "words":"Their portrait was made from the words of everyone who loved them - so their story stays close, always.",
  "psalm23":"The Lord is my shepherd; I shall not want. He maketh me to lie down in green pastures.",
  "light":"What we have once enjoyed we can never lose; all that we love deeply becomes a part of us.",
  "none":"",
