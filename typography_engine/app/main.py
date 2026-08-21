@@ -7,7 +7,9 @@ Later phases add /render.
 from __future__ import annotations
 
 import json
+import os
 import uuid
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, UploadFile
@@ -54,6 +56,20 @@ def _parse_words(words: Optional[str], words_json: Optional[str]) -> List[str]:
         raw = words.replace("\n", ",")
         return [w for w in (s.strip() for s in raw.split(",")) if w]
     return []
+
+
+def _load_brand_config(brand: str) -> None:
+	"""Load brand-specific TYPO_* settings from .env.{brand} file."""
+	env_file = Path(__file__).parent / f".env.{brand.lower()}"
+	if env_file.exists():
+		with open(env_file) as f:
+			for line in f:
+				line = line.strip()
+				if line and not line.startswith("#"):
+					if "=" in line:
+						key, value = line.split("=", 1)
+						os.environ[key.strip()] = value.strip()
+
 
 # Stroke styling for region debug output (hex only).
 _REGION_COLORS = {
@@ -269,6 +285,7 @@ async def render(
     brand: str = Form("typortrait"),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
+    _load_brand_config(brand)
     warns = WarningCollector()
     img_bytes = await image.read()
     if not img_bytes:
