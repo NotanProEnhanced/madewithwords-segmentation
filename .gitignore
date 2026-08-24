@@ -17,3 +17,10 @@ typography_engine/private/
 /typo-portrait-generator.jsx
 /typortrait-stage1-clean.zip
 /.claude/
+
+# --- credential and backup hygiene ---
+typography_engine/.env*
+typography_engine/*.bak-*
+typography_engine/*.orig*
+typography_engine/**/*.bak-*
+typography_engine/**/*.orig*

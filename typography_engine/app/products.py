@@ -221,7 +221,7 @@ CATALOG: List[Product] = [
         sku="digital",
         name="High-res digital download",
         blurb="Full-resolution PNG, no watermark. Print anywhere.",
-        price_cents=1499,
+        price_cents=2900,
         shipping_cents=0,
         physical=False,
     ),

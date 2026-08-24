@@ -336,9 +336,9 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     xx, yy = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
     # Spread the detail edges inward, then UNION the feature field, so eye/nose interiors inherit
     # their rim's drape-protection and stay crisp instead of warping into a corrupted blob.
-    featdamp = np.clip(cv2.GaussianBlur(det, (0, 0), sigmaX=max(1.0, W * 0.010)) * 1.9, 0, 1)
+    featdamp = np.clip(cv2.GaussianBlur(det, (0, 0), sigmaX=max(1.0, W * 0.010)) * float(os.environ.get("PET_DRAPE_DETAIL_DAMP","1.9") or 1.9), 0, 1)
     featdamp = np.maximum(featdamp, feat * _fp)
-    amp = float(os.environ.get("PET_DRAPE", "68") or 68.0) * sc * (1.0 - 0.92 * featdamp)
+    amp = float(os.environ.get("PET_DRAPE", "68") or 68.0) * sc * (1.0 - float(os.environ.get("PET_DRAPE_DAMP","0.92") or 0.92) * featdamp)
     my = (yy + amp * dn).astype(np.float32)
     mx = xx
 
@@ -350,7 +350,14 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # 3) Blend tiers by the detail field: coarse text on flat body, fine on features. The feature
     #    field is unioned in so an eye/nose INTERIOR (smooth -> low raw detail -> would otherwise
     #    get the COARSE tier and show big words) is pushed to the FINE tier like its detailed rim.
+    # PET_TIER_GAMMA: `det` is normalised by its own 99th percentile. Measured on a real coat it
+    # spans ~0.25-0.90 (p5-p95), which already crosses all three tier bands -- so the
+    # default 1.0 is usually correct. Gamma < 1 compresses toward the FINE tiers and
+    # REDUCES size range; > 1 shifts area toward COARSE. 1.0 = previous behaviour.
+    _tg = float(os.environ.get("PET_TIER_GAMMA", "1.0") or 1.0)
     df = np.clip(np.maximum(det, feat), 0, 1)
+    if _tg > 0.0 and _tg != 1.0:
+        df = np.power(df, _tg)
     warped = wL.copy()
     for a0, b0, ia, ib in ((0.0, 0.45, wL, wM), (0.45, 0.75, wM, wF), (0.75, 1.0001, wF, wMi)):
         bt = np.clip((df - a0) / (b0 - a0), 0, 1)
@@ -372,6 +379,20 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
             col = np.maximum(col, np.array([50.0, 42.0, 34.0], np.float32) * _slift)
     a = (warped * dens * mask)[..., None]
     ground_rgb = np.full((H, W, 3), gbgr[::-1], np.float32)
+    # SUBJECT BASE: the flat ground is painted across the WHOLE canvas, so INSIDE the
+    # silhouette it shows through every gap between glyphs and every row gap -- the coat
+    # reads as ground colour instead of the animal's own. PET_SUBJECT_BASE swaps the base
+    # inside the mask for the SOURCE PHOTO (dimmed by PET_SUBJECT_DIM so the words still
+    # read on top of it), leaving the flat ground only BEHIND the subject. The glyphs
+    # themselves are unchanged -- this only alters what sits behind them within the mask.
+    # PET_SUBJECT_BASE=0 (default) is byte-identical to the original behaviour.
+    _sb = float(os.environ.get("PET_SUBJECT_BASE", "0") or 0.0)
+    if _sb > 0.0:
+        _dim = float(os.environ.get("PET_SUBJECT_DIM", "0.45") or 0.0)
+        _pbase = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8),
+                              cv2.COLOR_BGR2RGB).astype(np.float32) * (1.0 - _dim)
+        _m3 = (mask * min(max(_sb, 0.0), 1.0))[..., None]
+        ground_rgb = ground_rgb * (1.0 - _m3) + _pbase * _m3
     out = ground_rgb * (1.0 - a) + col * a
 
     # 5) Feature edge-ink: darken along real internal edges so the face reads.
