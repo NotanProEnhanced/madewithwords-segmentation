@@ -10,10 +10,16 @@ services:
       - "127.0.0.1:8077:8077"
     environment:
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
       - TYPO_PRICE_CENTS=${TYPO_PRICE_CENTS:-900}
       - TYPO_CURRENCY=${TYPO_CURRENCY:-usd}
       - TYPO_PUBLIC_URL=${TYPO_PUBLIC_URL:-https://app.typortrait.com}
+      - PRINTFUL_API_TOKEN=${PRINTFUL_API_TOKEN:-}
+      - PRINTFUL_STORE_ID=${PRINTFUL_STORE_ID:-}
+      - PRINT_URL_SECRET=${PRINT_URL_SECRET:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
     volumes:
-      # Persist previews + paid clean files across restarts/rebuilds.
+      # Persist previews + paid clean files + orders DB across restarts/rebuilds.
       - ./data/outputs:/app/outputs
       - ./data/private:/app/private
+      - ./data/db:/app/data

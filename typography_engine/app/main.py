@@ -2,27 +2,34 @@
 
 Phase 1: project structure + health endpoint.
 Phase 2: image upload -> silhouette / edge / landmark debug images.
-Later phases add /render.
+Phase E: Printful-fulfilled physical prints alongside the digital download.
 """
 from __future__ import annotations
 
+import base64
 import json
+import secrets
 import uuid
 from typing import List, Optional
 
-from fastapi import FastAPI, File, Form, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from . import orders as orders_db
+from . import printful, products
 from .config import (
+    ADMIN_PASSWORD,
     CURRENCY,
     DOWNLOAD_PRICE_CENTS,
     OUTPUTS_DIR,
+    PRINTFUL_API_TOKEN,
     PRIVATE_DIR,
     PUBLIC_BASE_URL,
     STATIC_DIR,
     STRIPE_SECRET_KEY,
+    STRIPE_WEBHOOK_SECRET,
     WATERMARK_URL,
     RenderConfig,
 )
@@ -65,13 +72,37 @@ _REGION_COLORS = {
 
 app = FastAPI(title="Typography Portrait Engine", version=__version__)
 
+# Initialize the orders DB once at import time (idempotent).
+orders_db.init_db()
+
+
+def _stripe_to_dict(obj):
+    """Stripe SDK v15+ removed dict-style `.get()` from StripeObject; convert
+    to a plain dict by round-tripping through JSON (Stripe objects' __str__
+    emits canonical JSON) so the rest of the code can treat them as dicts."""
+    if obj is None or isinstance(obj, (str, int, float, bool, list)):
+        return obj
+    if isinstance(obj, dict):
+        return obj
+    try:
+        return json.loads(str(obj))
+    except (ValueError, TypeError):
+        return {}
+
+
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/")
-def index() -> RedirectResponse:
+def index():
+    # Serve the buyer UI directly at the apex so the URL bar shows
+    # 'app.typortrait.com/' (not '/static/index.html'). Files referenced by
+    # the HTML still resolve through the /static mount.
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path), media_type="text/html")
     return RedirectResponse(url="/static/index.html")
 
 
@@ -196,7 +227,7 @@ async def render(
     uppercase: bool = Form(True),
     background_hex: Optional[str] = Form(None),
     foreground_hex: Optional[str] = Form(None),
-    ink: str = Form("navy"),
+    ink: str = Form("gold_noir"),
     style: str = Form("mosaic"),
     message: Optional[str] = Form(None),
     poster: bool = Form(False),
@@ -246,16 +277,20 @@ async def render(
 
     from .pipeline.tonal import _PALETTES, _CALLIGRAM, _GRADIENTS, build_calligram
     from .pipeline.svgbuild import validate_svg as _validate
-    ink_choice = ink if (ink in _PALETTES or ink in _GRADIENTS or ink == "photo") else "navy"
+    ink_choice = ink if (ink in _PALETTES or ink in _GRADIENTS or ink in _CALLIGRAM or ink == "photo") else "gold_noir"
     style_choice = "story" if style == "story" else "mosaic"
 
+    modulation_png_bytes = None
     try:
         if style_choice == "story":
             # Continuous-prose calligram from the user's message (falls back to
             # the approved words if no passage was supplied).
             passage = (message or "").strip() or " ".join(word_list)
-            ink_hex, bg_hex = _CALLIGRAM.get(ink_choice, _CALLIGRAM["navy"])
-            svg, runs = build_calligram(an, passage, cfg, warns, ink_hex=ink_hex, bg_hex=bg_hex)
+            ink_hex, bg_hex = _CALLIGRAM.get(ink_choice, _CALLIGRAM["gold_noir"])
+            svg, runs, modulation_png_bytes = build_calligram(
+                an, passage, cfg, warns,
+                ink_hex=ink_hex, bg_hex=bg_hex, subject_only=True,
+            )
             if svg:
                 _validate(svg)
             from .pipeline.portrait import PortraitResult
@@ -291,7 +326,70 @@ async def render(
     clean_png = PRIVATE_DIR / f"{job_id}.png"
     preview_path = OUTPUTS_DIR / f"{job_id}_preview.png"
     try:
-        write_png(svg_out, clean_png, output_width=max(cfg.canvas_w, int(png_width)))
+        if modulation_png_bytes:
+            # Story style with per-glyph photo modulation: bytes were pre-rendered
+            # in build_calligram so the photo's tone runs THROUGH each letter shape.
+            # Bypass cairosvg here -- write the bytes directly.
+            # SPECTRUM POST-PROCESS: white_spectrum renders as white_black
+            # in the engine, then we recolour the dark letter pixels with a
+            # vertical rainbow gradient.
+            if ink_choice == "white_spectrum":
+                try:
+                    import io as _io_sp
+                    import numpy as _np_sp
+                    from PIL import Image as _Img_sp
+                    _spim = _Img_sp.open(_io_sp.BytesIO(modulation_png_bytes)).convert("RGB")
+                    _arr = _np_sp.asarray(_spim).astype(_np_sp.float32) / 255.0
+                    _H, _W = _arr.shape[:2]
+                    _ink_alpha = (1.0 - _arr.min(axis=2, keepdims=True))
+                    _STOPS = [(0.00, (242, 183, 5)),
+                              (0.18, (242, 92, 5)),
+                              (0.38, (230, 0, 46)),
+                              (0.58, (181, 23, 158)),
+                              (0.78, (106, 31, 181)),
+                              (1.00, (31, 63, 181))]
+                    def _grad(t):
+                        for _i in range(len(_STOPS) - 1):
+                            _v0, _c0 = _STOPS[_i]
+                            _v1, _c1 = _STOPS[_i + 1]
+                            if t <= _v1:
+                                _f = 0.0 if _v1 == _v0 else (t - _v0) / (_v1 - _v0)
+                                return tuple(_c0[k] + (_c1[k] - _c0[k]) * _f for k in range(3))
+                        return _STOPS[-1][1]
+                    _g = _np_sp.zeros((_H, 1, 3), dtype=_np_sp.float32)
+                    for _r in range(_H):
+                        _g[_r, 0] = _grad(_r / max(1, _H - 1))
+                    _g /= 255.0
+                    _field = _np_sp.broadcast_to(_g, (_H, _W, 3))
+                    _WHITE = _np_sp.ones((1, 1, 3), dtype=_np_sp.float32)
+                    _out = _field * _ink_alpha + _WHITE * (1.0 - _ink_alpha)
+                    _buf = _io_sp.BytesIO()
+                    _Img_sp.fromarray((_out * 255).clip(0, 255).astype(_np_sp.uint8)).save(
+                        _buf, format="PNG", optimize=True,
+                    )
+                    modulation_png_bytes = _buf.getvalue()
+                except Exception as e:  # noqa: BLE001
+                    warns.warn("compose", "spectrum_failed",
+                               f"Spectrum post-process failed: {e}")
+            if poster:
+                # Keepsake mode: wrap the modulated PNG in a designed poster
+                # (title + caption + frame) via PIL, so the buyer's chosen
+                # palette/photo modulation IS preserved (re-rasterising the
+                # composed SVG would have lost the modulation pass).
+                from .pipeline.compose import compose_poster_png
+                try:
+                    clean_png.write_bytes(compose_poster_png(
+                        modulation_png_bytes, ink_choice,
+                        title=title, caption=caption,
+                    ))
+                except Exception as e:  # noqa: BLE001
+                    warns.warn("compose", "poster_png_failed",
+                               f"Keepsake PNG compose failed: {e}")
+                    clean_png.write_bytes(modulation_png_bytes)
+            else:
+                clean_png.write_bytes(modulation_png_bytes)
+        else:
+            write_png(svg_out, clean_png, output_width=max(cfg.canvas_w, int(png_width)))
         from .pipeline.watermark import add_watermark
         preview_path.write_bytes(add_watermark(clean_png.read_bytes(), url=WATERMARK_URL))
     except Exception as e:  # noqa: BLE001
@@ -331,34 +429,126 @@ def pricing() -> JSONResponse:
     })
 
 
+@app.get("/products")
+def list_products() -> JSONResponse:
+    """Storefront catalog (prices, shipping, sizes). Single source of truth
+    so the UI never hardcodes prices."""
+    return JSONResponse({
+        "ok": True,
+        "currency": CURRENCY,
+        "products": products.public_catalog(),
+        "fulfillment_configured": bool(PRINTFUL_API_TOKEN),
+    })
+
+
 @app.post("/checkout")
-def checkout(job: str = Form(...), fmt: str = Form("png")) -> JSONResponse:
-    """Create a Stripe Checkout session to unlock the clean download of `job`."""
+def checkout(
+    job: str = Form(...),
+    sku: str = Form("digital"),
+    size: Optional[str] = Form(None),
+    fmt: str = Form("png"),
+) -> JSONResponse:
+    """Create a Stripe Checkout session for either a digital download or a
+    physical print. The product (`sku`) determines which line items appear
+    and whether a shipping address is collected."""
     if not STRIPE_SECRET_KEY:
         return JSONResponse({"ok": False, "error": "payments_unconfigured"}, status_code=503)
-    ext = "svg" if fmt == "svg" else "png"
-    if not (PRIVATE_DIR / f"{job}.{ext}").exists():
+
+    product = products.get(sku)
+    if not product:
+        return JSONResponse({"ok": False, "error": "unknown_product"}, status_code=400)
+
+    # The clean PNG (and SVG) must exist before we let anyone pay for them.
+    if not (PRIVATE_DIR / f"{job}.png").exists():
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+
+    # For sized products, require a valid size.
+    variant_id: Optional[int] = None
+    if product.physical:
+        if not PRINTFUL_API_TOKEN:
+            return JSONResponse(
+                {"ok": False, "error": "fulfillment_unconfigured"}, status_code=503,
+            )
+        variant_id = products.resolve_variant_id(product, size)
+        if variant_id is None:
+            return JSONResponse(
+                {"ok": False, "error": "missing_or_invalid_size",
+                 "sizes": list(product.size_variants.keys()) if product.size_variants else []},
+                status_code=400,
+            )
+
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
-    try:
-        session = stripe.checkout.Session.create(
-            mode="payment",
-            line_items=[{
-                "quantity": 1,
-                "price_data": {
-                    "currency": CURRENCY,
-                    "unit_amount": DOWNLOAD_PRICE_CENTS,
-                    "product_data": {"name": "Typortrait — high-resolution download"},
-                },
-            }],
-            metadata={"job": job, "fmt": ext},
-            success_url=f"{PUBLIC_BASE_URL}/download?job={job}&fmt={ext}&session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{PUBLIC_BASE_URL}/static/index.html?canceled=1",
+
+    order_id = uuid.uuid4().hex[:16]
+    ext = "svg" if fmt == "svg" else "png"
+
+    # Build line items: the product itself plus, for physical, a flat shipping line.
+    label_size = f" — {size}" if size else ""
+    line_items: List[dict] = [{
+        "quantity": 1,
+        "price_data": {
+            "currency": CURRENCY,
+            "unit_amount": product.price_cents,
+            "product_data": {"name": f"Typortrait — {product.name}{label_size}"},
+        },
+    }]
+    if product.physical and product.shipping_cents > 0:
+        line_items.append({
+            "quantity": 1,
+            "price_data": {
+                "currency": CURRENCY,
+                "unit_amount": product.shipping_cents,
+                "product_data": {"name": "Shipping (USA)"},
+            },
+        })
+
+    session_kwargs: dict = {
+        "mode": "payment",
+        "line_items": line_items,
+        "metadata": {
+            "job": job, "sku": sku, "size": size or "", "order_id": order_id, "fmt": ext,
+        },
+        "cancel_url": f"{PUBLIC_BASE_URL}/static/index.html?canceled=1",
+    }
+    if product.physical:
+        # Stripe collects the shipping address for us; webhook reads it.
+        session_kwargs["shipping_address_collection"] = {"allowed_countries": ["US"]}
+        session_kwargs["phone_number_collection"] = {"enabled": True}
+        session_kwargs["success_url"] = (
+            f"{PUBLIC_BASE_URL}/order/{order_id}?session_id={{CHECKOUT_SESSION_ID}}"
         )
+    else:
+        # Digital path keeps the existing /download flow.
+        session_kwargs["success_url"] = (
+            f"{PUBLIC_BASE_URL}/download?job={job}&fmt={ext}&session_id={{CHECKOUT_SESSION_ID}}"
+        )
+
+    try:
+        session = stripe.checkout.Session.create(**session_kwargs)
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
-    return JSONResponse({"ok": True, "url": session.url})
+
+    # Persist a pending order so the webhook has something to update.
+    try:
+        orders_db.create_pending(
+            order_id=order_id,
+            stripe_session_id=session.id,
+            job_id=job,
+            sku=sku,
+            size=size,
+            variant_id=variant_id,
+            price_cents=product.price_cents,
+            shipping_cents=product.shipping_cents,
+            currency=CURRENCY,
+        )
+    except Exception as e:  # noqa: BLE001
+        # If we can't persist, the order can still complete via Stripe but
+        # the webhook won't find anything to fulfill. Surface the error.
+        return JSONResponse({"ok": False, "error": "order_persist_failed", "detail": str(e)},
+                            status_code=500)
+
+    return JSONResponse({"ok": True, "url": session.url, "order_id": order_id})
 
 
 @app.get("/download")
@@ -369,7 +559,7 @@ def download(job: str, session_id: str, fmt: str = "png"):
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
     try:
-        sess = stripe.checkout.Session.retrieve(session_id)
+        sess = _stripe_to_dict(stripe.checkout.Session.retrieve(session_id))
     except Exception:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": "bad_session"}, status_code=400)
     if sess.get("payment_status") != "paid" or (sess.get("metadata") or {}).get("job") != job:
@@ -380,3 +570,261 @@ def download(job: str, session_id: str, fmt: str = "png"):
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
     media = "image/svg+xml" if ext == "svg" else "image/png"
     return FileResponse(str(path), media_type=media, filename=f"typortrait-{job}.{ext}")
+
+
+# --- Print fulfillment (Phase E) -------------------------------------------
+
+@app.get("/printful-fetch/{job}")
+def printful_fetch(job: str, exp: int, sig: str):
+    """One-time signed URL Printful fetches the clean PNG from.
+
+    The clean file lives in PRIVATE_DIR (paywalled). For physical orders we
+    need Printful to download it; we expose it via this signed URL instead
+    of making PRIVATE_DIR publicly mounted."""
+    if not printful.verify_signed_url(job, exp, sig):
+        raise HTTPException(status_code=403, detail="invalid_or_expired_signature")
+    path = PRIVATE_DIR / f"{job}.png"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="unknown_job")
+    return FileResponse(str(path), media_type="image/png")
+
+
+def _fulfill_with_printful(order_id: str, recipient: dict) -> None:
+    """Submit a paid physical order to Printful. Idempotent: noop if already
+    fulfilling. Caller has just transitioned the row to 'paid'."""
+    o = orders_db.get(order_id)
+    if not o:
+        return
+    if o["status"] != "paid" or not o["variant_id"]:
+        return
+    try:
+        signed = printful.signed_print_url(o["job_id"])
+        placement = "front" if o["sku"].startswith("tshirt") else "default"
+        res = printful.create_order(
+            recipient=recipient,
+            variant_id=o["variant_id"],
+            print_file_url=signed,
+            external_id=order_id,
+            retail_price_cents=o["price_cents"],
+            confirm=True,
+            placement=placement,
+        )
+        pf_id = res.get("id") if isinstance(res, dict) else None
+        orders_db.mark_fulfilling(order_id=order_id, printful_order_id=int(pf_id or 0), raw=res)
+    except Exception as e:  # noqa: BLE001
+        orders_db.mark_error(order_id=order_id, error_message=str(e))
+
+
+def _recipient_from_session(sess: dict) -> Optional[dict]:
+    """Map a Stripe Checkout Session's shipping_details to Printful's
+    recipient schema. Returns None for digital orders (no address)."""
+    ship = sess.get("shipping_details") or sess.get("shipping") or {}
+    addr = (ship.get("address") or {}) if isinstance(ship, dict) else {}
+    if not addr:
+        return None
+    customer = sess.get("customer_details") or {}
+    return {
+        "name": ship.get("name") or customer.get("name") or "",
+        "address1": addr.get("line1") or "",
+        "address2": addr.get("line2") or "",
+        "city": addr.get("city") or "",
+        "state_code": addr.get("state") or "",
+        "country_code": addr.get("country") or "US",
+        "zip": addr.get("postal_code") or "",
+        "email": customer.get("email") or "",
+        "phone": customer.get("phone") or "",
+    }
+
+
+@app.post("/webhook/stripe")
+async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Header(None)):
+    """Stripe → us. On checkout.session.completed for a physical order,
+    submit the order to Printful. Verified via STRIPE_WEBHOOK_SECRET."""
+    payload = await request.body()
+    if STRIPE_WEBHOOK_SECRET:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        try:
+            event = _stripe_to_dict(stripe.Webhook.construct_event(
+                payload, stripe_signature or "", STRIPE_WEBHOOK_SECRET,
+            ))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"bad_signature: {e}")
+    else:
+        # No secret configured -> trust the body (dev only). Don't run in prod.
+        try:
+            event = json.loads(payload.decode("utf-8"))
+        except Exception:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail="bad_payload")
+
+    if event.get("type") != "checkout.session.completed":
+        return JSONResponse({"ok": True, "ignored": event.get("type")})
+
+    sess = (event.get("data") or {}).get("object") or {}
+    if sess.get("payment_status") != "paid":
+        return JSONResponse({"ok": True, "ignored": "not_paid"})
+
+    recipient = _recipient_from_session(sess)
+    transitioned = orders_db.mark_paid(
+        stripe_session_id=sess.get("id") or "",
+        payment_intent=sess.get("payment_intent"),
+        customer_email=(sess.get("customer_details") or {}).get("email"),
+        recipient=recipient,
+    )
+    if transitioned and recipient:
+        _fulfill_with_printful(transitioned["id"], recipient)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/order/{order_id}", response_class=HTMLResponse)
+def order_status(order_id: str, session_id: Optional[str] = None):
+    """Customer-facing order status page."""
+    o = orders_db.get(order_id)
+    if not o:
+        raise HTTPException(status_code=404, detail="unknown_order")
+
+    # If we arrived from Stripe success and the webhook hasn't fired yet,
+    # poll Stripe directly so the customer sees a confirmed state instead
+    # of "pending payment". (Webhooks are async and can lag a few seconds.)
+    if session_id and o["status"] == "pending_payment" and STRIPE_SECRET_KEY:
+        try:
+            import stripe
+            stripe.api_key = STRIPE_SECRET_KEY
+            sess = _stripe_to_dict(stripe.checkout.Session.retrieve(session_id))
+            if sess.get("payment_status") == "paid":
+                recipient = _recipient_from_session(sess)
+                transitioned = orders_db.mark_paid(
+                    stripe_session_id=sess.get("id"),
+                    payment_intent=sess.get("payment_intent"),
+                    customer_email=(sess.get("customer_details") or {}).get("email"),
+                    recipient=recipient,
+                )
+                if transitioned and recipient and transitioned.get("variant_id"):
+                    _fulfill_with_printful(transitioned["id"], recipient)
+                o = orders_db.get(order_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+    product = products.get(o["sku"])
+    name = product.name if product else o["sku"]
+    status_msg = {
+        "pending_payment": "Waiting for payment confirmation…",
+        "paid": "Payment received. Preparing your order for fulfillment…",
+        "fulfilling": "We've sent your Typortrait to the press. You'll get an email when it ships.",
+        "shipped": "Your order has shipped!",
+        "delivered": "Delivered. Thank you!",
+        "error": "We hit a snag fulfilling this order. We'll be in touch — please reply to your receipt.",
+    }.get(o["status"], o["status"])
+
+    tracking_html = ""
+    if o.get("tracking_url"):
+        tracking_html = (
+            f'<p><a class="btn" href="{o["tracking_url"]}" target="_blank" rel="noopener">'
+            f'Track your shipment</a></p>'
+        )
+
+    download_html = ""
+    if o["sku"] == "digital" and o["status"] in ("paid", "fulfilling"):
+        # The /download path still requires a Stripe session id; if the
+        # caller arrived here it likely came from /order/{id}?session_id=...
+        if session_id:
+            download_html = (
+                f'<p><a class="btn" href="/download?job={o["job_id"]}&fmt=png'
+                f'&session_id={session_id}">Download your PNG</a></p>'
+            )
+
+    body = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Typortrait — Order {order_id}</title>
+<style>
+  body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       background:#faf9f7;color:#16203a;margin:0;padding:24px;display:flex;justify-content:center}}
+  .card{{background:#fff;border:1px solid #ece9e3;border-radius:20px;
+        box-shadow:0 10px 40px rgba(20,30,60,.10);padding:28px;max-width:520px;width:100%}}
+  h1{{font-family:Georgia,serif;color:#0d1b3a;margin:0 0 4px}}
+  .muted{{color:#6b7280;font-size:14px}}
+  dl{{margin:18px 0;display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:15px}}
+  dt{{color:#6b7280}}
+  .status{{background:#f3f5fa;border-radius:12px;padding:14px 16px;margin-top:18px}}
+  .btn{{display:inline-block;background:#0d1b3a;color:#fff;text-decoration:none;
+        border-radius:999px;padding:12px 18px;font-weight:600;margin-top:12px}}
+</style></head><body>
+<div class="card">
+  <h1>Thank you</h1>
+  <div class="muted">Order #{order_id}</div>
+  <dl>
+    <dt>Item</dt><dd>{name}{(' — ' + o['size']) if o.get('size') else ''}</dd>
+    <dt>Total</dt><dd>${(o['price_cents'] + o['shipping_cents']) / 100:.2f} {o['currency'].upper()}</dd>
+    <dt>Status</dt><dd>{o['status'].replace('_', ' ')}</dd>
+  </dl>
+  <div class="status">{status_msg}</div>
+  {tracking_html}
+  {download_html}
+  <p class="muted" style="margin-top:24px">
+    Bookmark this page to check on your order, or reply to your receipt email
+    if anything looks off.
+  </p>
+  <p><a href="/static/index.html">Make another Typortrait →</a></p>
+</div></body></html>"""
+    return HTMLResponse(body)
+
+
+# --- Admin -----------------------------------------------------------------
+
+def _check_admin(authorization: Optional[str]) -> bool:
+    if not ADMIN_PASSWORD:
+        return False
+    if not authorization or not authorization.lower().startswith("basic "):
+        return False
+    try:
+        decoded = base64.b64decode(authorization.split(" ", 1)[1]).decode("utf-8")
+        _, _, pw = decoded.partition(":")
+        return secrets.compare_digest(pw, ADMIN_PASSWORD)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+@app.get("/admin/orders", response_class=HTMLResponse)
+def admin_orders(authorization: Optional[str] = Header(None)):
+    if not ADMIN_PASSWORD:
+        raise HTTPException(status_code=503, detail="admin_unconfigured")
+    if not _check_admin(authorization):
+        return HTMLResponse(
+            "Unauthorized", status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="Typortrait admin"'},
+        )
+    rows = orders_db.list_recent(200)
+    rows_html = []
+    for o in rows:
+        product = products.get(o["sku"])
+        name = product.name if product else o["sku"]
+        pf_id = o.get("printful_order_id") or "—"
+        track = o.get("tracking_url")
+        track_html = f'<a href="{track}" target="_blank">track</a>' if track else "—"
+        err = (o.get("error_message") or "").replace("<", "&lt;")
+        rows_html.append(
+            f"<tr><td><a href='/order/{o['id']}'>{o['id']}</a></td>"
+            f"<td>{name}{(' / ' + o['size']) if o.get('size') else ''}</td>"
+            f"<td>${(o['price_cents'] + o['shipping_cents']) / 100:.2f}</td>"
+            f"<td>{o['status']}</td>"
+            f"<td>{o.get('customer_email') or '—'}</td>"
+            f"<td>{pf_id}</td><td>{track_html}</td>"
+            f"<td>{err}</td></tr>"
+        )
+    body = f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Orders — admin</title>
+<style>
+  body{{font-family:-apple-system,sans-serif;margin:24px;background:#faf9f7;color:#16203a}}
+  table{{border-collapse:collapse;width:100%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.06)}}
+  th,td{{border-bottom:1px solid #ece9e3;padding:10px 12px;text-align:left;font-size:14px;vertical-align:top}}
+  th{{background:#f3f5fa;color:#6b7280;font-size:12px;letter-spacing:.06em;text-transform:uppercase}}
+  td:last-child{{color:#7a2e2e;max-width:240px;word-break:break-word}}
+</style></head><body>
+<h1>Orders ({len(rows)})</h1>
+<table>
+<tr><th>Order</th><th>Item</th><th>Total</th><th>Status</th>
+    <th>Email</th><th>Printful</th><th>Track</th><th>Error</th></tr>
+{''.join(rows_html) or '<tr><td colspan=8>No orders yet.</td></tr>'}
+</table></body></html>"""
+    return HTMLResponse(body)

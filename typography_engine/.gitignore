@@ -1,7 +1,10 @@
 outputs/
+private/
+data/
 models/*.task
 models/*.tflite
 __pycache__/
 *.pyc
 .venv/
 tests/fixtures/cache/
+.env

@@ -82,8 +82,25 @@ PRIVATE_DIR = BASE_DIR / "private"
 PRIVATE_DIR.mkdir(exist_ok=True)
 
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 DOWNLOAD_PRICE_CENTS = env_int("TYPO_PRICE_CENTS", 1499)     # e.g. 1499 = $14.99
 CURRENCY = os.environ.get("TYPO_CURRENCY", "usd")
 # Public base URL of the app, used to build Stripe success/cancel redirects.
 PUBLIC_BASE_URL = os.environ.get("TYPO_PUBLIC_URL", f"http://127.0.0.1:{PORT}")
 WATERMARK_URL = os.environ.get("TYPO_WATERMARK_URL", "https://typortrait.com")
+
+# --- Printful (physical print fulfillment) ---------------------------------
+PRINTFUL_API_TOKEN = os.environ.get("PRINTFUL_API_TOKEN", "")
+PRINTFUL_STORE_ID = os.environ.get("PRINTFUL_STORE_ID", "")
+PRINTFUL_API_BASE = os.environ.get("PRINTFUL_API_BASE", "https://api.printful.com")
+# Secret used to sign one-time print-file URLs that Printful fetches.
+# Falls back to STRIPE_WEBHOOK_SECRET so a single secret can cover both.
+PRINT_URL_SECRET = os.environ.get("PRINT_URL_SECRET", "") or STRIPE_WEBHOOK_SECRET or "dev-only-not-secure"
+
+# Order persistence. SQLite file; volume-mounted in docker-compose.
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+ORDERS_DB = DATA_DIR / "orders.db"
+
+# Optional admin password (HTTP basic) for /admin/orders.
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")

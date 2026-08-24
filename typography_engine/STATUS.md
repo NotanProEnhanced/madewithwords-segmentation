@@ -10,12 +10,47 @@ Quick orientation for a new session. The app lives in `typography_engine/`.
   download clean file. Clean art in PRIVATE dir; `/checkout` + `/download` (verifies
   payment). Price up front via `/pricing`, default **$14.99** (`TYPO_PRICE_CENTS`).
 - Front-end (`static/index.html`): photo->words/message->reveal->**iOS-style live-thumbnail
-  swatch carousel** (crossfade)->download. Mosaic/Story toggle, keepsake poster.
-- Deploy: `Dockerfile`, `docker-compose.yml` (Stripe `.env` + ./data volumes), nginx,
-  **GO-LIVE.md** (beginner, source of truth) + **DEPLOY.md**.
+  swatch carousel** (crossfade)->**unified product picker** (framed / canvas / poster /
+  t-shirt / digital)->checkout. Mosaic/Story toggle, keepsake poster.
+- Deploy: `Dockerfile`, `docker-compose.yml` (Stripe + Printful `.env` + ./data volumes),
+  nginx, **GO-LIVE.md** (beginner, source of truth) + **DEPLOY.md**.
 - Marketing static site: `typography_engine/marketing/` (index.html, og.png, robots,
   sitemap, favicons) — SEO/AEO/schema. Replace placeholder testimonials before launch.
-- Tests: 18 (pytest) passing.
+- Tests: **33** (pytest) passing.
+
+## Phase E (Printful POD) — branch `claude/printful-pod`
+Physical print fulfillment for posters, framed prints, canvas, and t-shirts via
+Printful. Customer pays you via Stripe; your server submits the order to Printful
+on `checkout.session.completed`; Printful charges your card for wholesale + ships.
+
+Files: `app/printful.py` (client), `app/orders.py` (SQLite at `data/orders.db`),
+`app/products.py` (catalog). Endpoints added: `GET /products`, `POST /webhook/stripe`,
+`GET /order/{id}`, `GET /printful-fetch/{job}` (signed URL Printful fetches the
+clean PNG from), `GET /admin/orders` (HTTP basic auth, password in `ADMIN_PASSWORD`).
+
+### Env vars to add to `.env` before deploy
+```
+STRIPE_WEBHOOK_SECRET=whsec_...        # Stripe dashboard → Webhooks → endpoint signing secret
+PRINTFUL_API_TOKEN=...                 # https://developers.printful.com/ → Tokens
+PRINTFUL_STORE_ID=...                  # numeric, from Printful dashboard URL
+PRINT_URL_SECRET=<random 32+ chars>    # used to HMAC-sign the print-fetch URLs
+ADMIN_PASSWORD=<your password>         # protects /admin/orders
+```
+
+### Stripe webhook setup
+After deploy, in Stripe dashboard → Developers → Webhooks → Add endpoint:
+- URL: `https://app.typortrait.com/webhook/stripe`
+- Events: `checkout.session.completed`
+- Copy the **signing secret** into `STRIPE_WEBHOOK_SECRET`, then restart the container.
+
+### Printful product variant IDs
+`products.py` references hard-coded variant IDs from Printful's catalog. **Verify
+these IDs against `GET /products/<product_id>` on the live Printful API before
+launch** — Printful occasionally renumbers SKUs. Current IDs target:
+- `1320` (enhanced matte framed 16×20 black)
+- `3618` (canvas 16×20, 1.25" thick)
+- `4` (enhanced matte poster 18×24)
+- `4012–4016` (Bella+Canvas 3001 unisex tee, black, S–2XL)
 
 ## Decisions
 - Default ink **navy**; price **$14.99** digital; framed prints "coming soon".
