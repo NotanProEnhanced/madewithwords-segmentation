@@ -569,6 +569,7 @@ def _liw_landing_html(request: Request) -> str:
  <nav>{_trust_nav()}</nav>
  <div>&copy; 2026 {name}. Made with care.</div>
  <div class="op">{name} is a brand operated by Typortrait.</div>
+ {_sibling_links(b['fav'])}
 </div></footer>
 </body></html>'''
 
@@ -6120,3 +6121,31 @@ async def webhook_printful(request: Request) -> JSONResponse:
     else:
         return JSONResponse({"ok": True, "ignored": etype})
     return JSONResponse({"ok": True, "type": etype, "order": oid})
+
+
+_SIBLING_LEAD = {
+    ("lovedinwords", "pawsinwords"):  "Remembering a pet?",
+    ("lovedinwords", "faithinwords"): "Prefer scripture?",
+    ("pawsinwords",  "lovedinwords"): "Remembering a person?",
+    ("pawsinwords",  "faithinwords"): "Prefer scripture?",
+    ("faithinwords", "lovedinwords"): "A memorial portrait?",
+    ("faithinwords", "pawsinwords"):  "Remembering a pet?",
+}
+
+
+def _sibling_links(fav: str = "") -> str:
+    """Quiet cross-links to the sibling brands. FOOTER ONLY, deliberately: someone
+    part-way through making a memorial should never be sold something else. This is
+    for the visitor who landed on the wrong site and needs to find the right one."""
+    cur = (fav or "").strip().lower()
+    order = ["lovedinwords", "faithinwords", "pawsinwords"]
+    if cur not in order:
+        return ""
+    out = []
+    for other in order:
+        if other == cur:
+            continue
+        n, h, _f = _SITE_BRANDS[other]
+        lead = _SIBLING_LEAD.get((cur, other), "")
+        out.append(((lead + " ") if lead else "") + '<a href="' + h + '">' + n + "</a>")
+    return '<div class="op">' + " &nbsp;&middot;&nbsp; ".join(out) + "</div>"
