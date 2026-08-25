@@ -6032,3 +6032,49 @@ def compliance_region(request: Request) -> JSONResponse:
     blocked = _blocked_region(request)
     return JSONResponse({"blocked": bool(blocked),
                          "detail": _GEO_BLOCK_DETAIL if blocked else ""})
+
+@app.post("/webhook/printful")
+async def webhook_printful(request: Request) -> JSONResponse:
+    """Printful shipment updates. Printful's classic webhooks carry NO signature, so
+    this is guarded by a secret in the query string (PRINTFUL_WEBHOOK_SECRET) plus a
+    store-id check on the payload. Returns 200 for anything understood or safely
+    ignored -- a non-200 makes Printful retry, and a retry storm helps nobody."""
+    import os
+    secret = (os.environ.get("PRINTFUL_WEBHOOK_SECRET", "") or "").strip()
+    if not secret or request.query_params.get("k", "") != secret:
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    try:
+        evt = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "bad_json"}, status_code=400)
+
+    want = str(os.environ.get("PRINTFUL_STORE_ID", "") or "").strip()
+    got = str(evt.get("store") or "").strip()
+    if want and got and got != want:
+        return JSONResponse({"ok": True, "ignored": "other_store"})
+
+    etype = str(evt.get("type") or "")
+    data = evt.get("data") or {}
+    pf_order = data.get("order") or {}
+    ext = str(pf_order.get("external_id") or "").strip()
+    pf_id = pf_order.get("id")
+
+    row = orders_db.get(ext) if ext else None
+    if row is None and pf_id:
+        try:
+            row = orders_db.get_by_printful_id(int(pf_id))
+        except Exception:
+            row = None
+    if row is None:
+        return JSONResponse({"ok": True, "ignored": "unknown_order"})
+
+    oid = row["id"]
+    if etype == "package_shipped":
+        ship = data.get("shipment") or {}
+        trk = ship.get("tracking_url") or ship.get("tracking_number") or None
+        orders_db.mark_shipped(order_id=oid, tracking_url=trk, raw=evt)
+    elif etype in ("order_canceled", "order_failed", "package_returned"):
+        orders_db.mark_error(order_id=oid, error_message="printful:" + etype)
+    else:
+        return JSONResponse({"ok": True, "ignored": etype})
+    return JSONResponse({"ok": True, "type": etype, "order": oid})

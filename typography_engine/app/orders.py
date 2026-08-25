@@ -204,3 +204,28 @@ def _row_to_dict(row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
         else:
             d[k.removesuffix("_json")] = None
     return d
+
+
+def get_by_printful_id(printful_order_id: int) -> Optional[Dict[str, Any]]:
+    """Look an order up by the Printful id stored at mark_fulfilling(). The webhook
+    tries external_id (this table's `id`) first; this is the fallback."""
+    with _LOCK, _conn() as c:
+        row = c.execute(
+            "SELECT * FROM orders WHERE printful_order_id = ? ORDER BY created_at DESC LIMIT 1",
+            (int(printful_order_id),),
+        ).fetchone()
+    return _row_to_dict(row)
+
+
+def mark_delivered(*, order_id: str, raw: Dict[str, Any]) -> None:
+    """Terminal state. Printful's classic webhook has no delivery event, so this is
+    reached by polling rather than push -- kept here so the state machine is whole."""
+    with _LOCK, _conn() as c:
+        c.execute(
+            """
+            UPDATE orders
+            SET status='delivered', updated_at=?, printful_raw_json=?
+            WHERE id=?
+            """,
+            (time.time(), json.dumps(raw), order_id),
+        )
