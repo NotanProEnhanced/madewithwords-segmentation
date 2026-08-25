@@ -4094,6 +4094,17 @@ def _fulfill_with_printful(order_id: str, recipient: dict) -> None:
         orders_db.mark_fulfilling(order_id=order_id, printful_order_id=int(pf_id or 0), raw=res)
     except Exception as e:  # noqa: BLE001
         orders_db.mark_error(order_id=order_id, error_message=str(e))
+        try:
+            from .admin import send_email, ADMIN_EMAIL
+            if ADMIN_EMAIL:
+                _d = str(e)[:500]
+                send_email(ADMIN_EMAIL,
+                           "Order needs attention: Printful submission failed",
+                           "<p>Order <b>%s</b> was paid but did not reach Printful.</p><pre>%s</pre>"
+                           "<p>Nothing will be produced until this is handled by hand.</p>" % (order_id, _d),
+                           "Order %s was paid but did not reach Printful: %s" % (order_id, _d))
+        except Exception:
+            pass
 
 
 # ============================= Redemption codes =============================
