@@ -1447,9 +1447,9 @@ async def render(
     # PET typography size -> tier scale (<1 = finer type). Small adds fine detail; Large
     # reads bold and graphic. Stored in the recipe so the paid download matches the preview.
     _PET_TYPE_SCALES = {"small": 0.30, "medium": 0.42, "large": 0.56}
-    pet_type_sel = (pet_type or "medium").strip().lower()
+    pet_type_sel = (pet_type or "small").strip().lower()
     if pet_type_sel not in _PET_TYPE_SCALES:
-        pet_type_sel = "medium"
+        pet_type_sel = "small"
     pet_type_scale = _PET_TYPE_SCALES[pet_type_sel]
     ref_clean = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40]     # referral/source tag (persists)
     brand_clean = re.sub(r"[^A-Za-z0-9_-]", "", brand or "")[:40]  # ACTIVE brand skin (gates brand UX)

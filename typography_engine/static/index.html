@@ -1021,7 +1021,7 @@ const BRANDNAME=(BRAND&&BRAND.name)||"Typortrait";   // customer-facing brand na
 const _isMemorialBrand=!!(BRAND && BRAND.memorial);
 const _isPet=!!(BRAND && BRAND.pet);   // Paws in Words -> render via the pet engine
 if(_isPet && !state.petGround) state.petGround="dark";   // gallery-dark hero by default
-if(_isPet && !state.petType) state.petType="medium";     // typography size: small | medium | large
+if(_isPet && !state.petType) state.petType="small";     // typography size: small | medium | large
 // Pet-clean studio: hide the human-only controls, repurpose the Background axis as the pet
 // "Look", add word chips + composition guidance. Gated on _isPet -> other brands untouched.
 function _petSetup(){
@@ -1036,14 +1036,14 @@ function _petSetup(){
       var tc=document.createElement("div"); tc.className="ctl"; tc.id="petTypeCtl";
       tc.innerHTML='<div class="ctl-lbl">Typography</div>'
         +'<div class="seg" id="petTypeSeg" aria-label="Typography size">'
-        +'<button type="button" data-pt="small">Small</button>'
-        +'<button type="button" data-pt="medium" class="on">Medium</button>'
+        +'<button type="button" data-pt="small" class="on">Small</button>'
+        +'<button type="button" data-pt="medium">Medium</button>'
         +'<button type="button" data-pt="large">Large</button></div>'
         +'<div class="ctl-hint">Small adds fine detail; Large reads bold and graphic.</div>';
       _bg.parentNode.insertBefore(tc, _bg.nextSibling);
       tc.querySelectorAll("#petTypeSeg button").forEach(function(b){
         b.addEventListener("click",function(){
-          var v=b.getAttribute("data-pt"); if((state.petType||"medium")===v) return;
+          var v=b.getAttribute("data-pt"); if((state.petType||"small")===v) return;
           userTouched=true; state.petType=v;
           tc.querySelectorAll("#petTypeSeg button").forEach(function(x){ x.classList.toggle("on", x===b); });
           invalidate(); render(state.ink,{animate:false});   // re-render preview at the new size
@@ -1220,7 +1220,7 @@ function variantPost(id){
   // so the server streams the passage in written order. The flow flag is sent in render().
   // Paws in Words: the pet engine uses its own grounds (dark/mid/paper…), driven off the pet
   // flag on the server. Send the chosen pet ground; backdrop/ink don't apply.
-  if(_isPet) return {ink:"photo", style:"pet", ground:(state.petGround||"dark"), petType:(state.petType||"medium")};
+  if(_isPet) return {ink:"photo", style:"pet", ground:(state.petGround||"dark"), petType:(state.petType||"small")};
   const base = (state.style==="displacement" || state.style==="letter")
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
     : {ink:(id||"photo"), style:state.style, ground:"navy"};
@@ -1987,7 +1987,7 @@ async function renderSizeThumb(mf){
   const myGen=gen;
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
-  const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_isPet){ fd.append("pet","1"); fd.append("pet_type", state.petType||"medium"); } fd.append("message",words.value.trim());
+  const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_isPet){ fd.append("pet","1"); fd.append("pet_type", state.petType||"small"); } fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(mf));
   fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
@@ -2618,7 +2618,7 @@ async function render(ink,{animate=false,background=false,thumb=false,hires=fals
   if(!background && !thumb && !hires) showBusy(animate);
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
-  const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_isPet){ fd.append("pet","1"); fd.append("pet_type", state.petType||"medium"); } fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
+  const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_isPet){ fd.append("pet","1"); fd.append("pet_type", state.petType||"small"); } fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(state.minFont||20));
   if(thumb){
@@ -3170,7 +3170,7 @@ function fetchWithTimeout(url, opts, ms){
       if(state.crop) fd.append("crop", state.crop);
       fd.append("title", $g("gatherName").value.trim()||"In their words");
       fd.append("words", words.value.trim());
-      fd.append("style", vp.style); fd.append("ink", vp.ink); fd.append("ground", vp.ground); if(vp.backdrop) fd.append("backdrop", vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_isPet){ fd.append("pet","1"); fd.append("pet_type", state.petType||"medium"); }
+      fd.append("style", vp.style); fd.append("ink", vp.ink); fd.append("ground", vp.ground); if(vp.backdrop) fd.append("backdrop", vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_isPet){ fd.append("pet","1"); fd.append("pet_type", state.petType||"small"); }
       fd.append("min_font", String(state.minFont||20));
       const r=await fetch("/api/gather/create",{method:"POST",body:fd});
       const d=await r.json();
