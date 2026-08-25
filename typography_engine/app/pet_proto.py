@@ -278,7 +278,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # uniform coat sits ~= its neighbourhood and scores ~0, so it is never over-processed.
     _fp = float(os.environ.get("PET_FEATURE_PROTECT", "0.7") or 0.7)
     feat = np.zeros_like(gray0)                                            # 0..1 feature field (eyes/nose)
-    broad = cv2.GaussianBlur(gray0, (0, 0), sigmaX=max(1.0, W * 0.06))     # neighbourhood luminance
+    broad = cv2.GaussianBlur(gray0, (0, 0), sigmaX=max(1.0, W * float(os.environ.get("PET_FEATURE_SCOPE","0.06") or 0.06)))  # neighbourhood luminance
     if _fp > 0.0:
         localdark = np.clip((broad - gray0) / 55.0, 0, 1) * mask
         locallight = np.clip((gray0 - broad) / 70.0, 0, 1) * mask          # bright side less sensitive (÷70) -> fur/stripes don't register
@@ -290,6 +290,22 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         ok = int(max(3, round(W * 0.011))) | 1
         raw = cv2.morphologyEx(raw, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ok, ok)))
         feat = np.clip(cv2.GaussianBlur(raw, (0, 0), sigmaX=max(1.0, W * 0.012)) * 1.6, 0, 1)
+        # The neighbourhood comparison only fires at a feature's RIM: in the middle of a
+        # large dark region (a nose in a tight crop) the neighbourhood is equally dark, so
+        # feat reads 0 and the interior falls to the COARSE tier -- big words on the nose.
+        # Seal the rim with a small close, then flood-fill from the border: anything the
+        # fill cannot reach is interior. Same technique as _solidify_matte. 0 = off.
+        _ff = float(os.environ.get("PET_FEATURE_FILL", "0") or 0.0)
+        if _ff > 0.0:
+            _k = int(max(3, round(W * _ff))) | 1
+            _b = (feat > 0.30).astype(np.uint8)
+            _b = cv2.morphologyEx(_b, cv2.MORPH_CLOSE,
+                                  cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (_k, _k)))
+            _p = cv2.copyMakeBorder(_b, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=0)
+            cv2.floodFill(_p, np.zeros((_p.shape[0] + 2, _p.shape[1] + 2), np.uint8), (0, 0), 1)
+            _b = np.clip(_b + (_p[1:-1, 1:-1] == 0).astype(np.uint8), 0, 1)
+            feat = np.maximum(feat, cv2.GaussianBlur(_b.astype(np.float32), (0, 0),
+                                                     sigmaX=max(1.0, W * 0.006)))
 
     # DE-WHISKER: thin bright strokes (whiskers, the diagonal lines inside ears) read as real fur,
     # not type, and overpower the words. A white top-hat isolates bright structures THINNER than the
@@ -322,7 +338,10 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     #    typography size the buyer picked (Small/Medium/Large -> ~0.30/0.42/0.56); when the
     #    caller doesn't pass one, fall back to the PET_TYPE_SCALE env default.
     _tsc = float(type_scale) if type_scale is not None else float(os.environ.get("PET_TYPE_SCALE", "0.42") or 0.42)
-    tL = _rows(stream, W, H, 64 * sc * _tsc, rng)
+    # Coarse tier size. 64 is the historic value; lowering it shrinks only the LARGEST
+    # words (the ones flat areas get) without touching the fine end, so gradation is kept.
+    _tc = float(os.environ.get("PET_TIER_COARSE", "64") or 64.0)
+    tL = _rows(stream, W, H, _tc * sc * _tsc, rng)
     tM = _rows(stream, W, H, 40 * sc * _tsc, rng)
     tF = _rows(stream, W, H, 26 * sc * _tsc, rng)
     tMi = _rows(stream, W, H, 16 * sc * _tsc, rng)

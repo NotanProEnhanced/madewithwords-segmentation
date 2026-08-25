@@ -59,14 +59,18 @@ def _tile_watermark(im: Image.Image, mark: str = "typortrait.com", alpha: int = 
     """A sparse repeating diagonal mark confined to the SUBJECT (the figure), not the
     background -- fewer marks, a clean background, and unccroppable (you can't crop out
     the face). White text with a dark outline so it reads on dark and light grounds."""
+    import os
+    alpha = int(os.environ.get("TYPO_WM_ALPHA", "") or alpha)
+    _wsc = float(os.environ.get("TYPO_WM_SCALE", "0.023") or 0.023)
+    _wgap = float(os.environ.get("TYPO_WM_GAP", "1.0") or 1.0)
     W, H = im.size
-    wf = _font(max(14, int(W * 0.023)))
+    wf = _font(max(14, int(W * _wsc)))
     diag = int(math.hypot(W, H)) + 4               # big enough that the rotation still covers every corner
     layer = Image.new("RGBA", (diag, diag), (0, 0, 0, 0))
     ld = ImageDraw.Draw(layer)
     mw = ld.textlength(mark, font=wf)
-    step_x = int(mw + max(70, W * 0.22))           # sparse -> few marks
-    step_y = max(46, int(H * 0.17))
+    step_x = int(mw + max(70, W * 0.22) * _wgap)   # sparse -> few marks
+    step_y = max(46, int(H * 0.17 * _wgap))
     row = 0
     for yy in range(0, diag, step_y):
         off = (step_x // 2) if (row % 2) else 0    # brick offset so columns don't line up
