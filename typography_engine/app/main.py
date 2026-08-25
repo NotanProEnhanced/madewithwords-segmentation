@@ -4086,10 +4086,31 @@ def _fulfill_with_printful(order_id: str, recipient: dict) -> None:
         common = dict(recipient=recipient, print_file_url=signed, external_id=order_id,
                       retail_price_cents=o["price_cents"], confirm=PRINTFUL_CONFIRM,
                       placement=placement)
-        if prod and prod.bundle_items:
-            res = printful.create_order(bundle=prod.bundle_items, **common)   # multi-item order
-        else:
-            res = printful.create_order(variant_id=o["variant_id"], **common)
+        import time as _time
+        res = None
+        _last = None
+        for _attempt in range(3):
+            try:
+                if prod and prod.bundle_items:
+                    res = printful.create_order(bundle=prod.bundle_items, **common)   # multi-item order
+                else:
+                    res = printful.create_order(variant_id=o["variant_id"], **common)
+                break
+            except Exception as _ce:  # noqa: BLE001
+                _last = _ce
+                # The create may have SUCCEEDED with only the response lost -- that is
+                # what a read timeout looks like. Never retry blind: ask Printful whether
+                # this external_id already exists. Only a definite 404 justifies another
+                # create; an ambiguous lookup raises and lands in mark_error + alert.
+                _found = printful.get_order_by_external(order_id)
+                if _found:
+                    res = _found
+                    break
+                if _attempt == 2:
+                    raise
+                _time.sleep(2.0 * (_attempt + 1))
+        if res is None:
+            raise _last or RuntimeError("printful_create_failed")
         pf_id = res.get("id") if isinstance(res, dict) else None
         orders_db.mark_fulfilling(order_id=order_id, printful_order_id=int(pf_id or 0), raw=res)
     except Exception as e:  # noqa: BLE001

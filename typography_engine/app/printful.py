@@ -185,3 +185,18 @@ def shipping_rates(
     if isinstance(res, list):
         return res
     return res.get("items", []) if isinstance(res, dict) else []
+
+
+def get_order_by_external(external_id: str):
+    """Look an order up by OUR order id, via Printful's @-prefixed external lookup.
+
+    Returns the order dict, or None ONLY when Printful is definite that no such
+    order exists (404). Any other failure re-raises: an ambiguous lookup must not
+    be read as 'absent', because the caller uses None to justify creating the
+    order again -- and a wrong guess means a duplicate item and a duplicate charge."""
+    try:
+        return _request("GET", f"/orders/@{external_id}")
+    except PrintfulError as e:
+        if getattr(e, "status", None) == 404:
+            return None
+        raise
