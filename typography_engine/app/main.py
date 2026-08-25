@@ -6073,6 +6073,16 @@ async def webhook_printful(request: Request) -> JSONResponse:
         ship = data.get("shipment") or {}
         trk = ship.get("tracking_url") or ship.get("tracking_number") or None
         orders_db.mark_shipped(order_id=oid, tracking_url=trk, raw=evt)
+        try:
+            to = (row.get("customer_email") or "").strip()
+            if to:
+                from .admin import send_email
+                link = ('<p><a href="%s">Track your parcel</a></p>' % trk) if (trk or "").startswith("http") else ""
+                send_email(to, "Your order has shipped",
+                           "<p>Good news &mdash; your order is on its way.</p>" + link,
+                           "Good news - your order is on its way." + ((" Tracking: " + trk) if trk else ""))
+        except Exception:
+            pass
     elif etype in ("order_canceled", "order_failed", "package_returned"):
         orders_db.mark_error(order_id=oid, error_message="printful:" + etype)
     else:
