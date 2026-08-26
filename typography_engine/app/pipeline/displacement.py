@@ -1346,7 +1346,13 @@ def render_displacement_portrait(
         im3 = iris_m[..., None]
         if tint is not None:
             tip = np.array(tint[1][::-1], np.float32)        # lifted RGB -> BGR
-            iout = np.array(g["bg"], np.float32) * (1 - al) + tip * al
+            # The iris is composited over the GROUND, so wherever ink alpha is low the navy
+            # ground (13,27,58 RGB -- a saturated dark blue) shows through and a correctly
+            # sampled BROWN iris renders BLUE. TYPO_IRIS_ALPHA floors the alpha inside the
+            # iris so the sampled colour wins. 0 (default) keeps the previous behaviour.
+            _ia = float(os.environ.get("TYPO_IRIS_ALPHA", "0") or 0.0)
+            _ial = np.maximum(al, _ia) if _ia > 0.0 else al
+            iout = np.array(g["bg"], np.float32) * (1 - _ial) + tip * _ial
             out = out * (1.0 - im3) + iout * im3
         else:
             # The tint gate rejected the sample -- most often a low-saturation BROWN iris in

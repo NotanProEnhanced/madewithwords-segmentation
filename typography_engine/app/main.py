@@ -358,8 +358,8 @@ def _ba_slider_html(before: str = "/static/lovedinwords/before.jpg",
 .bfa-cap{{text-align:center;color:#6f6a5f;font-size:13.5px;line-height:1.5;margin:12px auto 0;max-width:34em}}
 </style>
 <div class="bfa">
- <img class="bfa-base" src="{after}" alt="The same face, formed entirely from the words that describe them">
- <img class="bfa-top" src="{before}" alt="A favourite photograph">
+ <img class="bfa-base" src="{_v(after)}" alt="The same face, formed entirely from the words that describe them">
+ <img class="bfa-top" src="{_v(before)}" alt="A favourite photograph">
  <div class="bfa-line"></div>
  <div class="bfa-knob"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M10 7 5 12l5 5M14 7l5 5-5 5" stroke="#1b2340" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
  <span class="bfa-tag bfa-l">Their photo</span>
@@ -525,6 +525,13 @@ def _liw_landing_html(request: Request) -> str:
 <section class="band"><div class="wrap">
  <h2 class="sec">From a photograph, to a portrait of who they were</h2>
  {_ba_slider_html()}
+ <figure style="max-width:440px;margin:18px auto 0;text-align:center">
+  <img src="/static/lovedinwords/after-loupe.jpg" loading="lazy"
+       alt="Close-up of the portrait, showing it is made entirely of words"
+       style="width:150px;height:150px;border-radius:50%;display:block;margin:0 auto;
+              border:2px solid rgba(255,255,255,.55);box-shadow:0 5px 16px rgba(0,0,0,.25)">
+  <figcaption style="color:#6f6a5f;font-size:13.5px;line-height:1.5;margin-top:10px">Every line is a word about them.</figcaption>
+ </figure>
  <p class="ba-note">Step close and the likeness dissolves into words &mdash; <i>grandmother, wise, gentle, beloved</i>.
   Step back, and their face returns.</p>
 </div></section>
@@ -6149,3 +6156,15 @@ def _sibling_links(fav: str = "") -> str:
         lead = _SIBLING_LEAD.get((cur, other), "")
         out.append(((lead + " ") if lead else "") + '<a href="' + h + '">' + n + "</a>")
     return '<div class="op">' + " &nbsp;&middot;&nbsp; ".join(out) + "</div>"
+
+
+def _v(path: str) -> str:
+    """Append the file's mtime as ?v= so a re-rendered static image busts the browser
+    cache. Without it a replaced JPEG keeps serving the old bytes from every visitor's
+    cache indefinitely -- the filename never changes, so nothing tells them to refetch."""
+    try:
+        from .config import STATIC_DIR as _SD
+        rel = path.split("?", 1)[0].replace("/static/", "", 1)
+        return "%s?v=%d" % (path, int((_SD / rel).stat().st_mtime))
+    except Exception:
+        return path
