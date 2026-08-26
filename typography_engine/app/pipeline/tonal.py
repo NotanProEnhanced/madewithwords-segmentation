@@ -652,13 +652,19 @@ def _sclera_shade(gray, an, scale: float, sm, floor: float = 0.58):
 
 
 def _iris_tint(an):
-    """Sample the primary face's iris colour. Returns ([(cx, cy, r)] in working
-    coords, lifted RGB tip colour) when both irises pass the colour gate, else
-    None (renders fall back to the plain ink, byte-identical)."""
+    """Primary face only. Kept so existing callers are unchanged."""
+    return _iris_tint_face(an, 0)
+
+
+def _iris_tint_face(an, idx: int = 0):
+    """Sample ONE face's iris colour. Returns ([(cx, cy, r)] in working coords,
+    lifted RGB tip colour) when both of that face's irises pass the colour gate,
+    else None -- in which case THAT face falls back to the plain ink, without
+    affecting any other face in the image."""
     faces = _faces_of(an)
-    if not faces:
+    if not faces or idx < 0 or idx >= len(faces):
         return None
-    pts = faces[0].points                      # primary face (renderer features it)
+    pts = faces[idx].points
     if pts.shape[0] < 478:
         return None                            # no iris landmarks (fallback mesh)
     bgr = an.img.bgr

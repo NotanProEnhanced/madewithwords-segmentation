@@ -460,6 +460,7 @@ def render_displacement_portrait(
     _lr_order = sorted(range(len(all_pts)), key=lambda i: _face_cx[i])
     _rank_of = {i: r for r, i in enumerate(_lr_order)}     # all_pts index -> left-to-right rank
     irises: List[Tuple[float, float, float]] = []
+    _iris_face_idx: List[int] = []     # parallel to `irises`: which face each circle came from
     eye_centers: List[Tuple[float, float, float]] = []
     _eye_face_pts = []            # faces whose eyes ARE rendered (drive the sclera/anchor hulls)
     _dark_lens_active = False
@@ -631,6 +632,7 @@ def render_displacement_portrait(
         if len(ratios) >= 2 and min(ratios) > _EYE_OPEN_IRIS_MAX:
             continue                                   # no dark pupil -> not a real eye
         irises.extend(_fi)
+        _iris_face_idx.extend([_pi] * len(_fi))
         _eye_face_pts.append(_fp)
 
     if _diag is not None:
@@ -1340,11 +1342,57 @@ def render_displacement_portrait(
     # colour -- sampled by the shared gated helper (both irises saturated and
     # hue-consistent, else no tint; sampled, never invented). Dark grounds only:
     # the lifted tint is designed for light-ink-on-dark.
+    # TYPO_EYE_PLAIN: render the eye as TYPE and nothing else. The iris tint, limbal
+    # ring, sclera paint and photographic paste are all gated on `irises`, so emptying
+    # it here disables the entire synthesis in one place. Nothing is drawn from landmark
+    # geometry, so a badly fitted mesh cannot place a disc where no eye is. Teeth are
+    # unaffected (their gate is `irises or teeth`).
+    if os.environ.get("TYPO_EYE_PLAIN", "").strip().lower() in ("1", "true", "on", "yes"):
+        irises = []
+        iris_m = None
     if irises and iris_m is not None and g["tone"] == "light" and ink in ("photo", "mono"):
-        from .tonal import _iris_tint
-        tint = _iris_tint(an)
-        im3 = iris_m[..., None]
-        if tint is not None:
+        from .tonal import _iris_tint, _iris_tint_face
+
+        def _iris_layer(_tint):
+            """The colour laid inside an iris: the sampled tint when the gate passed, else
+            the source's own iris pixels lifted so a dark brown reads on the dark ground."""
+            if _tint is not None:
+                _tp = np.array(_tint[1][::-1], np.float32)   # lifted RGB -> BGR
+                _iaa = float(os.environ.get("TYPO_IRIS_ALPHA", "0") or 0.0)
+                _iall = np.maximum(al, _iaa) if _iaa > 0.0 else al
+                return np.array(g["bg"], np.float32) * (1 - _iall) + _tp * _iall
+            _ill = float(os.environ.get("TYPO_IRIS_LIFT", "1.35") or 1.35)
+            _bff = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+            _hvv = cv2.cvtColor(np.clip(_bff, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
+            _hvv[..., 1] = np.clip(_hvv[..., 1] * 1.3, 0, 255)
+            _hvv[..., 2] = np.clip(_hvv[..., 2] * _ill + 40, 0, 255)
+            _icol = cv2.cvtColor(_hvv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
+            return np.array(g["bg"], np.float32) * (1 - al) + _icol * al
+
+        if (os.environ.get("TYPO_IRIS_PER_FACE", "").strip().lower() in ("1", "true", "on", "yes")
+                and _iris_face_idx):
+            # Each face gets ITS OWN sampled colour on ITS OWN irises. Previously one tint
+            # from faces[0] was painted onto every iris in the image, so a mixed-eye-colour
+            # group inherited the primary face's eyes. A face whose gate rejects now falls
+            # back alone rather than forcing the fallback on everyone.
+            for _fx in sorted(set(_iris_face_idx)):
+                _sel = [_c for _c, _fi2 in zip(irises, _iris_face_idx) if _fi2 == _fx]
+                if not _sel:
+                    continue
+                _fm = np.zeros((H, W), np.float32)
+                for (_ccx, _ccy, _rr) in _sel:
+                    cv2.circle(_fm, (int(round(_ccx)), int(round(_ccy))), int(round(_rr)),
+                               1.0, -1, cv2.LINE_AA)
+                _rmean = float(np.mean([_c[2] for _c in _sel]))
+                _fm = np.clip(cv2.GaussianBlur(_fm, (0, 0), sigmaX=max(1.0, _rmean * 0.18)), 0, 1)
+                _fm3 = _fm[..., None]
+                out = out * (1.0 - _fm3) + _iris_layer(_iris_tint_face(an, _fx)) * _fm3
+            tint = None
+            im3 = None
+        else:
+            tint = _iris_tint(an)
+            im3 = iris_m[..., None]
+        if im3 is not None and tint is not None:
             tip = np.array(tint[1][::-1], np.float32)        # lifted RGB -> BGR
             # The iris is composited over the GROUND, so wherever ink alpha is low the navy
             # ground (13,27,58 RGB -- a saturated dark blue) shows through and a correctly
@@ -1354,7 +1402,7 @@ def render_displacement_portrait(
             _ial = np.maximum(al, _ia) if _ia > 0.0 else al
             iout = np.array(g["bg"], np.float32) * (1 - _ial) + tip * _ial
             out = out * (1.0 - im3) + iout * im3
-        else:
+        elif im3 is not None:
             # The tint gate rejected the sample -- most often a low-saturation BROWN iris in
             # shadow. Without word-eyes the photo paste covered this; with word-eyes the iris
             # would otherwise fall through to the dark navy ground and read BLUE. Re-lay the
