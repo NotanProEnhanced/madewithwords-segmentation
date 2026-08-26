@@ -1271,9 +1271,26 @@ def render_displacement_portrait(
             hsv[..., 2] = np.minimum(hsv[..., 2], np.float32(_PAPER_INK_VALUE))
         else:
             hsv[..., 1] = np.clip(hsv[..., 1] * float(os.environ.get("TYPO_INK_SAT", "1.02") or 1.02), 0, 255)  # step-3 colour-fidelity knob (was fixed 1.02)
-            hsv[..., 2] = np.clip(hsv[..., 2] * 1.14 + 14, 0, 255)      # lift value vs dark ground
+            # On a dark ground the gaps between glyphs show GROUND, so the render reads
+            # darker than the source photograph. This lifts the ink value to compensate.
+            # Multiplier and offset were hardcoded at 1.14 / 14 -- both now tunable.
+            _ilm = float(os.environ.get("TYPO_INK_LIFT", "1.14") or 1.14)
+            _ila = float(os.environ.get("TYPO_INK_LIFT_ADD", "14") or 14.0)
+            hsv[..., 2] = np.clip(hsv[..., 2] * _ilm + _ila, 0, 255)     # lift value vs dark ground
         ink_col = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
-        out = np.array(g["bg"], np.float32) * (1 - al) + ink_col * al
+        # SUBJECT BASE: the ground is painted across the whole canvas, so INSIDE the
+        # silhouette it shows through every gap between glyphs -- the face reads as ground
+        # colour rather than skin, and the portrait comes out far darker than the source.
+        # TYPO_SUBJECT_BASE swaps the base inside the mask for the SOURCE PHOTO, dimmed by
+        # TYPO_SUBJECT_DIM so the words still read on top of it. The flat ground stays
+        # BEHIND the subject. 0 (default) is byte-identical to the previous behaviour.
+        _sb = float(os.environ.get("TYPO_SUBJECT_BASE", "0") or 0.0)
+        _base = np.zeros((H, W, 3), np.float32) + np.array(g["bg"], np.float32)
+        if _sb > 0.0:
+            _dim = float(os.environ.get("TYPO_SUBJECT_DIM", "0.45") or 0.0)
+            _m3 = (np.clip(mask01, 0, 1) * min(max(_sb, 0.0), 1.0))[..., None]
+            _base = _base * (1.0 - _m3) + (bgr_full * (1.0 - _dim)) * _m3
+        out = _base * (1 - al) + ink_col * al
         if os.environ.get("TYPO_POLARITY", "0").strip().lower() in ("1", "true", "on", "yes"):
             # Polarity model (the paper-grade shadow behaviour, brought to the dark-ground
             # Lifelike look). Instead of "light ink whose COVERAGE follows brightness"

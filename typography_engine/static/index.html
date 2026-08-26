@@ -733,7 +733,7 @@
         <button type="button" class="arrow right" id="arrowR" aria-label="More colours">&#8250;</button>
       </div>
     </div>
-    <div class="ctl swatchgroup" id="bgGroup">
+    <div class="ctl swatchgroup" id="bgGroup" style="display:none">
       <div class="ctl-lbl">Background</div>
       <div class="ctl-hint">What sits behind them — a studio wall, a soft colour, or none at all.</div>
       <div id="bgSwatches" class="swatches bgswatches"></div>
@@ -1224,7 +1224,7 @@ function variantPost(id){
   const base = (state.style==="displacement" || state.style==="letter")
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
     : {ink:(id||"photo"), style:state.style, ground:"navy"};
-  if(state.backdrop) base.backdrop = state.backdrop;
+  base.backdrop = state.backdrop || "studio";
   // A floral frame pairs only with the Paper sculpt -- force the ground so the preview
   // request matches what the server renders (the server also forces it, belt-and-suspenders).
   if(FLORAL_KEYS.indexOf(state.backdrop)>=0) base.ground = "paper";
@@ -1810,7 +1810,7 @@ function buildBgSwatches(){
 }
 function markBgSel(){
   if(!bgSwatchEl) return;
-  const sel = _isPet ? (state.petGround||"dark") : (state.backdrop||"");
+  const sel = _isPet ? (state.petGround||"dark") : (state.backdrop||"studio");
   [...bgSwatchEl.children].forEach(c=>c.classList.toggle("sel",(c.dataset.bg||"")===sel));
 }
 function selectBackground(bg){
