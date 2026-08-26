@@ -24,3 +24,5 @@ typography_engine/*.bak-*
 typography_engine/*.orig*
 typography_engine/**/*.bak-*
 typography_engine/**/*.orig*
+typography_engine/*.backup-*
+typography_engine/**/*.backup-*
