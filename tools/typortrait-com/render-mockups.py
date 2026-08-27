@@ -78,6 +78,45 @@ def words_for(src_name):
     raise SystemExit("no words defined for %s in render_usecases.py" % src_name)
 
 
+def detect_opening(scene_rgb, fallback):
+    """Measure the print aperture from the scene itself.
+
+    The scene photograph already contains a placeholder print with its own navy
+    ground. The constants above come from reel_template.py and are close but not
+    exact -- pasting to them leaves a rim of the scene's navy showing around the
+    portrait, and the two navies do not match. Finding the placeholder's bounding
+    box instead makes the paste flush by construction.
+
+    Falls back to the constants if the detection looks implausible.
+    """
+    try:
+        import numpy as np
+    except Exception:                                      # noqa: BLE001
+        print("numpy unavailable -- using constants")
+        return fallback
+
+    a = np.asarray(scene_rgb).astype(np.int16)
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    navy = (b > r + 12) & (b > g + 6) & (b < 160) & (r < 130)
+    ys, xs = np.nonzero(navy)
+    if ys.size < 2000:
+        print("no navy region found -- using constants")
+        return fallback
+
+    box = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+    w, h = box[2] - box[0], box[3] - box[1]
+    H, W = a.shape[:2]
+    area = (w * h) / float(W * H)
+    aspect = w / float(h)
+    if not (0.10 < area < 0.60 and 0.70 < aspect < 0.92):
+        print("detected region implausible (area %.2f aspect %.3f) -- using constants"
+              % (area, aspect))
+        return fallback
+    print("detected opening %dx%d at (%d,%d)  aspect %.3f  area %.2f"
+          % (w, h, box[0], box[1], aspect, area))
+    return box
+
+
 def main():
     if not os.path.isfile(SCENE):
         raise SystemExit("scene not found: %s" % SCENE)
@@ -100,6 +139,10 @@ def main():
     print("scene  %dx%d  aspect %.3f" % (scene.size[0], scene.size[1],
                                          scene.size[0] / float(scene.size[1])))
     scene = scene.resize((W, H), Image.LANCZOS)
+
+    # measure the real aperture rather than trusting the reel constants
+    box = detect_opening(scene, box)
+    bw, bh = box[2] - box[0], box[3] - box[1]
 
     for src_name, out_name in JOB_FILES:
         words = words_for(src_name)
