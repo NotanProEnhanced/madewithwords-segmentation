@@ -2757,11 +2757,11 @@ setCmp(50);
 function cmpSweepOnce(){
   try{
     var _k = "cmpSwept:" + ((beforeImg && beforeImg.src) ? beforeImg.src.slice(-60) : "x");
-    if(sessionStorage.getItem(_k)){ setCmp(98); return; }   // per PHOTO, not per session:
+    if(sessionStorage.getItem(_k)){ setCmp(50); return; }   // per PHOTO, not per session:
     sessionStorage.setItem(_k,"1");                          // a second pet deserves its own reveal
   }catch(_){ }
-  if(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches){ setCmp(98); return; }
-  setCmp(2);
+  if(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches){ setCmp(50); return; }
+  setCmp(98);
   var t0=null, DUR=1600, HOLD=450;
   function step(ts){
     if(t0===null) t0=ts;
@@ -2769,7 +2769,7 @@ function cmpSweepOnce(){
     if(e<HOLD){ requestAnimationFrame(step); return; }
     var k=Math.min(1,(e-HOLD)/DUR);
     var eased = k<0.5 ? 4*k*k*k : 1-Math.pow(-2*k+2,3)/2;
-    setCmp(2+eased*96);
+    setCmp(98-eased*48);
     if(k<1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
