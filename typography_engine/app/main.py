@@ -1375,6 +1375,12 @@ def auto_mask(job: str):
 
 # Inks the displacement (Lifelike) engine can SCULPT: "photo" (per-pixel colour),
 # the tinted sculpt palette, and a user-picked "custom" hex (draped as a light tint).
+# Custom ink is RETIRED for new renders: a picked hex falls through to the legacy flat
+# single-ink sculpt, which renders visibly worse than the photo/mono branch. "custom"
+# stays in the tuple below on purpose -- download rebuilds of already-paid orders must
+# still validate and reproduce exactly what the customer bought. New renders are
+# coerced to "photo" at intake instead. Set True to restore the option.
+ALLOW_CUSTOM_INK = False
 # Mosaic/Passage on any of these routes through the sculpt renderer so every ink is
 # sculpted, not flat. Gradients (spectrum/aurora) don't drape over the form and are
 # deliberately excluded -- they stay on the layered renderer.
@@ -1553,6 +1559,10 @@ async def render(
     # "custom" = a user-picked colour (a (ground, ink) poster pair built from the
     # hex). Only the layered Words/Message renderer honours it; everything else
     # falls back. Invalid/absent hex -> not custom.
+    # The Custom chip is gone from the studio; this catches a cached page or a
+    # replayed/hand-made POST so no NEW render can reach the flat sculpt path.
+    if ink == "custom" and not ALLOW_CUSTOM_INK:
+        ink, ink_hex = "photo", None
     custom_tuple = custom_poster(ink_hex) if (ink == "custom" and ink_hex) else None
     if ink in _PALETTES or ink in _GRADIENTS or ink in ("photo", "photo_paper"):
         ink_choice = ink

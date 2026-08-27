@@ -1221,6 +1221,10 @@ const MEMORIAL_INK_IDS=["photo","mono"];
 const MEMORIAL_INKS=MEMORIAL_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
 const GENERIC_INK_IDS=["photo","mono"];
 const GENERIC_INKS=GENERIC_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
+// Custom ink is retired: a picked hex falls through to the legacy flat single-ink
+// sculpt path, which renders visibly worse than the photo/mono branch. Every brand
+// now shows the same curated pair (Original + Noir). Flip to true to restore.
+const ALLOW_CUSTOM_INK=false;
 function currentSwatches(){ return _isMemorialBrand ? MEMORIAL_INKS : GENERIC_INKS; }   // + Custom chip (buildSwatches)
 // Backgrounds per brand. Memorial keepsakes are meant to be framed and hung, so they
 // keep the room-matching grounds (Studio/Sand/Slate) but drop "Cutout" -- a transparent
@@ -1881,7 +1885,7 @@ function buildSwatches(){
   // (words or message) for one consistent palette. Still hidden on the memorial skins:
   // a free colour picker invites a clashing/illegible result and adds decision burden
   // for grieving families -- the curated palette is the tasteful, finite set there.
-  if(!_isMemorialBrand){
+  if(ALLOW_CUSTOM_INK && !_isMemorialBrand){
     const cel=document.createElement("button"); cel.type="button";
     cel.className="thumb"+(state.ink==="custom"?" sel":""); cel.dataset.ink="custom";
     const cpic=document.createElement("div"); cpic.className="pic"; cpic.dataset.ink="custom";
