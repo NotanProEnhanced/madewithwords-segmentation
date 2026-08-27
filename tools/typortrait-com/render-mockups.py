@@ -50,6 +50,12 @@ GROUND = "navy"
 INK = "photo"
 PRINT_ASPECT = 0.8          # 4:5, matching the mat opening
 RENDER_WIDTH = 1400
+# breathe=True adds a margin of pure ground around the composition. On a bare
+# download that margin is doing real work, but inside a mat it shows as a
+# lighter navy border around a darker navy field -- two blues where there should
+# be one -- and the crop makes it asymmetric, so the print reads as misaligned.
+# The mat already provides the breathing room here.
+BREATHE = False
 
 # Same words as the use-case renders -- these are the same three subjects, so the
 # portrait in the frame should be the portrait on the card.
@@ -151,7 +157,7 @@ def main():
         an = analyze_image(base, RenderConfig(), warns)
         png = render_displacement_portrait(
             an, words, ground=GROUND, out_width=RENDER_WIDTH, supersample=2,
-            ink=INK, print_aspect=PRINT_ASPECT, breathe=True, graduate=True)
+            ink=INK, print_aspect=PRINT_ASPECT, breathe=BREATHE, graduate=True)
         portrait = Image.open(io.BytesIO(png)).convert("RGB")
         # cover-fit guards against any rounding drift between the render's aspect
         # and the opening's; with print_aspect=0.8 it is a straight resize.
