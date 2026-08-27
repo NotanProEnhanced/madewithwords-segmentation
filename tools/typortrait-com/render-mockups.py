@@ -76,7 +76,7 @@ except Exception:                                          # noqa: BLE001
     USECASE_JOBS = None
 
 JOB_FILES = [
-    ("graduate.png", "mock-graduate-new.jpg"),
+    ("woman.png", "mock-birthday-new.jpg"),
     ("son.png", "mock-children-new.jpg"),
     ("man.png", "mock-memorial-new.jpg"),
 ]

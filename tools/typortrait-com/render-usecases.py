@@ -41,15 +41,15 @@ OUT = "/app/data/marketing-out"
 # list is deliberate -- it gives the engine the subject's name to place more
 # than once, which is how the real product is used.
 JOBS = [
-    ("graduate.png", "use-graduate-new.jpg", [
-        "JACK", "JACK", "GRADUATE", "CLASS OF 2026", "SON", "BROTHER",
-        "GRANDSON", "FRIEND", "STUDENT", "COLLEGE", "CAMPUS", "DORM LIFE",
-        "LATE NIGHTS", "FINALS", "STUDY SESSIONS", "GAME DAYS", "ROAD TRIPS",
-        "TEAMMATES", "BEST FRIENDS", "HARD WORK", "DETERMINATION",
-        "NEVER QUIT", "BIG DREAMS", "AMBITIOUS", "COMPETITIVE", "CONFIDENT",
-        "FUNNY", "LOYAL", "ADVENTUROUS", "INDEPENDENT", "PROUD",
-        "ACCOMPLISHED", "NEXT CHAPTER", "NEW BEGINNING", "CAREER",
-        "THE FUTURE", "DREAM BIG", "GO FOR IT", "WE ARE PROUD OF YOU", "JACK",
+    ("woman.png", "use-birthday-new.jpg", [
+        "EMMA", "EMMA", "THIRTY", "WIFE", "DAUGHTER", "SISTER", "BEST FRIEND",
+        "HOME", "SUNDAY MORNINGS", "STRONG COFFEE", "LONG WALKS",
+        "OLD PLAYLISTS", "SECOND HELPINGS", "BOOKS EVERYWHERE",
+        "TERRIBLE JOKES", "LAUGHS FIRST", "ALWAYS EARLY", "STEADY HANDS",
+        "KIND", "PATIENT", "FUNNY", "FEARLESS", "GENEROUS", "CURIOUS",
+        "WARM", "STUBBORN", "THOUGHTFUL", "LOYAL", "ANOTHER YEAR",
+        "ANOTHER CHAPTER", "STILL COUNTING", "TEN YEARS", "US",
+        "MY FAVOURITE PERSON", "HAPPY BIRTHDAY", "EMMA",
     ]),
     ("son.png", "use-children-new.jpg", [
         "LEO", "LEO", "SON", "GRANDSON", "BROTHER", "BUDDY", "LITTLE MAN",
