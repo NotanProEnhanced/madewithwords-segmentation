@@ -123,6 +123,53 @@ def detect_opening(scene_rgb, fallback):
     return box
 
 
+def trim_ground_pad(img, tol=14):
+    """Trim a uniform flat-ground border off a rendered portrait.
+
+    The render is padded with flat ground to reach the requested print aspect.
+    Pasted into a mat, that pad shows as a lighter navy strip around a darker
+    composed field -- two blues where there should be one -- and because the fit
+    crops unevenly, the strip is wider on one side, so the print reads as
+    misaligned rather than bordered.
+
+    Rather than assume where the pad comes from, this measures it: take the
+    corner colour as the pad reference and walk inward from each edge while
+    every pixel in the row/column stays within `tol` of it. Trims nothing when
+    there is no pad.
+    """
+    try:
+        import numpy as np
+    except Exception:                                      # noqa: BLE001
+        return img, (0, 0, 0, 0)
+
+    a = np.asarray(img).astype(np.int16)
+    H, W = a.shape[:2]
+    ref = a[2, 2].astype(np.int16)
+
+    def flat_col(x):
+        return int(np.abs(a[:, x] - ref).max()) <= tol
+
+    def flat_row(y):
+        return int(np.abs(a[y, :] - ref).max()) <= tol
+
+    left = 0
+    while left < W // 3 and flat_col(left):
+        left += 1
+    right = W
+    while right > 2 * W // 3 and flat_col(right - 1):
+        right -= 1
+    top = 0
+    while top < H // 3 and flat_row(top):
+        top += 1
+    bottom = H
+    while bottom > 2 * H // 3 and flat_row(bottom - 1):
+        bottom -= 1
+
+    if left == 0 and top == 0 and right == W and bottom == H:
+        return img, (0, 0, 0, 0)
+    return img.crop((left, top, right, bottom)), (left, top, W - right, H - bottom)
+
+
 def main():
     if not os.path.isfile(SCENE):
         raise SystemExit("scene not found: %s" % SCENE)
@@ -159,14 +206,17 @@ def main():
             an, words, ground=GROUND, out_width=RENDER_WIDTH, supersample=2,
             ink=INK, print_aspect=PRINT_ASPECT, breathe=BREATHE, graduate=True)
         portrait = Image.open(io.BytesIO(png)).convert("RGB")
+        portrait, trimmed = trim_ground_pad(portrait)
         # cover-fit guards against any rounding drift between the render's aspect
-        # and the opening's; with print_aspect=0.8 it is a straight resize.
+        # and the opening's; with print_aspect=0.8 it is close to a straight resize.
         portrait = ImageOps.fit(portrait, (bw, bh), Image.LANCZOS)
 
         out = scene.copy()
         out.paste(portrait, (box[0], box[1]))
         out.save(os.path.join(OUT, out_name), quality=90, optimize=True)
-        print("%-24s <- %-14s %s" % (out_name, src_name, warns.as_list()))
+        print("%-24s <- %-14s trimmed L%d T%d R%d B%d  %s"
+              % (out_name, src_name, trimmed[0], trimmed[1], trimmed[2],
+                 trimmed[3], warns.as_list()))
 
     print("\ndone -- review before swapping anything into /var/www")
 
