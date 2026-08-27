@@ -28,7 +28,7 @@ from app.pipeline.warnings import WarningCollector       # noqa: E402
 from app.pipeline.analyze import analyze_image           # noqa: E402
 from app.pipeline.displacement import render_displacement_portrait   # noqa: E402
 
-SRC = "/app/data/marketing-src/man.png"
+SRC_DEFAULT = "/app/data/marketing-src/man.png"   # override with argv[2]
 OUT = "/app/data/marketing-out"
 
 WORDS = [
@@ -56,9 +56,11 @@ WATCH = [
 
 def main():
     tag = sys.argv[1] if len(sys.argv) > 1 else "untagged"
-    if not os.path.isfile(SRC):
-        raise SystemExit("missing source: %s (copy man.png into this tree's "
-                         "data/marketing-src/)" % SRC)
+    src_path = sys.argv[2] if len(sys.argv) > 2 else SRC_DEFAULT
+    if not os.path.isabs(src_path):
+        src_path = os.path.join("/app/data/marketing-src", src_path)
+    if not os.path.isfile(src_path):
+        raise SystemExit("missing source: %s" % src_path)
     os.makedirs(OUT, exist_ok=True)
 
     print("=== %s ===" % tag)
@@ -66,7 +68,8 @@ def main():
         v = os.environ.get(k)
         print("  %-22s %s" % (k, "<unset>" if v is None else (v or "<empty>")))
 
-    base = open(SRC, "rb").read()
+    print("source %s" % src_path)
+    base = open(src_path, "rb").read()
     warns = WarningCollector()
     an = analyze_image(base, RenderConfig(), warns)
     png = render_displacement_portrait(
