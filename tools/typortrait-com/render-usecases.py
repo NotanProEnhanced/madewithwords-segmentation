@@ -37,18 +37,41 @@ SRC = "/app/data/marketing-src"
 OUT = "/app/data/marketing-out"
 
 # (source file, output file, words)
+# Words supplied by the owner. The repeated name at the head and tail of each
+# list is deliberate -- it gives the engine the subject's name to place more
+# than once, which is how the real product is used.
 JOBS = [
     ("graduate.png", "use-graduate-new.jpg", [
-        "CLASS OF 2026", "FIRST IN THE FAMILY", "STUBBORN", "CURIOUS",
-        "LATE NIGHTS", "KEPT GOING", "KIND TO EVERYONE", "READY",
+        "JACK", "JACK", "GRADUATE", "CLASS OF 2026", "SON", "BROTHER",
+        "GRANDSON", "FRIEND", "STUDENT", "COLLEGE", "CAMPUS", "DORM LIFE",
+        "LATE NIGHTS", "FINALS", "STUDY SESSIONS", "GAME DAYS", "ROAD TRIPS",
+        "TEAMMATES", "BEST FRIENDS", "HARD WORK", "DETERMINATION",
+        "NEVER QUIT", "BIG DREAMS", "AMBITIOUS", "COMPETITIVE", "CONFIDENT",
+        "FUNNY", "LOYAL", "ADVENTUROUS", "INDEPENDENT", "PROUD",
+        "ACCOMPLISHED", "NEXT CHAPTER", "NEW BEGINNING", "CAREER",
+        "THE FUTURE", "DREAM BIG", "GO FOR IT", "WE ARE PROUD OF YOU", "JACK",
     ]),
     ("son.png", "use-children-new.jpg", [
-        "SEVEN", "DINOSAURS", "MUDDY KNEES", "ASKS WHY", "BRAVE",
-        "LOUD LAUGH", "BEST HUGS", "MY BOY",
+        "LEO", "LEO", "SON", "GRANDSON", "BROTHER", "BUDDY", "LITTLE MAN",
+        "MOMMY", "DADDY", "FAMILY", "HOME", "HUGS", "GIGGLES", "BIG SMILE",
+        "BEDTIME STORIES", "SATURDAY MORNINGS", "CARTOONS", "LEGO",
+        "DINOSAURS", "SUPERHEROES", "BIKE RIDES", "PLAYGROUND", "SOCCER",
+        "ICE CREAM", "PIZZA", "PANCAKES", "BIRTHDAY CAKE",
+        "CHRISTMAS MORNING", "BEST FRIENDS", "SILLY JOKES", "QUESTIONS",
+        "MISCHIEF", "ADVENTURES", "CURIOUS", "FEARLESS", "SWEET", "FUNNY",
+        "SMART", "KIND", "IMAGINATION", "OUR BOY", "OUR SUNSHINE",
+        "LOVE YOU TO THE MOON", "LEO",
     ]),
     ("man.png", "use-memorial-new.jpg", [
-        "GENTLE", "PATIENT", "SUNDAY PANCAKES", "TERRIBLE JOKES",
-        "STEADY HANDS", "ALWAYS EARLY", "GRANDAD", "LOVED",
+        "MICHAEL", "MICHAEL", "MIKE", "DAD", "FATHER", "HUSBAND", "GRANDPA",
+        "SON", "BROTHER", "FRIEND", "FAMILY", "HOME", "PROVIDER",
+        "PROTECTOR", "MENTOR", "BEST FRIEND", "FAMILY FIRST",
+        "SUNDAY DINNER", "BACKYARD", "GRILL MASTER", "MORNING COFFEE",
+        "ROAD TRIPS", "VACATIONS", "GOLF", "FOOTBALL", "GARAGE", "OLD SONGS",
+        "BAD JOKES", "GREAT STORIES", "HARD WORK", "ALWAYS THERE",
+        "GOOD ADVICE", "STRONG", "DEPENDABLE", "LOYAL", "PATIENT",
+        "GENEROUS", "FUNNY", "PROUD", "STEADFAST", "OUR ROCK", "ROLE MODEL",
+        "LEGACY", "LOVE", "RESPECT", "FOREVER", "MICHAEL",
     ]),
 ]
 
