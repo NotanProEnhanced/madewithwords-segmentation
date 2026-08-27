@@ -57,6 +57,8 @@ WATCH = [
 def main():
     tag = sys.argv[1] if len(sys.argv) > 1 else "untagged"
     src_path = sys.argv[2] if len(sys.argv) > 2 else SRC_DEFAULT
+    width = int(sys.argv[3]) if len(sys.argv) > 3 else 1600
+    aspect = float(sys.argv[4]) if len(sys.argv) > 4 else 1.0
     if not os.path.isabs(src_path):
         src_path = os.path.join("/app/data/marketing-src", src_path)
     if not os.path.isfile(src_path):
@@ -68,15 +70,15 @@ def main():
         v = os.environ.get(k)
         print("  %-22s %s" % (k, "<unset>" if v is None else (v or "<empty>")))
 
-    print("source %s" % src_path)
+    print("source %s  width=%d aspect=%.2f" % (src_path, width, aspect))
     base = open(src_path, "rb").read()
     warns = WarningCollector()
     an = analyze_image(base, RenderConfig(), warns)
     png = render_displacement_portrait(
-        an, WORDS, ground="navy", out_width=1600, supersample=2,
-        ink="photo", print_aspect=1.0, breathe=True, graduate=True,
+        an, WORDS, ground="navy", out_width=width, supersample=2,
+        ink="photo", print_aspect=aspect, breathe=True, graduate=True,
         backdrop="studio")
-    im = Image.open(io.BytesIO(png)).convert("RGB").resize((1100, 1100), Image.LANCZOS)
+    im = Image.open(io.BytesIO(png)).convert("RGB")
     out = os.path.join(OUT, "compare-%s.jpg" % tag)
     im.save(out, quality=92, optimize=True)
     print("wrote %s  %s" % (out, warns.as_list()))
