@@ -29,6 +29,7 @@ NEWDIR = (sys.argv[2] if len(sys.argv) > 2
 PAGE = os.path.join(ROOT, "index.html")
 
 TITLE = "Birthdays, Anniversaries&hellip;"
+WORDS_LINE = ("Words like <b>birthday &middot; anniversary &middot; together &middot; years &middot; always &middot; us</b>")
 COPY = ("A gift that says more than a card: the words you would use about them, "
         "in their own portrait.")
 
@@ -58,15 +59,27 @@ def main():
     if TITLE in src:
         print("card already replaced")
     else:
-        # heading + the paragraph that follows it, without matching the exact
-        # typographic apostrophes in the old copy
+        # The heading appears twice: the use-case card (prose body) and the
+        # prints card (a "Words like ..." list). Different bodies, so replace
+        # each with its own. Working by index avoids having to match the exact
+        # typographic apostrophes in the old copy.
         h = "<h3>Graduates</h3>"
-        if src.count(h) != 1:
-            die("heading found %d times, expected 1" % src.count(h))
-        i = src.index(h)
-        j = src.index("</p>", i) + len("</p>")
-        src = src[:i] + "<h3>%s</h3><p>%s</p>" % (TITLE, COPY) + src[j:]
-        print("card heading and copy replaced")
+        if src.count(h) != 2:
+            die("heading found %d times, expected 2" % src.count(h))
+
+        bodies = ['<p>%s</p>' % COPY, '<p class="words">%s</p>' % WORDS_LINE]
+        for body in bodies:
+            i = src.index(h)
+            j = src.index("</p>", i) + len("</p>")
+            src = src[:i] + "<h3>%s</h3>%s" % (TITLE, body) + src[j:]
+        print("both cards replaced (use-case prose, prints word list)")
+
+        # All three mockups are now the same wood frame on a desk, so the old
+        # per-image descriptions (light-oak on a wall, black frame on a desk)
+        # no longer describe what a reader sees.
+        n = len(re.findall(r'matted in [^"]*', src))
+        src = re.sub(r'matted in [^"]*', 'in a wood frame on a desk', src)
+        print("mockup alt text normalised on %d images" % n)
 
         for old, new in TOKENS:
             n = src.count(old)
