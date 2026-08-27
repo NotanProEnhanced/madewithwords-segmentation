@@ -60,6 +60,12 @@ RENDER_WIDTH = 1400
 # be one -- and the crop makes it asymmetric, so the print reads as misaligned.
 # The mat already provides the breathing room here.
 BREATHE = False
+# Print margin inside the mat, as a fraction of the aperture. Without it the
+# portrait runs edge to edge and the subject's head touches the mat, which no
+# real framed print does -- a print is trimmed with a margin and the mat overlaps
+# its edge. The margin is filled with the portrait's own background colour, so it
+# reads as the print continuing rather than as a border.
+INSET = 0.055
 
 # Same words as the use-case renders -- these are the same three subjects, so the
 # portrait in the frame should be the portrait on the card.
@@ -212,9 +218,16 @@ def main():
             backdrop=BACKDROP)
         portrait = Image.open(io.BytesIO(png)).convert("RGB")
         portrait, trimmed = trim_ground_pad(portrait)
-        # cover-fit guards against any rounding drift between the render's aspect
-        # and the opening's; with print_aspect=0.8 it is close to a straight resize.
-        portrait = ImageOps.fit(portrait, (bw, bh), Image.LANCZOS)
+
+        # Seat the portrait inside the aperture with a margin, on a card of its own
+        # background colour, so the head never touches the mat.
+        mx = int(round(bw * INSET))
+        my = int(round(bh * INSET))
+        inner = ImageOps.fit(portrait, (bw - 2 * mx, bh - 2 * my), Image.LANCZOS)
+        fill = portrait.getpixel((2, 2))
+        card = Image.new("RGB", (bw, bh), fill)
+        card.paste(inner, (mx, my))
+        portrait = card
 
         out = scene.copy()
         out.paste(portrait, (box[0], box[1]))
