@@ -85,7 +85,7 @@
 <style>
 .pw-rev{position:relative;display:block;line-height:0}
 .pw-rev img{width:100%;height:auto;display:block}
-.pw-rev .pw-a{position:absolute!important;inset:0;animation-name:pwRev!important;animation-duration:9s!important;animation-timing-function:ease-in-out!important;animation-iteration-count:infinite!important;animation-fill-mode:both!important;animation-delay:0s!important}
+.pw-rev .pw-a{position:absolute;inset:0;animation:pwRev 9s ease-in-out infinite}
 .pw-rev .pw-cap{position:absolute;left:0;right:0;bottom:8px;text-align:center;line-height:1.4;
   font:600 12px/1.4 system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;
   color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.7);pointer-events:none}

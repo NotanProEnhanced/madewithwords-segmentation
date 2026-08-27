@@ -341,8 +341,27 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # Coarse tier size. 64 is the historic value; lowering it shrinks only the LARGEST
     # words (the ones flat areas get) without touching the fine end, so gradation is kept.
     _tc = float(os.environ.get("PET_TIER_COARSE", "64") or 64.0)
-    tL = _rows(stream, W, H, _tc * sc * _tsc, rng)
-    tM = _rows(stream, W, H, 40 * sc * _tsc, rng)
+    # PET_WORD_TIERS: importance becomes SIZE, not just repetition. _weighted_stream already
+    # repeats the lead phrases more often, but every tier drew from the same stream -- so which
+    # words came out large was an accident of where a row happened to land. Feeding the coarse
+    # tier only the leading phrases (the name, the quirk, the bond -- whatever the form put
+    # first) makes the largest words in the portrait always the meaningful ones, and leaves the
+    # adjectives as texture. Off (default) = every tier draws the full stream, as before.
+    _hero, _mid = stream, stream
+    if os.environ.get("PET_WORD_TIERS", "").strip().lower() in ("1", "true", "on", "yes"):
+        _ph = _phrases(words)
+        _n = len(_ph)
+        if _n >= 3:
+            # Hero = the LEADING phrases that are also SHORT. Importance alone is not enough:
+            # a nine-word memory at coarse size becomes a banner across the subject, while the
+            # same words read beautifully one tier down. Names and quirks are naturally brief,
+            # so this keeps them largest without asking the customer to write telegraphically.
+            _lead = _ph[:max(2, int(round(_n * 0.55)))]
+            _brief = [q for q in _lead if len(q.split()) <= 3]
+            _hero = _brief[:max(1, int(round(_n * 0.30)))] or _lead[:1]
+            _mid = _lead
+    tL = _rows(_hero, W, H, _tc * sc * _tsc, rng)
+    tM = _rows(_mid, W, H, 40 * sc * _tsc, rng)
     tF = _rows(stream, W, H, 26 * sc * _tsc, rng)
     tMi = _rows(stream, W, H, 16 * sc * _tsc, rng)
 
@@ -377,6 +396,21 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     df = np.clip(np.maximum(det, feat), 0, 1)
     if _tg > 0.0 and _tg != 1.0:
         df = np.power(df, _tg)
+    # PET_HERO_CENTRE: tier choice is driven by image detail, so the COARSE tier lands on
+    # whatever is flattest -- often a smooth patch of ruff at the frame edge rather than the
+    # face. Raise df toward the subject's periphery so the outer region takes finer tiers and
+    # the largest words stay on the head, where a hero word reads as an anchor rather than a
+    # stray banner. Radius is normalised to the mask's own bounding box, so it follows the
+    # animal rather than the canvas. 0 (default) = unchanged.
+    _hc = float(os.environ.get("PET_HERO_CENTRE", "0") or 0.0)
+    if _hc > 0.0:
+        _ys, _xs = np.nonzero(mask > 0.5)
+        if _ys.size > 32:
+            _cy, _cx = float(_ys.mean()), float(_xs.mean())
+            _ry = max(1.0, (float(_ys.max()) - float(_ys.min())) * 0.5)
+            _rx = max(1.0, (float(_xs.max()) - float(_xs.min())) * 0.5)
+            _rr = np.sqrt(((xx - _cx) / _rx) ** 2 + ((yy - _cy) / _ry) ** 2)
+            df = np.clip(df + _hc * np.clip(_rr - 0.45, 0.0, 1.0), 0.0, 1.0)
     warped = wL.copy()
     for a0, b0, ia, ib in ((0.0, 0.45, wL, wM), (0.45, 0.75, wM, wF), (0.75, 1.0001, wF, wMi)):
         bt = np.clip((df - a0) / (b0 - a0), 0, 1)
@@ -396,6 +430,17 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         _slift = float(os.environ.get("PET_SHADOW_LIFT", "1.0") or 1.0)
         if _slift > 0.0:
             col = np.maximum(col, np.array([50.0, 42.0, 34.0], np.float32) * _slift)
+    # PET_NEGATIVE_SPACE: coverage is otherwise uniform across the whole subject -- every
+    # region equally busy, so the eye has nowhere to rest and meaningful words become wallpaper.
+    # Thin the type as the photo goes dark, so the deepest shadows dissolve toward the ground
+    # and read as depth rather than as texture. Highlights keep full density, so the lit
+    # structure stays built from words. 0 (default) = uniform, exactly as before.
+    _ns = float(os.environ.get("PET_NEGATIVE_SPACE", "0") or 0.0)
+    if _ns > 0.0:
+        _lq = np.clip(gray / 255.0, 0.0, 1.0)
+        _quiet = np.clip((0.45 - _lq) / 0.45, 0.0, 1.0)      # 1 at black -> 0 at mid-tone
+        _quiet = cv2.GaussianBlur(_quiet, (0, 0), sigmaX=max(1.0, W * 0.012))
+        dens = dens * (1.0 - min(max(_ns, 0.0), 0.95) * _quiet)
     a = (warped * dens * mask)[..., None]
     ground_rgb = np.full((H, W, 3), gbgr[::-1], np.float32)
     # SUBJECT BASE: the flat ground is painted across the WHOLE canvas, so INSIDE the

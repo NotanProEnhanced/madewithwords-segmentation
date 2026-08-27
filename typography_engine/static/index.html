@@ -63,6 +63,10 @@
   .reassure{color:var(--muted);font-size:14px;margin:16px auto 0;max-width:38ch;line-height:1.5}
   .card{background:var(--card);border:none;border-radius:var(--radius);box-shadow:var(--shadow);padding:28px;margin-top:22px}
 
+  .pf-more{background:none;border:none;padding:6px 0;margin-top:4px;font-size:13.5px;font-weight:600;color:var(--navy);cursor:pointer;opacity:.85}
+  .pf-more:hover{opacity:1;text-decoration:underline}
+  .pf-extra[hidden]{display:none}
+  .pf-opt>span{opacity:.62;font-weight:500}
   .drop{border:2px dashed #d8d3c8;border-radius:16px;padding:34px 18px;text-align:center;cursor:pointer;transition:.18s;background:#fcfbf9}
   .drop.drag{border-color:var(--navy);background:#f3f5fa}
   .drop .ico{font-size:13px;letter-spacing:.18em;color:var(--muted);text-transform:uppercase}
@@ -1054,24 +1058,37 @@ function _petSetup(){
     // portrait is emotionally UNIQUE instead of a generic chip list. The fields compose into the
     // existing #words box (name FIRST -> top weight on the server); #words stays editable.
     var _wl=document.getElementById("wordsLbl"); if(_wl) _wl.innerHTML="The words we&rsquo;ll sculpt";
-    var _wh=document.getElementById("wordsHint"); if(_wh) _wh.textContent="Built from what you tell us below — edit it any way you like.";
+    var _wh=document.getElementById("wordsHint"); if(_wh) _wh.textContent="Built from what you tell us below. Aim for 20\u201330 words and phrases \u2014 a few that are specifically them, plus enough others to fill the portrait.";
     var _wt=document.getElementById("words"); if(_wt){ _wt.setAttribute("placeholder","Milo, Bug, Goofball, Fetch, Rescued 2021…"); _wt.rows=3; }
     if(_wt && !document.getElementById("petForm")){
-      var TRAITS=["Goofball","Cuddler","Velcro","Gentle","Dramatic","Bossy","Sweet","Old soul","Diva","Brave"];
-      var LOVES=["Fetch","Naps","Treats","Belly rubs","The window","Car rides","Squeaky toys","Snow","Snacks","Zoomies"];
+      // Prompts, not answers. Supplying "Goofball" and "Velcro" guarantees generic
+      // vocabulary; asking a question pulls the answer toward this particular animal.
+      // Each entry is [chip label, example placeholder].
+      var TRAITS=[["how they greet you","loses her mind at the door"],["their mood","serious · silly · anxious · unbothered"],
+                  ["a sound they make","the little grumble"],["what they do at 3am","sits on my chest"],
+                  ["in one word","gentle · bossy · daft"]];
+      var LOVES=[["where they sleep","the warm laundry"],["their favourite spot","the window at 4pm"],
+                 ["what they beg for","cheese, always cheese"],["a place you go","the long field"],
+                 ["what they carry around","one sock, never a pair"]];
       var pf=document.createElement("div"); pf.id="petForm"; pf.className="petform";
       pf.innerHTML=
          '<label class="pf-row"><span>Their name</span><input id="pfName" type="text" autocomplete="off" maxlength="24" placeholder="Milo"></label>'
-        +'<label class="pf-row"><span>Nicknames <em>(optional)</em></span><input id="pfNick" type="text" autocomplete="off" maxlength="60" placeholder="Bug, Mister, Bubba"></label>'
+
         +'<div class="pf-field"><div class="pf-lbl">Personality</div><div class="pf-chips" id="pfTraitChips"></div>'
         +'<input id="pfTraits" type="text" autocomplete="off" maxlength="90" placeholder="tap above, or type your own"></div>'
         +'<div class="pf-field"><div class="pf-lbl">Loves</div><div class="pf-chips" id="pfLoveChips"></div>'
         +'<input id="pfLoves" type="text" autocomplete="off" maxlength="90" placeholder="tap above, or type your own"></div>'
-        +'<label class="pf-row"><span>Their story <em>(optional)</em></span><input id="pfStory" type="text" autocomplete="off" maxlength="60" placeholder="Rescued 2021 · my whole heart"></label>';
+        +'<label class="pf-row"><span>Only they do this</span><input id="pfQuirks" type="text" autocomplete="off" maxlength="90" placeholder="steals socks · sings at the door · sleeps in the sink"></label>'
+        +'<label class="pf-row"><span>What they are to you</span><input id="pfBond" type="text" autocomplete="off" maxlength="60" placeholder="my shadow · first one up · the boss of me"></label>'
+        +'<button type="button" id="pfMore" class="pf-more">+ add more about them</button>'
+        +'<div id="pfExtra" class="pf-extra" hidden>'
+        +'<label class="pf-row pf-opt"><span>Nicknames</span><input id="pfNick" type="text" autocomplete="off" maxlength="60" placeholder="Bug, Mister, Bubba"></label>'
+        +'<label class="pf-row pf-opt"><span>Their story</span><input id="pfStory" type="text" autocomplete="off" maxlength="60" placeholder="Rescued 2021 · lake summers · my whole heart"></label>'
+        +'</div>';
       var anchor=_wl||_wt; anchor.parentNode.insertBefore(pf, anchor);   // form sits ABOVE the words box
       var pfCompose=function(){
         var parts=[]; var nm=(document.getElementById("pfName").value||"").trim(); if(nm) parts.push(nm);
-        ["pfNick","pfTraits","pfLoves","pfStory"].forEach(function(id){
+        ["pfQuirks","pfBond","pfNick","pfTraits","pfLoves","pfStory"].forEach(function(id){
           (document.getElementById(id).value||"").split(/[,\n]+/).forEach(function(s){ s=s.trim(); if(s) parts.push(s); });
         });
         var seen={}, out=[]; parts.forEach(function(p){ var k=p.toUpperCase(); if(!seen[k]){ seen[k]=1; out.push(p); } });  // de-dupe, keep order (name first)
@@ -1079,18 +1096,25 @@ function _petSetup(){
       };
       var addChips=function(hostId, fieldId, list){
         var host=document.getElementById(hostId);
-        list.forEach(function(w){ var b=document.createElement("button"); b.type="button"; b.className="petchip"; b.textContent=w;
-          b.addEventListener("click",function(){
-            var f=document.getElementById(fieldId); var cur=(f.value||"").trim(); var parts=cur?cur.split(/\s*,\s*/):[];
-            var i=parts.map(function(p){return p.toLowerCase();}).indexOf(w.toLowerCase());
-            if(i<0){ parts.push(w); b.classList.add("on"); } else { parts.splice(i,1); b.classList.remove("on"); }   // toggle
-            f.value=parts.filter(Boolean).join(", "); pfCompose();
+        list.forEach(function(pair){
+          var b=document.createElement("button"); b.type="button"; b.className="petchip"; b.textContent=pair[0];
+          b.addEventListener("click",function(){                     // prompt, don't answer
+            var f=document.getElementById(fieldId);
+            f.setAttribute("placeholder", pair[1]);
+            host.querySelectorAll(".petchip").forEach(function(x){ x.classList.remove("on"); });
+            b.classList.add("on");
+            f.focus();
           });
           host.append(b);
         });
       };
       addChips("pfTraitChips","pfTraits",TRAITS); addChips("pfLoveChips","pfLoves",LOVES);
-      ["pfName","pfNick","pfTraits","pfLoves","pfStory"].forEach(function(id){ document.getElementById(id).addEventListener("input", pfCompose); });
+      ["pfName","pfNick","pfTraits","pfQuirks","pfBond","pfLoves","pfStory"].forEach(function(id){ document.getElementById(id).addEventListener("input", pfCompose); });
+      var _more=document.getElementById("pfMore");
+      if(_more) _more.addEventListener("click", function(){
+        var x=document.getElementById("pfExtra");
+        x.hidden=!x.hidden; _more.textContent = x.hidden ? "+ add more about them" : "\u2212 fewer details";
+      });
     }
     var drop=document.getElementById("drop");
     if(drop && !document.getElementById("petGuide")){
@@ -2459,7 +2483,7 @@ function revealPlain(entry, crossfade){
     overlay.src=url; busy.classList.add("hide");
   } else {
     portrait.classList.remove("shown");
-    portrait.onload=()=>{ portrait.classList.add("shown"); busy.classList.add("hide"); applyKeepsake(); };
+    portrait.onload=()=>{ portrait.classList.add("shown"); busy.classList.add("hide"); applyKeepsake(); cmpSweepOnce(); };
     portrait.src=url;
   }
 }
@@ -2473,7 +2497,7 @@ function revealFromAssembly(entry){
   const url = entry.preview + "?t=" + Date.now();
   const im=new Image();
   im.onload=()=>{
-    portrait.onload=null; portrait.src=url; portrait.classList.add("shown"); applyKeepsake();
+    portrait.onload=null; portrait.src=url; portrait.classList.add("shown"); applyKeepsake(); cmpSweepOnce();
     canvas.style.transition="opacity .5s ease"; canvas.style.opacity="0";
     busy.classList.add("hide"); stopComposeStatus();
     setTimeout(()=>{ stopAssembly(); canvas.style.opacity=""; canvas.style.transition=""; }, 540);
@@ -2725,6 +2749,31 @@ cmpHandle.addEventListener("pointerdown", e=>{ cmpDragging=true; try{cmpHandle.s
 window.addEventListener("pointermove", e=>{ if(cmpDragging) cmpFromX(e.clientX); });
 window.addEventListener("pointerup", ()=>{ cmpDragging=false; });
 setCmp(50);
+
+/* First render of a session: sweep the compare handle from the photograph across to the
+   portrait, so the words are seen EMERGING from their own photo rather than replacing it.
+   Runs once per session -- replaying it on every tweak would obstruct the comparison the
+   user is actually trying to make. Reduced-motion jumps straight to the finished portrait. */
+function cmpSweepOnce(){
+  try{
+    var _k = "cmpSwept:" + ((beforeImg && beforeImg.src) ? beforeImg.src.slice(-60) : "x");
+    if(sessionStorage.getItem(_k)){ setCmp(98); return; }   // per PHOTO, not per session:
+    sessionStorage.setItem(_k,"1");                          // a second pet deserves its own reveal
+  }catch(_){ }
+  if(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches){ setCmp(98); return; }
+  setCmp(2);
+  var t0=null, DUR=1600, HOLD=450;
+  function step(ts){
+    if(t0===null) t0=ts;
+    var e=ts-t0;
+    if(e<HOLD){ requestAnimationFrame(step); return; }
+    var k=Math.min(1,(e-HOLD)/DUR);
+    var eased = k<0.5 ? 4*k*k*k : 1-Math.pow(-2*k+2,3)/2;
+    setCmp(2+eased*96);
+    if(k<1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
 
 /* ---------- swatch carousel arrows ---------- */
 $("#arrowL").addEventListener("click", ()=> swatchEl.scrollBy({left:-200,behavior:"smooth"}));
