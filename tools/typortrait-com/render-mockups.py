@@ -48,6 +48,10 @@ CANVAS = (900, 1125)
 
 GROUND = "navy"
 INK = "photo"
+# Match the studio exactly: it posts ground="navy" with backdrop="studio",
+# which recolours the segmented background to #e6e6e6. Omitting it leaves the
+# subject on bare navy, which is not what a customer receives.
+BACKDROP = "studio"
 PRINT_ASPECT = 0.8          # 4:5, matching the mat opening
 RENDER_WIDTH = 1400
 # breathe=True adds a margin of pure ground around the composition. On a bare
@@ -204,7 +208,8 @@ def main():
         an = analyze_image(base, RenderConfig(), warns)
         png = render_displacement_portrait(
             an, words, ground=GROUND, out_width=RENDER_WIDTH, supersample=2,
-            ink=INK, print_aspect=PRINT_ASPECT, breathe=BREATHE, graduate=True)
+            ink=INK, print_aspect=PRINT_ASPECT, breathe=BREATHE, graduate=True,
+            backdrop=BACKDROP)
         portrait = Image.open(io.BytesIO(png)).convert("RGB")
         portrait, trimmed = trim_ground_pad(portrait)
         # cover-fit guards against any rounding drift between the render's aspect

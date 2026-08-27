@@ -77,6 +77,11 @@ JOBS = [
 
 GROUND = "navy"
 INK = "photo"          # Original -- the only inks now offered are photo and mono
+# The studio posts ground="navy" AND backdrop="studio" (variantPost in
+# static/index.html). "backdrop" recolours only the segmented background to
+# #e6e6e6, a light neutral wall. Without it the subject sits on bare navy --
+# a background no customer ever gets.
+BACKDROP = "studio"
 OUT_WIDTH = 1600
 FINAL = 1100
 
@@ -96,7 +101,8 @@ def main():
         an = analyze_image(base, RenderConfig(), warns)
         png = render_displacement_portrait(
             an, words, ground=GROUND, out_width=OUT_WIDTH, supersample=2,
-            ink=INK, print_aspect=1.0, breathe=True, graduate=True)
+            ink=INK, print_aspect=1.0, breathe=True, graduate=True,
+            backdrop=BACKDROP)
         im = Image.open(io.BytesIO(png)).convert("RGB").resize(
             (FINAL, FINAL), Image.LANCZOS)
         im.save(os.path.join(OUT, out_name), quality=90, optimize=True)
