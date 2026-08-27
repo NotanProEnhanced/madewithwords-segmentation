@@ -223,10 +223,19 @@ def main():
         # background colour, so the head never touches the mat.
         mx = int(round(bw * INSET))
         my = int(round(bh * INSET))
-        inner = ImageOps.fit(portrait, (bw - 2 * mx, bh - 2 * my), Image.LANCZOS)
+        aw, ah = bw - 2 * mx, bh - 2 * my
+        # CONTAIN, not cover. The trimmed portrait is about 0.72 aspect against
+        # the aperture's 0.80, so a cover-fit crops top and bottom -- which took
+        # the top off every subject's head. Scale to fit entirely and let the
+        # background-coloured card take up the difference; because the card is
+        # the portrait's own background colour, the letterboxing is invisible.
+        pw, ph = portrait.size
+        scale = min(aw / float(pw), ah / float(ph))
+        inner = portrait.resize((max(1, int(round(pw * scale))),
+                                 max(1, int(round(ph * scale)))), Image.LANCZOS)
         fill = portrait.getpixel((2, 2))
         card = Image.new("RGB", (bw, bh), fill)
-        card.paste(inner, (mx, my))
+        card.paste(inner, ((bw - inner.size[0]) // 2, (bh - inner.size[1]) // 2))
         portrait = card
 
         out = scene.copy()
