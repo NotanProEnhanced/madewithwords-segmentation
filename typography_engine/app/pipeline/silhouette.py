@@ -223,6 +223,68 @@ def silhouette_from_mask(mask: np.ndarray, w: int, h: int) -> Silhouette:
     return Silhouette(mask=binm, bbox=bbox, coverage=coverage, confidence=0.99)
 
 
+def _pad_for_segmentation(img, frac):
+    """A padded copy of the image for SEGMENTATION ONLY.
+
+    A tight crop starves a semantic portrait model of the context it needs to
+    separate person from environment -- measured: the same photo segments
+    cleanly uncropped and badly cropped, in two unrelated model families.
+    Replicate-pad, blur the synthetic surround so it presents no false edge,
+    then paste the real pixels back over the centre.
+
+    Returns (padded_image, box) where box is (px, py, w, h) for _unpad.
+    """
+    h, w = img.bgr.shape[:2]
+    px = max(1, int(round(w * frac)))
+    py = max(1, int(round(h * frac)))
+    # How the synthetic surround is filled.
+    #   replicate  smears edge pixels outward. On a frame-filling portrait that
+    #              means smearing SKIN and HAIR outward, so the model reads
+    #              "the person continues past the frame" and returns a soft,
+    #              uncertain alpha around the whole perimeter.
+    #   constant   a neutral fill the model can read as background, which should
+    #              sharpen the boundary instead of dissolving it.
+    _mode = (os.environ.get("TYPO_SEG_PAD_MODE", "replicate") or "replicate").strip().lower()
+    if _mode == "constant":
+        _lv = float(os.environ.get("TYPO_SEG_PAD_FILL", "128") or 128.0)
+        canvas = cv2.copyMakeBorder(img.bgr, py, py, px, px, cv2.BORDER_CONSTANT,
+                                    value=(_lv, _lv, _lv))
+    elif _mode == "reflect":
+        canvas = cv2.copyMakeBorder(img.bgr, py, py, px, px, cv2.BORDER_REFLECT_101)
+    else:
+        canvas = cv2.copyMakeBorder(img.bgr, py, py, px, px, cv2.BORDER_REPLICATE)
+    # Blur strength for the synthetic surround. Too much bleeds into the guided
+    # filter that snaps the alpha to edges, softening the subject boundary near
+    # the frame; too little presents a hard false edge. 0 disables the blur.
+    _b = float(os.environ.get("TYPO_SEG_PAD_BLUR", "0.025") or 0.0)
+    if _b > 0.0:
+        canvas = cv2.GaussianBlur(canvas, (0, 0), sigmaX=max(1.0, max(w, h) * _b))
+    canvas[py:py + h, px:px + w] = img.bgr
+    gray = cv2.cvtColor(canvas, cv2.COLOR_BGR2GRAY)
+    try:
+        import dataclasses as _dc
+        padded = _dc.replace(img, bgr=canvas, gray=gray)
+    except Exception:  # noqa: BLE001 -- not a dataclass, or frozen oddly
+        import copy as _copy
+        padded = _copy.copy(img)
+        try:
+            padded.bgr = canvas
+            padded.gray = gray
+        except Exception:  # noqa: BLE001
+            return img, None
+    return padded, (px, py, w, h)
+
+
+def _unpad(arr, box):
+    """Crop a padded segmentation result back to the original frame."""
+    if arr is None or box is None:
+        return arr
+    px, py, w, h = box
+    if arr.shape[0] < py + h or arr.shape[1] < px + w:
+        return arr
+    return arr[py:py + h, px:px + w]
+
+
 def extract_silhouette(
     img: LoadedImage,
     warns: WarningCollector,
@@ -231,12 +293,25 @@ def extract_silhouette(
 ) -> Silhouette:
     h, w = img.bgr.shape[:2]
 
+    # Segmentation-only virtual uncrop. The uploaded image and the render are
+    # untouched; this only widens what the classifier sees. Off unless set.
+    _segpad = float(os.environ.get("TYPO_SEG_PAD", "0") or 0.0)
+    _seg_img, _seg_box = (img, None)
+    if _segpad > 0.0:
+        _seg_img, _seg_box = _pad_for_segmentation(img, _segpad)
+        if os.environ.get("TYPO_MASK_DEBUG", "").strip().lower() in ("1", "true", "on", "yes"):
+            try:
+                print("[segpad] frac=%.3f  %dx%d -> %dx%d"
+                      % (_segpad, w, h, _seg_img.bgr.shape[1], _seg_img.bgr.shape[0]))
+            except Exception:  # noqa: BLE001
+                pass
+
     # Best (opt-in): a real matting model -> true strand-level hair alpha. Only runs when
     # TYPO_MATTE_MODEL is set and the model + onnxruntime are available; otherwise falls
     # straight through to MediaPipe below. Fully fail-safe (matte() never raises).
     from . import matting
     if matting.enabled():
-        alpha = matting.matte(img.bgr, warns)
+        alpha = _unpad(matting.matte(_seg_img.bgr, warns), _seg_box)
         if alpha is not None:
             binm = _clean_mask((alpha > 0.5).astype(np.uint8) * 255)
             cov = float((binm > 127).sum()) / float(h * w)
@@ -251,7 +326,8 @@ def extract_silhouette(
                 return Silhouette(mask=binm, bbox=bbox, coverage=cov, confidence=conf, soft=soft)
 
     # Primary: MediaPipe selfie segmentation (clean person/background cut).
-    selfie, soft = _selfie_mask(img, warns)
+    selfie, soft = _selfie_mask(_seg_img, warns)
+    selfie, soft = _unpad(selfie, _seg_box), _unpad(soft, _seg_box)
     if selfie is not None:
         bbox = _bbox_of(selfie)
         coverage = float((selfie > 127).sum()) / float(h * w)
