@@ -24,7 +24,10 @@ ANCHOR = """            png_bytes = await _bounded_to_thread(
                 render_displacement_portrait, an, disp_words, ground=ground_choice,
 """
 
-NEW = """            if os.environ.get("TYPO_ARGS_DEBUG", "").strip().lower() in ("1", "true", "on", "yes"):
+NEW = """            # __import__ rather than `os`: this handler has a function-local
+            # `import os` further down, which makes `os` local for the WHOLE
+            # function -- referencing it here raises UnboundLocalError.
+            if __import__("os").environ.get("TYPO_ARGS_DEBUG", "").strip().lower() in ("1", "true", "on", "yes"):
                 try:
                     print("[args] ground=%r ink=%r backdrop=%r aspect=%r out_width=%r ss=%r "
                           "flow=%r uppercase=%r breathe=%r variety=%r sunglasses=%r "
