@@ -86,14 +86,23 @@ def main():
         print("already patched -- no change")
         return
 
-    head = src.splitlines()[:40]
+    lines = src.splitlines(True)
+    head = [l.strip() for l in lines[:60]]
     missing = [m for m in NEEDED
-               if not any(line.strip() == m or line.strip().startswith(m + " ")
-                          for line in head)]
+               if not any(h == m or h.startswith(m + " ") for h in head)]
     if missing:
-        raise SystemExit("ABORTED: analyze.py is missing module-scope imports: %s\n"
-                         "Add them by hand -- a function-local import would rebind "
-                         "the name for the whole function." % ", ".join(missing))
+        # Add them at module scope, after the last existing top-level import. A
+        # function-local import would rebind the name for the whole function --
+        # the trap that broke the main.py guard earlier.
+        last = -1
+        for i, l in enumerate(lines[:60]):
+            if l.startswith("import ") or l.startswith("from "):
+                last = i
+        if last < 0:
+            raise SystemExit("ABORTED: no import block found in analyze.py")
+        lines[last + 1:last + 1] = [m + "\n" for m in missing]
+        src = "".join(lines)
+        print("added module-scope imports: %s" % ", ".join(missing))
 
     if src.count(ANCHOR) != 1:
         raise SystemExit("ABORTED: anchor found %d times, expected 1" % src.count(ANCHOR))
