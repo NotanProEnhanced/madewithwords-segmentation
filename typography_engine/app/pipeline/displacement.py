@@ -1176,22 +1176,35 @@ def render_displacement_portrait(
     # light wash below, on light paper the paper already reads as teeth. A closed
     # mouth yields no mask and is left untouched.
     from .tonal import _teeth_mask
-    teeth = None                       # union every subject's open-mouth teeth region
-    for _fp in all_pts:
+    # Per-face gate. Merging first and testing the union let one subject's dark
+    # lip crease validate "open mouth" for every face in the photo -- two closed
+    # mouths rendered as two pale blobs. Each face is now judged on its own
+    # pixels and dropped before it can contribute to the union.
+    _tdark = float(os.environ.get("TYPO_TEETH_DARK", "60.0") or 60.0)
+    _tbright = float(os.environ.get("TYPO_TEETH_BRIGHT", "205.0") or 205.0)
+    _tdbg = os.environ.get("TYPO_TEETH_DEBUG", "").strip().lower() in ("1", "true", "on", "yes")
+    teeth = None                       # union of the mouths that really are open
+    for _fi, _fp in enumerate(all_pts):
         _tm = _teeth_mask(_fp, H, W)
-        if _tm is not None:
-            teeth = _tm if teeth is None else np.maximum(teeth, _tm)
-    if teeth is not None:
-        # Appearance gate (parallels the eyes): the mesh mis-reads a resting/closed
-        # mouth on a tilted or lying-down photo as "open". A REAL open mouth has a
-        # dark cavity OR bright teeth; a falsely-detected one is uniform lip tone.
-        # Keep teeth only with a dark cavity (p10 low) or genuinely bright teeth.
-        tpx = gray[teeth > 0.5]
-        if tpx.size > 10:
-            p10 = float(np.percentile(tpx, 10))
-            p90 = float(np.percentile(tpx, 90))
-            if p10 > 60.0 and p90 < 205.0:
-                teeth = None                           # no cavity, no teeth -> closed mouth
+        if _tm is None:
+            continue
+        # A REAL open mouth has a dark cavity OR genuinely bright teeth; a
+        # falsely-detected one is uniform lip tone.
+        _tpx = gray[_tm > 0.5]
+        if _tpx.size > 10:
+            _p10 = float(np.percentile(_tpx, 10))
+            _p90 = float(np.percentile(_tpx, 90))
+            _closed = (_p10 > _tdark and _p90 < _tbright)
+            if _tdbg:
+                try:
+                    print("[teeth] face=%d p10=%.1f p90=%.1f dark<=%.1f bright>=%.1f -> %s"
+                          % (_fi, _p10, _p90, _tdark, _tbright,
+                             "closed" if _closed else "KEPT"))
+                except Exception:
+                    pass
+            if _closed:
+                continue
+        teeth = _tm if teeth is None else np.maximum(teeth, _tm)
     if teeth is not None:
         a = a * (1.0 - 0.92 * teeth)
     if ground in PAPER_FAMILY:
@@ -1292,6 +1305,37 @@ def render_displacement_portrait(
             _dim = float(os.environ.get("TYPO_SUBJECT_DIM", "0.45") or 0.0)
             _m3 = (np.clip(mask01, 0, 1) * min(max(_sb, 0.0), 1.0))[..., None]
             _base = _base * (1.0 - _m3) + (bgr_full * (1.0 - _dim)) * _m3
+        # Field dump (TYPO_DUMP_FIELDS=<dir>). The composite below is fully
+        # determined by _base, al and ink_col, so when a render is wrong the
+        # answer is in one of them -- no inference required.
+        _dd = os.environ.get("TYPO_DUMP_FIELDS", "").strip()
+        if _dd:
+            try:
+                os.makedirs(_dd, exist_ok=True)
+
+                def _dump(_nm, _arr):
+                    _a = np.asarray(_arr, np.float32)
+                    if _a.ndim == 3 and _a.shape[2] == 1:
+                        _a = _a[..., 0]
+                    if float(_a.max()) <= 1.001:
+                        _a = _a * 255.0
+                    cv2.imwrite(os.path.join(_dd, _nm + ".png"),
+                                np.clip(_a, 0, 255).astype(np.uint8))
+
+                _dump("mask01", mask01)
+                _dump("soft01", soft01)
+                _dump("alpha", al)
+                _dump("base", _base)
+                _a1 = np.asarray(al, np.float32)
+                if _a1.ndim == 3:
+                    _a1 = _a1[..., 0]
+                print("[dump] %s  alpha mean=%.3f p95=%.3f   soft01 mean=%.3f   "
+                      "base mean=%.1f" % (_dd, float(_a1.mean()),
+                                          float(np.percentile(_a1, 95)),
+                                          float(np.asarray(soft01, np.float32).mean()),
+                                          float(np.asarray(_base, np.float32).mean())))
+            except Exception as _e:  # noqa: BLE001
+                print("[dump] failed: %s" % _e)
         out = _base * (1 - al) + ink_col * al
         if os.environ.get("TYPO_POLARITY", "0").strip().lower() in ("1", "true", "on", "yes"):
             # Polarity model (the paper-grade shadow behaviour, brought to the dark-ground

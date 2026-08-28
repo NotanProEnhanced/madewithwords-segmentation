@@ -489,7 +489,17 @@ def _teeth_mask(pts, h: int, w: int):
     p = np.array([pts[i] for i in _INNER_LIP], np.float32)
     pw = float(p[:, 0].max() - p[:, 0].min())
     ph = float(p[:, 1].max() - p[:, 1].min())
-    if pw < 3.0 or ph < 2.0 or ph / pw < 0.12:    # lips together -> no teeth
+    # Geometry gate. A closed mouth still has a thin inner-lip ring, so this
+    # ratio is the first line of defence against a false positive.
+    _tr = float(os.environ.get("TYPO_TEETH_MIN_RATIO", "0.12") or 0.12)
+    if os.environ.get("TYPO_TEETH_DEBUG", "").strip().lower() in ("1", "true", "on", "yes"):
+        try:
+            print("[teeth] pw=%.1f ph=%.1f ratio=%.3f gate=%.3f -> %s"
+                  % (pw, ph, (ph / pw if pw else 0.0), _tr,
+                     "closed" if (pw < 3.0 or ph < 2.0 or ph / pw < _tr) else "open"))
+        except Exception:
+            pass
+    if pw < 3.0 or ph < 2.0 or ph / pw < _tr:    # lips together -> no teeth
         return None
     mm = np.zeros((h, w), np.float32)
     cv2.fillConvexPoly(mm, cv2.convexHull(p.astype(np.int32)), 1.0)
