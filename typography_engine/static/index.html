@@ -1252,7 +1252,7 @@ function variantPost(id){
   const base = (state.style==="displacement" || state.style==="letter")
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
     : {ink:(id||"photo"), style:state.style, ground:"navy"};
-  base.backdrop = state.backdrop || "studio";
+  base.backdrop = state.backdrop || "";
   // A floral frame pairs only with the Paper sculpt -- force the ground so the preview
   // request matches what the server renders (the server also forces it, belt-and-suspenders).
   if(FLORAL_KEYS.indexOf(state.backdrop)>=0) base.ground = "paper";
