@@ -1,0 +1,33 @@
+# Typortrait
+
+> Typortrait turns a photo and the words that matter into a portrait made entirely of words — a deeply personal keepsake or gift. Build and preview for free; download a high-resolution image for $14.99, or order framed prints, canvas, posters and tees shipped worldwide.
+
+## What it is
+- A web app at https://app.typortrait.com that composes a likeness of a person out of text: their name, the traits you love, a date, or a whole message.
+- Two styles: Words (scattered traits) and Message (a passage laid out as readable lines that form the face).
+- Colours include navy, sepia, burgundy, forest, gold-on-black and full photo colour, on a light or dark background.
+- No design skills, no Photoshop and no software install required — the app does the art automatically in seconds.
+
+## How it works
+1. Upload a clear, well-lit, front-facing head-and-shoulders photo of one person.
+2. Type the words that matter, or paste a message.
+3. Choose a style and colour.
+4. Pay once and download the full-resolution, watermark-free image — or order a print.
+
+## Pricing
+- Free to build and preview (no credit card required).
+- $14.99 for a high-resolution, watermark-free digital download.
+- Physical prints from $15: framed prints, gallery canvas, posters and tees, shipped worldwide. Choose a product right after creating your portrait.
+- Secure checkout, powered by Stripe.
+
+## Popular uses
+- Memorials, anniversaries, weddings, birthdays, graduations, new babies, Mother's Day and Father's Day, children and pet portraits.
+
+## Privacy
+- Your photo is used only to create your portrait.
+
+## Links
+- Home: https://typortrait.com/
+- Create a portrait: https://app.typortrait.com
+- Terms of Use: https://app.typortrait.com/terms
+- Privacy Policy: https://app.typortrait.com/privacy
