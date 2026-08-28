@@ -51,7 +51,12 @@ def _pad_for_segmentation(img, frac):
     px = max(1, int(round(w * frac)))
     py = max(1, int(round(h * frac)))
     canvas = cv2.copyMakeBorder(img.bgr, py, py, px, px, cv2.BORDER_REPLICATE)
-    canvas = cv2.GaussianBlur(canvas, (0, 0), sigmaX=max(3.0, max(w, h) * 0.025))
+    # Blur strength for the synthetic surround. Too much bleeds into the guided
+    # filter that snaps the alpha to edges, softening the subject boundary near
+    # the frame; too little presents a hard false edge. 0 disables the blur.
+    _b = float(os.environ.get("TYPO_SEG_PAD_BLUR", "0.025") or 0.0)
+    if _b > 0.0:
+        canvas = cv2.GaussianBlur(canvas, (0, 0), sigmaX=max(1.0, max(w, h) * _b))
     canvas[py:py + h, px:px + w] = img.bgr
     gray = cv2.cvtColor(canvas, cv2.COLOR_BGR2GRAY)
     try:
