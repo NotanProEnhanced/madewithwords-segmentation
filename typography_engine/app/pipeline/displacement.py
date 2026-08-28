@@ -505,7 +505,11 @@ def render_displacement_portrait(
             # detection, and falls back to legacy eye-blobs/rings on EVERY face -- so
             # sunglasses wearers render see-through in the preview though the paid file
             # is correct. At SS=2 the threshold is unchanged (byte-identical).
-            if ir >= 8.0 * _ssn:
+            # Minimum iris radius for a face to get real eyes. Below this the
+            # face is skipped entirely and the legacy blob fallback takes over,
+            # which paints a dark disc. Small faces in a group photo sit under
+            # the original fixed 8.0. TYPO_IRIS_MIN_PX exposes it.
+            if ir >= float(os.environ.get("TYPO_IRIS_MIN_PX", "8.0") or 8.0) * _ssn:
                 _fi.append((icx, icy, ir))
         if len(_fi) < 2:
             continue
@@ -1065,7 +1069,13 @@ def render_displacement_portrait(
             p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
             if len(p) >= 3:
                 cv2.polylines(anchor, [cv2.convexHull(p)], True, 1.0, th, cv2.LINE_AA)
-    if not irises:
+    # Legacy blob fallback. When no iris resolved, this draws an ink disc at each
+    # lid centroid. On small faces that is a dark circle over a real eye -- worse
+    # than drawing nothing, since the rest of the face is already typography.
+    # TYPO_EYE_BLOB=0 renders those eyes as words instead. Default 1 = unchanged.
+    _eye_blob = os.environ.get("TYPO_EYE_BLOB", "1").strip().lower() \
+        not in ("0", "false", "off", "no")
+    if not irises and _eye_blob:
         # Legacy eye presence: an ink blob at the lid centroid. Only used when the
         # iris landmarks can't resolve -- with real irises the round pupil and
         # catchlight below model the eye properly instead. Skipped on shaded faces so a
