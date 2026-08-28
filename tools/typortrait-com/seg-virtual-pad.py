@@ -50,7 +50,22 @@ def _pad_for_segmentation(img, frac):
     h, w = img.bgr.shape[:2]
     px = max(1, int(round(w * frac)))
     py = max(1, int(round(h * frac)))
-    canvas = cv2.copyMakeBorder(img.bgr, py, py, px, px, cv2.BORDER_REPLICATE)
+    # How the synthetic surround is filled.
+    #   replicate  smears edge pixels outward. On a frame-filling portrait that
+    #              means smearing SKIN and HAIR outward, so the model reads
+    #              "the person continues past the frame" and returns a soft,
+    #              uncertain alpha around the whole perimeter.
+    #   constant   a neutral fill the model can read as background, which should
+    #              sharpen the boundary instead of dissolving it.
+    _mode = (os.environ.get("TYPO_SEG_PAD_MODE", "replicate") or "replicate").strip().lower()
+    if _mode == "constant":
+        _lv = float(os.environ.get("TYPO_SEG_PAD_FILL", "128") or 128.0)
+        canvas = cv2.copyMakeBorder(img.bgr, py, py, px, px, cv2.BORDER_CONSTANT,
+                                    value=(_lv, _lv, _lv))
+    elif _mode == "reflect":
+        canvas = cv2.copyMakeBorder(img.bgr, py, py, px, px, cv2.BORDER_REFLECT_101)
+    else:
+        canvas = cv2.copyMakeBorder(img.bgr, py, py, px, px, cv2.BORDER_REPLICATE)
     # Blur strength for the synthetic surround. Too much bleeds into the guided
     # filter that snaps the alpha to edges, softening the subject boundary near
     # the frame; too little presents a hard false edge. 0 disables the blur.
