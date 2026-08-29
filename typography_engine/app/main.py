@@ -7,7 +7,9 @@ Later phases add /render.
 from __future__ import annotations
 
 import json
+import os
 import uuid
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, UploadFile
@@ -54,6 +56,20 @@ def _parse_words(words: Optional[str], words_json: Optional[str]) -> List[str]:
         raw = words.replace("\n", ",")
         return [w for w in (s.strip() for s in raw.split(",")) if w]
     return []
+
+
+def _load_brand_config(brand: str) -> None:
+	"""Load brand-specific TYPO_* settings from .env.{brand} file."""
+	env_file = Path(__file__).parent / f".env.{brand.lower()}"
+	if env_file.exists():
+		with open(env_file) as f:
+			for line in f:
+				line = line.strip()
+				if line and not line.startswith("#"):
+					if "=" in line:
+						key, value = line.split("=", 1)
+						os.environ[key.strip()] = value.strip()
+
 
 # Stroke styling for region debug output (hex only).
 _REGION_COLORS = {
@@ -187,6 +203,69 @@ async def debug_regions(image: UploadFile = File(...)) -> JSONResponse:
     )
 
 
+def _ensure_wallpaper_bundle(job: str) -> Optional[Path]:
+	"""Build (once) the 'digital everywhere' ZIP for a job: the print master plus
+	phone / desktop / square wallpapers and a short read-me. Cached on disk next to
+	the other job artefacts, brand-labelled from the recipe. Returns None if the
+	clean master can't be produced or the bundle can't be built (callers fall back
+	to the single print PNG so a purchase is never broken by this value-add)."""
+	zip_path = PRIVATE_DIR / f"{job}.bundle.zip"
+	if zip_path.exists():
+		return zip_path
+	clean_png = PRIVATE_DIR / f"{job}.png"
+	if not clean_png.exists():
+		return None
+	try:
+		import zipfile
+		from .pipeline.wallpaper import build_wallpaper_set
+		label = _bundle_label(job)
+		master_bytes = clean_png.read_bytes()
+		wp = build_wallpaper_set(master_bytes)
+		tmp = zip_path.with_suffix(".zip.tmp")
+		with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+			z.writestr(f"{label} - Print (high-resolution).png", master_bytes)
+			z.writestr(f"{label} - Phone Wallpaper.png", wp["phone"])
+			z.writestr(f"{label} - Desktop Wallpaper.png", wp["desktop"])
+			z.writestr(f"{label} - Square (for sharing).png", wp["square"])
+			z.writestr("Read Me.txt", _bundle_readme(label))
+		tmp.replace(zip_path)
+		return zip_path
+	except Exception:  # noqa: BLE001
+		return None
+
+
+def _bundle_label(job: str) -> str:
+	"""Brand name stamped on the digital-bundle files, from the job's brand metadata."""
+	try:
+		brand_file = PRIVATE_DIR / f"{job}.brand"
+		if brand_file.exists():
+			brand_name = brand_file.read_text(encoding="utf-8").strip()
+			if brand_name in ("lovedinwords", "pawsinwords", "faithinwords"):
+				return {"lovedinwords": "LovedInWords", "pawsinwords": "PawsInWords", "faithinwords": "FaithInWords"}.get(brand_name, "Typortrait")
+	except Exception:  # noqa: BLE001
+		pass
+	return "Typortrait"
+
+
+def _bundle_readme(label: str) -> str:
+	site = {"LovedInWords": "LovedInWords.com", "PawsInWords": "PawsInWords.com", "FaithInWords": "FaithInWords.com"}.get(label, "Typortrait.com")
+	signoff = (f"With gratitude,\n{site}  ·  powered by Typortrait\n"
+			   if label in ("LovedInWords", "PawsInWords", "FaithInWords") else f"Thank you,\n{site}\n")
+	return (
+		f"Your {label} Keepsake — Digital Files\n"
+		"==========================================\n\n"
+		"Thank you. Inside this folder is your portrait, ready for every screen and for print:\n\n"
+		"  • Print (high-resolution).png  — full quality, no watermark. Print it at home or\n"
+		"    at any photo lab, up to poster size.\n"
+		"  • Phone Wallpaper.png          — sized for your phone's lock screen.\n"
+		"  • Desktop Wallpaper.png        — sized for a computer background.\n"
+		"  • Square (for sharing).png     — perfect for sharing.\n\n"
+		"To set the phone wallpaper: save the Phone image to your photos, then open\n"
+		"Settings → Wallpaper (iPhone), or long-press the home screen → Wallpapers (Android).\n\n"
+		+ signoff
+	)
+
+
 @app.post("/render")
 async def render(
     image: UploadFile = File(...),
@@ -203,8 +282,10 @@ async def render(
     title: Optional[str] = Form(None),
     caption: Optional[str] = Form(None),
     png_width: int = Form(2000),
+    brand: str = Form("typortrait"),
 ) -> JSONResponse:
     """Render a typographic portrait: validated SVG + PNG from approved words."""
+    _load_brand_config(brand)
     warns = WarningCollector()
     img_bytes = await image.read()
     if not img_bytes:
@@ -288,6 +369,7 @@ async def render(
     # Clean (paid) files go to the PRIVATE dir; only a watermarked preview is
     # served publicly. The clean art is never web-reachable without payment.
     (PRIVATE_DIR / f"{job_id}.svg").write_text(svg_out, encoding="utf-8")
+    (PRIVATE_DIR / f"{job_id}.brand").write_text(brand, encoding="utf-8")  # Store brand for checkout
     clean_png = PRIVATE_DIR / f"{job_id}.png"
     preview_path = OUTPUTS_DIR / f"{job_id}_preview.png"
     try:
@@ -296,6 +378,9 @@ async def render(
         preview_path.write_bytes(add_watermark(clean_png.read_bytes(), url=WATERMARK_URL))
     except Exception as e:  # noqa: BLE001
         warns.warn("render", "preview_failed", f"Preview export failed: {e}")
+
+    import threading
+    threading.Thread(target=_ensure_wallpaper_bundle, args=(job_id,), daemon=True).start()
 
     return JSONResponse(
         {
@@ -339,6 +424,19 @@ def checkout(job: str = Form(...), fmt: str = Form("png")) -> JSONResponse:
     ext = "svg" if fmt == "svg" else "png"
     if not (PRIVATE_DIR / f"{job}.{ext}").exists():
         return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+
+    # Read brand from stored metadata
+    brand = "Typortrait"
+    brand_file = PRIVATE_DIR / f"{job}.brand"
+    if brand_file.exists():
+        brand_name = brand_file.read_text(encoding="utf-8").strip()
+        brand_map = {
+            "lovedinwords": "Loved in Words",
+            "pawsinwords": "Paws in Words",
+            "faithinwords": "Faith in Words",
+        }
+        brand = brand_map.get(brand_name, "Typortrait")
+
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
     try:
@@ -349,7 +447,7 @@ def checkout(job: str = Form(...), fmt: str = Form("png")) -> JSONResponse:
                 "price_data": {
                     "currency": CURRENCY,
                     "unit_amount": DOWNLOAD_PRICE_CENTS,
-                    "product_data": {"name": "Typortrait — high-resolution download"},
+                    "product_data": {"name": f"{brand} — high-resolution download"},
                 },
             }],
             metadata={"job": job, "fmt": ext},
