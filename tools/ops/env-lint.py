@@ -17,7 +17,7 @@ import sys
 
 TREES = [
     ("typortrait-stg", "typortrait-staging"),
-    ("typortrait-staging", "typortrait"),
+    ("typortrait-prod", "typortrait"),
     ("typortrait-faithinwords", "typortrait-faithinwords"),
     ("typortrait-lovedinwords", "typortrait-lovedinwords"),
     ("typortrait-pawsinwords", "typortrait-pawsinwords"),

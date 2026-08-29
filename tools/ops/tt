@@ -1,0 +1,39 @@
+#!/bin/bash
+# Typortrait fleet tool -- one command per operation across all five trees.
+#   tt list                     trees, ports, roles, git branch + dirty count
+#   tt patch <script.py> <rel>  run a patch script against <rel> in every tree
+#   tt build [tree ...]         docker compose up -d --build (all, or named)
+#   tt verify <needle>          HTTP code + occurrences of <needle> in served page
+#
+# Directory names now match their role: typortrait-stg is staging, typortrait-prod
+# is production. Before 2026-08-29 production lived in a directory called
+# "typortrait-staging", which was a standing invitation to edit the wrong tree.
+TREES="typortrait-stg:8078:staging typortrait-prod:8077:PROD-typortrait typortrait-faithinwords:8079:PROD-faith typortrait-lovedinwords:8080:PROD-loved typortrait-pawsinwords:8081:PROD-paws"
+cmd=$1; shift
+case "$cmd" in
+list)
+  for e in $TREES; do d=${e%%:*}; r=${e#*:}; p=${r%%:*}; o=${r#*:}
+    printf '%-26s %-5s %-18s %-30s dirty=%s\n' "$d" "$p" "$o" \
+      "$(git -C /root/$d rev-parse --abbrev-ref HEAD 2>/dev/null || echo NO-GIT)" \
+      "$(git -C /root/$d status --porcelain 2>/dev/null | wc -l)"
+  done ;;
+patch)
+  s=$1; rel=$2
+  [ -n "$rel" ] || { echo "usage: tt patch <script.py> <relative/path>"; exit 2; }
+  for e in $TREES; do d=${e%%:*}; printf '== %s\n' "$d"
+    python3 "$s" /root/$d/typography_engine/$rel || echo "   ^ SKIPPED"
+  done ;;
+build)
+  for e in $TREES; do d=${e%%:*}
+    [ $# -eq 0 ] || echo "$*" | grep -qw "$d" || continue
+    printf '== %s\n' "$d"
+    ( cd /root/$d/typography_engine && docker compose up -d --build ) || echo "   ^ BUILD FAILED"
+  done ;;
+verify)
+  for e in $TREES; do d=${e%%:*}; r=${e#*:}; p=${r%%:*}
+    printf '%-26s %-5s http=%s  hits=%s\n' "$d" "$p" \
+      "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$p/static/index.html)" \
+      "$(curl -s http://127.0.0.1:$p/static/index.html | grep -c "$1")"
+  done ;;
+*) sed -n '2,7p' "$0" ;;
+esac
