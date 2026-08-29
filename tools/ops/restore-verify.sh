@@ -64,6 +64,13 @@ for T in $TREES; do
   echo "$parts  private-json=$j"
 done
 
+printf '%-26s ' "system"
+sys=""
+[ -s "$TMP/system/crontab.txt" ] && sys="$sys crontab($(wc -l < "$TMP/system/crontab.txt") lines)" || { sys="$sys NO-CRONTAB"; fail=1; }
+[ -s "$TMP/system/etc-nginx.tar.gz" ] && sys="$sys nginx($(du -h "$TMP/system/etc-nginx.tar.gz" | cut -f1))" || { sys="$sys NO-NGINX"; fail=1; }
+[ -s "$TMP/system/letsencrypt-renewal.tar.gz" ] && sys="$sys letsencrypt-renewal" || sys="$sys no-letsencrypt"
+echo "$sys"
+
 echo
 if [ "$fail" = "0" ]; then
   echo "RESTORE VERIFIED -- this archive contains a usable copy of every tree."

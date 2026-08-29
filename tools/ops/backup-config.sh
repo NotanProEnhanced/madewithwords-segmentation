@@ -75,6 +75,23 @@ for T in $TREES; do
   find "$E/data/private" -maxdepth 1 -name '*.json' -exec cp {} "$D/data/private/" \; 2>/dev/null || true
 done
 
+# System configuration that lives in neither git nor any tree: without these a
+# rebuilt box has the code and the data but nothing routes and nothing is
+# scheduled. Both are small text files.
+mkdir -p "$STAGE/system"
+crontab -l > "$STAGE/system/crontab.txt" 2>/dev/null || echo "(no crontab)" > "$STAGE/system/crontab.txt"
+if [ -d /etc/nginx ]; then
+  tar -czf "$STAGE/system/etc-nginx.tar.gz" -C /etc nginx 2>/dev/null || echo "WARNING: could not archive /etc/nginx"
+else
+  echo "NOTE: no /etc/nginx"
+fi
+# Certificate PRIVATE KEYS are deliberately not included -- certbot can re-issue
+# from the renewal config, so copying keys into a long-lived archive adds risk
+# for no recovery benefit.
+if [ -d /etc/letsencrypt/renewal ]; then
+  tar -czf "$STAGE/system/letsencrypt-renewal.tar.gz" -C /etc/letsencrypt renewal 2>/dev/null || true
+fi
+
 ARCHIVE="$OUT/typortrait-config-$STAMP.tar.gz.gpg"
 tar -czf - -C "$STAGE" . \
   | gpg --batch --yes --symmetric --cipher-algo AES256 \
