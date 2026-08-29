@@ -3,191 +3,240 @@
 # Explicit project name so prod is fully isolated from staging in Compose. Both
 # trees are named typography_engine, so WITHOUT this they share a default project
 # and a deploy in one tears down the other's container (Bad Gateway). Don't change.
-name: typortrait-prod
+name: ${COMPOSE_PROJECT}
 services:
   typortrait:
     build: .
-    image: typortrait:latest
-    container_name: typortrait
+    image: ${IMAGE_TAG}
+    container_name: ${CONTAINER_NAME}
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8077:8077"
+      - "127.0.0.1:${HOST_PORT}:8077"
+    env_file:
+      # Everything in .env reaches the container. Without this a value set
+      # in .env but missing from the environment list below is silently
+      # ignored -- which happened three times in one day.
+      - .env
     environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PET_DEWHISKER=${PET_DEWHISKER:-}
+      - PET_DRAPE=${PET_DRAPE:-}
+      - PET_DRAPE_DAMP=${PET_DRAPE_DAMP:-}
+      - PET_DRAPE_DETAIL_DAMP=${PET_DRAPE_DETAIL_DAMP:-}
+      - PET_DRAPE_SMOOTH=${PET_DRAPE_SMOOTH:-}
+      - PET_EDGE_INK=${PET_EDGE_INK:-}
+      - PET_EDGE_TIGHTEN=${PET_EDGE_TIGHTEN:-}
+      - PET_EYE_POP=${PET_EYE_POP:-}
+      - PET_FEATURE_FILL=${PET_FEATURE_FILL:-}
+      - PET_FEATURE_PROTECT=${PET_FEATURE_PROTECT:-}
+      - PET_FEATURE_SCOPE=${PET_FEATURE_SCOPE:-}
+      - PET_HERO_CENTRE=${PET_HERO_CENTRE:-}
+      - PET_LOCAL_CONTRAST=${PET_LOCAL_CONTRAST:-}
+      - PET_MATTE_DIR=/app/data/pet-models
+      - PET_MATTE_FILL=${PET_MATTE_FILL:-}
+      - PET_MATTE_MODEL=${PET_MATTE_MODEL:-}
+      - PET_MAX_RENDER_PX=${PET_MAX_RENDER_PX:-}
+      - PET_NEGATIVE_SPACE=${PET_NEGATIVE_SPACE:-}
+      - PET_PHOTO=${PET_PHOTO:-}
+      - PET_PHOTO_FUR=${PET_PHOTO_FUR:-}
+      - PET_ROW_GAP=${PET_ROW_GAP:-}
+      - PET_SHADOW_LIFT=${PET_SHADOW_LIFT:-}
+      - PET_SHARPEN=${PET_SHARPEN:-}
+      - PET_SUBJECT_BASE=${PET_SUBJECT_BASE:-0}
+      - PET_SUBJECT_DIM=${PET_SUBJECT_DIM:-0.45}
+      - PET_TEST=${PET_TEST:-}
+      - PET_TIER_COARSE=${PET_TIER_COARSE:-}
+      - PET_TIER_GAMMA=${PET_TIER_GAMMA:-}
+      - PET_TONAL=${PET_TONAL:-}
+      - PET_TRACK=${PET_TRACK:-}
+      - PET_TYPE_SCALE=${PET_TYPE_SCALE:-}
+      - PET_VIBRANCE=${PET_VIBRANCE:-}
+      - PET_VIGNETTE=${PET_VIGNETTE:-}
+      - PET_WORD_TIERS=${PET_WORD_TIERS:-}
+      - PRINTFUL_API_BASE=${PRINTFUL_API_BASE:-https://api.printful.com}
+      - PRINTFUL_API_TOKEN=${PRINTFUL_API_TOKEN:-}
+      - PRINTFUL_CONFIRM=${PRINTFUL_CONFIRM:-true}
+      - PRINTFUL_STORE_ID=${PRINTFUL_STORE_ID:-}
+      - PRINTFUL_WEBHOOK_SECRET=${PRINTFUL_WEBHOOK_SECRET:-}
+      - PRINT_URL_SECRET=${PRINT_URL_SECRET:-}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
-      - TYPO_PRICE_CENTS=${TYPO_PRICE_CENTS:-900}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - TYPO_ADMIN_EMAIL=${TYPO_ADMIN_EMAIL:-}
+      - TYPO_ADMIN_PASSWORD=${TYPO_ADMIN_PASSWORD:-}
+      - TYPO_ARGS_DEBUG=${TYPO_ARGS_DEBUG:-}
+      - TYPO_BG_LIGHTEN=${TYPO_BG_LIGHTEN:-0}
+      - TYPO_BIO_CONSENT_VERSION=${TYPO_BIO_CONSENT_VERSION:-bio-v1-2026-06}
+      - TYPO_BLOCKED_REGIONS=${TYPO_BLOCKED_REGIONS:-US-IL}
+      - TYPO_CONSENT_RETENTION_DAYS=${TYPO_CONSENT_RETENTION_DAYS:-}
+      - TYPO_CREASE=${TYPO_CREASE:-0.22}
       - TYPO_CURRENCY=${TYPO_CURRENCY:-usd}
+      - TYPO_DARKSCLERA=${TYPO_DARKSCLERA:-1}
+      - TYPO_DEPOSTERIZE=${TYPO_DEPOSTERIZE:-0.6}
+      - TYPO_EDGE_FALLOFF=${TYPO_EDGE_FALLOFF:-0.45}
+      - TYPO_ENABLE_DEBUG=${TYPO_ENABLE_DEBUG:-}
+      - TYPO_EYE_BLOB=${TYPO_EYE_BLOB:-}
+      - TYPO_EYE_DEBUG=${TYPO_EYE_DEBUG:-}
+      - TYPO_EYE_PHOTO=${TYPO_EYE_PHOTO:-1.0}
+      - TYPO_EYE_PLAIN=${TYPO_EYE_PLAIN:-}
+      - TYPO_EYE_POP=${TYPO_EYE_POP:-0.8}
+      - TYPO_EYE_SHARPEN=${TYPO_EYE_SHARPEN:-0.6}
+      - TYPO_FACE_DETAIL=${TYPO_FACE_DETAIL:-0.95}
+      - TYPO_FACE_FLOOR=${TYPO_FACE_FLOOR:-}
+      - TYPO_FACE_FLOOR_COV_HI=${TYPO_FACE_FLOOR_COV_HI:-}
+      - TYPO_FACE_FLOOR_COV_LO=${TYPO_FACE_FLOOR_COV_LO:-}
+      - TYPO_FACE_FLOOR_DEBUG=${TYPO_FACE_FLOOR_DEBUG:-}
+      - TYPO_FACE_FLOOR_GROW=${TYPO_FACE_FLOOR_GROW:-}
+      - TYPO_FACE_FLOOR_GROW_MAX=${TYPO_FACE_FLOOR_GROW_MAX:-}
+      - TYPO_GALLERY_ENABLED=${TYPO_GALLERY_ENABLED:-}
+      - TYPO_GATHER_ENABLED=${TYPO_GATHER_ENABLED:-}
+      - TYPO_GEO_COUNTRY_HEADER=${TYPO_GEO_COUNTRY_HEADER:-X-Geo-Country}
+      - TYPO_GEO_REGION_HEADER=${TYPO_GEO_REGION_HEADER:-X-Geo-Region}
+      - TYPO_HILIGHT_FINE=${TYPO_HILIGHT_FINE:-0.30}
+      - TYPO_HILIGHT_WASH=${TYPO_HILIGHT_WASH:-0.5}
+      - TYPO_INK_LIFT=${TYPO_INK_LIFT:-}
+      - TYPO_INK_LIFT_ADD=${TYPO_INK_LIFT_ADD:-}
+      - TYPO_INK_SAT=${TYPO_INK_SAT:-1.02}
+      - TYPO_IRIS_ALPHA=${TYPO_IRIS_ALPHA:-}
+      - TYPO_IRIS_LIFT=${TYPO_IRIS_LIFT:-1.35}
+      - TYPO_IRIS_MIN_PX=${TYPO_IRIS_MIN_PX:-}
+      - TYPO_LAYERED_PHOTO=${TYPO_LAYERED_PHOTO:-0}
+      - TYPO_LENS_DARKRATIO=${TYPO_LENS_DARKRATIO:-0.62}
+      - TYPO_LENS_DARK_MAX=${TYPO_LENS_DARK_MAX:-115}
+      - TYPO_MASK_DEBUG=${TYPO_MASK_DEBUG:-}
+      - TYPO_MASK_FILL_MAXCOV=${TYPO_MASK_FILL_MAXCOV:-}
+      - TYPO_MASK_FILL_SMALL=${TYPO_MASK_FILL_SMALL:-}
+      - TYPO_MASK_GROW=${TYPO_MASK_GROW:-}
+      - TYPO_MATTE_FLOOR=${TYPO_MATTE_FLOOR:-0.12}
+      - TYPO_MATTE_GAMMA=${TYPO_MATTE_GAMMA:-1.5}
+      - TYPO_MATTE_MAXSIDE=${TYPO_MATTE_MAXSIDE:-1280}
+      - TYPO_MATTE_MODEL=${TYPO_MATTE_MODEL:-}
+      - TYPO_MATTE_UNION=${TYPO_MATTE_UNION:-}
+      - TYPO_MISFIT_GAP=${TYPO_MISFIT_GAP:-0.02}
+      - TYPO_MODERATION_MODEL=${TYPO_MODERATION_MODEL:-omni-moderation-latest}
+      - TYPO_NOIR_CONTRAST=${TYPO_NOIR_CONTRAST:-1.08}
+      - TYPO_PAPER_FACE=${TYPO_PAPER_FACE:-0.30}
+      - TYPO_PAPER_HAIR=${TYPO_PAPER_HAIR:-0.35}
+      - TYPO_POLARITY=${TYPO_POLARITY:-1}
+      - TYPO_POLARITY_FLOOR=${TYPO_POLARITY_FLOOR:-0.18}
+      - TYPO_POLARITY_GAMMA=${TYPO_POLARITY_GAMMA:-1.35}
+      - TYPO_PRICE_CENTS=${TYPO_PRICE_CENTS:-900}
       - TYPO_PUBLIC_URL=${TYPO_PUBLIC_URL:-https://app.typortrait.com}
+      - TYPO_RASTERIZER=${TYPO_RASTERIZER:-auto}
+      - TYPO_REDEEM_BRAND=${TYPO_REDEEM_BRAND:-}
+      - TYPO_REDEEM_ENABLED=${TYPO_REDEEM_ENABLED:-}
+      - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}
+      - TYPO_REQUIRE_CAIROSVG=${TYPO_REQUIRE_CAIROSVG:-}
+      - TYPO_RETENTION_DAYS=${TYPO_RETENTION_DAYS:-30}
+      - TYPO_SAT_CAP=${TYPO_SAT_CAP:-150}
+      - TYPO_SECRET_KEY=${TYPO_SECRET_KEY:-}
+      - TYPO_SEG_PAD=${TYPO_SEG_PAD:-}
+      - TYPO_SEG_PAD_BLUR=${TYPO_SEG_PAD_BLUR:-}
+      - TYPO_SEG_PAD_FILL=${TYPO_SEG_PAD_FILL:-}
+      - TYPO_SEG_PAD_MODE=${TYPO_SEG_PAD_MODE:-}
+      - TYPO_SHADOW_LIFT=${TYPO_SHADOW_LIFT:-0.18}
+      - TYPO_SMTP_HOST=${TYPO_SMTP_HOST:-smtp.gmail.com}
+      - TYPO_SMTP_PASS=${TYPO_SMTP_PASS:-}
+      - TYPO_SMTP_PORT=${TYPO_SMTP_PORT:-587}
+      - TYPO_SMTP_USER=${TYPO_SMTP_USER:-}
+      - TYPO_SOFT_MATTE=${TYPO_SOFT_MATTE:-1}
+      - TYPO_SUBJECT_BASE=${TYPO_SUBJECT_BASE:-}
+      - TYPO_SUBJECT_DIM=${TYPO_SUBJECT_DIM:-}
+      - TYPO_TEETH_BRIGHT=${TYPO_TEETH_BRIGHT:-}
+      - TYPO_TEETH_DARK=${TYPO_TEETH_DARK:-}
+      - TYPO_TEETH_DEBUG=${TYPO_TEETH_DEBUG:-}
+      - TYPO_TEETH_MIN_RATIO=${TYPO_TEETH_MIN_RATIO:-}
+      - TYPO_VIBRANCE=${TYPO_VIBRANCE:-0.22}
+      - TYPO_WM_ALPHA=${TYPO_WM_ALPHA:-}
+      - TYPO_WM_GAP=${TYPO_WM_GAP:-}
+      - TYPO_WM_SCALE=${TYPO_WM_SCALE:-}
+      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-0}   # OFF: photographic eyes are truthful (real brown/blue, real lens); word-formed eyes caused iris-colour + sunglasses artefacts
+      - TYPO_WORD_VARIETY=${TYPO_WORD_VARIETY:-}
+      - UMAMI_HOST=${UMAMI_HOST:-https://cloud.umami.is}
+      - UMAMI_HOSTNAME=${UMAMI_HOSTNAME:-app.typortrait.com}
+      - UMAMI_WEBSITE_ID=${UMAMI_WEBSITE_ID:-}
       # Phase C: admin review dashboard + email notifications. See DEPLOY.md
       # for the Gmail app-password setup; SMTP creds are optional (the
       # dashboard still works without them — you just won't get notification
       # emails).
-      - TYPO_ADMIN_PASSWORD=${TYPO_ADMIN_PASSWORD:-}
-      - TYPO_ADMIN_EMAIL=${TYPO_ADMIN_EMAIL:-}
-      - TYPO_SECRET_KEY=${TYPO_SECRET_KEY:-}
-      - TYPO_SMTP_HOST=${TYPO_SMTP_HOST:-smtp.gmail.com}
-      - TYPO_SMTP_PORT=${TYPO_SMTP_PORT:-587}
-      - TYPO_SMTP_USER=${TYPO_SMTP_USER:-}
-      - TYPO_SMTP_PASS=${TYPO_SMTP_PASS:-}
       # Print-on-demand (Printful). All optional: with no PRINTFUL_API_TOKEN the
       # storefront stays digital-only and physical checkout is gated off. The
       # webhook secret lets the async order pipeline verify Stripe callbacks; the
       # print-URL secret signs the time-limited art URLs Printful fetches (it
       # falls back to the webhook secret if unset).
-      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
-      - PRINTFUL_API_TOKEN=${PRINTFUL_API_TOKEN:-}
-      - PRINTFUL_STORE_ID=${PRINTFUL_STORE_ID:-}
-      - PRINTFUL_API_BASE=${PRINTFUL_API_BASE:-https://api.printful.com}
-      - PRINT_URL_SECRET=${PRINT_URL_SECRET:-}
       # Auto-confirm paid physical orders at Printful. Defaults to true (real
       # fulfillment). Set PRINTFUL_CONFIRM=false while testing so orders land
       # as deletable drafts (no charge, no print). See GO-LIVE.md.
-      - PRINTFUL_CONFIRM=${PRINTFUL_CONFIRM:-true}
       # Analytics (Umami Cloud). Optional: with no UMAMI_WEBSITE_ID the
       # server-side purchase event is skipped (browser pageviews still work via
       # the tracking script in the page <head>). Website ID is not a secret.
-      - UMAMI_WEBSITE_ID=${UMAMI_WEBSITE_ID:-}
-      - UMAMI_HOST=${UMAMI_HOST:-https://cloud.umami.is}
-      - UMAMI_HOSTNAME=${UMAMI_HOSTNAME:-app.typortrait.com}
       # Privacy compliance + render-health knobs. Read in code with safe defaults;
       # listed here so they can be tuned from .env. See COMPLIANCE.md.
-      - TYPO_BLOCKED_REGIONS=${TYPO_BLOCKED_REGIONS:-US-IL}
-      - TYPO_GEO_COUNTRY_HEADER=${TYPO_GEO_COUNTRY_HEADER:-X-Geo-Country}
-      - TYPO_GEO_REGION_HEADER=${TYPO_GEO_REGION_HEADER:-X-Geo-Region}
-      - TYPO_BIO_CONSENT_VERSION=${TYPO_BIO_CONSENT_VERSION:-bio-v1-2026-06}
-      - TYPO_RETENTION_DAYS=${TYPO_RETENTION_DAYS:-30}
-      - TYPO_CONSENT_RETENTION_DAYS=${TYPO_CONSENT_RETENTION_DAYS:-}
       # Gather (crowd-sourced words). Default OFF -- the feature + its routes only
       # exist when TYPO_GATHER_ENABLED=1 is set in .env. Leave unset in prod until
       # you choose to launch it.
-      - TYPO_GATHER_ENABLED=${TYPO_GATHER_ENABLED:-}
       # Gallery storefront (pre-made collections: Sacred, Christmas). Default OFF --
       # /gallery + the item pages 404 until TYPO_GALLERY_ENABLED=1 is set in .env.
       # This lets the code deploy INERT and be switched on deliberately afterwards.
       # Without this line the flag can never reach the app, however .env is set.
-      - TYPO_GALLERY_ENABLED=${TYPO_GALLERY_ENABLED:-}
       # Word-variety dial for the Lifelike/Letter renderer. Unset = 0.0 = the original
       # engine, byte-identical. Set TYPO_WORD_VARIETY=0.7 in .env to flatten the lead-word
       # repetition so a varied word list reads as varied. Revert by deleting the line.
-      - TYPO_WORD_VARIETY=${TYPO_WORD_VARIETY:-}
       # Redemption codes (gift/partner/pre-need: a code buys the personalize+fulfil flow
       # with NO Stripe charge). Default OFF -- every /redeem route 404s until
       # TYPO_REDEEM_ENABLED=1 is set in .env, so the code deploys INERT. Optionally set
       # TYPO_REDEEM_BRAND (default lovedinwords) to choose the studio skin recipients land in.
-      - TYPO_REDEEM_ENABLED=${TYPO_REDEEM_ENABLED:-}
-      - TYPO_REDEEM_BRAND=${TYPO_REDEEM_BRAND:-}
-      - TYPO_ENABLE_DEBUG=${TYPO_ENABLE_DEBUG:-}
-      - TYPO_REQUIRE_CAIROSVG=${TYPO_REQUIRE_CAIROSVG:-}
       # Pet render PROTOTYPE test page (/pet-test). Default OFF -> the route 404s.
-      - PET_TEST=${PET_TEST:-}
       # Pet prototype render knobs (live-tunable via .env, no rebuild).
-      - PET_DRAPE=${PET_DRAPE:-}
-      - PET_TYPE_SCALE=${PET_TYPE_SCALE:-}
-      - PET_EDGE_INK=${PET_EDGE_INK:-}
-      - PET_TONAL=${PET_TONAL:-}
-      - PET_PHOTO=${PET_PHOTO:-}
-      - PET_VIBRANCE=${PET_VIBRANCE:-}
-      - PET_VIGNETTE=${PET_VIGNETTE:-}
-      - PET_SHARPEN=${PET_SHARPEN:-}
-      - PET_DRAPE_SMOOTH=${PET_DRAPE_SMOOTH:-}
-      - PET_SHADOW_LIFT=${PET_SHADOW_LIFT:-}
-      - PET_MATTE_MODEL=${PET_MATTE_MODEL:-}
-      - PET_MATTE_FILL=${PET_MATTE_FILL:-}
-      - PET_FEATURE_PROTECT=${PET_FEATURE_PROTECT:-}
-      - PET_ROW_GAP=${PET_ROW_GAP:-}
-      - PET_TRACK=${PET_TRACK:-}
-      - PET_EYE_POP=${PET_EYE_POP:-}
-      - PET_MAX_RENDER_PX=${PET_MAX_RENDER_PX:-}
-      - PET_PHOTO_FUR=${PET_PHOTO_FUR:-}
-      - PET_DEWHISKER=${PET_DEWHISKER:-}
-      - PET_EDGE_TIGHTEN=${PET_EDGE_TIGHTEN:-}
-      - PET_LOCAL_CONTRAST=${PET_LOCAL_CONTRAST:-}
       # Persist the U2-Net matte model on the bind-mounted /app/data so it survives rebuilds.
-      - PET_MATTE_DIR=/app/data/pet-models
+      # Subject base: ground behind the subject only; photo base within the silhouette.
       # Background lightening: render the image background lighter than the subject's
       # dark ground (0..1, fraction toward white; 0 = off, background == ground).
-      - TYPO_BG_LIGHTEN=${TYPO_BG_LIGHTEN:-0}
       # Highlight wash: keep bright features (silver hair, pale skin) light on the dark
       # ground so they don't collapse to the ground (0..1; 0 disables). Default 0.5.
-      - TYPO_HILIGHT_WASH=${TYPO_HILIGHT_WASH:-0.5}
       # Shadow lift: preserve modelled detail in a face's shaded side instead of crushing
       # it to the near-black ground (0..1; 0 disables). Default 0.18.
-      - TYPO_SHADOW_LIFT=${TYPO_SHADOW_LIFT:-0.18}
       # Colour fidelity (step 3): vibrance strength, oversaturation ceiling (HSV S; 0 off),
       # and word-ink saturation multiplier. Lower vibrance / cap => less orange skin,
       # less magenta lips. Defaults tuned for natural skin.
-      - TYPO_VIBRANCE=${TYPO_VIBRANCE:-0.22}
-      - TYPO_SAT_CAP=${TYPO_SAT_CAP:-150}
       # Photographic eye-overlay opacity (0..1). Lower blends the typography through the eye
       # so it reads as part of the words. Default 0.5.
-      - TYPO_EYE_PHOTO=${TYPO_EYE_PHOTO:-1.0}
       # Eye crispness: sharpen + local contrast inside the eye (scaled up for small/distant
       # eyes) so non-closeup sources don't render flat/muddy eyes. 0 disables.
-      - TYPO_EYE_SHARPEN=${TYPO_EYE_SHARPEN:-0.6}
       # Eye pop: paint a crisp catchlight + dark iris rim ON TOP of the photo eye so soft/
       # low-res sources still read alive and defined (not flat/muddy). Scaled up for small eyes.
-      - TYPO_EYE_POP=${TYPO_EYE_POP:-0.8}
       # Face-detail sizing: lift text density across the whole face so the chin, cheekbones
       # and ears render as FINE type -- distinct from the larger neck below. 0 reverts.
-      - TYPO_FACE_DETAIL=${TYPO_FACE_DETAIL:-0.95}
       # Light-aware far-edge softening: on a directionally-lit subject, fade the SHADOW-side
       # silhouette edge into the ground (self-gates -- flat lighting = no effect). 0 disables.
-      - TYPO_EDGE_FALLOFF=${TYPO_EDGE_FALLOFF:-0.45}
       # Lifelike Mosaic/Passage: render the Words (Mosaic) + Message (Passage) styles on
       # Original ink through the Lifelike (displacement) engine, so all three styles share
       # Lifelike's photographic quality and differ only in TYPOGRAPHY -- Lifelike = weighted
       # words, Mosaic = a varied word-cloud, Passage = the message in written order.
       # OFF until validated on staging; flip to 1 (or set in .env).
-      - TYPO_LAYERED_PHOTO=${TYPO_LAYERED_PHOTO:-0}
       # Paper/ink ground floors so faces + light hair read on ivory (0..1; 0 off).
-      - TYPO_PAPER_FACE=${TYPO_PAPER_FACE:-0.30}
-      - TYPO_PAPER_HAIR=${TYPO_PAPER_HAIR:-0.35}
       # Lifelike polarity + word-formed eyes. Validated on staging and promoted -> ON.
       # Tuning knobs below; set =0 in .env to revert without a code change.
-      - TYPO_POLARITY=${TYPO_POLARITY:-1}
-      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-0}   # OFF: photographic eyes are truthful (real brown/blue, real lens); word-formed eyes caused iris-colour + sunglasses artefacts
       # Sunglasses backstop: suppress fabricated eyes on dark lenses (auto). =0 reverts.
-      - TYPO_DARKSCLERA=${TYPO_DARKSCLERA:-1}
-      - TYPO_LENS_DARKRATIO=${TYPO_LENS_DARKRATIO:-0.62}
       # Misfit-mesh guard: suppress a face whose iris sits above its brow by this
       # fraction of face height (sunglasses/occluded meshes slide onto the forehead).
-      - TYPO_MISFIT_GAP=${TYPO_MISFIT_GAP:-0.02}
       # Sunglasses toggle: with the flag on, only faces darker than this (p90) get an opaque lens
       # -- so a mixed group (sunglasses + clear/prescription glasses) doesn't black out real eyes.
-      - TYPO_LENS_DARK_MAX=${TYPO_LENS_DARK_MAX:-115}
       # Soft hair matte: feather the subject/background edge (guided-filter alpha) so hair
       # doesn't read as a cardboard cutout on any backdrop. =0 reverts to the hard binary edge.
-      - TYPO_SOFT_MATTE=${TYPO_SOFT_MATTE:-1}
       # High-quality matting model (RobustVideoMatting) for true strand-level hair. OPT-IN:
       # set TYPO_MATTE_MODEL=1 in .env to enable (needs onnxruntime + the ~15MB model). Falls
       # back to the guided-filter soft matte when unset/unavailable. TYPO_MATTE_MAXSIDE caps res.
-      - TYPO_MATTE_MODEL=${TYPO_MATTE_MODEL:-}
-      - TYPO_MATTE_MAXSIDE=${TYPO_MATTE_MAXSIDE:-1280}
       # Matte edge cleanup: drop alpha below FLOOR to 0 (clean background gaps between
       # hair strands, no stray words) then GAMMA sharpens the low end. Matte-model path only.
-      - TYPO_MATTE_FLOOR=${TYPO_MATTE_FLOOR:-0.12}
-      - TYPO_MATTE_GAMMA=${TYPO_MATTE_GAMMA:-1.5}
       # Diagnostics: set TYPO_EYE_DEBUG=1 in .env to log per-face eye/lens detection to stderr.
-      - TYPO_EYE_DEBUG=${TYPO_EYE_DEBUG:-}
-      - TYPO_POLARITY_GAMMA=${TYPO_POLARITY_GAMMA:-1.35}
-      - TYPO_POLARITY_FLOOR=${TYPO_POLARITY_FLOOR:-0.18}
-      - TYPO_NOIR_CONTRAST=${TYPO_NOIR_CONTRAST:-1.08}
       # Iris colour fallback lift: brightens a low-saturation (brown) iris so it reads on the dark ground.
-      - TYPO_IRIS_LIFT=${TYPO_IRIS_LIFT:-1.35}
       # De-posterize: add the photo's smooth light->dark falloff back so the face isn't flat/
       # banded (0..1; 0 disables). Default 0.6.
-      - TYPO_DEPOSTERIZE=${TYPO_DEPOSTERIZE:-0.6}
       # Micro-expression: render facial creases (folds, crow's feet) as fine type (0..1; 0 off). Default 0.22.
-      - TYPO_CREASE=${TYPO_CREASE:-0.22}
       # Highlights breathe: finer type in the brightest skin so highlights don't cake (0..1; 0 off). Default 0.30.
-      - TYPO_HILIGHT_FINE=${TYPO_HILIGHT_FINE:-0.30}
-      - TYPO_INK_SAT=${TYPO_INK_SAT:-1.02}
-      - TYPO_RENDER_CONCURRENCY=${TYPO_RENDER_CONCURRENCY:-}
       # SVG->PNG backend: auto (CairoSVG, full fidelity, slower) | resvg (much
       # faster; identical output for the current solid-fill SVGs) | cairosvg.
-      - TYPO_RASTERIZER=${TYPO_RASTERIZER:-auto}
       # Text moderation (OpenAI moderation endpoint). Unset -> text moderation off.
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - TYPO_MODERATION_MODEL=${TYPO_MODERATION_MODEL:-omni-moderation-latest}
     volumes:
       # Persist previews + paid clean files across restarts/rebuilds.
       - ./data/outputs:/app/outputs
