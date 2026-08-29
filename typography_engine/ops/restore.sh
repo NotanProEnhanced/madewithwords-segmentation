@@ -33,12 +33,20 @@ cat <<EOF
 
 Restore complete. Files are under: $RESTORE_TO  (original absolute paths preserved)
 
-Review, then place each piece:
-  • Databases   $RESTORE_TO/root/.typortrait-backup-staging/orders.db
-                $RESTORE_TO/root/.typortrait-backup-staging/gather.db
-                ->  $APP_DIR/data/orders.db   and   $APP_DIR/data/gather/gather.db
-  • Private     $RESTORE_TO$APP_DIR/data/private/   ->  $APP_DIR/data/private/
-  • Secrets     $RESTORE_TO$APP_DIR/.env       ->  $APP_DIR/.env      (chmod 600)
+The snapshot may hold MORE THAN ONE TREE. Databases are staged per tree, so
+check which trees are present before copying anything:
+
+    ls $RESTORE_TO/root/.typortrait-backup-staging/
+
+Review, then place each piece (\$T is the tree, e.g. typortrait-prod):
+  • Databases   $RESTORE_TO/root/.typortrait-backup-staging/\$T/orders.db
+                $RESTORE_TO/root/.typortrait-backup-staging/\$T/gather.db
+                ->  /root/\$T/typography_engine/data/orders.db
+                    /root/\$T/typography_engine/data/gather/gather.db
+  • Private     $RESTORE_TO/root/\$T/typography_engine/data/private/
+                ->  /root/\$T/typography_engine/data/private/
+  • Secrets     $RESTORE_TO/root/\$T/typography_engine/.env
+                ->  /root/\$T/typography_engine/.env      (chmod 600)
   • nginx       $RESTORE_TO/etc/nginx/sites-available/  ->  /etc/nginx/sites-available/
   • TLS certs   $RESTORE_TO/etc/letsencrypt/            ->  /etc/letsencrypt/   (or re-issue via certbot)
 

@@ -13,13 +13,20 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-# SCOPE: this backs up ONE tree. There are five. The other four have their
+# SCOPE: the trees listed in APP_DIRS below. The remaining live trees have their
 # config, orders and consent records covered nightly by backup-config.sh, but
 # NOT their source photos or gather.db. See "The gap between them" in
 # ops/README.md before assuming the whole fleet is in here.
 #
-# ---- CONFIG (adjust APP_DIR if your checkout path differs) -----------------
-APP_DIR="/root/typortrait-prod/typography_engine"
+# ---- CONFIG ---------------------------------------------------------------
+# One line per tree. Each contributes its .env, data/private and a consistent
+# snapshot of its databases. Snapshots are staged per tree, so two trees with an
+# orders.db do not overwrite each other -- they did not, before, because there
+# was only ever one tree.
+APP_DIRS=(
+  "/root/typortrait-prod/typography_engine"   # production
+  "/root/typortrait/typography_engine"        # hand-run workspace: marketing and reel renders
+)
 STAGING="/root/.typortrait-backup-staging"     # transient consistent DB snapshots
 ENVFILE="/root/.typortrait-backup.env"         # restic + provider creds (chmod 600)
 LOG="/var/log/typortrait-backup.log"
@@ -36,21 +43,29 @@ fail(){
 }
 trap 'fail "error near line $LINENO"' ERR
 
-# APP_DIR is hardcoded above and has been wrong before: the production tree was
-# renamed from typortrait-staging to typortrait-prod in August 2026, and every
-# path in this file pointed at the old name until it was caught. Check it
-# explicitly, so a wrong path says so instead of failing three commands later
-# with a line number.
-[ -d "$APP_DIR" ] || fail "APP_DIR does not exist: $APP_DIR -- has the tree been renamed? (see ops/README.md)"
+# These paths are hardcoded above and have been wrong before: the production
+# tree was renamed from typortrait-staging to typortrait-prod in August 2026,
+# and every path in this file pointed at the old name until it was caught. Check
+# them explicitly, so a wrong path says so instead of failing three commands
+# later with a line number.
+for _d in "${APP_DIRS[@]}"; do
+  [ -d "$_d" ] || fail "tree does not exist: $_d -- has it been renamed or removed? (see ops/README.md)"
+done
 [ -f "$ENVFILE" ] || fail "missing creds file $ENVFILE (see ops/BACKUP-SETUP.md)"
 set -a; . "$ENVFILE"; set +a
 command -v restic  >/dev/null || fail "restic not installed (apt-get install restic)"
 command -v sqlite3 >/dev/null || fail "sqlite3 not installed (apt-get install sqlite3)"
 
 # 1) Consistent SQLite snapshots — never back up a live DB file directly.
+#    Staged under STAGING/<tree>/ so each tree's databases stay distinguishable
+#    in the snapshot and in a restore.
 rm -rf "$STAGING"; mkdir -p "$STAGING"; chmod 700 "$STAGING"
-for db in "$APP_DIR/data/orders.db" "$APP_DIR/data/gather/gather.db"; do
-  [ -f "$db" ] && sqlite3 "$db" ".backup '$STAGING/$(basename "$db")'"
+for _d in "${APP_DIRS[@]}"; do
+  _tree=$(basename "$(dirname "$_d")")
+  mkdir -p "$STAGING/$_tree"
+  for db in "$_d/data/orders.db" "$_d/data/gather/gather.db"; do
+    [ -f "$db" ] && sqlite3 "$db" ".backup '$STAGING/$_tree/$(basename "$db")'"
+  done
 done
 
 # 2) Initialise the repo on first run (no-op once it exists).
@@ -62,10 +77,13 @@ restic snapshots >/dev/null 2>&1 || restic init
 #    git, so the backup is their authoritative recovery source (present-dirs only).
 WWW=()
 for d in /var/www/typortrait.com /var/www/lovedinwords.com; do [ -d "$d" ] && WWW+=("$d"); done
+PATHS=("$STAGING")
+for _d in "${APP_DIRS[@]}"; do
+  [ -f "$_d/.env" ]         && PATHS+=("$_d/.env")
+  [ -d "$_d/data/private" ] && PATHS+=("$_d/data/private")
+done
 restic backup \
-  "$STAGING" \
-  "$APP_DIR/.env" \
-  "$APP_DIR/data/private" \
+  "${PATHS[@]}" \
   "${WWW[@]}" \
   /etc/nginx/sites-available \
   /etc/letsencrypt \
@@ -74,8 +92,12 @@ restic backup \
 # 3b) Consent records ONLY, tagged 'consent'. LONG retention (legal evidence,
 #     ~7 years). They also live in the 'data' snapshot; this is what keeps them
 #     after the photos have rolled off, WITHOUT retaining photos for years.
-find "$APP_DIR/data/private" \( -name '*.consent.json' -o -name '*.biometric_consent.json' \) -print \
-  > "$STAGING/consent-list.txt" || true
+: > "$STAGING/consent-list.txt"
+for _d in "${APP_DIRS[@]}"; do
+  [ -d "$_d/data/private" ] || continue
+  find "$_d/data/private" \( -name '*.consent.json' -o -name '*.biometric_consent.json' \) -print \
+    >> "$STAGING/consent-list.txt" || true
+done
 if [ -s "$STAGING/consent-list.txt" ]; then
   restic backup --files-from "$STAGING/consent-list.txt" --tag typortrait --tag consent
 fi

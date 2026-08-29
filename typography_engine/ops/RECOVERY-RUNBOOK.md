@@ -49,8 +49,10 @@ R=/root/typortrait-restore
 APP=/root/typortrait-prod/typography_engine
 cp "$R$APP/.env" "$APP/.env" && chmod 600 "$APP/.env"
 mkdir -p "$APP/data/gather"
-cp "$R/root/.typortrait-backup-staging/orders.db" "$APP/data/orders.db"
-cp "$R/root/.typortrait-backup-staging/gather.db" "$APP/data/gather/gather.db"
+# databases are staged per tree; check what the snapshot holds before copying
+ls "$R/root/.typortrait-backup-staging/"
+cp "$R/root/.typortrait-backup-staging/typortrait-prod/orders.db" "$APP/data/orders.db"
+cp "$R/root/.typortrait-backup-staging/typortrait-prod/gather.db" "$APP/data/gather/gather.db"
 cp -a "$R$APP/data/private" "$APP/data/"
 cp -a "$R/etc/nginx/sites-available/." /etc/nginx/sites-available/
 cp -a "$R/etc/letsencrypt/." /etc/letsencrypt/
