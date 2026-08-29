@@ -111,8 +111,10 @@ if [ -n "${BACKUP_RCLONE:-}" ]; then
 fi
 if [ "$pushed" = "0" ]; then
   echo
-  echo "BACKUP_REMOTE is not set, so this archive is on the same disk as the"
-  echo "originals. Set it to an off-box destination or this protects very little."
+  echo "Neither BACKUP_REMOTE nor BACKUP_RCLONE reached this script, so the archive"
+  echo "is on the same disk as the originals -- which protects very little."
+  echo "If you set one in a file you source, it needs 'export': a bare assignment"
+  echo "sets a shell variable the child process never sees."
 fi
 
 find "$OUT" -name 'typortrait-config-*.tar.gz.gpg' -mtime +"$KEEP_DAYS" -delete
