@@ -82,9 +82,17 @@ tar -czf - -C "$STAGE" . \
 chmod 600 "$ARCHIVE"
 
 echo "wrote $ARCHIVE ($(du -h "$ARCHIVE" | cut -f1))"
-echo "contents:"
+echo "contents (first 30 entries):"
+# `set -o pipefail` plus `head` is a trap: head closes the pipe, tar dies of
+# SIGPIPE, the pipeline reports failure and `set -e` exits the script HERE --
+# silently skipping the off-box push and the pruning below. Capture first, then
+# show a slice of it.
+LISTING=$(mktemp)
 gpg --batch --quiet --decrypt --passphrase-file "$PASS" "$ARCHIVE" 2>/dev/null \
-  | tar -tzf - | head -30
+  | tar -tzf - > "$LISTING" || true
+head -30 "$LISTING"
+echo "... $(wc -l < "$LISTING") entries total"
+rm -f "$LISTING"
 
 pushed=0
 if [ -n "${BACKUP_REMOTE:-}" ]; then
