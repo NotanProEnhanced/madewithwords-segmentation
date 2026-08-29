@@ -68,7 +68,7 @@ if [ "$rc" != "0" ] || [ "$ALWAYS" = "1" ]; then
   echo "$OUT"
   # best-effort email using the app's own SMTP settings
   if [ -f "$ENVFILE" ]; then
-    python3 - "$STATUS" "$LATEST" <<'PY' 2>/dev/null || true
+    ENVFILE="$ENVFILE" LOG="$LOG" python3 - "$STATUS" "$LATEST" <<'PY' || true
 import os, re, smtplib, sys
 from email.message import EmailMessage
 env = {}
@@ -77,18 +77,37 @@ for line in open(os.environ.get("ENVFILE", "/root/typortrait-prod/typography_eng
     m = re.match(r"^([A-Z0-9_]+)=(.*)$", line.strip())
     if m:
         env[m.group(1)] = m.group(2)
-host = env.get("TYPO_SMTP_HOST"); user = env.get("TYPO_SMTP_USER")
+user = env.get("TYPO_SMTP_USER")
 pw = env.get("TYPO_SMTP_PASS") or env.get("TYPO_SMTP_PASSWORD")
 to = env.get("TYPO_ADMIN_EMAIL")
-if not (host and user and pw and to):
+# The .env carries only user and pass -- the app defaults the host in code. Do
+# the same rather than refusing to send, and infer from the address when the
+# provider is obvious.
+host = env.get("TYPO_SMTP_HOST")
+if not host and user:
+    dom = user.split("@")[-1].lower()
+    host = {"gmail.com": "smtp.gmail.com",
+            "googlemail.com": "smtp.gmail.com",
+            "outlook.com": "smtp-mail.outlook.com",
+            "hotmail.com": "smtp-mail.outlook.com"}.get(dom)
+missing = [n for n, v in (("TYPO_SMTP_USER", user), ("TYPO_SMTP_PASS", pw),
+                          ("TYPO_ADMIN_EMAIL", to), ("smtp host", host)) if not v]
+if missing:
+    # Say so. A notification that fails quietly is worse than none, because it
+    # is mistaken for silence meaning "all well".
+    print("EMAIL NOT SENT -- missing: %s" % ", ".join(missing), file=sys.stderr)
     sys.exit(0)
 msg = EmailMessage()
 msg["Subject"] = "Typortrait backup verification: %s (%s)" % (sys.argv[1], sys.argv[2])
 msg["From"] = user
 msg["To"] = to
 msg.set_content(open(os.environ.get("LOG", "/var/log/typortrait-backup-verify.log")).read()[-4000:])
-s = smtplib.SMTP(host, int(env.get("TYPO_SMTP_PORT", "587")), timeout=20)
-s.starttls(); s.login(user, pw); s.send_message(msg); s.quit()
+try:
+    srv = smtplib.SMTP(host, int(env.get("TYPO_SMTP_PORT", "587")), timeout=20)
+    srv.starttls(); srv.login(user, pw); srv.send_message(msg); srv.quit()
+    print("email sent to %s via %s" % (to, host), file=sys.stderr)
+except Exception as e:
+    print("EMAIL FAILED via %s: %s" % (host, e), file=sys.stderr)
 PY
   fi
 fi
