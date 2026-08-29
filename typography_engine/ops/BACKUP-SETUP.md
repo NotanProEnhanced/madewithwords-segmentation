@@ -85,10 +85,21 @@ Step-by-step, command-level recovery instructions are in **ops/RECOVERY-RUNBOOK.
 `/etc/nginx/sites-available`, `/etc/letsencrypt`.
 
 **Retention (two-tier, so photos don't outlive the deletion promise):**
-- **Full DR set** (photos, DBs, config, `.env`) — 24 hourly + 35 daily. Source
-  photos roll off in ~35 days, matching the ~30-day auto-deletion we promise users.
+- **Full DR set** (photos, DBs, config, `.env`) — `--keep-within-hourly 24h`
+  plus `--keep-within-daily 35d`. Source photos expire at 35 days of **elapsed
+  time**, matching the ~30-day auto-deletion we promise users.
 - **Consent records only** — 30 daily + 12 monthly + 7 yearly (the legal retention
-  window). Tiny, so long retention is cheap.
+  window). Tiny, so long retention is cheap. Deliberately count-based: for legal
+  records the safe failure is keeping too much.
+
+> ⚠️ **Retention only works if this runs on a schedule.** It was written with
+> `--keep-daily 35`, which keeps the 35 most recent days *that have snapshots* —
+> not the last 35 days. The job was never actually added to cron, ran three
+> times in two months, and every one of those snapshots was retained
+> indefinitely: customer photos from 1 July were still in the repository on 29
+> August. Fixed by switching the data tier to `--keep-within-daily 35d`, but
+> **confirm the cron line exists** (`crontab -l | grep backup.sh`) — an
+> unscheduled backup is also a broken retention policy.
 
 ## What is NOT backed up (by design — it's recoverable elsewhere)
 Code (GitHub) · container images (rebuilt) · `outputs/` (regenerated from

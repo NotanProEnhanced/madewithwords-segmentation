@@ -97,10 +97,19 @@ command by command) · `INCIDENT-RESPONSE.md`.
 ## Scheduled work
 
 ```
-0 * * * *   backup.sh          hourly restic (verify this is still scheduled)
+0 * * * *   backup.sh          hourly restic  -- NOT SCHEDULED as of 2026-08-29
 30 3 * * *  backup-config.sh   nightly config + orders to B2
 0 4 1 * *   verify-monthly.sh  monthly restore proof
 ```
+
+`backup.sh` was never added to cron. It ran three times between 1 July and 12
+August, by hand. Two consequences, both fixed but worth understanding: there was
+no hourly recovery point despite the setup guide promising one, and the
+count-based `--keep-daily 35` retention never expired anything, so customer
+source photos sat in the repository for 59 days against a ~30-day deletion
+promise. Retention is now time-based — but it still only runs when a backup
+runs, so **the cron line is part of the privacy commitment, not just the
+recovery plan.**
 
 Check what is *actually* scheduled with `crontab -l` rather than trusting this
 table. A backup that silently stopped looks exactly like one that is fine, right

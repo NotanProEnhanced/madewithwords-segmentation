@@ -81,9 +81,26 @@ if [ -s "$STAGING/consent-list.txt" ]; then
 fi
 
 # 4) Two-tier retention, then a single prune.
-#    data    -> photos/DBs/config roll off ~35 days (matches the deletion promise)
+#    data    -> photos/DBs/config roll off at 35 days (matches the deletion promise)
 #    consent -> kept long for the legal retention window
-restic forget --tag data    --keep-hourly 24 --keep-daily 35
+#
+# The data line uses --keep-within-*, which expires by ELAPSED TIME. It used to
+# say --keep-daily 35, and that is a different thing: it keeps the 35 most
+# recent days that HAVE a snapshot, not the last 35 days. This script was never
+# actually scheduled, so it ran three times in two months -- and under
+# --keep-daily 35 those three days were all "within the last 35 daily
+# snapshots" and were kept indefinitely. Customer source photos from 1 July
+# were still in the repository on 29 August, 59 days later, against a promise
+# to delete at ~30. Count-based retention silently stops honouring a time-based
+# promise the moment the backup cadence slips, and fails in the direction that
+# keeps personal data longer.
+restic forget --tag data    --keep-within-hourly 24h --keep-within-daily 35d
+#
+# The consent line stays COUNT-based on purpose. These are legal records and no
+# photos, so the safe direction is to over-retain: when the cadence slips,
+# count-based keeps more than intended, while time-based would delete records
+# that no newer backup has replaced. Tiny text files, so over-retention costs
+# nothing and under-retention is unrecoverable.
 restic forget --tag consent --keep-daily 30 --keep-monthly 12 --keep-yearly 7
 restic prune
 
