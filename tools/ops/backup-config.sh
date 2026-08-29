@@ -25,10 +25,14 @@
 #   machine the backup protects.
 #
 # OFF-BOX
-#   Set BACKUP_REMOTE to an scp/rsync destination and the archive is pushed
-#   there after it is written. A backup on the same disk as the original
-#   protects against fat fingers and nothing else.
-#       BACKUP_REMOTE=user@host:/backups/typortrait ./backup-config.sh
+#   A backup on the same disk as the original protects against fat fingers and
+#   nothing else. Set one of these and the archive is pushed after it is written:
+#       BACKUP_REMOTE=user@host:/backups/typortrait   ./backup-config.sh   # scp
+#       BACKUP_RCLONE=b2:my-bucket/typortrait          ./backup-config.sh   # rclone
+#   Both may be set, for two independent copies.
+#
+#   Verify a restore afterwards with restore-verify.sh. An untested backup is a
+#   guess, and the failure mode is silent until the day it matters.
 #
 # Usage:  ./backup-config.sh
 set -euo pipefail
@@ -82,10 +86,22 @@ echo "contents:"
 gpg --batch --quiet --decrypt --passphrase-file "$PASS" "$ARCHIVE" 2>/dev/null \
   | tar -tzf - | head -30
 
+pushed=0
 if [ -n "${BACKUP_REMOTE:-}" ]; then
-  echo "pushing to $BACKUP_REMOTE"
-  scp -q "$ARCHIVE" "$BACKUP_REMOTE/" && echo "pushed" || echo "PUSH FAILED -- archive is still local"
-else
+  echo "pushing to $BACKUP_REMOTE (scp)"
+  if scp -q "$ARCHIVE" "$BACKUP_REMOTE/"; then echo "pushed"; pushed=1
+  else echo "PUSH FAILED -- archive is still local only"; fi
+fi
+if [ -n "${BACKUP_RCLONE:-}" ]; then
+  if command -v rclone >/dev/null; then
+    echo "pushing to $BACKUP_RCLONE (rclone)"
+    if rclone copy "$ARCHIVE" "$BACKUP_RCLONE"; then echo "pushed"; pushed=1
+    else echo "PUSH FAILED -- archive is still local only"; fi
+  else
+    echo "BACKUP_RCLONE is set but rclone is not installed"
+  fi
+fi
+if [ "$pushed" = "0" ]; then
   echo
   echo "BACKUP_REMOTE is not set, so this archive is on the same disk as the"
   echo "originals. Set it to an off-box destination or this protects very little."
