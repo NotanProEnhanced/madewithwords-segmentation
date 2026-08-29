@@ -1,6 +1,6 @@
 # ops/rc.sh — load the restic backup environment into your CURRENT shell.
 #
-#   Usage:  source /root/typortrait-staging/typography_engine/ops/rc.sh
+#   Usage:  source /root/typortrait-prod/typography_engine/ops/rc.sh
 #           (or, from the repo dir:  . ops/rc.sh)
 #
 # Then run restic directly:  restic snapshots | restic stats | restic check

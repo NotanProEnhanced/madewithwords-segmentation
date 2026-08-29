@@ -41,9 +41,9 @@ and `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`.)*
 
 ## 5. First run (initialises the repo + first backup)
 ```bash
-chmod +x /root/typortrait-staging/typography_engine/ops/backup.sh
-chmod +x /root/typortrait-staging/typography_engine/ops/restore.sh
-/root/typortrait-staging/typography_engine/ops/backup.sh
+chmod +x /root/typortrait-prod/typography_engine/ops/backup.sh
+chmod +x /root/typortrait-prod/typography_engine/ops/restore.sh
+/root/typortrait-prod/typography_engine/ops/backup.sh
 tail -n 30 /var/log/typortrait-backup.log       # expect "backup ok"
 ```
 
@@ -51,7 +51,7 @@ tail -n 30 /var/log/typortrait-backup.log       # expect "backup ok"
 ```bash
 crontab -e
 # add:
-0 * * * * /root/typortrait-staging/typography_engine/ops/backup.sh
+0 * * * * /root/typortrait-prod/typography_engine/ops/backup.sh
 ```
 
 ## 7. (Recommended) Dead-man's-switch alerting
@@ -61,7 +61,7 @@ missed, healthchecks.io emails you.
 
 ## 8. Test the restore (do this quarterly)
 ```bash
-/root/typortrait-staging/typography_engine/ops/restore.sh /root/test-restore
+/root/typortrait-prod/typography_engine/ops/restore.sh /root/test-restore
 ls -R /root/test-restore        # confirm the DBs, private/, .env are present
 rm -rf /root/test-restore
 ```
@@ -70,7 +70,7 @@ rm -rf /root/test-restore
 The scripts load the credentials automatically. To run restic yourself (list,
 check, forget, restore), load the env into your shell first with the helper:
 ```bash
-source /root/typortrait-staging/typography_engine/ops/rc.sh
+source /root/typortrait-prod/typography_engine/ops/rc.sh
 restic snapshots      # then any restic command works this session
 ```
 (The env only lasts for the current terminal — source it again in a new shell.)

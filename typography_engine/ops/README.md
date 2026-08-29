@@ -1,0 +1,124 @@
+# ops — operating the fleet
+
+Everything here runs on the VPS as root. Nothing here is imported by the
+application; these are operator tools, safe to read before you run them.
+
+Five deployments live on one box, each a full checkout of this repo:
+
+| tree                       | brand / role            | port |
+|----------------------------|-------------------------|------|
+| `/root/typortrait-prod`    | app.typortrait.com      | 8077 |
+| `/root/typortrait-stg`     | staging — testing only  | 8078 |
+| `/root/typortrait-faithinwords` | faithinwords.com   | 8079 |
+| `/root/typortrait-lovedinwords` | lovedinwords.com   | 8080 |
+| `/root/typortrait-pawsinwords`  | pawsinwords.com    | 8081 |
+
+> **The directory names lie about their roles, historically.** Until August 2026
+> the *production* tree was called `typortrait-staging` and staging was
+> `typortrait-stg` — one letter apart, opposite meanings. Production is now
+> `typortrait-prod`. If you find a script, cron line or document still saying
+> `/root/typortrait-staging`, it predates the rename and is pointing at nothing.
+
+All five track branch `pet-engine-drape-tone-tiers` on remote **`github`**
+(`git@github.com:NotanProEnhanced/madewithwords-segmentation.git`). Note the
+remote is *not* called `origin` — `origin` is a local path to a sibling tree.
+
+---
+
+## There are two backup systems, and they do different jobs
+
+This is the thing most likely to confuse whoever reads this next, so it is first.
+
+### 1. `backup.sh` — restic, hourly, the full disaster-recovery set
+Covers **one tree only** (`typortrait-prod`): both databases, the customer
+source photos, consent records, `.env`, the live web roots, nginx and
+Let's Encrypt. Deduplicated and encrypted, with two-tier retention so photos
+roll off at ~35 days (matching the deletion promise) while consent records are
+kept for the legal window. Setup: `BACKUP-SETUP.md`. Credentials:
+`/root/.typortrait-backup.env`. Helper: `rc.sh`.
+
+### 2. `backup-config.sh` — gpg + rclone, nightly, config and orders for **all five**
+Covers what is not in git and cannot be rebuilt: each tree's `.env` and
+`docker-compose.yml`, a consistent `orders.db` snapshot, the order/consent JSON,
+plus the crontab and nginx config. Deliberately **excludes** customer source
+photos. Pushed to `b2:typortrait-backups-jt/config`.
+Verified by `restore-verify.sh`; re-verified monthly from B2 by
+`verify-monthly.sh`.
+
+### The gap between them
+Four of the five trees (`faithinwords`, `lovedinwords`, `pawsinwords`, `stg`)
+have their **config, orders and consent records** backed up nightly, but their
+**customer source photos and `gather.db` are not backed up at all**. For photos
+that is arguably correct — they are deleted at ~30 days by design. For
+`gather.db` it is probably an oversight. Decide deliberately rather than by
+accident; `backup.sh` is written for a single `APP_DIR` and would need a loop.
+
+---
+
+## The scripts
+
+### Fleet
+| script | what it does |
+|---|---|
+| `tt` | fleet tool — run a command across every tree, see status at a glance |
+| `env-lint.py` | flags `.env` problems: short secrets, unreachable keys, missing values |
+| `compose-diff.py` | compares the five compose files key by key |
+| `compose-env-file.py` | checks each tree declares `env_file` (without it, `.env` is silently ignored) |
+| `compose-template.py` | builds the one shared compose template; `--apply` installs it |
+
+> `.env` values are silently ignored unless the service declares `env_file:`.
+> A key can sit in `.env`, look correct, and do nothing. That cost three
+> separate debugging sessions before `env_file` was added everywhere.
+
+### Backup and recovery
+| script | what it does |
+|---|---|
+| `backup.sh` | restic hourly backup (prod tree) |
+| `restore.sh` | restic restore into a review directory — never overwrites live data |
+| `rc.sh` | `source` it to load restic credentials into your shell |
+| `backup-config.sh` | nightly encrypted config/orders backup, all five trees |
+| `restore-verify.sh` | decrypt an archive and prove every tree is recoverable from it |
+| `verify-monthly.sh` | pull the newest archive back from B2 and verify it; emails on failure |
+
+### Site and orders
+| script | what it does |
+|---|---|
+| `deploy-site.sh` | publish `sites/typortrait.com` from git to `/var/www` |
+| `site-drift.sh` | detect the live site drifting from the repo |
+| `close-stale-orders.py` | close orders stuck in a non-terminal status; dry run by default |
+| `pf-check-orders.py` | read-only: look up orders at Printful with a chosen token |
+
+### Documents
+`BACKUP-SETUP.md` (one-time restic setup) · `RECOVERY-RUNBOOK.md` (rebuild,
+command by command) · `INCIDENT-RESPONSE.md`.
+
+---
+
+## Scheduled work
+
+```
+0 * * * *   backup.sh          hourly restic (verify this is still scheduled)
+30 3 * * *  backup-config.sh   nightly config + orders to B2
+0 4 1 * *   verify-monthly.sh  monthly restore proof
+```
+
+Check what is *actually* scheduled with `crontab -l` rather than trusting this
+table. A backup that silently stopped looks exactly like one that is fine, right
+up until the day you need it — which is the entire reason `verify-monthly.sh`
+exists and why it fails loudly when the newest archive is more than three days
+old.
+
+## Conventions worth knowing
+
+- **Dry run first.** `close-stale-orders.py`, `compose-template.py`,
+  `deploy-site.sh` and `site-drift.sh` all report before they write and need an
+  explicit `--apply`.
+- **Secrets never appear in this repo, in arguments, or in output.** Tokens and
+  passphrases are read from root-only files. Create them with `nano`, remove them
+  with `shred -u`. Scripts print key *names* and lengths, never values.
+- **Customer source photos are not copied into long-lived archives.** They are
+  personal data covered by a ~30-day deletion promise, and an archive that keeps
+  them for a year quietly breaks it.
+- **`app/` is baked into the image; `static/` and `data/` are bind-mounted.**
+  Changes under `app/` need `docker compose up -d --build`; `static/` changes
+  take effect on reload.

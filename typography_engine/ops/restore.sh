@@ -13,7 +13,7 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-APP_DIR="/root/typortrait-staging/typography_engine"
+APP_DIR="/root/typortrait-prod/typography_engine"
 ENVFILE="/root/.typortrait-backup.env"
 RESTORE_TO="${1:-/root/typortrait-restore}"
 SNAPSHOT="${2:-latest}"

@@ -13,8 +13,13 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
+# SCOPE: this backs up ONE tree. There are five. The other four have their
+# config, orders and consent records covered nightly by backup-config.sh, but
+# NOT their source photos or gather.db. See "The gap between them" in
+# ops/README.md before assuming the whole fleet is in here.
+#
 # ---- CONFIG (adjust APP_DIR if your checkout path differs) -----------------
-APP_DIR="/root/typortrait-staging/typography_engine"
+APP_DIR="/root/typortrait-prod/typography_engine"
 STAGING="/root/.typortrait-backup-staging"     # transient consistent DB snapshots
 ENVFILE="/root/.typortrait-backup.env"         # restic + provider creds (chmod 600)
 LOG="/var/log/typortrait-backup.log"
@@ -31,6 +36,12 @@ fail(){
 }
 trap 'fail "error near line $LINENO"' ERR
 
+# APP_DIR is hardcoded above and has been wrong before: the production tree was
+# renamed from typortrait-staging to typortrait-prod in August 2026, and every
+# path in this file pointed at the old name until it was caught. Check it
+# explicitly, so a wrong path says so instead of failing three commands later
+# with a line number.
+[ -d "$APP_DIR" ] || fail "APP_DIR does not exist: $APP_DIR -- has the tree been renamed? (see ops/README.md)"
 [ -f "$ENVFILE" ] || fail "missing creds file $ENVFILE (see ops/BACKUP-SETUP.md)"
 set -a; . "$ENVFILE"; set +a
 command -v restic  >/dev/null || fail "restic not installed (apt-get install restic)"
