@@ -117,6 +117,29 @@ up until the day you need it — which is the entire reason `verify-monthly.sh`
 exists and why it fails loudly when the newest archive is more than three days
 old.
 
+## Staging is a real test environment — and holds a real Printful token
+
+Staging (`typortrait-stg`, port 8078, behind basic auth at
+staging.typortrait.com) runs the full purchase path:
+
+- **Stripe:** a test-mode restricted key (`rk_test_`) with exactly two scopes —
+  Checkout Sessions: Write and PaymentIntents: Write. Those are every Stripe
+  operation the app performs. Test card `4242 4242 4242 4242`.
+- **Printful:** the **real** token and store id, because Printful has no test
+  mode, with **`PRINTFUL_CONFIRM=false`** so orders land as unconfirmed drafts —
+  visible in the dashboard, deletable, never printed, never billed.
+
+> ⚠️ `PRINTFUL_CONFIRM=false` is the entire safety margin. Set it to true, or
+> overwrite staging's `.env` with production's, and a staging test purchase
+> sends a real job to a real printer. `env-lint.py` fails loudly on that
+> combination — run it before any test purchase.
+
+nginx exempts `/webhook/stripe` and `/printful-fetch/` from basic auth, because
+Stripe and Printful cannot authenticate. Don't remove those exemptions.
+
+Drafts land in the **production** Printful store, since staging uses the same
+store id. Delete test drafts when you are done with them.
+
 ## Conventions worth knowing
 
 - **Dry run first.** `close-stale-orders.py`, `compose-template.py`,
