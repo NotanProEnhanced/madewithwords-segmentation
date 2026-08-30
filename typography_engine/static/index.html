@@ -1873,7 +1873,11 @@ function buildBgSwatches(){
   };
   currentBackgrounds().forEach(([bg,col,label])=>mk(bg,col,label));
   // Florals: a labelled group, memorial only (the frames pair with the Paper sculpt).
-  if(_isMemorialBrand && FLORALS.length){
+  // Appended DIRECTLY rather than through currentBackgrounds(), so gating that list on
+  // the engine is not enough -- this needs its own guard. The pet engine reads only its
+  // own grounds and never looks at `backdrop`, so a floral chip there would change
+  // nothing while appearing to.
+  if(_isMemorialBrand && !_petEngine && FLORALS.length){
     const lab=document.createElement("div"); lab.className="bg-group"; lab.textContent="Florals";
     bgSwatchEl.append(lab);
     FLORALS.forEach(([bg,src,label])=>mk(bg,"img:"+src,label));
