@@ -84,7 +84,8 @@
   /* Labelled control group: a quiet label + one human line under each choice. */
   .ctl{margin-top:20px}
   .ctl-lbl{font-weight:600;font-size:15px;color:var(--ink);margin-bottom:8px}
-  #styleGallery>.ctl-lbl, #caseCtl>.ctl-lbl{text-align:center}
+  #styleGallery>.ctl-lbl, #caseCtl>.ctl-lbl, #petTypeCtl>.ctl-lbl,
+  #petTypeCtl>.ctl-hint{text-align:center}
   .ctl-hint{color:var(--muted);font-size:13px;line-height:1.45;margin-top:8px}
   .photo-note{margin-top:10px;padding:10px 12px;border-radius:10px;background:#f4f1e8;
     border:1px solid #e7e1d2;color:#6a5b39;font-size:13px;line-height:1.45}
@@ -433,7 +434,7 @@
        and doesn't force overflow-y:auto; the strip still scrolls internally. */
     overflow-x:clip}
   body.guided #result .result-card-h{font-family:var(--serif);font-size:20px;font-weight:740;
-    letter-spacing:-.02em;color:var(--navy);margin:0 0 2px}
+    letter-spacing:-.02em;color:var(--navy);margin:0 0 2px;text-align:center}
   body.guided #result .result-card>#styleGallery{margin-top:14px!important}  /* no double top gap */
   /* Compact sticky brand bar on the result view: reuse the real header (so the
      per-brand name + heart stay correct) shrunk to a pinned logo strip. */
@@ -1050,8 +1051,8 @@ function _petEngineSetup(){
     }
     if(_bg && !document.getElementById("petTypeCtl")){
       var tc=document.createElement("div"); tc.className="ctl"; tc.id="petTypeCtl";
-      tc.innerHTML='<div class="ctl-lbl">Typography</div>'
-        +'<div class="seg" id="petTypeSeg" aria-label="Typography size">'
+      tc.innerHTML='<div class="ctl-lbl">Lettering Size</div>'
+        +'<div class="seg" id="petTypeSeg" aria-label="Lettering size">'
         +'<button type="button" data-pt="small" class="on">Small</button>'
         +'<button type="button" data-pt="medium">Medium</button>'
         +'<button type="button" data-pt="large">Large</button></div>'
@@ -1080,8 +1081,8 @@ function _petSetup(){
     var _bg=document.getElementById("bgGroup");
     if(_bg && !document.getElementById("petTypeCtl")){
       var tc=document.createElement("div"); tc.className="ctl"; tc.id="petTypeCtl";
-      tc.innerHTML='<div class="ctl-lbl">Typography</div>'
-        +'<div class="seg" id="petTypeSeg" aria-label="Typography size">'
+      tc.innerHTML='<div class="ctl-lbl">Lettering Size</div>'
+        +'<div class="seg" id="petTypeSeg" aria-label="Lettering size">'
         +'<button type="button" data-pt="small" class="on">Small</button>'
         +'<button type="button" data-pt="medium">Medium</button>'
         +'<button type="button" data-pt="large">Large</button></div>'
