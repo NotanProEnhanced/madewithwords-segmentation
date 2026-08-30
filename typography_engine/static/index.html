@@ -960,13 +960,13 @@ const _qp=new URLSearchParams(location.search);
 // ref in products._MEMORIAL_REFS). A new memorial partner is just one entry here.
 const BRANDS={
   lovedinwords:{ name:"Loved in Words", owned:true, tag:"A portrait of a life, in the words that describe them.", title:"Loved in Words — a remembrance portrait made from words", host:"lovedinwords.com",
-    style:"displacement", ink:"photo", pinStyle:true, memorial:true,
+    style:"displacement", petEngine:true, ink:"photo", pinStyle:true, memorial:true,
     theme:{ "--navy":"#42525f", "--ink":"#2f3742", "--paper":"#f4efe8", "--card":"#fffdf9", "--line":"#e7e0d5", "--muted":"#776f64" } },
   // EverLoved (everloved.com) — co-brand demo for the partnership pitch. A soft sage
   // palette (placeholder; swap to EverLoved's real brand once confirmed).
   // ?brand=everloved drives memorial pricing via the "everloved" ref (already set).
   everloved:{ name:"EverLoved", tag:"A keepsake portrait, in the words that loved them.", title:"EverLoved — a remembrance portrait made from words", host:"everloved.com",
-    style:"displacement", ink:"photo", pinStyle:true, memorial:true,
+    style:"displacement", petEngine:true, ink:"photo", pinStyle:true, memorial:true,
     theme:{ "--navy":"#46594e", "--ink":"#2c352e", "--paper":"#f2f1ea", "--card":"#fbfaf6", "--line":"#e2e1d6", "--muted":"#6f756c" } },
   // Redemption skin: the Loved in Words identity a partner-redemption customer lands
   // in (via /redeem's ?brand=keepsake redirect). Deliberately a SEPARATE slot from
@@ -974,7 +974,7 @@ const BRANDS={
   // — red-heart favicon, LovedInWords.com preview mark — never touches either. No host:
   // it's reached only by the redeem redirect, never by referrer.
   keepsake:{ name:"Loved in Words", owned:true, tag:"A portrait of a life, in the words that describe them.", title:"Loved in Words — a remembrance portrait made from words",
-    style:"displacement", ink:"photo", pinStyle:true, memorial:true,
+    style:"displacement", petEngine:true, ink:"photo", pinStyle:true, memorial:true,
     theme:{ "--navy":"#42525f", "--ink":"#2f3742", "--paper":"#f4efe8", "--card":"#fffdf9", "--line":"#e7e0d5", "--muted":"#776f64" } },
   // Faith in Words (faithinwords.com) -- sacred/devotional word portraits. NOT memorial:
   // this is the full creative studio (a name & a few words, or a written verse/passage),
@@ -983,7 +983,7 @@ const BRANDS={
   // so a direct visit brands correctly with no ?brand param. (name/tag/theme are a first
   // pass -- easy to tune.)
   faithinwords:{ name:"Faith in Words", owned:true, tag:"A sacred portrait, in the words of Scripture.", title:"Faith in Words — a sacred portrait made from Scripture", host:"faithinwords.com",
-    style:"displacement", ink:"photo", pinStyle:true, glyph:"cross",
+    style:"displacement", petEngine:true, ink:"photo", pinStyle:true, glyph:"cross",
     theme:{ "--navy":"#33405f", "--ink":"#2a2f40", "--paper":"#f4f0e6", "--card":"#fffdf7", "--line":"#e7dfca", "--muted":"#77705f" } },
   // Paws in Words (pawsinwords.com) -- pet word-portraits. NOT the human face engine:
   // `pet:true` + style "pet" route rendering to the landmark-free pet renderer (U2-Net matte,
@@ -1030,10 +1030,46 @@ const _isPet=!!(BRAND && BRAND.pet);   // pet STUDIO: the Paws in Words interfac
 // ignores `style` once it is set, so the brand's real style still travels with the request:
 // that is what keeps Passage working (main.py only reads `message` when style=="message").
 const _petEngine=!!(BRAND && (BRAND.pet || BRAND.petEngine));
-if(_isPet && !state.petGround) state.petGround="dark";   // gallery-dark hero by default
+if(_petEngine && !state.petGround) state.petGround="dark";   // gallery-dark hero by default
 if(_petEngine && !state.petType) state.petType="small";     // typography size: small | medium | large
 // Pet-clean studio: hide the human-only controls, repurpose the Background axis as the pet
 // "Look", add word chips + composition guidance. Gated on _isPet -> other brands untouched.
+// A brand on the pet ENGINE but wearing its own studio (memorial, faith). The engine
+// takes only words, a ground and a typography size -- it reads no ink, no style and no
+// backdrop -- so any control for those would change nothing. A control that lies is
+// worse than a missing one, so they are removed rather than left decorative, and the
+// Background axis is rebuilt from the grounds the engine actually accepts.
+function _petEngineSetup(){
+  try{
+    ["styleGallery","inkGroup","sizeFilm"].forEach(function(id){ var e=document.getElementById(id); if(e) e.style.display="none"; });
+    var _bg=document.getElementById("bgGroup");
+    if(_bg){
+      _bg.style.display="";                                   // the engine DOES honour the ground
+      var _bl=_bg.querySelector(".ctl-lbl"); if(_bl) _bl.textContent="Background";
+      var _bh=_bg.querySelector(".ctl-hint"); if(_bh) _bh.textContent="The tone behind them.";
+    }
+    if(_bg && !document.getElementById("petTypeCtl")){
+      var tc=document.createElement("div"); tc.className="ctl"; tc.id="petTypeCtl";
+      tc.innerHTML='<div class="ctl-lbl">Typography</div>'
+        +'<div class="seg" id="petTypeSeg" aria-label="Typography size">'
+        +'<button type="button" data-pt="small" class="on">Small</button>'
+        +'<button type="button" data-pt="medium">Medium</button>'
+        +'<button type="button" data-pt="large">Large</button></div>'
+        +'<div class="ctl-hint">Small adds fine detail; Large reads bold and graphic.</div>';
+      _bg.parentNode.insertBefore(tc, _bg.nextSibling);
+      tc.querySelectorAll("#petTypeSeg button").forEach(function(b){
+        b.addEventListener("click",function(){
+          var v=b.getAttribute("data-pt"); if((state.petType||"small")===v) return;
+          userTouched=true; state.petType=v;
+          tc.querySelectorAll("#petTypeSeg button").forEach(function(x){ x.classList.toggle("on", x===b); });
+          invalidate(); render(state.ink,{animate:false});
+        });
+      });
+    }
+  }catch(e){}
+}
+
+
 function _petSetup(){
   try{
     ["styleGallery","inkGroup","sizeFilm","caseCtl","sunRow","dropTips"].forEach(function(id){ var e=document.getElementById(id); if(e) e.style.display="none"; });
@@ -1135,7 +1171,7 @@ function _petSetup(){
 // only when the gallery is actually live (probe /gallery; it 404s when the
 // TYPO_GALLERY_ENABLED flag is off, so the link tracks the flag automatically).
 if(!_isMemorialBrand){
-  fetch("/gallery",{method:"HEAD"}).then(r=>{ if(r.ok && !_isPet){ const _gl=document.getElementById("galleryLink"); if(_gl) _gl.style.display="inline-block"; } }).catch(()=>{});   // pet brand has no sacred/holiday gallery -> never show it
+  fetch("/gallery",{method:"HEAD"}).then(r=>{ if(r.ok && !_petEngine){ const _gl=document.getElementById("galleryLink"); if(_gl) _gl.style.display="inline-block"; } }).catch(()=>{});   // pet brand has no sacred/holiday gallery -> never show it
 }
 // Memorial skins keep a calmer flow and name the styles by WHAT THE VISITOR PROVIDES --
 // Words / Passage / Letter (short -> long) -- rather than by abstract style jargon. It's
@@ -1143,7 +1179,7 @@ if(!_isMemorialBrand){
 // someone who has passed), and never reuses "Original" (already the colour swatch). Mosaic
 // (the scattered word-cloud) is hidden here -- in grief, fewer choices land better.
 // Generic Typortrait is untouched: it doesn't show this chooser at all.
-if(_isMemorialBrand){
+if(_isMemorialBrand && !_petEngine){
   const _mb=document.querySelector('#styleSegResult button[data-style="words"]');
   if(_mb) _mb.style.display="none";
   // "Letter" and "Passage" render the SAME portrait -- both stream the written text into
@@ -1193,6 +1229,7 @@ if(BRAND){
     if(_FAV[BRAND_ID]) document.querySelectorAll('link[rel*="icon"]').forEach(function(l){
       const h=l.getAttribute("href"); if(h) l.setAttribute("href", h.replace("/favicons/typortrait/","/favicons/"+BRAND_ID+"/")); });
     if(_isPet) _petSetup();
+    else if(_petEngine) _petEngineSetup();
     if(_isMemorialBrand) _memorialSetup();
   }catch(e){}
 }
@@ -1242,7 +1279,7 @@ function currentSwatches(){ return _isMemorialBrand ? MEMORIAL_INKS : GENERIC_IN
 // trap for a big share of pets. Dark (hero) + a neutral grey remain.
 const PET_GROUNDS=[["dark","#1b1e25","Gallery Dark"],["mid","#8b9099","Gallery Gray"]];
 function currentBackgrounds(){
-  if(_isPet) return PET_GROUNDS;
+  if(_petEngine) return PET_GROUNDS;
   return _isMemorialBrand ? BACKGROUNDS.filter(b=>b[0]!=="transparent") : BACKGROUNDS;
 }
 function variantPost(id){
@@ -1254,7 +1291,7 @@ function variantPost(id){
   // so the server streams the passage in written order. The flow flag is sent in render().
   // Paws in Words: the pet engine uses its own grounds (dark/mid/paper…), driven off the pet
   // flag on the server. Send the chosen pet ground; backdrop/ink don't apply.
-  if(_isPet) return {ink:"photo", style:"pet", ground:(state.petGround||"dark"), petType:(state.petType||"small")};
+  if(_petEngine) return {ink:"photo", style:"pet", ground:(state.petGround||"dark"), petType:(state.petType||"small")};
   const base = (state.style==="displacement" || state.style==="letter")
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
     : {ink:(id||"photo"), style:state.style, ground:"navy"};
@@ -1844,12 +1881,12 @@ function buildBgSwatches(){
 }
 function markBgSel(){
   if(!bgSwatchEl) return;
-  const sel = _isPet ? (state.petGround||"dark") : (state.backdrop||"studio");
+  const sel = _petEngine ? (state.petGround||"dark") : (state.backdrop||"studio");
   [...bgSwatchEl.children].forEach(c=>c.classList.toggle("sel",(c.dataset.bg||"")===sel));
 }
 function selectBackground(bg){
   bg = bg || null;
-  if(_isPet){                       // pet "Look" -> re-render on the chosen ground; no ink thumbnails
+  if(_petEngine){                   // pet ground -> re-render on the chosen ground; no ink thumbnails
     if((state.petGround||"dark")===(bg||"dark")) return;
     userTouched=true; state.petGround=bg||"dark"; markBgSel();
     invalidate(); render(state.ink,{animate:false});
@@ -1982,7 +2019,7 @@ function buildSizeStrip(){
   // Pet brand has its OWN typography control (state.petType, the Small/Medium/Large seg in
   // _petSetup). The legacy Word-size filmstrip drives min_font, which the pet engine ignores
   // -> it's a dead, duplicate control here. Keep it hidden so pets see ONE size control.
-  if(_isPet){ if(sizeFilmEl) sizeFilmEl.style.display="none"; return; }
+  if(_petEngine){ if(sizeFilmEl) sizeFilmEl.style.display="none"; return; }
   // Sculpted is auto-scaled; Message auto-sizes from text length (build_poster
   // repeats to fill, so the type size is the renderer's call, not the user's).
   if(state.style==="displacement" || state.style==="letter" || state.style==="message"){ if(sizeFilmEl) sizeFilmEl.style.display="none"; return; }  // no size control (Letter = displacement: auto-scaled, ignores min_font)
@@ -2014,7 +2051,7 @@ function updateSizeThumb(mf){
   if(Number(mf)===Number(state.minFont)) src=(cache[state.ink]&&cache[state.ink].preview)||src;
   if(src){ pic.style.backgroundImage=`url(${src})`; pic.style.backgroundSize="cover"; pic.style.backgroundPosition="center"; pic.classList.remove("loading"); }
 }
-function refreshSizeStrip(){ if(_isPet) return; markSizeSel(); allowedMf.forEach(mf=>updateSizeThumb(mf)); }
+function refreshSizeStrip(){ if(_petEngine) return; markSizeSel(); allowedMf.forEach(mf=>updateSizeThumb(mf)); }
 function resetSizeThumbs(){ if(sizeStripEl) sizeStripEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.remove("loading"); }); }
 async function renderSizeThumb(mf){
   if(!state.file) return;
@@ -2038,7 +2075,7 @@ let prewarmingSizes=false;
 // render on demand when the user taps a swatch/size. Set false to restore eager
 // prewarming.
 const LAZY_THUMBS = true;
-async function prewarmSizes(){ if(_isPet) return;
+async function prewarmSizes(){ if(_petEngine) return;
   if(LAZY_THUMBS) return;
   if(prewarmingSizes || resultView.style.display!=="block" || state.style==="displacement" || state.style==="letter" || state.style==="message") return;
   prewarmingSizes=true;
@@ -2726,7 +2763,7 @@ function setThumbStatus(label){
   else { thumbStatus.classList.remove("on"); thumbStatus.textContent=""; }
 }
 let prewarming=false, prewarmAgain=false;
-async function prewarm(){ if(_isPet) return;
+async function prewarm(){ if(_petEngine) return;   // ink axis is hidden on the pet engine -> these thumbnails are wasted renders
   if(LAZY_THUMBS) return;                 // thumbnails render on tap, not eagerly
   // Don't run two passes at once -- but if a prewarm is requested WHILE one is
   // running, flag a re-run instead of dropping it. That covers a style/variant
