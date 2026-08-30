@@ -20,6 +20,7 @@ import os
 import random
 import re
 import tempfile
+import time
 import urllib.request
 from threading import Lock
 
@@ -81,33 +82,80 @@ if _MATTE_NAME not in _MATTE_MODELS:
 _MATTE_URL = (os.environ.get("PET_MATTE_URL", "").strip() or _MATTE_MODELS[_MATTE_NAME][0])
 _MATTE_SIZE = _MATTE_MODELS[_MATTE_NAME][1]
 _MATTE_PATH = os.path.join(os.environ.get("PET_MATTE_DIR", tempfile.gettempdir()), _MATTE_NAME + ".onnx")
+# Both models are ~170MB. Used to reject a TRUNCATED file instead of handing it to
+# onnxruntime; the old check was 1MB, which a 170MB download passes almost instantly.
+_MATTE_MIN_BYTES = 100_000_000
 _U2_SESSION = None
 _U2_LOCK = Lock()
-_U2_FAILED = False
+_U2_FAILED_AT = 0.0        # monotonic time of the last failed attempt; 0 = none
+_U2_RETRY_AFTER = 300.0    # seconds to wait before trying again
 
 
 def _ensure_u2net():
-    if os.path.exists(_MATTE_PATH) and os.path.getsize(_MATTE_PATH) > 1_000_000:
+    """Return the model path, or None.
+
+    Downloads to a TEMPORARY file in the same directory and renames it into place, so
+    a partly-written model is never visible at the final path.
+
+    This mattered. urlretrieve() wrote straight to _MATTE_PATH, and a 170MB download
+    passes a 1MB size check within a fraction of a second -- so a render arriving
+    during the download saw a file that looked complete, loaded a truncated ONNX,
+    and raised. The failure then latched for the life of the process and every later
+    render fell back to GrabCut's rectangle mask. That is what produced the near-black
+    portraits on Loved in Words the first time the pet engine ran there, two minutes
+    after the model started downloading.
+    """
+    if os.path.exists(_MATTE_PATH):
+        if os.path.getsize(_MATTE_PATH) >= _MATTE_MIN_BYTES:
+            return _MATTE_PATH
+        try:
+            os.remove(_MATTE_PATH)     # truncated by an interrupted earlier attempt
+        except OSError:
+            return None
+    d = os.path.dirname(_MATTE_PATH) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".part")   # same filesystem -> atomic rename
+    os.close(fd)
+    try:
+        urllib.request.urlretrieve(_MATTE_URL, tmp)
+        if os.path.getsize(tmp) < _MATTE_MIN_BYTES:
+            return None
+        os.replace(tmp, _MATTE_PATH)
         return _MATTE_PATH
-    os.makedirs(os.path.dirname(_MATTE_PATH) or ".", exist_ok=True)
-    urllib.request.urlretrieve(_MATTE_URL, _MATTE_PATH)
-    return _MATTE_PATH if (os.path.exists(_MATTE_PATH) and os.path.getsize(_MATTE_PATH) > 1_000_000) else None
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
 
 def _u2net_session():
-    global _U2_SESSION, _U2_FAILED
+    """The ONNX session, or None to fall back to GrabCut.
+
+    A failure used to latch permanently: one transient error -- a slow download, a
+    truncated file, a momentary memory shortage -- degraded EVERY later render in the
+    process to the GrabCut rectangle, silently, until someone restarted the container.
+    For a portrait people pay for, that is the worst possible failure shape: it looks
+    like the product working, and it stays broken. Back off and retry instead, so a
+    transient fault costs one render rather than all of them.
+    """
+    global _U2_SESSION, _U2_FAILED_AT
     with _U2_LOCK:
-        if _U2_SESSION is not None or _U2_FAILED:
+        if _U2_SESSION is not None:
             return _U2_SESSION
+        if _U2_FAILED_AT and (time.monotonic() - _U2_FAILED_AT) < _U2_RETRY_AFTER:
+            return None
         try:
             import onnxruntime as ort  # already a project dependency
             path = _ensure_u2net()
             if not path:
-                _U2_FAILED = True
+                _U2_FAILED_AT = time.monotonic()
                 return None
             _U2_SESSION = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+            _U2_FAILED_AT = 0.0
         except Exception:  # noqa: BLE001  -- any failure -> fall back to GrabCut
-            _U2_FAILED = True
+            _U2_FAILED_AT = time.monotonic()
             _U2_SESSION = None
     return _U2_SESSION
 

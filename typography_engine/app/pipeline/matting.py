@@ -37,7 +37,6 @@ ISNet ONNX I/O:
 from __future__ import annotations
 
 import os
-import tempfile
 import urllib.request
 from threading import Lock
 from typing import Optional
@@ -52,9 +51,8 @@ _LOCK = Lock()
 _SESSION = None
 _INIT_ERROR: Optional[str] = None
 
-# Shared with app/pet_proto.py: same URL, same on-disk path, same env override, so the
-# ~170MB file is fetched once and serves both engines.
-_ISNET_URL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx"
+# The model file is shared with app/pet_proto.py, which owns fetching it -- see
+# _isnet_session() below. Only the input geometry is ours.
 _ISNET_SIDE = 1024
 _ISNET_LOCK = Lock()
 _ISNET_SESSION = None
@@ -76,10 +74,6 @@ def enabled() -> bool:
     return _model_name() != ""
 
 
-def _isnet_path() -> str:
-    return os.path.join(os.environ.get("PET_MATTE_DIR", tempfile.gettempdir()), "isnet.onnx")
-
-
 def _isnet_session(warns: WarningCollector):
     global _ISNET_SESSION, _ISNET_ERROR
     with _ISNET_LOCK:
@@ -87,12 +81,15 @@ def _isnet_session(warns: WarningCollector):
             return _ISNET_SESSION
         if _ISNET_ERROR is not None:
             return None
-        path = _isnet_path()
         try:
-            if not (os.path.exists(path) and os.path.getsize(path) > 1_000_000):
-                os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-                urllib.request.urlretrieve(_ISNET_URL, path)
-            if not (os.path.exists(path) and os.path.getsize(path) > 1_000_000):
+            # Delegate to the pet engine's fetcher rather than keeping a second copy of
+            # this logic. Both point at the SAME file, and a duplicate downloader could
+            # truncate the model out from under the other engine mid-render. That one
+            # already downloads to a temporary file and renames it into place, which is
+            # what makes a concurrent reader safe.
+            from ..pet_proto import _ensure_u2net
+            path = _ensure_u2net()
+            if not path:
                 _ISNET_ERROR = "model_unavailable"
                 warns.warn("matte", "model_download_failed", "Could not fetch the isnet matting model")
                 return None
