@@ -555,7 +555,7 @@ def _liw_landing_html(request: Request) -> str:
     <li>High-resolution digital download &mdash; no watermark</li>
     <li>Matching phone &amp; desktop wallpapers, included free</li>
     <li>Archival fine-art prints and framed keepsakes, delivered</li>
-    <li>Two styles &mdash; luminous colour or timeless monochrome</li>
+    <li>Your choice of background tone and lettering size</li>
    </ul>
    <p class="kprice">Digital keepsake <b>${_dig:.0f}</b> &nbsp;&middot;&nbsp; Framed 16&times;20 <b>${_fr:.0f}</b> &nbsp;&middot;&nbsp; Family set <b>${_fam:.0f}</b></p>
    <p class="knote">A free preview comes first &mdash; you only pay if it feels right.</p>
