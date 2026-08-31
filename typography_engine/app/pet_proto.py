@@ -368,7 +368,7 @@ def _rows(stream, W, H, fs, rng):
     return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
 
 
-def _contour_rows(stream, field, W, H, fs, rng, sel=None, occ=None):
+def _contour_rows(stream, field, W, H, fs, rng, sel=None):
     """Ink map with the phrase stream set ALONG iso-contours of `field`, each glyph rotated
     to the local tangent.
 
@@ -459,12 +459,7 @@ def _contour_rows(stream, field, W, H, fs, rng, sel=None, occ=None):
     # glyphs from neighbouring levels land on top of each other and the type turns to mush.
     # Testing each glyph's footprint against what is already inked lets the spacing be tight
     # for density WITHOUT that pile-up: the ink goes where there is room for it.
-    # SHARED across tiers when the caller passes one. Each tier used to build its own,
-    # so four layers were collision-tested in isolation and then blended on top of each
-    # other -- every tier blind to the others' ink. That gives the worst of both: piles
-    # where layers coincide, and bare ground where none of them happened to land.
-    if occ is None:
-        occ = np.zeros((H, W), np.uint8)
+    occ = np.zeros((H, W), np.uint8)
     # How much of a glyph's own ink may already be covered before it is dropped. Measured
     # alongside the gap above: tighter spacing needs a looser test or the density gained is
     # immediately rejected.
@@ -735,15 +730,10 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         # Already placed on the form -- warping them again would reintroduce exactly the
         # dragging this replaces.
         _sel = mask > 0.35
-        # ONE occupancy grid for all four tiers, COARSE FIRST: the big words claim their
-        # space, then each finer tier fills what is still open. Sharing it is what stops the
-        # layers colliding; going coarse-to-fine is what stops fine type being crowded out
-        # by ink it cannot see.
-        _occ = np.zeros((H, W), np.uint8)
-        wL = _contour_rows(_hero, Dn, W, H, _tc * sc * _tsc, rng, _sel, _occ)
-        wM = _contour_rows(_mid, Dn, W, H, 40 * sc * _tsc, rng, _sel, _occ)
-        wF = _contour_rows(stream, Dn, W, H, 26 * sc * _tsc, rng, _sel, _occ)
-        wMi = _contour_rows(stream, Dn, W, H, 16 * sc * _tsc, rng, _sel, _occ)
+        wL = _contour_rows(_hero, Dn, W, H, _tc * sc * _tsc, rng, _sel)
+        wM = _contour_rows(_mid, Dn, W, H, 40 * sc * _tsc, rng, _sel)
+        wF = _contour_rows(stream, Dn, W, H, 26 * sc * _tsc, rng, _sel)
+        wMi = _contour_rows(stream, Dn, W, H, 16 * sc * _tsc, rng, _sel)
     else:
         tL = _rows(_hero, W, H, _tc * sc * _tsc, rng)
         tM = _rows(_mid, W, H, 40 * sc * _tsc, rng)
