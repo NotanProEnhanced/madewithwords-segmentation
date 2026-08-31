@@ -404,6 +404,15 @@ def _contour_rows(stream, field, W, H, fs, rng, sel=None, occ=None):
     # 0.60 measured, not inherited: PET_ROW_GAP is 1.12 because straight rows need air or
     # they collide into a wall of text. Contours are collision-tested, so they can sit far
     # tighter -- ink coverage 0.24 at 0.60 against 0.16 at 1.12, with straight rows at 0.27.
+    # Smooth the field HARDER than the drape does, for contour extraction only. Every local
+    # extremum in the field becomes a closed ring, which is why the output reads as a
+    # topographic map -- bullseyes round the eyes and on the forehead. Removing the small
+    # extrema leaves long sweeping lines that cross the form, which is what a reference
+    # typographic portrait actually shows. The DRAPE still uses the unsmoothed field, so
+    # surface shape is not lost -- this only decides where the lines run.
+    _csm = float(os.environ.get("PET_CONTOUR_SMOOTH", "0.16") or 0.0)
+    if _csm > 0.0:
+        f = cv2.GaussianBlur(f, (0, 0), sigmaX=max(1.0, W * _csm))
     _gap = float(os.environ.get("PET_CONTOUR_GAP", "0.48") or 0.48)
     step = max(5.0, fs * _gap)                       # wanted perpendicular gap, in pixels
 
