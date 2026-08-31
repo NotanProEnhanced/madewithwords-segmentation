@@ -140,6 +140,31 @@ Stripe and Printful cannot authenticate. Don't remove those exemptions.
 Drafts land in the **production** Printful store, since staging uses the same
 store id. Delete test drafts when you are done with them.
 
+## Per-tree render settings that are NOT in git
+
+`.env` holds credentials so it stays untracked, which means a setting made there
+exists only on the box (the nightly config archive captures it; nothing else does).
+Anything non-obvious belongs here.
+
+**`PET_TORSO_FILL=0.55`** on `typortrait-lovedinwords` and `typortrait-faithinwords`.
+
+ISNet's confidence fades toward the bottom of a frame and reaches literal zero: on a
+head-and-shoulders portrait the matte measured 0.93 coverage at the face and 0.00 in
+the bottom band, losing the neck, collar and shoulders — the "floating head".
+`_solidify_matte()` cannot fix it, because it recovers only regions the image border
+cannot reach and a neck runs off the bottom edge. This setting carries any column that
+already extends past 55% of the frame height down to the bottom.
+
+> Deliberately **not set on `typortrait-pawsinwords`.** Those renders are good today,
+> and a pet photographed with floor visible below is exactly the case where extending
+> columns downward would smear. It is off by default in code for the same reason.
+
+Diagnose with `ops/pet-matte-probe.py` — copy it into a tree's `data/` and run it in
+the container. It prints matte coverage per horizontal band before and after
+`_solidify_matte`, which separates "the model never saw it" from "the threshold
+discarded it". Three rounds of adjusting `PET_MATTE_FILL` were wasted before that
+probe existed; the two tables answered it in one run.
+
 ## Conventions worth knowing
 
 - **Dry run first.** `close-stale-orders.py`, `compose-template.py`,
