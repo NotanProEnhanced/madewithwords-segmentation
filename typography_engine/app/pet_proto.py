@@ -486,7 +486,19 @@ def _contour_rows(stream, field, W, H, fs, rng, sel=None, occ=None):
     # started wherever the previous one had stopped -- mid-word. A word is placed whole or
     # not at all.
     _trk = max(1, int(round(2 * float(os.environ.get("PET_TRACK", "1.0") or 1.0))))
-    words_seq = [(w + ",") for w in stream if w] or ["-"]
+    # Split PHRASES into words. _phrases() splits the input on commas, not spaces, so a
+    # stream entry is a whole phrase -- "A DEVOTED HUSBAND AND FATHER". Requiring one of
+    # those to fit atomically on a curved run under strict collision essentially never
+    # succeeds, and the render came out with no type on it at all. Words are the atomic
+    # unit; the comma stays on the last word of each phrase so phrases still read apart.
+    words_seq = []
+    for _p in stream:
+        _ws = str(_p).split()
+        for _j, _w in enumerate(_ws):
+            if _w:
+                words_seq.append(_w + ("," if _j == len(_ws) - 1 else ""))
+    if not words_seq:
+        words_seq = ["-"]
     _gapw = " " * _trk
     wi = rng.randint(0, len(words_seq) - 1)
 
