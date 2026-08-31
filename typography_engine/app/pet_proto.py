@@ -210,6 +210,30 @@ def _solidify_matte(m, w):
     cv2.floodFill(padded, np.zeros((padded.shape[0] + 2, padded.shape[1] + 2), np.uint8), (0, 0), 1)
     holes = (padded[1:-1, 1:-1] == 0).astype(np.uint8)       # 0s unreachable from the border = real holes
     b = np.clip(b + holes, 0, 1)
+    # Torso continuation. The hole fill above can only recover regions the border cannot
+    # reach; a neck and chest run OFF the bottom edge, so they are correctly judged "not a
+    # hole" -- and then lost anyway, because the model's confidence fades downward. Measured
+    # on a head-and-shoulders portrait the mask ran 0.93 coverage at the face and 0.00 in the
+    # bottom band, which is the 'floating head' this function exists to prevent.
+    #
+    # So: for any column whose silhouette already extends into the lower part of the frame,
+    # carry it down to the bottom edge. A torso that reaches that far does not stop in mid-air.
+    # Columns that end higher up are untouched, so a subject sitting fully inside the frame
+    # (a pet with floor visible below) does not smear downward.
+    #
+    # PET_TORSO_FILL is the fraction of the height below which a column counts as "reaching":
+    # 0 disables. Off by default -- turn it on per tree and look before adopting it.
+    _tf = float(os.environ.get("PET_TORSO_FILL", "0") or 0.0)
+    if _tf > 0.0 and b.any():
+        H = b.shape[0]
+        cut = int(H * min(0.95, max(0.05, _tf)))
+        reaches = b[cut:].any(axis=0)                       # columns present below the cut
+        if reaches.any():
+            has = b.any(axis=0)
+            last = H - 1 - np.argmax(b[::-1], axis=0)       # lowest subject row per column
+            rows = np.arange(H)[:, None]
+            b = np.maximum(b, ((rows >= last[None, :]) & has[None, :]
+                               & reaches[None, :]).astype(np.uint8))
     solid = cv2.GaussianBlur(b.astype(np.float32), (0, 0), sigmaX=max(1.0, w * 0.006))
     return np.clip(np.maximum(m, solid), 0, 1)
 
