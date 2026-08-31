@@ -485,6 +485,22 @@ def _contour_rows(stream, field, W, H, fs, rng, sel=None):
             # leftward ones backwards. Every run then advances left-to-right: glyphs upright
             # AND words in order. The cost is that the type jumps between runs rather than
             # flowing continuously around the loop, which at this density is invisible.
+            # findContours returns 8-connected STAIRCASE points: along a near-vertical or
+            # diagonal contour, consecutive steps alternate between (0,+-1) and (+-1,0), so
+            # the horizontal direction flips at almost every point. The run-splitting below
+            # then shatters the contour into one- and two-point fragments and the length
+            # filter discards every one of them -- measured, 33 of 34 bare cells had
+            # contours running through them and simply received no glyphs.
+            #
+            # Smooth the polyline first, so direction is a property of the CURVE rather than
+            # of the rasterisation. Wrapped, because these contours are closed.
+            _k = max(3, (int(round(fs * 0.5)) | 1))
+            if len(cp) > _k * 2:
+                _h = _k // 2
+                _pad = np.vstack([cp[-_h:], cp, cp[:_h]])
+                _ker = np.ones(_k, np.float32) / _k
+                cp = np.stack([np.convolve(_pad[:, 0], _ker, "valid"),
+                               np.convolve(_pad[:, 1], _ker, "valid")], axis=1).astype(np.float32)
             sgn = np.sign(np.diff(cp[:, 0]))
             sgn[sgn == 0] = 1.0
             cuts = np.flatnonzero(np.diff(sgn)) + 1
