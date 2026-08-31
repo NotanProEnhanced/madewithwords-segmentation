@@ -368,6 +368,144 @@ def _rows(stream, W, H, fs, rng):
     return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
 
 
+def _contour_rows(stream, field, W, H, fs, rng, sel=None):
+    """Ink map with the phrase stream set ALONG iso-contours of `field`, each glyph rotated
+    to the local tangent.
+
+    _rows() draws straight horizontal rows and the caller then WARPS them onto the form.
+    That works until the surface turns away sharply -- a temple against hair, a jaw at the
+    silhouette -- where the warp drags glyphs across a boundary the surface does not cross,
+    and the type melts. Setting glyphs along a contour instead means the path simply ENDS at
+    the edge: there is nothing to drag, so that failure mode cannot occur.
+
+    It is also the only way to get text running DOWN a cheek. A warped horizontal row still
+    runs left-to-right across the whole face however hard it is bent; a contour goes where
+    the form goes.
+    """
+    fs = max(6, int(round(fs)))
+    font = ImageFont.truetype(_FONT, fs) if _FONT else ImageFont.load_default()
+    f = np.clip(np.asarray(field, np.float32), 0.0, 1.0)
+    if sel is None:
+        sel = np.ones(f.shape, bool)
+
+    _gap = float(os.environ.get("PET_ROW_GAP", "1.12") or 1.12)
+    step = max(6.0, fs * _gap)                       # wanted perpendicular gap, in pixels
+
+    # EQUALISE the field across the subject. Iso-contours vanish on a plateau: a broad flat
+    # region has no level crossings, so it gets no contours and renders bare -- the exact
+    # inverse of what is wanted, since flat regions are where flow was missing in the first
+    # place. Rank-transforming the field so its values are uniform over the subject makes
+    # equal level spacing mean equal AREA between contours, so every region gets its share
+    # of type regardless of how much the raw field happens to vary there.
+    if bool(np.any(sel)):
+        qs = np.linspace(0.0, 100.0, 256)
+        xp = np.percentile(f[sel], qs).astype(np.float32)
+        xp = np.maximum.accumulate(xp)               # np.interp needs xp non-decreasing
+        if float(xp[-1] - xp[0]) > 1e-6:
+            f = np.interp(f, xp, (qs / 100.0)).astype(np.float32)
+
+    # Level spacing from the field's own gradient: for per-pixel change g, a level difference
+    # d lands d/g pixels apart, so d = step * g gives roughly the gap asked for.
+    #
+    # np.gradient, NOT cv2.Sobel: the 3x3 Sobel kernel returns a derivative scaled by about
+    # 8, which made the spacing ~8x too coarse -- five contour levels where forty were wanted,
+    # and an ink coverage of 0.04 against 0.26 for straight rows. np.gradient is a true
+    # unit-spacing derivative, so the arithmetic above actually holds.
+    gy, gx = np.gradient(f)
+    g = np.hypot(gx, gy).astype(np.float32)
+    gm = float(np.percentile(g[sel], 60.0)) if bool(np.any(sel)) else float(np.percentile(g, 60.0))
+    lo, hi = (float(np.percentile(f[sel], 1.0)), float(np.percentile(f[sel], 99.0))) \
+        if bool(np.any(sel)) else (0.0, 1.0)
+    dlev = max(1e-4, step * max(gm, 1e-5))
+    n = int(np.clip((hi - lo) / dlev, 4, int(os.environ.get("PET_CONTOUR_MAX", "140") or 140)))
+    levels = np.linspace(lo, hi, n)
+
+    # One bitmap per (character, quantised angle) instead of one rotation per glyph. A face
+    # carries thousands of glyphs per tier; without this the rotations dominate the render.
+    _aq = 6.0
+    cache = {}
+
+    def glyph(ch, deg):
+        k = (ch, int(round(deg / _aq)) % int(360 // _aq))
+        im = cache.get(k)
+        if im is None:
+            bb = font.getbbox(ch)
+            gw, gh = max(1, bb[2] - bb[0]), max(1, bb[3] - bb[1])
+            pad = 2
+            g0 = Image.new("L", (gw + 2 * pad, gh + 2 * pad), 0)
+            ImageDraw.Draw(g0).text((pad - bb[0], pad - bb[1]), ch, font=font, fill=255)
+            im = cache[k] = g0.rotate(k[1] * _aq, resample=Image.BILINEAR, expand=True)
+        return im
+
+    adv = {}
+
+    def advance(ch):
+        a = adv.get(ch)
+        if a is None:
+            a = adv[ch] = max(1.0, float(font.getlength(ch)))
+        return a
+
+    canvas = Image.new("L", (W, H), 0)
+    sep = "," + " " * max(1, int(round(2 * float(os.environ.get("PET_TRACK", "1.0") or 1.0))))
+    text = (sep.join(stream) + sep) if stream else "  "
+    ti = rng.randint(0, max(1, len(text) - 1))
+
+    for lv in levels:
+        cnts, _ = cv2.findContours((f >= lv).astype(np.uint8),
+                                   cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+        for c in cnts:
+            cp = c[:, 0, :].astype(np.float32)
+            if len(cp) < 12:
+                continue
+            # A closed contour is traversed in ONE rotational direction, so on its far side
+            # the tangent points backwards: glyphs land upside down. Flipping each glyph
+            # 180 fixes the letters but leaves the run advancing right-to-left, so the words
+            # come out reversed -- TSET, SDROWNI DEVOL. On a memorial portrait, where the
+            # words are the product, that reads as a defect rather than as texture.
+            #
+            # So split the contour into runs of constant horizontal direction and walk the
+            # leftward ones backwards. Every run then advances left-to-right: glyphs upright
+            # AND words in order. The cost is that the type jumps between runs rather than
+            # flowing continuously around the loop, which at this density is invisible.
+            sgn = np.sign(np.diff(cp[:, 0]))
+            sgn[sgn == 0] = 1.0
+            cuts = np.flatnonzero(np.diff(sgn)) + 1
+            for seg in np.split(np.arange(len(cp) - 1), cuts):
+                # Keep SHORT runs. Near-vertical stretches of a contour flip horizontal
+                # direction constantly and shatter into fragments; discarding those left
+                # bare patches exactly where the form runs vertically -- a temple, the side
+                # of a jaw. A two-glyph fragment is still ink on the form.
+                if len(seg) < 2:
+                    continue
+                pts = cp[seg[0]:seg[-1] + 2]
+                if sgn[seg[0]] < 0:
+                    pts = pts[::-1]
+                d = np.diff(pts, axis=0)
+                arc = np.concatenate([[0.0], np.cumsum(np.hypot(d[:, 0], d[:, 1]))])
+                total = float(arc[-1])
+                if total < fs * 0.6:
+                    continue
+                # Stagger long runs so contours do not align into visible bands; start a
+                # short run at its beginning, where a stagger would consume the whole run.
+                pos = float(rng.random()) * fs if total > fs * 4.0 else 0.0
+                while pos < total:
+                    ch = text[ti % len(text)]
+                    ti += 1
+                    a = advance(ch)
+                    if ch != " ":
+                        i = int(np.searchsorted(arc, pos))
+                        i = min(max(i, 1), len(pts) - 1)
+                        x, y = float(pts[i][0]), float(pts[i][1])
+                        iy, ix = int(y), int(x)
+                        if 0 <= iy < H and 0 <= ix < W and sel[iy, ix]:
+                            tx, ty = pts[i] - pts[i - 1]
+                            gi = glyph(ch, -float(np.degrees(np.arctan2(ty, tx))))
+                            canvas.paste(255, (int(x - gi.width * 0.5),
+                                               int(y - gi.height * 0.5)), gi)
+                    pos += a
+    return np.asarray(canvas).astype(np.float32) / 255.0
+
+
 def _enhance_contrast(bgr, mask):
     """Stretch the subject's tones to the full range so black fur reads black and white fur
     white. The flat grey wash came from compressed midtones -- this is the punch that makes a
@@ -497,10 +635,11 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
             _brief = [q for q in _lead if len(q.split()) <= 3]
             _hero = _brief[:max(1, int(round(_n * 0.30)))] or _lead[:1]
             _mid = _lead
-    tL = _rows(_hero, W, H, _tc * sc * _tsc, rng)
-    tM = _rows(_mid, W, H, 40 * sc * _tsc, rng)
-    tF = _rows(stream, W, H, 26 * sc * _tsc, rng)
-    tMi = _rows(stream, W, H, 16 * sc * _tsc, rng)
+    # PET_CONTOUR sets the type ALONG iso-contours of the drape field instead of drawing
+    # straight rows for the warp to bend. It needs a field with real surface in it, so it
+    # requires the depth drape; on luminance alone the "contours" would be tone boundaries,
+    # not form. Falls back silently to rows if depth is unavailable.
+    _contour = (os.environ.get("PET_CONTOUR", "").strip().lower() in ("1", "true", "yes", "on"))
 
     # 2) Drape: warp the rows VERTICALLY by smoothed luminance so they ride the form. Damp the
     #    warp on high-detail features (eyes/nose) so they stay crisp. PET_DRAPE tunes wrap depth;
@@ -559,7 +698,20 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     def R(t):
         return cv2.remap(t, mx, my, cv2.INTER_LINEAR, borderValue=0.0)
 
-    wL, wM, wF, wMi = R(tL), R(tM), R(tF), R(tMi)
+    if _contour and _dd > 0.0:
+        # Already placed on the form -- warping them again would reintroduce exactly the
+        # dragging this replaces.
+        _sel = mask > 0.35
+        wL = _contour_rows(_hero, Dn, W, H, _tc * sc * _tsc, rng, _sel)
+        wM = _contour_rows(_mid, Dn, W, H, 40 * sc * _tsc, rng, _sel)
+        wF = _contour_rows(stream, Dn, W, H, 26 * sc * _tsc, rng, _sel)
+        wMi = _contour_rows(stream, Dn, W, H, 16 * sc * _tsc, rng, _sel)
+    else:
+        tL = _rows(_hero, W, H, _tc * sc * _tsc, rng)
+        tM = _rows(_mid, W, H, 40 * sc * _tsc, rng)
+        tF = _rows(stream, W, H, 26 * sc * _tsc, rng)
+        tMi = _rows(stream, W, H, 16 * sc * _tsc, rng)
+        wL, wM, wF, wMi = R(tL), R(tM), R(tF), R(tMi)
 
     # 3) Blend tiers by the detail field: coarse text on flat body, fine on features. The feature
     #    field is unioned in so an eye/nose INTERIOR (smooth -> low raw detail -> would otherwise
