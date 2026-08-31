@@ -480,9 +480,15 @@ def _contour_rows(stream, field, W, H, fs, rng, sel=None, occ=None):
     # How many times to nudge a rejected glyph forward along the path before giving up on
     # it. Leaving the area open is correct only after trying to fit something in it.
     _retry = int(os.environ.get("PET_CONTOUR_RETRY", "4") or 0)
-    sep = "," + " " * max(1, int(round(2 * float(os.environ.get("PET_TRACK", "1.0") or 1.0))))
-    text = (sep.join(stream) + sep) if stream else "  "
-    ti = rng.randint(0, max(1, len(text) - 1))
+    # WORDS, not a character stream. Placing characters individually made the result
+    # legible but not readable: a glyph rejected by the collision test was skipped and the
+    # next one carried on, dropping a letter out of the middle of a word, and each run
+    # started wherever the previous one had stopped -- mid-word. A word is placed whole or
+    # not at all.
+    _trk = max(1, int(round(2 * float(os.environ.get("PET_TRACK", "1.0") or 1.0))))
+    words_seq = [(w + ",") for w in stream if w] or ["-"]
+    _gapw = " " * _trk
+    wi = rng.randint(0, len(words_seq) - 1)
 
     for lv in levels:
         cnts, _ = cv2.findContours((f >= lv).astype(np.uint8),
@@ -538,47 +544,57 @@ def _contour_rows(stream, field, W, H, fs, rng, sel=None, occ=None):
                 # Stagger long runs so contours do not align into visible bands; start a
                 # short run at its beginning, where a stagger would consume the whole run.
                 pos = float(rng.random()) * fs if total > fs * 4.0 else 0.0
+                fails = 0
                 while pos < total:
-                    ch = text[ti % len(text)]
-                    ti += 1
-                    a = advance(ch)
-                    if ch != " ":
-                        placed = False
-                        # Retry along the path before abandoning the glyph: a rejected
-                        # position is not the same as no position.
-                        for _try in range(max(1, _retry)):
-                            tp = pos + _try * (a * 0.45)
-                            if tp >= total:
-                                break
-                            i = int(np.searchsorted(arc, tp))
-                            i = min(max(i, 1), len(pts) - 1)
-                            x, y = float(pts[i][0]), float(pts[i][1])
-                            iy, ix = int(y), int(x)
-                            if not (0 <= iy < H and 0 <= ix < W and sel[iy, ix]):
-                                continue
-                            tx, ty = pts[i] - pts[i - 1]
-                            gi, gink, gpad = glyph(ch, -float(np.degrees(np.arctan2(ty, tx))))
-                            x0, y0 = int(x - gi.width * 0.5), int(y - gi.height * 0.5)
-                            cx0, cy0 = max(0, x0), max(0, y0)
-                            cx1, cy1 = min(W, x0 + gi.width), min(H, y0 + gi.height)
-                            if cx1 <= cx0 or cy1 <= cy0:
-                                continue
-                            psub = gpad[cy0 - y0:cy1 - y0, cx0 - x0:cx1 - x0]
-                            n_pad = int(psub.sum())
-                            if not n_pad:
-                                continue
-                            win = occ[cy0:cy1, cx0:cx1]
-                            if float((win & psub).sum()) / n_pad > _coll:
-                                continue
-                            canvas.paste(255, (x0, y0), gi)
-                            win |= psub          # reserve the DILATED footprint
-                            pos = tp
-                            placed = True
+                    word = words_seq[wi % len(words_seq)]
+                    # Plan every glyph of the word FIRST and commit only if all of them fit.
+                    # A word that is partly placed is a word that cannot be read.
+                    plan, p, ok = [], pos, True
+                    for ch in word:
+                        a = advance(ch)
+                        if p >= total:
+                            ok = False
                             break
-                        if not placed:
-                            pos += a * 0.5       # step past a blocked stretch
-                            continue
-                    pos += a
+                        i = int(np.searchsorted(arc, p))
+                        i = min(max(i, 1), len(pts) - 1)
+                        x, y = float(pts[i][0]), float(pts[i][1])
+                        iy, ix = int(y), int(x)
+                        if not (0 <= iy < H and 0 <= ix < W and sel[iy, ix]):
+                            ok = False
+                            break
+                        tx, ty = pts[i] - pts[i - 1]
+                        gi, gink, gpad = glyph(ch, -float(np.degrees(np.arctan2(ty, tx))))
+                        x0, y0 = int(x - gi.width * 0.5), int(y - gi.height * 0.5)
+                        cx0, cy0 = max(0, x0), max(0, y0)
+                        cx1, cy1 = min(W, x0 + gi.width), min(H, y0 + gi.height)
+                        if cx1 <= cx0 or cy1 <= cy0:
+                            ok = False
+                            break
+                        psub = gpad[cy0 - y0:cy1 - y0, cx0 - x0:cx1 - x0]
+                        if not int(psub.sum()):
+                            ok = False
+                            break
+                        win = occ[cy0:cy1, cx0:cx1]
+                        if float((win & psub).sum()) / int(psub.sum()) > _coll:
+                            ok = False
+                            break
+                        plan.append((gi, x0, y0, cy0, cy1, cx0, cx1, psub))
+                        p += a
+                    if ok and plan:
+                        for gi, x0, y0, cy0, cy1, cx0, cx1, psub in plan:
+                            canvas.paste(255, (x0, y0), gi)
+                            occ[cy0:cy1, cx0:cx1] |= psub
+                        wi += 1
+                        fails = 0
+                        pos = p + advance(" ") * _trk        # word gap
+                    else:
+                        # Nudge along and try again; after a few failures move to the next
+                        # word, which may be shorter and fit where this one did not.
+                        fails += 1
+                        pos += fs * 0.5
+                        if fails >= max(1, _retry):
+                            wi += 1
+                            fails = 0
     return np.asarray(canvas).astype(np.float32) / 255.0
 
 
