@@ -368,7 +368,7 @@ def _rows(stream, W, H, fs, rng):
     return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
 
 
-def _contour_rows(stream, field, W, H, fs, rng, sel=None):
+def _contour_rows(stream, field, W, H, fs, rng, sel=None, occ=None):
     """Ink map with the phrase stream set ALONG iso-contours of `field`, each glyph rotated
     to the local tangent.
 
@@ -459,7 +459,8 @@ def _contour_rows(stream, field, W, H, fs, rng, sel=None):
     # glyphs from neighbouring levels land on top of each other and the type turns to mush.
     # Testing each glyph's footprint against what is already inked lets the spacing be tight
     # for density WITHOUT that pile-up: the ink goes where there is room for it.
-    occ = np.zeros((H, W), np.uint8)
+    if occ is None:
+        occ = np.zeros((H, W), np.uint8)
     # How much of a glyph's own ink may already be covered before it is dropped. Measured
     # alongside the gap above: tighter spacing needs a looser test or the density gained is
     # immediately rejected.
@@ -739,24 +740,6 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     else:
         mx = xx
 
-    def R(t):
-        return cv2.remap(t, mx, my, cv2.INTER_LINEAR, borderValue=0.0)
-
-    if _contour and _dd > 0.0:
-        # Already placed on the form -- warping them again would reintroduce exactly the
-        # dragging this replaces.
-        _sel = mask > 0.35
-        wL = _contour_rows(_hero, Dn, W, H, _tc * sc * _tsc, rng, _sel)
-        wM = _contour_rows(_mid, Dn, W, H, 40 * sc * _tsc, rng, _sel)
-        wF = _contour_rows(stream, Dn, W, H, 26 * sc * _tsc, rng, _sel)
-        wMi = _contour_rows(stream, Dn, W, H, 16 * sc * _tsc, rng, _sel)
-    else:
-        tL = _rows(_hero, W, H, _tc * sc * _tsc, rng)
-        tM = _rows(_mid, W, H, 40 * sc * _tsc, rng)
-        tF = _rows(stream, W, H, 26 * sc * _tsc, rng)
-        tMi = _rows(stream, W, H, 16 * sc * _tsc, rng)
-        wL, wM, wF, wMi = R(tL), R(tM), R(tF), R(tMi)
-
     # 3) Blend tiers by the detail field: coarse text on flat body, fine on features. The feature
     #    field is unioned in so an eye/nose INTERIOR (smooth -> low raw detail -> would otherwise
     #    get the COARSE tier and show big words) is pushed to the FINE tier like its detailed rim.
@@ -783,6 +766,41 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
             _rx = max(1.0, (float(_xs.max()) - float(_xs.min())) * 0.5)
             _rr = np.sqrt(((xx - _cx) / _rx) ** 2 + ((yy - _cy) / _ry) ** 2)
             df = np.clip(df + _hc * np.clip(_rr - 0.45, 0.0, 1.0), 0.0, 1.0)
+
+    def R(t):
+        return cv2.remap(t, mx, my, cv2.INTER_LINEAR, borderValue=0.0)
+
+    if _contour and _dd > 0.0:
+        # Already placed on the form -- warping them again would reintroduce exactly the
+        # dragging this replaces.
+        #
+        # Each tier places ink ONLY where the blend below will actually show it, and all
+        # four share ONE occupancy grid. Both halves are needed and neither works alone:
+        #
+        #   Dense tiers with no df restriction overlap, because the blend INTERPOLATES
+        #   between adjacent tiers -- in a transition band two full typographies land on
+        #   top of each other.
+        #
+        #   A shared grid with no df restriction goes sparse, because a tier reserves
+        #   space the blend then discards at that pixel while blocking the tier that was
+        #   wanted there.
+        #
+        # Restricted to its own band and sharing the grid, each tier is dense where it is
+        # seen, absent where it is not, and cannot collide with its neighbour. The bands
+        # overlap deliberately, so the two tiers active in a transition INTERLEAVE.
+        _sub = mask > 0.35
+        _occ = np.zeros((H, W), np.uint8)
+        wL = _contour_rows(_hero, Dn, W, H, _tc * sc * _tsc, rng, _sub & (df < 0.50), _occ)
+        wM = _contour_rows(_mid, Dn, W, H, 40 * sc * _tsc, rng, _sub & (df < 0.80), _occ)
+        wF = _contour_rows(stream, Dn, W, H, 26 * sc * _tsc, rng, _sub & (df > 0.40), _occ)
+        wMi = _contour_rows(stream, Dn, W, H, 16 * sc * _tsc, rng, _sub & (df > 0.70), _occ)
+    else:
+        tL = _rows(_hero, W, H, _tc * sc * _tsc, rng)
+        tM = _rows(_mid, W, H, 40 * sc * _tsc, rng)
+        tF = _rows(stream, W, H, 26 * sc * _tsc, rng)
+        tMi = _rows(stream, W, H, 16 * sc * _tsc, rng)
+        wL, wM, wF, wMi = R(tL), R(tM), R(tF), R(tMi)
+
     warped = wL.copy()
     for a0, b0, ia, ib in ((0.0, 0.45, wL, wM), (0.45, 0.75, wM, wF), (0.75, 1.0001, wF, wMi)):
         bt = np.clip((df - a0) / (b0 - a0), 0, 1)
