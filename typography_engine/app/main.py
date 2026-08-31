@@ -1631,9 +1631,13 @@ async def render(
             from .pet_proto import render_pet_portrait
             # First preview renders sharper (higher floor) so the initial view isn't soft --
             # the loupe/paid pass still goes higher. Floor 1050 (was 700), cap 1600 (was 1500).
+            # print_aspect MUST match the paid render (see /download, which passes
+            # print_aspect=aspect). It was None here, so the preview kept the source's
+            # own proportions while the purchased file was composed on a 4:5 gallery
+            # canvas -- the buyer approved one framing and received another.
             png_bytes = await _bounded_to_thread(
                 render_pet_portrait, img_bytes, text, pet_ground_sel,
-                int(min(1600, max(1050, preview_w))), None, pet_type_scale)
+                int(min(1600, max(1050, preview_w))), aspect, pet_type_scale)
             runs, ground_hex, mask_svg = [], None, None
         elif is_displacement or disp_route:
             from .pipeline.displacement import render_displacement_portrait
@@ -3706,7 +3710,9 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
             # Paws in Words: paid file via the pet engine, on a 4:5 gallery print canvas at
             # download resolution. Skips the face pipeline entirely.
             from .pet_proto import render_pet_portrait
-            _dl_pt = {"small": 0.30, "medium": 0.42, "large": 0.56}.get(r.get("pet_type") or "medium")
+            # "small" to match the preview's default (see _PET_TYPE_SCALES above); this
+            # said "medium", so an untouched control previewed small and downloaded medium.
+            _dl_pt = {"small": 0.30, "medium": 0.42, "large": 0.56}.get(r.get("pet_type") or "small")
             png_bytes = render_pet_portrait(
                 src_path.read_bytes(), (r.get("text", "") or ""),
                 ground=(r.get("pet_ground") or "dark"),
