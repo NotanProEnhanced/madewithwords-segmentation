@@ -789,11 +789,19 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         # seen, absent where it is not, and cannot collide with its neighbour. The bands
         # overlap deliberately, so the two tiers active in a transition INTERLEAVE.
         _sub = mask > 0.35
-        _occ = np.zeros((H, W), np.uint8)
-        wL = _contour_rows(_hero, Dn, W, H, _tc * sc * _tsc, rng, _sub & (df < 0.50), _occ)
-        wM = _contour_rows(_mid, Dn, W, H, 40 * sc * _tsc, rng, _sub & (df < 0.80), _occ)
-        wF = _contour_rows(stream, Dn, W, H, 26 * sc * _tsc, rng, _sub & (df > 0.40), _occ)
-        wMi = _contour_rows(stream, Dn, W, H, 16 * sc * _tsc, rng, _sub & (df > 0.70), _occ)
+        # Each tier gets its OWN grid. Sharing one starves the fine tiers: the blend below
+        # needs TWO tiers present at most pixels, so they are not alternatives competing for
+        # space -- they are both required. Filling coarse-first let wF claim the face and
+        # left wMi, the tier the blend wants wherever detail is high, with nowhere to go. On
+        # a human face, which is high-detail almost everywhere, that emptied the render.
+        #
+        # The BANDS are what stop them piling up instead: a tier places ink only across the
+        # df range where the blend can show it, so outside its own range it contributes
+        # nothing to overlap. Ranges overlap exactly as far as the blend's transitions do.
+        wL = _contour_rows(_hero, Dn, W, H, _tc * sc * _tsc, rng, _sub & (df < 0.50))
+        wM = _contour_rows(_mid, Dn, W, H, 40 * sc * _tsc, rng, _sub & (df < 0.80))
+        wF = _contour_rows(stream, Dn, W, H, 26 * sc * _tsc, rng, _sub & (df > 0.40))
+        wMi = _contour_rows(stream, Dn, W, H, 16 * sc * _tsc, rng, _sub & (df > 0.70))
     else:
         tL = _rows(_hero, W, H, _tc * sc * _tsc, rng)
         tM = _rows(_mid, W, H, 40 * sc * _tsc, rng)
