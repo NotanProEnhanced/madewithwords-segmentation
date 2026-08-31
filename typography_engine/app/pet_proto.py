@@ -91,40 +91,11 @@ _U2_FAILED_AT = 0.0        # monotonic time of the last failed attempt; 0 = none
 _U2_RETRY_AFTER = 300.0    # seconds to wait before trying again
 
 
-def _download_atomic(url, path, min_bytes):
-    """Fetch `url` to `path`, or return None. Downloads to a TEMPORARY file in the same
-    directory and renames it into place, so a partly-written file is never visible at
-    the final path, and rejects anything under `min_bytes`.
-
-    Shared by the matte and depth models. A second copy of this logic would be a second
-    chance to get it wrong, and getting it wrong here is expensive -- see below."""
-    if os.path.exists(path):
-        if os.path.getsize(path) >= min_bytes:
-            return path
-        try:
-            os.remove(path)                # truncated by an interrupted earlier attempt
-        except OSError:
-            return None
-    d = os.path.dirname(path) or "."
-    os.makedirs(d, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=d, suffix=".part")      # same filesystem -> atomic rename
-    os.close(fd)
-    try:
-        urllib.request.urlretrieve(url, tmp)
-        if os.path.getsize(tmp) < min_bytes:
-            return None
-        os.replace(tmp, path)
-        return path
-    finally:
-        if os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
-
-
 def _ensure_u2net():
-    """Return the matte model path, or None.
+    """Return the model path, or None.
+
+    Downloads to a TEMPORARY file in the same directory and renames it into place, so
+    a partly-written model is never visible at the final path.
 
     This mattered. urlretrieve() wrote straight to _MATTE_PATH, and a 170MB download
     passes a 1MB size check within a fraction of a second -- so a render arriving
@@ -134,65 +105,29 @@ def _ensure_u2net():
     portraits on Loved in Words the first time the pet engine ran there, two minutes
     after the model started downloading.
     """
-    return _download_atomic(_MATTE_URL, _MATTE_PATH, _MATTE_MIN_BYTES)
-
-
-# ---- Monocular depth (MiDaS v2.1 small, MIT). 67MB, same cache dir and the same atomic
-# fetch as the matte. Used ONLY to drive the drape; any failure -> None -> luminance alone.
-# Verified signature: input (1,3,256,256) float32 ImageNet-normalised RGB, output
-# (1,256,256) relative INVERSE depth -- larger is nearer. -------------------------------
-_DEPTH_URL = (os.environ.get("PET_DEPTH_URL", "").strip()
-              or "https://github.com/isl-org/MiDaS/releases/download/v2_1/model-small.onnx")
-_DEPTH_SIDE = 256
-_DEPTH_MIN_BYTES = 40_000_000
-_DEPTH_PATH = os.path.join(os.environ.get("PET_MATTE_DIR", tempfile.gettempdir()), "midas-small.onnx")
-_DEPTH_SESSION = None
-_DEPTH_LOCK = Lock()
-_DEPTH_FAILED_AT = 0.0
-_DEPTH_MEAN = np.array([0.485, 0.456, 0.406], np.float32)
-_DEPTH_STD = np.array([0.229, 0.224, 0.225], np.float32)
-
-
-def _depth_session():
-    """Depth session, or None. Same back-off as the matte: a transient failure must not
-    latch and silently flatten every later render."""
-    global _DEPTH_SESSION, _DEPTH_FAILED_AT
-    with _DEPTH_LOCK:
-        if _DEPTH_SESSION is not None:
-            return _DEPTH_SESSION
-        if _DEPTH_FAILED_AT and (time.monotonic() - _DEPTH_FAILED_AT) < _U2_RETRY_AFTER:
-            return None
+    if os.path.exists(_MATTE_PATH):
+        if os.path.getsize(_MATTE_PATH) >= _MATTE_MIN_BYTES:
+            return _MATTE_PATH
         try:
-            import onnxruntime as ort
-            path = _download_atomic(_DEPTH_URL, _DEPTH_PATH, _DEPTH_MIN_BYTES)
-            if not path:
-                _DEPTH_FAILED_AT = time.monotonic()
-                return None
-            _DEPTH_SESSION = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
-            _DEPTH_FAILED_AT = 0.0
-        except Exception:  # noqa: BLE001 -- depth is optional; fall back to luminance
-            _DEPTH_FAILED_AT = time.monotonic()
-            _DEPTH_SESSION = None
-    return _DEPTH_SESSION
-
-
-def _depth_map(bgr):
-    """Relative depth at the image's resolution (larger = nearer), or None."""
-    sess = _depth_session()
-    if sess is None:
-        return None
-    try:
-        h, w = bgr.shape[:2]
-        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-        im = cv2.resize(rgb, (_DEPTH_SIDE, _DEPTH_SIDE), interpolation=cv2.INTER_AREA)
-        im = (im - _DEPTH_MEAN) / _DEPTH_STD
-        inp = np.transpose(im, (2, 0, 1))[None].astype(np.float32)
-        d = np.squeeze(sess.run(None, {sess.get_inputs()[0].name: inp})[0]).astype(np.float32)
-        if d.ndim != 2:
+            os.remove(_MATTE_PATH)     # truncated by an interrupted earlier attempt
+        except OSError:
             return None
-        return cv2.resize(d, (w, h), interpolation=cv2.INTER_CUBIC)
-    except Exception:  # noqa: BLE001
-        return None
+    d = os.path.dirname(_MATTE_PATH) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".part")   # same filesystem -> atomic rename
+    os.close(fd)
+    try:
+        urllib.request.urlretrieve(_MATTE_URL, tmp)
+        if os.path.getsize(tmp) < _MATTE_MIN_BYTES:
+            return None
+        os.replace(tmp, _MATTE_PATH)
+        return _MATTE_PATH
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
 
 def _u2net_session():
@@ -319,26 +254,16 @@ def _detail_map(gray):
     return np.clip(lap, 0, 1)
 
 
-def _phrases(words, keep_case=False):
-    """Phrases, split on commas and newlines.
-
-    keep_case preserves the writer's own capitalisation. ALL CAPS at body size reads as
-    texture rather than as writing -- the difference between a portrait made of labels and
-    one made of sentences -- so the contour layout sets its body tiers in natural case and
-    reserves capitals for the large words. Default is unchanged: the row layout has always
-    uppercased and its look depends on it."""
-    if keep_case:
-        ph = [re.sub(r"[^A-Za-z0-9' ]+", "", p).strip() for p in words.replace("\n", ",").split(",")]
-        return [p for p in ph if p] or ["Love"]
+def _phrases(words):
     ph = [re.sub(r"[^A-Z0-9' ]+", "", p).strip() for p in words.upper().replace("\n", ",").split(",")]
     return [p for p in ph if p] or ["LOVE"]
 
 
-def _weighted_stream(words, keep_case=False):
+def _weighted_stream(words):
     """Importance-weighted phrase stream: the NAME + lead words repeat most (up to ~3x) with
     their copies spread evenly, so the pet's name is findable across the portrait -- the
     'oh, it says his name' moment that drives the sale. Ported from the human engine's weighting."""
-    ph = _phrases(words, keep_case=keep_case)
+    ph = _phrases(words)
     n = len(ph)
     if n <= 1:
         return ph
@@ -378,257 +303,6 @@ def _rows(stream, W, H, fs, rng):
     return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
 
 
-def _contour_rows(stream, field, W, H, fs, rng, sel=None, occ=None):
-    """Ink map with the phrase stream set ALONG iso-contours of `field`, each glyph rotated
-    to the local tangent.
-
-    _rows() draws straight horizontal rows and the caller then WARPS them onto the form.
-    That works until the surface turns away sharply -- a temple against hair, a jaw at the
-    silhouette -- where the warp drags glyphs across a boundary the surface does not cross,
-    and the type melts. Setting glyphs along a contour instead means the path simply ENDS at
-    the edge: there is nothing to drag, so that failure mode cannot occur.
-
-    It is also the only way to get text running DOWN a cheek. A warped horizontal row still
-    runs left-to-right across the whole face however hard it is bent; a contour goes where
-    the form goes.
-    """
-    fs = max(6, int(round(fs)))
-    font = ImageFont.truetype(_FONT, fs) if _FONT else ImageFont.load_default()
-    f = np.clip(np.asarray(field, np.float32), 0.0, 1.0)
-    if sel is None:
-        sel = np.ones(f.shape, bool)
-
-    # Contour mode gets its OWN gap. Rows need air between them or they collide into a wall
-    # of text; contours are collision-tested below, so they can sit tighter and the type can
-    # carry the image rather than dusting a photograph.
-    # 0.60 measured, not inherited: PET_ROW_GAP is 1.12 because straight rows need air or
-    # they collide into a wall of text. Contours are collision-tested, so they can sit far
-    # tighter -- ink coverage 0.24 at 0.60 against 0.16 at 1.12, with straight rows at 0.27.
-    # Smooth the field HARDER than the drape does, for contour extraction only. Every local
-    # extremum in the field becomes a closed ring, which is why the output reads as a
-    # topographic map -- bullseyes round the eyes and on the forehead. Removing the small
-    # extrema leaves long sweeping lines that cross the form, which is what a reference
-    # typographic portrait actually shows. The DRAPE still uses the unsmoothed field, so
-    # surface shape is not lost -- this only decides where the lines run.
-    _csm = float(os.environ.get("PET_CONTOUR_SMOOTH", "0.16") or 0.0)
-    if _csm > 0.0:
-        f = cv2.GaussianBlur(f, (0, 0), sigmaX=max(1.0, W * _csm))
-    _gap = float(os.environ.get("PET_CONTOUR_GAP", "0.48") or 0.48)
-    step = max(5.0, fs * _gap)                       # wanted perpendicular gap, in pixels
-
-    # EQUALISE the field across the subject. Iso-contours vanish on a plateau: a broad flat
-    # region has no level crossings, so it gets no contours and renders bare -- the exact
-    # inverse of what is wanted, since flat regions are where flow was missing in the first
-    # place. Rank-transforming the field so its values are uniform over the subject makes
-    # equal level spacing mean equal AREA between contours, so every region gets its share
-    # of type regardless of how much the raw field happens to vary there.
-    if bool(np.any(sel)):
-        qs = np.linspace(0.0, 100.0, 256)
-        xp = np.percentile(f[sel], qs).astype(np.float32)
-        xp = np.maximum.accumulate(xp)               # np.interp needs xp non-decreasing
-        if float(xp[-1] - xp[0]) > 1e-6:
-            f = np.interp(f, xp, (qs / 100.0)).astype(np.float32)
-
-    # Level spacing from the field's own gradient: for per-pixel change g, a level difference
-    # d lands d/g pixels apart, so d = step * g gives roughly the gap asked for.
-    #
-    # np.gradient, NOT cv2.Sobel: the 3x3 Sobel kernel returns a derivative scaled by about
-    # 8, which made the spacing ~8x too coarse -- five contour levels where forty were wanted,
-    # and an ink coverage of 0.04 against 0.26 for straight rows. np.gradient is a true
-    # unit-spacing derivative, so the arithmetic above actually holds.
-    gy, gx = np.gradient(f)
-    g = np.hypot(gx, gy).astype(np.float32)
-    gm = float(np.percentile(g[sel], 60.0)) if bool(np.any(sel)) else float(np.percentile(g, 60.0))
-    lo, hi = (float(np.percentile(f[sel], 1.0)), float(np.percentile(f[sel], 99.0))) \
-        if bool(np.any(sel)) else (0.0, 1.0)
-    dlev = max(1e-4, step * max(gm, 1e-5))
-    n = int(np.clip((hi - lo) / dlev, 4, int(os.environ.get("PET_CONTOUR_MAX", "320") or 320)))
-    levels = np.linspace(lo, hi, n)
-
-    # One bitmap per (character, quantised angle) instead of one rotation per glyph. A face
-    # carries thousands of glyphs per tier; without this the rotations dominate the render.
-    _aq = 6.0
-    # Separation margin in pixels at the working resolution, scaled with type size so large
-    # words get proportionally more air than small ones. Dilating the tested mask by this is
-    # what turns "may not overlap" into "must not touch".
-    _sep = int(round(fs * float(os.environ.get("PET_CONTOUR_PAD", "0.07") or 0.0)))
-    cache = {}
-
-    def glyph(ch, deg):
-        k = (ch, int(round(deg / _aq)) % int(360 // _aq))
-        im = cache.get(k)
-        if im is None:
-            bb = font.getbbox(ch)
-            gw, gh = max(1, bb[2] - bb[0]), max(1, bb[3] - bb[1])
-            pad = 2
-            g0 = Image.new("L", (gw + 2 * pad, gh + 2 * pad), 0)
-            ImageDraw.Draw(g0).text((pad - bb[0], pad - bb[1]), ch, font=font, fill=255)
-            im = g0.rotate(k[1] * _aq, resample=Image.BILINEAR, expand=True)
-            # Two masks per glyph. The tight one is what gets INKED; the dilated one is what
-            # is tested and reserved, which is how a separation margin is enforced -- a pixel
-            # of clear ground between neighbouring glyphs rather than letters kissing.
-            # Computed once per (character, angle), not per placement.
-            m0 = (np.asarray(im) > 96).astype(np.uint8)
-            if _sep > 0:
-                m1 = cv2.dilate(m0, np.ones((_sep * 2 + 1, _sep * 2 + 1), np.uint8)) > 0
-            else:
-                m1 = m0 > 0
-            cache[k] = im = (im, m0 > 0, m1)
-        return im
-
-    adv = {}
-
-    def advance(ch):
-        a = adv.get(ch)
-        if a is None:
-            a = adv[ch] = max(1.0, float(font.getlength(ch)))
-        return a
-
-    canvas = Image.new("L", (W, H), 0)
-    # Occupancy, for collision. Where contours converge -- a nose, the corner of an eye --
-    # glyphs from neighbouring levels land on top of each other and the type turns to mush.
-    # Testing each glyph's footprint against what is already inked lets the spacing be tight
-    # for density WITHOUT that pile-up: the ink goes where there is room for it.
-    if occ is None:
-        occ = np.zeros((H, W), np.uint8)
-    # Fraction of a glyph's dilated footprint that may already be reserved. Near zero =
-    # genuine non-overlap. It was 0.35, which bought density by PERMITTING collisions --
-    # the wrong trade: density should come from retrying a placement, not from letting
-    # letters sit on top of each other.
-    _coll = float(os.environ.get("PET_CONTOUR_COLLIDE", "0.02") or 0.0)
-    # How many times to nudge a rejected glyph forward along the path before giving up on
-    # it. Leaving the area open is correct only after trying to fit something in it.
-    _retry = int(os.environ.get("PET_CONTOUR_RETRY", "4") or 0)
-    # WORDS, not a character stream. Placing characters individually made the result
-    # legible but not readable: a glyph rejected by the collision test was skipped and the
-    # next one carried on, dropping a letter out of the middle of a word, and each run
-    # started wherever the previous one had stopped -- mid-word. A word is placed whole or
-    # not at all.
-    _trk = max(1, int(round(2 * float(os.environ.get("PET_TRACK", "1.0") or 1.0))))
-    # Split PHRASES into words. _phrases() splits the input on commas, not spaces, so a
-    # stream entry is a whole phrase -- "A DEVOTED HUSBAND AND FATHER". Requiring one of
-    # those to fit atomically on a curved run under strict collision essentially never
-    # succeeds, and the render came out with no type on it at all. Words are the atomic
-    # unit; the comma stays on the last word of each phrase so phrases still read apart.
-    words_seq = []
-    for _p in stream:
-        _ws = str(_p).split()
-        for _j, _w in enumerate(_ws):
-            if _w:
-                words_seq.append(_w + ("," if _j == len(_ws) - 1 else ""))
-    if not words_seq:
-        words_seq = ["-"]
-    _gapw = " " * _trk
-    wi = rng.randint(0, len(words_seq) - 1)
-
-    for lv in levels:
-        cnts, _ = cv2.findContours((f >= lv).astype(np.uint8),
-                                   cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
-        for c in cnts:
-            cp = c[:, 0, :].astype(np.float32)
-            if len(cp) < 12:
-                continue
-            # A closed contour is traversed in ONE rotational direction, so on its far side
-            # the tangent points backwards: glyphs land upside down. Flipping each glyph
-            # 180 fixes the letters but leaves the run advancing right-to-left, so the words
-            # come out reversed -- TSET, SDROWNI DEVOL. On a memorial portrait, where the
-            # words are the product, that reads as a defect rather than as texture.
-            #
-            # So split the contour into runs of constant horizontal direction and walk the
-            # leftward ones backwards. Every run then advances left-to-right: glyphs upright
-            # AND words in order. The cost is that the type jumps between runs rather than
-            # flowing continuously around the loop, which at this density is invisible.
-            # findContours returns 8-connected STAIRCASE points: along a near-vertical or
-            # diagonal contour, consecutive steps alternate between (0,+-1) and (+-1,0), so
-            # the horizontal direction flips at almost every point. The run-splitting below
-            # then shatters the contour into one- and two-point fragments and the length
-            # filter discards every one of them -- measured, 33 of 34 bare cells had
-            # contours running through them and simply received no glyphs.
-            #
-            # Smooth the polyline first, so direction is a property of the CURVE rather than
-            # of the rasterisation. Wrapped, because these contours are closed.
-            _k = max(3, (int(round(fs * 0.5)) | 1))
-            if len(cp) > _k * 2:
-                _h = _k // 2
-                _pad = np.vstack([cp[-_h:], cp, cp[:_h]])
-                _ker = np.ones(_k, np.float32) / _k
-                cp = np.stack([np.convolve(_pad[:, 0], _ker, "valid"),
-                               np.convolve(_pad[:, 1], _ker, "valid")], axis=1).astype(np.float32)
-            sgn = np.sign(np.diff(cp[:, 0]))
-            sgn[sgn == 0] = 1.0
-            cuts = np.flatnonzero(np.diff(sgn)) + 1
-            for seg in np.split(np.arange(len(cp) - 1), cuts):
-                # Keep SHORT runs. Near-vertical stretches of a contour flip horizontal
-                # direction constantly and shatter into fragments; discarding those left
-                # bare patches exactly where the form runs vertically -- a temple, the side
-                # of a jaw. A two-glyph fragment is still ink on the form.
-                if len(seg) < 2:
-                    continue
-                pts = cp[seg[0]:seg[-1] + 2]
-                if sgn[seg[0]] < 0:
-                    pts = pts[::-1]
-                d = np.diff(pts, axis=0)
-                arc = np.concatenate([[0.0], np.cumsum(np.hypot(d[:, 0], d[:, 1]))])
-                total = float(arc[-1])
-                if total < fs * 0.6:
-                    continue
-                # Stagger long runs so contours do not align into visible bands; start a
-                # short run at its beginning, where a stagger would consume the whole run.
-                pos = float(rng.random()) * fs if total > fs * 4.0 else 0.0
-                fails = 0
-                while pos < total:
-                    word = words_seq[wi % len(words_seq)]
-                    # Plan every glyph of the word FIRST and commit only if all of them fit.
-                    # A word that is partly placed is a word that cannot be read.
-                    plan, p, ok = [], pos, True
-                    for ch in word:
-                        a = advance(ch)
-                        if p >= total:
-                            ok = False
-                            break
-                        i = int(np.searchsorted(arc, p))
-                        i = min(max(i, 1), len(pts) - 1)
-                        x, y = float(pts[i][0]), float(pts[i][1])
-                        iy, ix = int(y), int(x)
-                        if not (0 <= iy < H and 0 <= ix < W and sel[iy, ix]):
-                            ok = False
-                            break
-                        tx, ty = pts[i] - pts[i - 1]
-                        gi, gink, gpad = glyph(ch, -float(np.degrees(np.arctan2(ty, tx))))
-                        x0, y0 = int(x - gi.width * 0.5), int(y - gi.height * 0.5)
-                        cx0, cy0 = max(0, x0), max(0, y0)
-                        cx1, cy1 = min(W, x0 + gi.width), min(H, y0 + gi.height)
-                        if cx1 <= cx0 or cy1 <= cy0:
-                            ok = False
-                            break
-                        psub = gpad[cy0 - y0:cy1 - y0, cx0 - x0:cx1 - x0]
-                        if not int(psub.sum()):
-                            ok = False
-                            break
-                        win = occ[cy0:cy1, cx0:cx1]
-                        if float((win & psub).sum()) / int(psub.sum()) > _coll:
-                            ok = False
-                            break
-                        plan.append((gi, x0, y0, cy0, cy1, cx0, cx1, psub))
-                        p += a
-                    if ok and plan:
-                        for gi, x0, y0, cy0, cy1, cx0, cx1, psub in plan:
-                            canvas.paste(255, (x0, y0), gi)
-                            occ[cy0:cy1, cx0:cx1] |= psub
-                        wi += 1
-                        fails = 0
-                        pos = p + advance(" ") * _trk        # word gap
-                    else:
-                        # Nudge along and try again; after a few failures move to the next
-                        # word, which may be shorter and fit where this one did not.
-                        fails += 1
-                        pos += fs * 0.5
-                        if fails >= max(1, _retry):
-                            wi += 1
-                            fails = 0
-    return np.asarray(canvas).astype(np.float32) / 255.0
-
-
 def _enhance_contrast(bgr, mask):
     """Stretch the subject's tones to the full range so black fur reads black and white fur
     white. The flat grey wash came from compressed midtones -- this is the punch that makes a
@@ -663,8 +337,6 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     bgr = _enhance_contrast(bgr, mask)                       # punch up the tonal range first
     rng = random.Random(20260813)                           # fixed seed -> deterministic
     stream = _weighted_stream(words)                        # name + lead words weighted -> findable
-    # Natural-case copy for the contour layout's body tiers (see _phrases).
-    stream_nc = _weighted_stream(words, keep_case=True)
     sc = W / 900.0                                          # size reference
 
     # (The silhouette "halo/glow" -- a ring of the original background the matte let bleed in --
@@ -760,40 +432,17 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
             _brief = [q for q in _lead if len(q.split()) <= 3]
             _hero = _brief[:max(1, int(round(_n * 0.30)))] or _lead[:1]
             _mid = _lead
-    # PET_CONTOUR sets the type ALONG iso-contours of the drape field instead of drawing
-    # straight rows for the warp to bend. It needs a field with real surface in it, so it
-    # requires the depth drape; on luminance alone the "contours" would be tone boundaries,
-    # not form. Falls back silently to rows if depth is unavailable.
-    _contour = (os.environ.get("PET_CONTOUR", "").strip().lower() in ("1", "true", "yes", "on"))
+    tL = _rows(_hero, W, H, _tc * sc * _tsc, rng)
+    tM = _rows(_mid, W, H, 40 * sc * _tsc, rng)
+    tF = _rows(stream, W, H, 26 * sc * _tsc, rng)
+    tMi = _rows(stream, W, H, 16 * sc * _tsc, rng)
 
     # 2) Drape: warp the rows VERTICALLY by smoothed luminance so they ride the form. Damp the
     #    warp on high-detail features (eyes/nose) so they stay crisp. PET_DRAPE tunes wrap depth;
     #    PET_DRAPE_SMOOTH smooths the field so type rides the broad form, not sharp local edges.
     _dsm = float(os.environ.get("PET_DRAPE_SMOOTH", "0.045") or 0.045)
     D = cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, W * _dsm))
-    Dn = D.astype(np.float32) / 255.0
-    # Depth-driven drape. Luminance encodes curvature only where the PHOTOGRAPH happens to
-    # have tonal change; a smooth, evenly lit forehead has almost none, so it gets almost no
-    # warp -- and a broad flat plane is exactly where flowing type would read as sculpture
-    # rather than as an overlay. A monocular depth estimate has real surface everywhere,
-    # lit or not. PET_DRAPE_DEPTH is how much of the field comes from depth rather than
-    # luminance; 0 disables and is the default.
-    _dd = float(os.environ.get("PET_DRAPE_DEPTH", "0") or 0.0)
-    if _dd > 0.0:
-        dep = _depth_map(bgr)
-        if dep is not None:
-            # Relative inverse depth on an arbitrary scale, so normalise across the SUBJECT,
-            # not the frame: a distant background otherwise sets the range and the face
-            # occupies a sliver of it. Percentiles rather than min/max so one bright speck
-            # cannot flatten everything else.
-            sel = mask > 0.5
-            src = dep[sel] if bool(np.any(sel)) else dep
-            lo, hi = float(np.percentile(src, 2.0)), float(np.percentile(src, 98.0))
-            dep = np.clip((dep - lo) / max(1e-6, hi - lo), 0.0, 1.0)
-            dep = cv2.GaussianBlur(dep, (0, 0), sigmaX=max(1.0, W * _dsm))
-            _dd = min(1.0, _dd)
-            Dn = (1.0 - _dd) * Dn + _dd * dep
-    dn = np.tanh((Dn - 0.5) * 2.4) * 0.85            # soft-limit: no over-stretch on the darkest/brightest fur (kills the 'melt')
+    dn = np.tanh((D / 255.0 - 0.5) * 2.4) * 0.85            # soft-limit: no over-stretch on the darkest/brightest fur (kills the 'melt')
     xx, yy = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
     # Spread the detail edges inward, then UNION the feature field, so eye/nose interiors inherit
     # their rim's drape-protection and stay crisp instead of warping into a corrupted blob.
@@ -814,11 +463,16 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # today.
     _ax = float(os.environ.get("PET_DRAPE_X", "0") or 0.0)
     if _ax > 0.0:
-        gx = cv2.Sobel(Dn, cv2.CV_32F, 1, 0, ksize=5)
+        gx = cv2.Sobel(D.astype(np.float32) / 255.0, cv2.CV_32F, 1, 0, ksize=5)
         gx = gx / (float(np.abs(gx).max()) + 1e-6)          # normalise: amplitude comes from _ax
         mx = (xx + (amp * _ax) * np.tanh(gx * 2.4)).astype(np.float32)
     else:
         mx = xx
+
+    def R(t):
+        return cv2.remap(t, mx, my, cv2.INTER_LINEAR, borderValue=0.0)
+
+    wL, wM, wF, wMi = R(tL), R(tM), R(tF), R(tMi)
 
     # 3) Blend tiers by the detail field: coarse text on flat body, fine on features. The feature
     #    field is unioned in so an eye/nose INTERIOR (smooth -> low raw detail -> would otherwise
@@ -846,53 +500,6 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
             _rx = max(1.0, (float(_xs.max()) - float(_xs.min())) * 0.5)
             _rr = np.sqrt(((xx - _cx) / _rx) ** 2 + ((yy - _cy) / _ry) ** 2)
             df = np.clip(df + _hc * np.clip(_rr - 0.45, 0.0, 1.0), 0.0, 1.0)
-
-    def R(t):
-        return cv2.remap(t, mx, my, cv2.INTER_LINEAR, borderValue=0.0)
-
-    if _contour and _dd > 0.0:
-        # Already placed on the form -- warping them again would reintroduce exactly the
-        # dragging this replaces.
-        #
-        # Each tier places ink ONLY where the blend below will actually show it, and all
-        # four share ONE occupancy grid. Both halves are needed and neither works alone:
-        #
-        #   Dense tiers with no df restriction overlap, because the blend INTERPOLATES
-        #   between adjacent tiers -- in a transition band two full typographies land on
-        #   top of each other.
-        #
-        #   A shared grid with no df restriction goes sparse, because a tier reserves
-        #   space the blend then discards at that pixel while blocking the tier that was
-        #   wanted there.
-        #
-        # Restricted to its own band and sharing the grid, each tier is dense where it is
-        # seen, absent where it is not, and cannot collide with its neighbour. The bands
-        # overlap deliberately, so the two tiers active in a transition INTERLEAVE.
-        _sub = mask > 0.35
-        # Each tier gets its OWN grid. Sharing one starves the fine tiers: the blend below
-        # needs TWO tiers present at most pixels, so they are not alternatives competing for
-        # space -- they are both required. Filling coarse-first let wF claim the face and
-        # left wMi, the tier the blend wants wherever detail is high, with nowhere to go. On
-        # a human face, which is high-detail almost everywhere, that emptied the render.
-        #
-        # The BANDS are what stop them piling up instead: a tier places ink only across the
-        # df range where the blend can show it, so outside its own range it contributes
-        # nothing to overlap. Ranges overlap exactly as far as the blend's transitions do.
-        # Large tiers in CAPS as emphasis, body tiers in the writer's own case. Body text
-        # set in capitals reads as texture; set naturally it reads as writing, which is the
-        # difference between a portrait made of labels and one made of sentences.
-        _nc = stream_nc if len(stream_nc) == len(stream) else stream
-        wL = _contour_rows(_hero, Dn, W, H, _tc * sc * _tsc, rng, _sub & (df < 0.50))
-        wM = _contour_rows(_mid, Dn, W, H, 40 * sc * _tsc, rng, _sub & (df < 0.80))
-        wF = _contour_rows(_nc, Dn, W, H, 26 * sc * _tsc, rng, _sub & (df > 0.40))
-        wMi = _contour_rows(_nc, Dn, W, H, 16 * sc * _tsc, rng, _sub & (df > 0.70))
-    else:
-        tL = _rows(_hero, W, H, _tc * sc * _tsc, rng)
-        tM = _rows(_mid, W, H, 40 * sc * _tsc, rng)
-        tF = _rows(stream, W, H, 26 * sc * _tsc, rng)
-        tMi = _rows(stream, W, H, 16 * sc * _tsc, rng)
-        wL, wM, wF, wMi = R(tL), R(tM), R(tF), R(tMi)
-
     warped = wL.copy()
     for a0, b0, ia, ib in ((0.0, 0.45, wL, wM), (0.45, 0.75, wM, wF), (0.75, 1.0001, wF, wMi)):
         bt = np.clip((df - a0) / (b0 - a0), 0, 1)
