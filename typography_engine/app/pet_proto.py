@@ -394,7 +394,7 @@ def _contour_rows(stream, field, W, H, fs, rng, sel=None, occ=None):
     # 0.60 measured, not inherited: PET_ROW_GAP is 1.12 because straight rows need air or
     # they collide into a wall of text. Contours are collision-tested, so they can sit far
     # tighter -- ink coverage 0.24 at 0.60 against 0.16 at 1.12, with straight rows at 0.27.
-    _gap = float(os.environ.get("PET_CONTOUR_GAP", "0.60") or 0.60)
+    _gap = float(os.environ.get("PET_CONTOUR_GAP", "0.48") or 0.48)
     step = max(5.0, fs * _gap)                       # wanted perpendicular gap, in pixels
 
     # EQUALISE the field across the subject. Iso-contours vanish on a plateau: a broad flat
@@ -429,6 +429,10 @@ def _contour_rows(stream, field, W, H, fs, rng, sel=None, occ=None):
     # One bitmap per (character, quantised angle) instead of one rotation per glyph. A face
     # carries thousands of glyphs per tier; without this the rotations dominate the render.
     _aq = 6.0
+    # Separation margin in pixels at the working resolution, scaled with type size so large
+    # words get proportionally more air than small ones. Dilating the tested mask by this is
+    # what turns "may not overlap" into "must not touch".
+    _sep = int(round(fs * float(os.environ.get("PET_CONTOUR_PAD", "0.07") or 0.0)))
     cache = {}
 
     def glyph(ch, deg):
@@ -441,9 +445,16 @@ def _contour_rows(stream, field, W, H, fs, rng, sel=None, occ=None):
             g0 = Image.new("L", (gw + 2 * pad, gh + 2 * pad), 0)
             ImageDraw.Draw(g0).text((pad - bb[0], pad - bb[1]), ch, font=font, fill=255)
             im = g0.rotate(k[1] * _aq, resample=Image.BILINEAR, expand=True)
-            # keep the glyph's own pixel mask: collision must be tested against the INK,
-            # not the rotated bounding box, which is mostly empty space
-            cache[k] = im = (im, np.asarray(im) > 96)
+            # Two masks per glyph. The tight one is what gets INKED; the dilated one is what
+            # is tested and reserved, which is how a separation margin is enforced -- a pixel
+            # of clear ground between neighbouring glyphs rather than letters kissing.
+            # Computed once per (character, angle), not per placement.
+            m0 = (np.asarray(im) > 96).astype(np.uint8)
+            if _sep > 0:
+                m1 = cv2.dilate(m0, np.ones((_sep * 2 + 1, _sep * 2 + 1), np.uint8)) > 0
+            else:
+                m1 = m0 > 0
+            cache[k] = im = (im, m0 > 0, m1)
         return im
 
     adv = {}
@@ -461,10 +472,14 @@ def _contour_rows(stream, field, W, H, fs, rng, sel=None, occ=None):
     # for density WITHOUT that pile-up: the ink goes where there is room for it.
     if occ is None:
         occ = np.zeros((H, W), np.uint8)
-    # How much of a glyph's own ink may already be covered before it is dropped. Measured
-    # alongside the gap above: tighter spacing needs a looser test or the density gained is
-    # immediately rejected.
-    _coll = float(os.environ.get("PET_CONTOUR_COLLIDE", "0.35") or 0.35)
+    # Fraction of a glyph's dilated footprint that may already be reserved. Near zero =
+    # genuine non-overlap. It was 0.35, which bought density by PERMITTING collisions --
+    # the wrong trade: density should come from retrying a placement, not from letting
+    # letters sit on top of each other.
+    _coll = float(os.environ.get("PET_CONTOUR_COLLIDE", "0.02") or 0.0)
+    # How many times to nudge a rejected glyph forward along the path before giving up on
+    # it. Leaving the area open is correct only after trying to fit something in it.
+    _retry = int(os.environ.get("PET_CONTOUR_RETRY", "4") or 0)
     sep = "," + " " * max(1, int(round(2 * float(os.environ.get("PET_TRACK", "1.0") or 1.0))))
     text = (sep.join(stream) + sep) if stream else "  "
     ti = rng.randint(0, max(1, len(text) - 1))
@@ -528,25 +543,41 @@ def _contour_rows(stream, field, W, H, fs, rng, sel=None, occ=None):
                     ti += 1
                     a = advance(ch)
                     if ch != " ":
-                        i = int(np.searchsorted(arc, pos))
-                        i = min(max(i, 1), len(pts) - 1)
-                        x, y = float(pts[i][0]), float(pts[i][1])
-                        iy, ix = int(y), int(x)
-                        if 0 <= iy < H and 0 <= ix < W and sel[iy, ix]:
+                        placed = False
+                        # Retry along the path before abandoning the glyph: a rejected
+                        # position is not the same as no position.
+                        for _try in range(max(1, _retry)):
+                            tp = pos + _try * (a * 0.45)
+                            if tp >= total:
+                                break
+                            i = int(np.searchsorted(arc, tp))
+                            i = min(max(i, 1), len(pts) - 1)
+                            x, y = float(pts[i][0]), float(pts[i][1])
+                            iy, ix = int(y), int(x)
+                            if not (0 <= iy < H and 0 <= ix < W and sel[iy, ix]):
+                                continue
                             tx, ty = pts[i] - pts[i - 1]
-                            gi, gmask = glyph(ch, -float(np.degrees(np.arctan2(ty, tx))))
+                            gi, gink, gpad = glyph(ch, -float(np.degrees(np.arctan2(ty, tx))))
                             x0, y0 = int(x - gi.width * 0.5), int(y - gi.height * 0.5)
                             cx0, cy0 = max(0, x0), max(0, y0)
                             cx1, cy1 = min(W, x0 + gi.width), min(H, y0 + gi.height)
-                            if cx1 > cx0 and cy1 > cy0:
-                                gsub = gmask[cy0 - y0:cy1 - y0, cx0 - x0:cx1 - x0]
-                                n_ink = int(gsub.sum())
-                                if n_ink:
-                                    win = occ[cy0:cy1, cx0:cx1]
-                                    # fraction of THIS glyph's ink already covered
-                                    if float((win & gsub).sum()) / n_ink <= _coll:
-                                        canvas.paste(255, (x0, y0), gi)
-                                        win |= gsub
+                            if cx1 <= cx0 or cy1 <= cy0:
+                                continue
+                            psub = gpad[cy0 - y0:cy1 - y0, cx0 - x0:cx1 - x0]
+                            n_pad = int(psub.sum())
+                            if not n_pad:
+                                continue
+                            win = occ[cy0:cy1, cx0:cx1]
+                            if float((win & psub).sum()) / n_pad > _coll:
+                                continue
+                            canvas.paste(255, (x0, y0), gi)
+                            win |= psub          # reserve the DILATED footprint
+                            pos = tp
+                            placed = True
+                            break
+                        if not placed:
+                            pos += a * 0.5       # step past a blocked stretch
+                            continue
                     pos += a
     return np.asarray(canvas).astype(np.float32) / 255.0
 
