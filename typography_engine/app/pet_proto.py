@@ -91,11 +91,40 @@ _U2_FAILED_AT = 0.0        # monotonic time of the last failed attempt; 0 = none
 _U2_RETRY_AFTER = 300.0    # seconds to wait before trying again
 
 
-def _ensure_u2net():
-    """Return the model path, or None.
+def _download_atomic(url, path, min_bytes):
+    """Fetch `url` to `path`, or return None. Downloads to a TEMPORARY file in the same
+    directory and renames it into place, so a partly-written file is never visible at
+    the final path, and rejects anything under `min_bytes`.
 
-    Downloads to a TEMPORARY file in the same directory and renames it into place, so
-    a partly-written model is never visible at the final path.
+    Shared by the matte and depth models. A second copy of this logic would be a second
+    chance to get it wrong, and getting it wrong here is expensive -- see below."""
+    if os.path.exists(path):
+        if os.path.getsize(path) >= min_bytes:
+            return path
+        try:
+            os.remove(path)                # truncated by an interrupted earlier attempt
+        except OSError:
+            return None
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".part")      # same filesystem -> atomic rename
+    os.close(fd)
+    try:
+        urllib.request.urlretrieve(url, tmp)
+        if os.path.getsize(tmp) < min_bytes:
+            return None
+        os.replace(tmp, path)
+        return path
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+def _ensure_u2net():
+    """Return the matte model path, or None.
 
     This mattered. urlretrieve() wrote straight to _MATTE_PATH, and a 170MB download
     passes a 1MB size check within a fraction of a second -- so a render arriving
@@ -105,29 +134,65 @@ def _ensure_u2net():
     portraits on Loved in Words the first time the pet engine ran there, two minutes
     after the model started downloading.
     """
-    if os.path.exists(_MATTE_PATH):
-        if os.path.getsize(_MATTE_PATH) >= _MATTE_MIN_BYTES:
-            return _MATTE_PATH
+    return _download_atomic(_MATTE_URL, _MATTE_PATH, _MATTE_MIN_BYTES)
+
+
+# ---- Monocular depth (MiDaS v2.1 small, MIT). 67MB, same cache dir and the same atomic
+# fetch as the matte. Used ONLY to drive the drape; any failure -> None -> luminance alone.
+# Verified signature: input (1,3,256,256) float32 ImageNet-normalised RGB, output
+# (1,256,256) relative INVERSE depth -- larger is nearer. -------------------------------
+_DEPTH_URL = (os.environ.get("PET_DEPTH_URL", "").strip()
+              or "https://github.com/isl-org/MiDaS/releases/download/v2_1/model-small.onnx")
+_DEPTH_SIDE = 256
+_DEPTH_MIN_BYTES = 40_000_000
+_DEPTH_PATH = os.path.join(os.environ.get("PET_MATTE_DIR", tempfile.gettempdir()), "midas-small.onnx")
+_DEPTH_SESSION = None
+_DEPTH_LOCK = Lock()
+_DEPTH_FAILED_AT = 0.0
+_DEPTH_MEAN = np.array([0.485, 0.456, 0.406], np.float32)
+_DEPTH_STD = np.array([0.229, 0.224, 0.225], np.float32)
+
+
+def _depth_session():
+    """Depth session, or None. Same back-off as the matte: a transient failure must not
+    latch and silently flatten every later render."""
+    global _DEPTH_SESSION, _DEPTH_FAILED_AT
+    with _DEPTH_LOCK:
+        if _DEPTH_SESSION is not None:
+            return _DEPTH_SESSION
+        if _DEPTH_FAILED_AT and (time.monotonic() - _DEPTH_FAILED_AT) < _U2_RETRY_AFTER:
+            return None
         try:
-            os.remove(_MATTE_PATH)     # truncated by an interrupted earlier attempt
-        except OSError:
-            return None
-    d = os.path.dirname(_MATTE_PATH) or "."
-    os.makedirs(d, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=d, suffix=".part")   # same filesystem -> atomic rename
-    os.close(fd)
+            import onnxruntime as ort
+            path = _download_atomic(_DEPTH_URL, _DEPTH_PATH, _DEPTH_MIN_BYTES)
+            if not path:
+                _DEPTH_FAILED_AT = time.monotonic()
+                return None
+            _DEPTH_SESSION = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+            _DEPTH_FAILED_AT = 0.0
+        except Exception:  # noqa: BLE001 -- depth is optional; fall back to luminance
+            _DEPTH_FAILED_AT = time.monotonic()
+            _DEPTH_SESSION = None
+    return _DEPTH_SESSION
+
+
+def _depth_map(bgr):
+    """Relative depth at the image's resolution (larger = nearer), or None."""
+    sess = _depth_session()
+    if sess is None:
+        return None
     try:
-        urllib.request.urlretrieve(_MATTE_URL, tmp)
-        if os.path.getsize(tmp) < _MATTE_MIN_BYTES:
+        h, w = bgr.shape[:2]
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        im = cv2.resize(rgb, (_DEPTH_SIDE, _DEPTH_SIDE), interpolation=cv2.INTER_AREA)
+        im = (im - _DEPTH_MEAN) / _DEPTH_STD
+        inp = np.transpose(im, (2, 0, 1))[None].astype(np.float32)
+        d = np.squeeze(sess.run(None, {sess.get_inputs()[0].name: inp})[0]).astype(np.float32)
+        if d.ndim != 2:
             return None
-        os.replace(tmp, _MATTE_PATH)
-        return _MATTE_PATH
-    finally:
-        if os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
+        return cv2.resize(d, (w, h), interpolation=cv2.INTER_CUBIC)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _u2net_session():
@@ -442,7 +507,29 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     #    PET_DRAPE_SMOOTH smooths the field so type rides the broad form, not sharp local edges.
     _dsm = float(os.environ.get("PET_DRAPE_SMOOTH", "0.045") or 0.045)
     D = cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, W * _dsm))
-    dn = np.tanh((D / 255.0 - 0.5) * 2.4) * 0.85            # soft-limit: no over-stretch on the darkest/brightest fur (kills the 'melt')
+    Dn = D.astype(np.float32) / 255.0
+    # Depth-driven drape. Luminance encodes curvature only where the PHOTOGRAPH happens to
+    # have tonal change; a smooth, evenly lit forehead has almost none, so it gets almost no
+    # warp -- and a broad flat plane is exactly where flowing type would read as sculpture
+    # rather than as an overlay. A monocular depth estimate has real surface everywhere,
+    # lit or not. PET_DRAPE_DEPTH is how much of the field comes from depth rather than
+    # luminance; 0 disables and is the default.
+    _dd = float(os.environ.get("PET_DRAPE_DEPTH", "0") or 0.0)
+    if _dd > 0.0:
+        dep = _depth_map(bgr)
+        if dep is not None:
+            # Relative inverse depth on an arbitrary scale, so normalise across the SUBJECT,
+            # not the frame: a distant background otherwise sets the range and the face
+            # occupies a sliver of it. Percentiles rather than min/max so one bright speck
+            # cannot flatten everything else.
+            sel = mask > 0.5
+            src = dep[sel] if bool(np.any(sel)) else dep
+            lo, hi = float(np.percentile(src, 2.0)), float(np.percentile(src, 98.0))
+            dep = np.clip((dep - lo) / max(1e-6, hi - lo), 0.0, 1.0)
+            dep = cv2.GaussianBlur(dep, (0, 0), sigmaX=max(1.0, W * _dsm))
+            _dd = min(1.0, _dd)
+            Dn = (1.0 - _dd) * Dn + _dd * dep
+    dn = np.tanh((Dn - 0.5) * 2.4) * 0.85            # soft-limit: no over-stretch on the darkest/brightest fur (kills the 'melt')
     xx, yy = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
     # Spread the detail edges inward, then UNION the feature field, so eye/nose interiors inherit
     # their rim's drape-protection and stay crisp instead of warping into a corrupted blob.
@@ -463,7 +550,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # today.
     _ax = float(os.environ.get("PET_DRAPE_X", "0") or 0.0)
     if _ax > 0.0:
-        gx = cv2.Sobel(D.astype(np.float32) / 255.0, cv2.CV_32F, 1, 0, ksize=5)
+        gx = cv2.Sobel(Dn, cv2.CV_32F, 1, 0, ksize=5)
         gx = gx / (float(np.abs(gx).max()) + 1e-6)          # normalise: amplitude comes from _ax
         mx = (xx + (amp * _ax) * np.tanh(gx * 2.4)).astype(np.float32)
     else:
