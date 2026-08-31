@@ -450,24 +450,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     featdamp = np.maximum(featdamp, feat * _fp)
     amp = float(os.environ.get("PET_DRAPE", "68") or 68.0) * sc * (1.0 - float(os.environ.get("PET_DRAPE_DAMP","0.92") or 0.92) * featdamp)
     my = (yy + amp * dn).astype(np.float32)
-    # Horizontal companion. The drape above is VERTICAL ONLY -- rows get pushed up and down
-    # by luminance, so they undulate but never bend sideways, which is why the type reads as
-    # horizontal lines laid over a face rather than following it. Shearing the rows along the
-    # form's horizontal gradient makes them wrap a cheek or a muzzle instead.
-    #
-    # It reuses `amp`, which is already damped on high-detail features, so eyes and noses keep
-    # the same protection from horizontal smearing that they have from vertical.
-    #
-    # PET_DRAPE_X is the fraction of the vertical amplitude to apply sideways. 0 disables and
-    # is the default: this changes the look of every pet render, and Paws in Words is good
-    # today.
-    _ax = float(os.environ.get("PET_DRAPE_X", "0") or 0.0)
-    if _ax > 0.0:
-        gx = cv2.Sobel(D.astype(np.float32) / 255.0, cv2.CV_32F, 1, 0, ksize=5)
-        gx = gx / (float(np.abs(gx).max()) + 1e-6)          # normalise: amplitude comes from _ax
-        mx = (xx + (amp * _ax) * np.tanh(gx * 2.4)).astype(np.float32)
-    else:
-        mx = xx
+    mx = xx
 
     def R(t):
         return cv2.remap(t, mx, my, cv2.INTER_LINEAR, borderValue=0.0)
