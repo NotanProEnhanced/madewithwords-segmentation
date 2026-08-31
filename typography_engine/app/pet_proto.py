@@ -319,16 +319,26 @@ def _detail_map(gray):
     return np.clip(lap, 0, 1)
 
 
-def _phrases(words):
+def _phrases(words, keep_case=False):
+    """Phrases, split on commas and newlines.
+
+    keep_case preserves the writer's own capitalisation. ALL CAPS at body size reads as
+    texture rather than as writing -- the difference between a portrait made of labels and
+    one made of sentences -- so the contour layout sets its body tiers in natural case and
+    reserves capitals for the large words. Default is unchanged: the row layout has always
+    uppercased and its look depends on it."""
+    if keep_case:
+        ph = [re.sub(r"[^A-Za-z0-9' ]+", "", p).strip() for p in words.replace("\n", ",").split(",")]
+        return [p for p in ph if p] or ["Love"]
     ph = [re.sub(r"[^A-Z0-9' ]+", "", p).strip() for p in words.upper().replace("\n", ",").split(",")]
     return [p for p in ph if p] or ["LOVE"]
 
 
-def _weighted_stream(words):
+def _weighted_stream(words, keep_case=False):
     """Importance-weighted phrase stream: the NAME + lead words repeat most (up to ~3x) with
     their copies spread evenly, so the pet's name is findable across the portrait -- the
     'oh, it says his name' moment that drives the sale. Ported from the human engine's weighting."""
-    ph = _phrases(words)
+    ph = _phrases(words, keep_case=keep_case)
     n = len(ph)
     if n <= 1:
         return ph
@@ -644,6 +654,8 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     bgr = _enhance_contrast(bgr, mask)                       # punch up the tonal range first
     rng = random.Random(20260813)                           # fixed seed -> deterministic
     stream = _weighted_stream(words)                        # name + lead words weighted -> findable
+    # Natural-case copy for the contour layout's body tiers (see _phrases).
+    stream_nc = _weighted_stream(words, keep_case=True)
     sc = W / 900.0                                          # size reference
 
     # (The silhouette "halo/glow" -- a ring of the original background the matte let bleed in --
@@ -857,10 +869,14 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         # The BANDS are what stop them piling up instead: a tier places ink only across the
         # df range where the blend can show it, so outside its own range it contributes
         # nothing to overlap. Ranges overlap exactly as far as the blend's transitions do.
+        # Large tiers in CAPS as emphasis, body tiers in the writer's own case. Body text
+        # set in capitals reads as texture; set naturally it reads as writing, which is the
+        # difference between a portrait made of labels and one made of sentences.
+        _nc = stream_nc if len(stream_nc) == len(stream) else stream
         wL = _contour_rows(_hero, Dn, W, H, _tc * sc * _tsc, rng, _sub & (df < 0.50))
         wM = _contour_rows(_mid, Dn, W, H, 40 * sc * _tsc, rng, _sub & (df < 0.80))
-        wF = _contour_rows(stream, Dn, W, H, 26 * sc * _tsc, rng, _sub & (df > 0.40))
-        wMi = _contour_rows(stream, Dn, W, H, 16 * sc * _tsc, rng, _sub & (df > 0.70))
+        wF = _contour_rows(_nc, Dn, W, H, 26 * sc * _tsc, rng, _sub & (df > 0.40))
+        wMi = _contour_rows(_nc, Dn, W, H, 16 * sc * _tsc, rng, _sub & (df > 0.70))
     else:
         tL = _rows(_hero, W, H, _tc * sc * _tsc, rng)
         tM = _rows(_mid, W, H, 40 * sc * _tsc, rng)
