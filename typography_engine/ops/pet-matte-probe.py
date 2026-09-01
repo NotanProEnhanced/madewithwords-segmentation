@@ -22,12 +22,17 @@ It also prints the same bands for the RAW model output, before
 _solidify_matte's largest-component selection and hole fill, so the two stages
 can be told apart.
 
-WRITES NOTHING. Reads one image and prints numbers.
+Reads one image and prints numbers. Writes nothing unless DUMP=<dir> is set, in
+which case it also writes three pictures -- including one marking every pixel the
+solidifier ADDED to the model's answer, which is where this stage can invent
+subject out of background.
 
 Usage (inside the container, data/ is bind-mounted so copy it there first):
     cp typography_engine/ops/pet-matte-probe.py /root/<tree>/typography_engine/data/
     docker exec <container> python /app/data/pet-matte-probe.py
     docker exec <container> python /app/data/pet-matte-probe.py /app/data/private/<job>.src
+    docker exec -e DUMP=/app/data/mattedump <container> \
+        python /app/data/pet-matte-probe.py /app/data/testset/05-couple.jpg
 """
 import glob
 import os
@@ -90,11 +95,38 @@ def main():
     else:
         bands(raw, "raw model output")
     print()
-    bands(_foreground_mask(bgr), "after solidify")
+    solid = _foreground_mask(bgr)
+    bands(solid, "after solidify")
     print()
     print("Read the lower bands: that is the neck and chest. Near-zero in BOTH tables")
     print("means the model never saw the neck. Low in the second but not the first")
     print("means _solidify_matte discarded it.")
+
+    # DUMP=<dir> writes pictures as well as numbers. Bands answer "how much"; they cannot
+    # answer "where", and the question that prompted this -- background between two people
+    # coming out as subject -- is entirely about where. The overlay marks every pixel the
+    # SOLIDIFIER added to the model's own answer, which is exactly the set of pixels that
+    # can be wrong in that way: the largest-component pick, the hole fill, the torso fill.
+    dd = os.environ.get("DUMP", "").strip()
+    if dd:
+        os.makedirs(dd, exist_ok=True)
+        added = ((solid > 0.5) & (raw <= 0.5))
+        cv2.imwrite(os.path.join(dd, "matte-raw.png"),
+                    np.clip(raw * 255.0, 0, 255).astype(np.uint8))
+        cv2.imwrite(os.path.join(dd, "matte-solid.png"),
+                    np.clip(solid * 255.0, 0, 255).astype(np.uint8))
+        ov = bgr.astype(np.float32).copy()
+        ov[added] = ov[added] * 0.25 + np.array([60, 60, 235], np.float32) * 0.75
+        cv2.imwrite(os.path.join(dd, "matte-added.png"),
+                    np.clip(ov, 0, 255).astype(np.uint8))
+        print()
+        print("wrote %s" % dd)
+        print("  matte-raw.png    what the model returned")
+        print("  matte-solid.png  what the renderer used")
+        print("  matte-added.png  RED = invented by _solidify_matte, not seen by the model")
+        print("added %.2f%% of the frame   PET_MATTE_FILL=%r  PET_TORSO_FILL=%r"
+              % (100.0 * float(added.mean()), os.environ.get("PET_MATTE_FILL"),
+                 os.environ.get("PET_TORSO_FILL")))
 
 
 if __name__ == "__main__":
