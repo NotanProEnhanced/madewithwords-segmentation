@@ -552,10 +552,15 @@ def render_displacement_portrait(
             return v / (2.0 * horiz)
         _ear_l = _ear(33, 160, 158, 133, 153, 144)
         _ear_r = _ear(362, 385, 387, 263, 373, 380)
-        if min(_ear_l, _ear_r) < _EYE_OPEN_EAR:
+        # Env-tunable, default unchanged. Laughing faces measure 0.10-0.13 against a 0.15
+        # cut, so this gate is the reason a whole group can end up with no eyes at all --
+        # worth being able to move without a rebuild once there is data on where shut
+        # really begins.
+        _open_ear = float(os.environ.get("TYPO_EYE_OPEN_EAR", "") or _EYE_OPEN_EAR)
+        if min(_ear_l, _ear_r) < _open_ear:
             _eyelog(_pi, "SKIP eyes-closed",
                     "ear=(%.3f, %.3f) < %.3f -- laughing/squinting reads as shut"
-                    % (_ear_l, _ear_r, _EYE_OPEN_EAR))
+                    % (_ear_l, _ear_r, _open_ear))
             continue
         # PER-SUBJECT sunglasses (authoritative): the user tapped exactly which faces wear them.
         # Lens the selected faces unconditionally; leave everyone else with their real eyes. No
@@ -1169,12 +1174,24 @@ def render_displacement_portrait(
             p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
             if len(p) >= 3:
                 cv2.polylines(anchor, [cv2.convexHull(p)], True, 1.0, th, cv2.LINE_AA)
-    # Legacy blob fallback. When no iris resolved, this draws an ink disc at each
-    # lid centroid. On small faces that is a dark circle over a real eye -- worse
-    # than drawing nothing, since the rest of the face is already typography.
-    # TYPO_EYE_BLOB=0 renders those eyes as words instead. Default 1 = unchanged.
-    _eye_blob = os.environ.get("TYPO_EYE_BLOB", "1").strip().lower() \
-        not in ("0", "false", "off", "no")
+    # Legacy blob fallback: when NO iris resolved anywhere, draw an ink disc at each lid
+    # centroid. Now OFF by default, because measured on a real photograph it is the
+    # "dark circles over the eyes" defect itself.
+    #
+    # Three people laughing. Every face was skipped -- one for an unresolved iris, all
+    # three for the openness gate, which reads narrowed eyes as shut:
+    #
+    #     face=0 ear=(0.172, 0.128)   face=1 ear=(0.151, 0.120)   face=2 ear=(0.245, 0.101)
+    #     _EYE_OPEN_EAR = 0.15
+    #
+    # With `irises` empty this painted a filled disc on all three. The two turned away had
+    # theirs land on already-dark creases; the one facing the camera got what read as
+    # sunglasses. The original comment here already said it: worse than drawing nothing,
+    # since the rest of the face is typography anyway. Now the default agrees.
+    #
+    # TYPO_EYE_BLOB=1 restores it.
+    _eye_blob = os.environ.get("TYPO_EYE_BLOB", "0").strip().lower() \
+        in ("1", "true", "on", "yes")
     if not irises and _eye_blob:
         # Legacy eye presence: an ink blob at the lid centroid. Only used when the
         # iris landmarks can't resolve -- with real irises the round pupil and
