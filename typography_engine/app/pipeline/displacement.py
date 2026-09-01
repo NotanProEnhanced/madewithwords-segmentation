@@ -123,9 +123,23 @@ _PAPER_IRIS_SAT = 1.36
 
 # Eye-aspect-ratio (lid aperture / eye width) below which an eye is treated as
 # CLOSED. MediaPipe still places an iris on a shut eye, so without this gate the
-# "living eyes" treatment fabricates open eyes on a closed-eye photo. Open eyes
-# run ~0.25-0.35; a relaxed/closed eye ~<0.12. 0.15 leaves headroom for squints.
-_EYE_OPEN_EAR = 0.15
+# "living eyes" treatment fabricates open eyes on a closed-eye photo.
+#
+# Was 0.15, on the assumption that "a relaxed/closed eye" runs under 0.12 and 0.15 therefore
+# "leaves headroom for squints". It does not. Measured on a photograph of three people
+# laughing -- eyes plainly open, narrowed:
+#
+#     face=0 ear=(0.164, 0.116)   face=1 ear=(0.259, 0.138)   face=2 ear=(0.245, 0.101)
+#
+# All three were classed as shut. That is the whole of the "dark circles over the eyes"
+# defect: a skipped face gets no iris, pupil, catchlight or sclera lift, so its eye sockets
+# render as the bare ground the tone field puts there -- an unbroken dark shape where an eye
+# should be. Nothing draws those discs. They are what is left when nothing draws an eye.
+#
+# 0.09 admits a laughing squint and still rejects a shut eye. It is calibrated on open eyes
+# only: the set has no photograph of genuinely closed eyes to measure the other side against,
+# so the floor is evidence-based above and assumed below. TYPO_EYE_OPEN_EAR overrides it.
+_EYE_OPEN_EAR = 0.09
 # Appearance backstop for what geometry/blendshapes MISS (e.g. closed eyes behind a
 # reflective lens, where MediaPipe still reports "open"). A real open eye has a DARK
 # PUPIL; ratio = pupil darkness (p10 of the central disc) / eye-region bright pixels.
