@@ -1509,6 +1509,14 @@ async def render(
     cfg = RenderConfig()
     if min_font_px is not None:
         cfg.min_font_px = float(min_font_px)
+    # Word size for the DISPLACEMENT engine, which has no per-word minimum and so ignores
+    # min_font_px entirely -- the reason the studio's Small/Medium/Large buttons did nothing
+    # on the Lifelike style. Carried as a ratio against the studio default of 57.
+    #
+    # Explicitly 1.0 when the caller sends no size, rather than cfg.min_font_px / 57: that
+    # field defaults to 20, so deriving from it would silently give every API caller and
+    # every internal render 0.35x type -- a change to callers that asked for nothing.
+    _disp_ws = (float(min_font_px) / 57.0) if min_font_px is not None else 1.0
     if background_hex:
         cfg.background_hex = background_hex
     if foreground_hex:
@@ -1662,6 +1670,12 @@ async def render(
                 # Word-variety dial: per-style (Mosaic flattens to a varied cloud). MUST
                 # match the paid render in _ensure_clean_png or the preview misrepresents it.
                 variety=disp_variety_eff, print_aspect=aspect_choice, backdrop=backdrop_choice,
+                # Word size. This engine ignores min_font_px (it has no per-word minimum), so
+                # the studio's Small/Medium/Large buttons did nothing on the Lifelike style --
+                # the primary style. Carried as a ratio against the studio default of 57, so
+                # 57 reproduces every render made before this. MUST match the paid render in
+                # _ensure_clean_png, or the buyer approves one word size and receives another.
+                word_scale=_disp_ws,
                 sunglasses=sunglasses_on, sunglass_faces=sunglass_faces_sel)
             runs, ground_hex, mask_svg = [], None, None
         else:
@@ -1765,6 +1779,8 @@ async def render(
             "pet": bool(pet_on),   # Paws in Words -> paid recompose renders via the pet engine
             "pet_ground": pet_ground_sel if pet_on else None,
             "pet_type": pet_type_sel if pet_on else None,   # typography size (small/medium/large)
+            "word_scale": _disp_ws,   # displacement word size -> the paid file must
+                                      # match the size the buyer approved on screen
             "ref": ref_clean, "brand": brand_clean,
         }), encoding="utf-8")
 
@@ -3749,6 +3765,9 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
                 # routed Mosaic flattens to a varied word-cloud, like the preview).
                 breathe=STUDIO_BREATHE,
                 variety=(1.0 if (r.get("disp_route") and r.get("style") == "words") else WORD_VARIETY),
+                # Same word size the preview used. The recipe stores min_font_px, so this
+                # reads the buyer's own choice rather than a default.
+                word_scale=float(r.get("word_scale") or 1.0),
                 sunglasses=dl_sun, sunglass_faces=dl_sunf)
             if not png_bytes:
                 return None

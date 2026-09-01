@@ -325,6 +325,14 @@ def render_displacement_portrait(
     discovery: Optional[Sequence[str]] = None,  # opt-in Phase-1: hide a small cross + these tiny
                                   # marks (e.g. ["IHS", "JN 8:12"]) for close-inspection 'discovery'.
                                   # None => nothing drawn (default).
+    word_scale: float = 1.0,      # multiplier on all four size tiers, so the studio's word-size
+                                  # control actually reaches this engine. main.py passes
+                                  # cfg.min_font_px / 57, where 57 is the studio default -- so
+                                  # 1.0 is byte-identical to every render made before this
+                                  # parameter existed. min_font_px itself is meaningless here
+                                  # (this engine has never had a per-word minimum; it tiles
+                                  # rows at fixed tier sizes), which is exactly why the Small /
+                                  # Medium / Large buttons did nothing on the Lifelike style.
     graduate: bool = True,        # graduate the type OUTSIDE the face -- body (below chin) and hair
                                   # (above face) step down from the largest tier -- plus a hair
                                   # local-contrast 'sculpt'. Default ON; env TYPO_GRADUATE_BODY=0
@@ -734,8 +742,12 @@ def render_displacement_portrait(
 
     # Four size tiers blended *continuously* (below) so the type eases from large
     # to small instead of snapping between discrete sizes.
-    t_large, t_mid, t_fine, t_micro = (rows(64 * s * _ssn), rows(40 * s * _ssn),
-                                       rows(26 * s * _ssn), rows(16 * s * _ssn))
+    # Clamped so a bad value cannot produce a canvas of one enormous letter or a render
+    # that never finishes. 0.2 is finer than the studio's smallest offer, 3.0 coarser than
+    # its largest.
+    _wsc = float(np.clip(float(word_scale or 1.0), 0.2, 3.0))
+    t_large, t_mid, t_fine, t_micro = (rows(64 * s * _ssn * _wsc), rows(40 * s * _ssn * _wsc),
+                                       rows(26 * s * _ssn * _wsc), rows(16 * s * _ssn * _wsc))
     # Fifth tier, scaled to the EYE rather than the face: even "micro" type spans
     # a whole iris on a close-up, so the iris gets rows proportional to its own
     # radius -- typography that fits inside the eye.
