@@ -1100,7 +1100,35 @@ def render_displacement_portrait(
     gd2 = np.clip((ink_field - 0.70) / 0.30, 0, 1)
     w2 = np.clip(warped + (b1 - warped) * gd1 + (b2 - b1) * gd2, 0, 1)
 
+    # STAGED INK DUMP (TYPO_DUMP_STAGES=<dir>). The ink field is rewritten by sixteen
+    # passes in sequence, and any of them can drive a region to bare ground. Reasoning from
+    # the code about which one did it failed four times on a single defect -- each wrong
+    # guess costing a rebuild and an upload. This writes `a` after every pass, so the one
+    # that darkened a region is IDENTIFIED by opening two consecutive files.
+    #
+    # Numbered so they sort in execution order. Read them in pairs: the first frame where a
+    # region goes dark names the pass that did it.
+    _sd = os.environ.get("TYPO_DUMP_STAGES", "").strip()
+    _stage_n = [0]
+
+    def _stage(_label, _arr):
+        if not _sd:
+            return
+        try:
+            os.makedirs(_sd, exist_ok=True)
+            _x = np.asarray(_arr, np.float32)
+            if _x.ndim == 3:
+                _x = _x[..., 0]
+            cv2.imwrite(os.path.join(_sd, "a-%s.png" % _label),
+                        np.clip(_x * 255.0, 0, 255).astype(np.uint8))
+            _stage_n[0] += 1
+            print("[stage] %-22s mean=%.4f  frac<0.05=%.4f"
+                  % (_label, float(_x.mean()), float((_x < 0.05).mean())))
+        except Exception as _e:  # noqa: BLE001
+            print("[stage] %s failed: %s" % (_label, _e))
+
     a = np.clip(w2 * (0.04 + 0.96 * np.power(ink_field, 0.62)), 0, 1)
+    _stage("01-ink-field", a)
     # Light-aware far-edge softening (prototype): when the subject is DIRECTIONALLY lit, let
     # the SHADOW-side silhouette edge fall off into the ground instead of a crisp cut -- the
     # natural way a portrait's dark side melts into space. Self-gating: light direction is the
@@ -1129,6 +1157,7 @@ def render_displacement_portrait(
             _band = np.clip(1.0 - _dist / max(1.0, fw * 0.16), 0.0, 1.0)                # 1 at edge -> 0 inward
             soft01 = soft01 * (1.0 - np.clip(_ef * _conf * _band * _proj, 0.0, 1.0))
     a = a * soft01   # hair-preserving soft matte edge (+ optional light-aware shadow-edge falloff)
+    _stage("02-soft-matte", a)
     # Highlight wash (light-ground only): a BRIGHT subject region -- silver/white hair, pale
     # skin, specular highlights -- otherwise reads DARK because the navy ground shows through
     # the gaps BETWEEN glyphs. Lift a gentle light floor under the type in the brightest areas
@@ -1142,6 +1171,7 @@ def render_displacement_portrait(
             _hi = np.clip((ink_field - 0.60) / 0.40, 0.0, 1.0)
             _mk = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0, 1)
             a = np.clip(a + _hw * _hi * _mk * (1.0 - a), 0, 1)
+            _stage("03-highlight-wash", a)
     # Shadow lift (light-ground only): the counterpart to the highlight wash. Deep shadow on
     # the subject otherwise crushes to the near-black ground, so the shaded side of a face
     # becomes a detail-less void and the portrait reads harsh. Lift a gentle floor in the
@@ -1154,6 +1184,7 @@ def render_displacement_portrait(
         if _sl > 0.0:
             _lo = np.clip((0.50 - ink_field) / 0.50, 0.0, 1.0)   # 1 at black -> 0 at mid(0.5)
             a = np.clip(a + _sl * _lo * np.clip(face_norm, 0, 1) * (1.0 - a), 0, 1)
+            _stage("04-shadow-lift", a)
 
     # Feature anchoring: eye rings + lip seam + pupils + nostrils.
     anchor = np.zeros((H, W), np.float32)
@@ -1209,8 +1240,10 @@ def render_displacement_portrait(
     anchor = np.clip(anchor, 0, 1)
     if g["tone"] == "light":
         a = a * (1.0 - 0.65 * anchor)          # dark feature lines = less light ink (ground shows)
+        _stage("05-anchor-light", a)
     else:
         a = np.clip(a + 0.70 * anchor, 0, 1)    # dark feature lines = more dark ink on paper
+        _stage("06-anchor-dark", a)
 
     # Round pupil + catchlight from the true iris geometry. The pupil is a
     # feathered DISC at the iris centre (not the blocky gap the text rows happen
@@ -1260,12 +1293,15 @@ def render_displacement_portrait(
         scl = np.clip(scl - iris_full, 0, 1)
         scl = cv2.GaussianBlur(scl, (0, 0), sigmaX=max(1.0, fw * 0.004))
         a = a * (1.0 - 0.92 * scl)
+        _stage("07-sclera", a)
         if g["tone"] == "light":                  # light ink on a dark ground
             a = a * (1.0 - 0.88 * pup)            # pupil: round, dark (ground shows)
             a = np.clip(a + 0.55 * glint, 0, 1)   # catchlight: a tight glint, not a bloom
+            _stage("08-pupil-glint-dark", a)
         else:                                     # dark ink on light paper
             a = np.clip(a + 0.80 * pup, 0, 1)     # pupil: round dark ink
             a = a * (1.0 - 0.85 * glint)          # catchlight: paper shows
+            _stage("09-pupil-glint-light", a)
 
     # Opaque dark lens: clear the typography inside a detected tinted lens (eyelid hull,
     # dilated to the lens where reflections sit) so it reads as a solid dark lens instead
@@ -1297,6 +1333,7 @@ def render_displacement_portrait(
                 cv2.ellipse(_lens, (int(round(_cx)), _ecy), (_ax, _ay), 0, 0, 360, 1.0, -1, cv2.LINE_AA)
         _lensf = np.clip(cv2.GaussianBlur(_lens, (0, 0), sigmaX=max(1.0, fw * 0.012)), 0, 1)
         a = a * (1.0 - 0.97 * _lensf)
+        _stage("10-dark-lens", a)
 
     # Teeth carry NO typography. Where the mouth is open, suppress ink across the
     # inner mouth (both tones); on a dark ground the cleared teeth get a soft
@@ -1334,6 +1371,7 @@ def render_displacement_portrait(
         teeth = _tm if teeth is None else np.maximum(teeth, _tm)
     if teeth is not None:
         a = a * (1.0 - 0.92 * teeth)
+        _stage("11-teeth", a)
     if ground in PAPER_FAMILY:
         # INK-DRAWING density: tone is how much ink lands, not its colour. Heavy ink
         # where the photo is dark; fade to paper where it's light; an edge boost draws
@@ -1347,6 +1385,7 @@ def render_displacement_portrait(
         edge = cv2.GaussianBlur(edge, (0, 0), max(0.6, 0.8 * _ssn))
         ink_amt = np.clip(dark * _PAPER_DARK_GAIN + edge * _PAPER_EDGE_GAIN + _PAPER_INK_FLOOR, 0.0, 1.0)
         a = a * ink_amt
+        _stage("12-paper-ink", a)
     # === Phase-1 (opt-in): tonal breathing =================================
     # Compress the typography into the MIDTONES so the tonal extremes rest, the way a
     # charcoal portrait reads as 3-D: let the ground show through the deepest facial
@@ -1380,10 +1419,12 @@ def render_displacement_portrait(
         _skin = _face_reg * (1.0 - _eyeblock)
         _shadow = np.clip((0.33 - lum) / 0.33, 0.0, 1.0) * _skin      # deepest facial shadow
         a = a * (1.0 - 0.66 * _shadow)
+        _stage("13-breathe-shadow", a)
         _hl = np.clip((lum - 0.88) / 0.12, 0.0, 1.0) * _skin          # brightest specular skin
         _hl = np.power(_hl, 1.4)                                       # roll off -> only true peaks
         _hl = cv2.GaussianBlur(_hl, (0, 0), sigmaX=max(1.0, fw * 0.009))
         a = a * (1.0 - 0.32 * _hl)
+        _stage("14-breathe-highlight", a)
     # =======================================================================
 
     # Paper/ink ground: on light skin the whole face is highlight, so the density falls away
@@ -1394,6 +1435,7 @@ def render_displacement_portrait(
         _pf = float(os.environ.get("TYPO_PAPER_FACE", "0.30") or 0.30)
         if _pf > 0.0:
             a = np.maximum(a, w2 * _pf * np.clip(face_norm, 0, 1))
+            _stage("15-paper-face", a)
         # Light-hair floor: silver/blonde hair on the ivory washes out (light on light), so a
         # silver-haired subject reads as a floating face. Give the HAIR region an ink-density
         # floor so light hair renders as delicate grey words instead of vanishing. Dark hair
@@ -1405,6 +1447,7 @@ def render_displacement_portrait(
             _hairm = ((mask01 > 0) & (_yy2 < _chin2)).astype(np.float32) * (1.0 - np.clip(face_norm, 0, 1))
             _hairm = np.clip(cv2.GaussianBlur(_hairm, (0, 0), sigmaX=max(2.0, fw * 0.03)), 0, 1)
             a = np.maximum(a, w2 * _ph * _hairm)
+            _stage("16-paper-hair", a)
 
     al = a[..., None]
     if ink == "photo" or ink == "mono":
