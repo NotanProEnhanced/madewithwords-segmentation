@@ -38,14 +38,16 @@ BRAND="${BRAND:-lovedinwords}"
 # The studio's own memorial-preview parameters, so a baseline reflects what a visitor
 # actually sees rather than some other configuration. Change these only deliberately: they
 # are part of what makes two runs comparable.
-PNG_W="${PNG_W:-900}"
-RENDER_W="${RENDER_W:-1500}"
-STYLE="${STYLE:-displacement}"
+DEF_PNG_W=900; DEF_RENDER_W=1500; DEF_STYLE=displacement; DEF_MIN_FONT=57
+DEF_BRAND=lovedinwords
+PNG_W="${PNG_W:-$DEF_PNG_W}"
+RENDER_W="${RENDER_W:-$DEF_RENDER_W}"
+STYLE="${STYLE:-$DEF_STYLE}"
 INK="${INK:-photo}"
 GROUND="${GROUND:-navy}"
 BACKDROP="${BACKDROP:-studio}"
 ASPECT="${ASPECT:-0.8}"
-MIN_FONT="${MIN_FONT:-57}"
+MIN_FONT="${MIN_FONT:-$DEF_MIN_FONT}"
 PET="${PET:-}"                 # PET=1 to exercise the landmark-free engine instead
 
 [ -d "$SET/src" ] || { echo "no sources at $SET/src"; exit 1; }
@@ -54,7 +56,18 @@ WORDS="$(tr -d '\r\n' < "$SET/words.txt")"
 
 COMMIT="$(git -C "$TREE" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 DIRTY="$(git -C "$TREE" status --porcelain 2>/dev/null | wc -l)"
-OUT="$SET/out/$COMMIT"
+# A run at non-default parameters is NOT comparable with the baseline, so it must not be
+# filed on top of it. Rendering the download size into out/<commit>/ would overwrite the
+# preview-size files the baseline is made of, and nothing would say it had happened.
+SIG=""
+[ "$PNG_W"    = "$DEF_PNG_W" ]    || SIG="$SIG-png$PNG_W"
+[ "$RENDER_W" = "$DEF_RENDER_W" ] || SIG="$SIG-rw$RENDER_W"
+[ "$MIN_FONT" = "$DEF_MIN_FONT" ] || SIG="$SIG-mf$MIN_FONT"
+[ "$STYLE"    = "$DEF_STYLE" ]    || SIG="$SIG-$STYLE"
+[ "$BRAND"    = "$DEF_BRAND" ]    || SIG="$SIG-$BRAND"
+[ -z "$PET" ]                     || SIG="$SIG-pet"
+
+OUT="$SET/out/$COMMIT$SIG"
 [ "$DIRTY" = "0" ] || OUT="$OUT-dirty"
 mkdir -p "$OUT"
 
