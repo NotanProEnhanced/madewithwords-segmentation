@@ -45,8 +45,15 @@ else
     B=$(ls -1dt "$OUTS"/*/ 2>/dev/null | head -1); B="${B%/}"
 fi
 
-[ -n "$A" ] && [ -d "$A" ] || { echo "cannot find first run"; exit 1; }
-[ -n "$B" ] && [ -d "$B" ] || { echo "cannot find second run"; exit 1; }
+_missing() {   # Name what is actually there. "cannot find first run" leaves you guessing
+               # whether the name was wrong or the render never happened.
+    echo "no run named '$1' under $OUTS"
+    echo "runs available:"
+    ls -1dt "$OUTS"/*/ 2>/dev/null | sed 's|.*/out/||; s|/$||; s|^|  |' || echo "  (none)"
+    exit 1
+}
+[ -n "$A" ] && [ -d "$A" ] || _missing "${1:-}"
+[ -n "$B" ] && [ -d "$B" ] || _missing "${2:-}"
 [ "$A" != "$B" ] || { echo "both names resolve to $A"; exit 1; }
 
 echo "A  $(basename "$A")"

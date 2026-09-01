@@ -71,9 +71,30 @@ OUT="$SET/out/$COMMIT$SIG"
 [ "$DIRTY" = "0" ] || OUT="$OUT-dirty"
 mkdir -p "$OUT"
 
-if ! curl -sf --max-time 10 "$BASE/healthz" >/dev/null 2>&1; then
-    curl -sf --max-time 10 -o /dev/null "$BASE/static/index.html" || {
-        echo "nothing answering on $BASE -- is the container up?"; exit 1; }
+# WAIT for the container, do not probe once. `docker compose up -d` returns when the
+# container has STARTED; uvicorn then spends fifteen to twenty seconds loading MediaPipe
+# before it answers anything. A single probe loses that race every time the two commands
+# are run as a block, and reports it as "is the container up?" -- which it is.
+WAIT="${WAIT:-90}"
+_up() {
+    curl -sf --max-time 5 "$BASE/healthz" >/dev/null 2>&1 && return 0
+    curl -sf --max-time 5 -o /dev/null "$BASE/static/index.html" 2>/dev/null
+}
+if ! _up; then
+    printf 'waiting for %s ' "$BASE"
+    _t0=$(date +%s)
+    until _up; do
+        if [ $(( $(date +%s) - _t0 )) -ge "$WAIT" ]; then
+            echo
+            echo "nothing answering on $BASE after ${WAIT}s."
+            echo "The container may have failed to start. Look at why:"
+            echo "    docker compose logs --tail 40"
+            exit 1
+        fi
+        printf '.'
+        sleep 3
+    done
+    echo " up"
 fi
 
 note=""; [ "$DIRTY" = "0" ] || note=" ($DIRTY uncommitted)"
