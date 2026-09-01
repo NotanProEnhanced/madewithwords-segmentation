@@ -852,7 +852,24 @@ def render_displacement_portrait(
         _notface = 1.0 - face_norm
         _bottom_y = float(_rows_on.max()) if _rows_on.size else float(H)
         _top_y = float(_rows_on.min()) if _rows_on.size else 0.0
-        if len(all_pts) <= 1:
+        # One subject or several, the treatment is now the SAME: a floor off every face's
+        # hull. Measured on the test set, the two branches below were not two tunings of one
+        # idea -- they were two different products:
+        #
+        #     01-hat   df mean 0.948   L=0%   M=0%   F=96%  Mi=4%
+        #     05-couple df mean 0.661  L=15%  M=50%  F=24%  Mi=11%
+        #
+        # The single portrait sits almost entirely in ONE tier. The group spreads across all
+        # four, and WHICH tier a region lands in depends on its distance from that person's
+        # own chin -- so the taller subject's collar and the shorter subject's hair size
+        # differently in the same photograph. That is the inconsistency reported on the
+        # couple, and it is not about hair or necks: it is this branch.
+        #
+        # TYPO_GROUP_UNIFORM=0 restores the old additive group ramp.
+        _uniform = (len(all_pts) <= 1
+                    or os.environ.get("TYPO_GROUP_UNIFORM", "1").strip().lower()
+                    not in ("0", "false", "off", "no"))
+        if _uniform:
             # Single subject (the memorial portrait). Hold the neck + body + hair AT LEAST as
             # fine as the FACE'S OWN detail floor (_fdt), so they read proportional to the jaw
             # -- uniform, never coarser than the face, no bulge. (The prior fixed target 0.65
@@ -875,8 +892,17 @@ def render_displacement_portrait(
             # strength right under the JAWLINE. _notface's wide fw*0.22 blur and the chin-TIP
             # cut both left the under-jaw neck un-boosted -> large type there. Seamless because
             # the neck target == the face floor; df is smoothed downstream.
-            _offmask = 1.0 - np.clip(cv2.GaussianBlur(fmh.astype(np.float32), (0, 0),
-                                                      sigmaX=max(1.0, fw * 0.03)), 0, 1)
+            # Feathered PER FACE, for the same reason mask_of and _face_w_pf are: a smaller
+            # face needs a smaller feather, or the primary's blur bleeds across the second
+            # subject's jaw. With one face this is the single hull blurred by fw * 0.03 --
+            # arithmetically the previous expression, so single portraits stay identical.
+            _hullf = np.zeros((H, W), np.float32)
+            for _fp, _fwi in zip(all_pts, _fws):
+                _hm = np.zeros((H, W), np.uint8)
+                cv2.fillConvexPoly(_hm, cv2.convexHull(_fp.astype(np.int32)), 1)
+                _hullf = np.maximum(_hullf, cv2.GaussianBlur(
+                    _hm.astype(np.float32), (0, 0), sigmaX=max(1.0, _fwi * 0.03)))
+            _offmask = 1.0 - np.clip(_hullf, 0, 1)
             df = np.clip(np.maximum(df, _neck_target * _offmask), 0, 1)
         else:
             # Group: each subject's neck/chest (and hair/crown) must graduate from THEIR OWN
