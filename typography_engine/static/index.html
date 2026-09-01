@@ -673,11 +673,10 @@
     <div class="ctl" id="inputSizeCtl" style="display:none">
       <div class="ctl-lbl">Word size</div>
       <div class="seg" id="sizeSeg" aria-label="Word size">
-        <button type="button" data-mf="27">Small</button>
-        <button type="button" data-mf="57" class="on">Medium</button>
-        <button type="button" data-mf="120">Large</button>
+        <button type="button" data-mf="57" class="on">Standard</button>
+        <button type="button" data-mf="120">Bold</button>
       </div>
-      <div class="ctl-hint">Larger words look bold and graphic; smaller words add fine detail.</div>
+      <div class="ctl-hint">Standard fills the portrait with readable words; Bold uses fewer, larger ones.</div>
     </div>
     <label class="consent" id="consentRow">
       <input type="checkbox" id="consent" />
@@ -1482,7 +1481,7 @@ $("#styleSegResult").addEventListener("click", e=>{ const b=e.target.closest("bu
 const sizeSeg=$("#sizeSeg");
 if(sizeSeg){ sizeSeg.addEventListener("click", e=>{
   const b=e.target.closest("button"); if(!b) return;
-  state.minFont=parseFloat(b.dataset.mf)||20;
+  state.minFont=parseFloat(b.dataset.mf)||57;   // 57 is the studio default; 20 would now mean 0.35x type
   [...e.currentTarget.children].forEach(c=>c.classList.toggle("on",c===b));
 }); }
 // ---------- Crop editor: opens on upload, 4:5 print frame, pointer/stylus ------
@@ -1809,7 +1808,7 @@ function applySizes(allowed, recommended){
     state.minFont=Number(recommended);                 // framing-based default (close-up -> Large)
   } else if(!allowedMf.includes(Number(state.minFont))){   // current pick invalid -> re-default
     const def=(state.style==="message") ? 20
-              : ([57,27,120].find(v=>allowedMf.includes(v))||allowedMf[0]);   // Large, else Medium
+              : ([57,120].find(v=>allowedMf.includes(v))||allowedMf[0]);   // Standard, else Bold
     state.minFont=allowedMf.includes(def)?def:allowedMf[0];
   }
   // Keep the hidden Words segment in rough sync (cosmetic; state.minFont rules).
@@ -2017,7 +2016,7 @@ const WORD_SIZES=[[27,"Small"],[57,"Medium"],[120,"Large"]];
 const LETTER_SIZES=[[20,"Readable"],[13,"Balanced"]];
 function sizesForStyle(){ return state.style==="message" ? LETTER_SIZES : WORD_SIZES; }
 const sizeStripEl=$("#sizeStrip"), sizeFilmEl=$("#sizeFilm");
-let allowedMf=[120,57,27,13];
+let allowedMf=[120,57];
 let sizeThumbCache={};                 // coarse renders of the CURRENT ink, keyed by size
 function buildSizeStrip(){
   if(!sizeStripEl) return;
@@ -2696,7 +2695,8 @@ async function render(ink,{animate=false,background=false,thumb=false,hires=fals
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
   const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_petEngine){ fd.append("pet","1"); fd.append("pet_type", state.petType||"small"); } fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
-  fd.append("min_font_px", String(state.minFont||20));
+  fd.append("min_font_px", String(state.minFont||57));   // was ||20 -- a different default from the
+                                                          // other two call sites, and now a visible one
   if(thumb){
     // A 74px chip needs only the colour and rough likeness; a small canvas
     // renders fast even on a slow single core.

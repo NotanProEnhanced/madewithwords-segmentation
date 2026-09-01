@@ -745,18 +745,19 @@ def _allowed_size_mf(face_frac):
     studio offers only sizes whose smallest tier still reads at this face size.
     Giant + Large are always offered; Medium needs a reasonably-sized face;
     Small needs a close-up. Thresholds tuned against real renders."""
-    allow = [120.0, 57.0]                       # Giant, Large -- always
-    if face_frac is None or face_frac >= 0.16:  # Medium
-        allow.append(27.0)
-    if face_frac is None or face_frac >= 0.28:  # Small (close-up only)
-        allow.append(13.0)
-    return sorted(allow, reverse=True)
-
-
-# Faces filling >= this share of the frame are "close-ups": they carry bold
-# Large type cleanly (fewer, more-readable words = less overlap). Looser/mid
-# framings default to Medium for more words and finer detail. Tunable.
-_CLOSEUP_FRAC = 0.42
+    # 57 and 120 ONLY. The finer sizes were offered on the theory that a large enough face
+    # carries them; tested on the fixed set they do not. 27 renders words the customer
+    # cannot read, and 50, 45 and 40 are no better -- and the customer approves the PREVIEW,
+    # so a size whose preview cannot be judged must not be on the menu whatever it does at
+    # print resolution.
+    #
+    # This mattered only once the studio's word-size control actually reached the Lifelike
+    # engine: before that every option rendered identically, so offering four was harmless
+    # and meaningless in equal measure.
+    #
+    # face_frac is kept in the signature -- callers pass it -- but no longer narrows the
+    # list. When a size below 57 is shown to read well, this is where it goes back.
+    return [120.0, 57.0]
 
 
 def _recommended_size_mf(face_frac):
@@ -1516,7 +1517,15 @@ async def render(
     # Explicitly 1.0 when the caller sends no size, rather than cfg.min_font_px / 57: that
     # field defaults to 20, so deriving from it would silently give every API caller and
     # every internal render 0.35x type -- a change to callers that asked for nothing.
+    #
+    # CLAMPED to the sizes the studio actually offers (57..120 -> 1.0..2.11). Below 57 the
+    # words stop being readable -- checked at 50, 45, 40 and 27 on the fixed set -- and
+    # several callers still send smaller numbers for reasons that predate this parameter
+    # meaning anything: the Message/Letter flow posts min_font_px=20, and Letter renders
+    # through this engine. Clamping here means no path can select an unreadable size, rather
+    # than every path having to remember not to.
     _disp_ws = (float(min_font_px) / 57.0) if min_font_px is not None else 1.0
+    _disp_ws = min(max(_disp_ws, 1.0), 120.0 / 57.0)
     if background_hex:
         cfg.background_hex = background_hex
     if foreground_hex:
