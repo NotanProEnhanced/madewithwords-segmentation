@@ -214,12 +214,20 @@ def _solidify_matte(m, w):
     # inside one body. Measured on a two-person portrait it filled as subject and rendered
     # with typography and skin tone in the gap between them.
     #
-    # Size separates the cases. A genuine interior hole is a small dropout the model missed;
-    # the pocket between two people is a large share of the silhouette. PET_HOLE_MAX is the
-    # largest hole, as a fraction of the subject's own area, that will still be filled.
-    # 0 = fill every hole, which is the previous behaviour and remains the default until the
-    # threshold is chosen from measurements rather than picked.
-    _hmax = float(os.environ.get("PET_HOLE_MAX", "0") or 0.0)
+    # Size separates the cases. Measured across the ten-image test set, every genuine dropout
+    # on a single subject was under 0.6% of the silhouette, while the pocket between two
+    # people was 2.8% -- a clean gap with nothing in it:
+    #
+    #     06-sidelight 0.059%   10-smile 0.242%   07-dark-on-dark 0.533%   |   05-couple 2.781%
+    #
+    # PET_HOLE_MAX is the largest hole, as a fraction of the subject's own area, that will
+    # still be filled. 0.012 sits in that gap with about a factor of two of margin on each
+    # side. PET_HOLE_MAX=0 restores the old behaviour of filling everything.
+    #
+    # Calibrated on ONE two-subject photograph and on no animals at all. Three subjects, or a
+    # dog with a real gap between its legs, are not represented; treat it as well-founded for
+    # couples and provisional elsewhere until the test set covers them.
+    _hmax = float(os.environ.get("PET_HOLE_MAX", "0.012") or 0.012)
     _subj = float(b.sum()) or 1.0
     if os.environ.get("PET_HOLE_DEBUG", "").strip() or _hmax > 0.0:
         _nh, _lh, _sh, _ = cv2.connectedComponentsWithStats(holes, 8)
