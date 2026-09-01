@@ -1453,6 +1453,18 @@ def render_displacement_portrait(
                 _dump("soft01", soft01)
                 _dump("alpha", al)
                 _dump("base", _base)
+                # anchor carries EVERY deliberate facial mark: lip and eye outlines, the
+                # nostril dots, the legacy eye blob. When something dark appears over an eye
+                # and the code paths that could draw it have been excluded one by one, this
+                # is the layer that settles it -- either the mark is here and the engine drew
+                # it, or it is not and the darkness comes from the tone field instead.
+                try:
+                    _dump("anchor", anchor)
+                    _an = np.asarray(anchor, np.float32)
+                    print("[dump] anchor mean=%.4f max=%.3f  pixels>0.5: %d"
+                          % (float(_an.mean()), float(_an.max()), int((_an > 0.5).sum())))
+                except NameError:
+                    pass
                 # df is the ONLY thing that decides word SIZE, so a complaint about type
                 # being too coarse in one region is a statement about df there. Dumped as
                 # a picture (bright = fine type) plus the tier the blend actually lands on,
