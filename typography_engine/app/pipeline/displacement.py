@@ -1370,6 +1370,24 @@ def render_displacement_portrait(
                 _dump("soft01", soft01)
                 _dump("alpha", al)
                 _dump("base", _base)
+                # df is the ONLY thing that decides word SIZE, so a complaint about type
+                # being too coarse in one region is a statement about df there. Dumped as
+                # a picture (bright = fine type) plus the tier the blend actually lands on,
+                # because df alone is hard to read against four discrete tiers: banding at
+                # 0.45 / 0.75 is where the visible size step happens.
+                _dfa = np.asarray(df, np.float32)
+                _dump("df", _dfa)
+                _tier = np.digitize(_dfa, [0.45, 0.75, 1.0]).astype(np.float32)  # 0..3
+                _dump("tier", _tier / 3.0)
+                _msk = np.asarray(mask01, np.float32) > 0.5
+                if _msk.any():
+                    _ds = _dfa[_msk]
+                    print("[dump] df on subject  mean=%.3f  p05=%.3f p50=%.3f p95=%.3f   "
+                          "tier share  L=%.0f%% M=%.0f%% F=%.0f%% Mi=%.0f%%"
+                          % (float(_ds.mean()), float(np.percentile(_ds, 5)),
+                             float(np.percentile(_ds, 50)), float(np.percentile(_ds, 95)),
+                             *[100.0 * float((np.digitize(_ds, [0.45, 0.75, 1.0]) == _k).mean())
+                               for _k in range(4)]))
                 _a1 = np.asarray(al, np.float32)
                 if _a1.ndim == 3:
                     _a1 = _a1[..., 0]
