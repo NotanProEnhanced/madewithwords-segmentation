@@ -741,27 +741,61 @@ def render_displacement_portrait(
     # radius -- typography that fits inside the eye.
     t_iris = rows(max(6.0, float(np.mean([r for _, _, r in irises])) * 0.30)) if irises else None
 
-    def mask_of(keys, dil, sig) -> np.ndarray:
-        mm = np.zeros((H, W), np.uint8)
-        for _fp in all_pts:
+    # Each face's OWN width. `fw` above is the PRIMARY face's, and every feather radius and
+    # type scale below was derived from it -- so in a two-person portrait the second face was
+    # sized and feathered for the first. That is why two faces in one photograph came out
+    # with visibly different type: one global scale, taken from one of them.
+    #
+    # With a single face these are identical to the old global values, so nothing changes on
+    # a one-subject photograph. TYPO_PER_FACE=0 restores the previous behaviour.
+    _perface = (os.environ.get("TYPO_PER_FACE", "1").strip().lower()
+                not in ("0", "false", "no", "off"))
+    # The PRIMARY face keeps exactly `fw`, and the others are scaled relative to it by
+    # landmark-hull width. Measuring the primary face's hull directly would give a slightly
+    # different number than fw (which comes from the detector's bbox, not the hull), and a
+    # single-face render would then shift for no reason -- destroying the one property that
+    # makes this change checkable: with one face, nothing may change at all.
+    _hw = [max(1.0, float(np.asarray(_p)[:, 0].max() - np.asarray(_p)[:, 0].min()))
+           for _p in all_pts]
+    _fws = [fw] * len(all_pts)
+    if _perface and len(all_pts) > 1 and _hw[0] > 0:
+        _fws = [fw * (_w / _hw[0]) for _w in _hw]
+
+    def mask_of(keys, dil_f, sig_f) -> np.ndarray:
+        """Union of the named landmark groups. `dil_f` and `sig_f` are FRACTIONS of a face's
+        width, applied per face, so a small face gets a small feather rather than the
+        primary face's."""
+        acc = np.zeros((H, W), np.float32)
+        for _fp, _fwi in zip(all_pts, _fws):
+            mm = np.zeros((H, W), np.uint8)
             for k in keys:
                 p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
                 if len(p) >= 3:
                     cv2.fillConvexPoly(mm, cv2.convexHull(p), 1)
-        if dil > 0:
-            mm = cv2.dilate(mm, np.ones((dil | 1, dil | 1), np.uint8), 1)
-        return np.clip(cv2.GaussianBlur(mm.astype(np.float32), (0, 0), sigmaX=max(1.0, sig)), 0, 1)
+            d = int(_fwi * dil_f)
+            if d > 0:
+                mm = cv2.dilate(mm, np.ones((d | 1, d | 1), np.uint8), 1)
+            acc = np.maximum(acc, cv2.GaussianBlur(mm.astype(np.float32), (0, 0),
+                                                   sigmaX=max(1.0, _fwi * sig_f)))
+        return np.clip(acc, 0, 1)
 
-    feat_damp = mask_of(_GROUPS.keys(), int(fw * 0.06), fw * 0.045)
+    feat_damp = mask_of(_GROUPS.keys(), 0.06, 0.045)
 
     fmh = np.zeros((H, W), np.uint8)
     for _fp in all_pts:
         cv2.fillConvexPoly(fmh, cv2.convexHull(_fp.astype(np.int32)), 1)
+    # Per-face hull feathering, for the same reason as mask_of above.
+    _face_w_pf = np.zeros((H, W), np.float32)
+    for _fp, _fwi in zip(all_pts, _fws):
+        _m = np.zeros((H, W), np.uint8)
+        cv2.fillConvexPoly(_m, cv2.convexHull(_fp.astype(np.int32)), 1)
+        _face_w_pf = np.maximum(_face_w_pf, cv2.GaussianBlur(
+            _m.astype(np.float32), (0, 0), sigmaX=max(W * 0.012, _fwi * 0.22)))
     # FACE-relative feathering (not image-relative): on a tight crop the face fills
     # the frame, so an image-relative blur transitions over too thin a band and the
     # type SNAPS large->small. Scaling the blur to the face width keeps the size
     # gradient gradual across the forehead/cheeks at any crop tightness.
-    face_w = cv2.GaussianBlur(fmh.astype(np.float32), (0, 0), sigmaX=max(W * 0.012, fw * 0.22))
+    face_w = _face_w_pf
 
     # Smooth "detail field" df in [0,1] that drives a CONTINUOUS size gradient:
     # ~0 on the body (large text) -> ~0.45 on the broad face (mid) -> ~1 at the
@@ -770,7 +804,7 @@ def render_displacement_portrait(
     # Wide feature feathering -> feat_norm DECAYS smoothly outward from the eyes/
     # nose/mouth, so the type grows continuously (small at features -> mid -> large)
     # instead of snapping at a hard feature boundary.
-    feat_union = mask_of(_GROUPS.keys(), int(fw * 0.04), fw * 0.24)
+    feat_union = mask_of(_GROUPS.keys(), 0.04, 0.24)
     feat_norm = np.clip(feat_union / (feat_union.max() + 1e-6), 0, 1)
     df = np.clip(0.52 * face_norm + 0.70 * feat_norm, 0, 1)
     # Face-detail floor: the chin, jaw, cheekbones and ears sit INSIDE the face but FAR from
