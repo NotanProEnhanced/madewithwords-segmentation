@@ -209,6 +209,37 @@ def _solidify_matte(m, w):
     padded = cv2.copyMakeBorder(b, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=0)
     cv2.floodFill(padded, np.zeros((padded.shape[0] + 2, padded.shape[1] + 2), np.uint8), (0, 0), 1)
     holes = (padded[1:-1, 1:-1] == 0).astype(np.uint8)       # 0s unreachable from the border = real holes
+    # ...except when TWO subjects stand together. The background between them is walled off
+    # by the pair and is, to a flood fill from the border, indistinguishable from a hole
+    # inside one body. Measured on a two-person portrait it filled as subject and rendered
+    # with typography and skin tone in the gap between them.
+    #
+    # Size separates the cases. A genuine interior hole is a small dropout the model missed;
+    # the pocket between two people is a large share of the silhouette. PET_HOLE_MAX is the
+    # largest hole, as a fraction of the subject's own area, that will still be filled.
+    # 0 = fill every hole, which is the previous behaviour and remains the default until the
+    # threshold is chosen from measurements rather than picked.
+    _hmax = float(os.environ.get("PET_HOLE_MAX", "0") or 0.0)
+    _subj = float(b.sum()) or 1.0
+    if os.environ.get("PET_HOLE_DEBUG", "").strip() or _hmax > 0.0:
+        _nh, _lh, _sh, _ = cv2.connectedComponentsWithStats(holes, 8)
+        _keep = np.zeros_like(holes)
+        _rep = []
+        for _i in range(1, _nh):
+            _a = float(_sh[_i, cv2.CC_STAT_AREA])
+            _frac = _a / _subj
+            _fill = (_hmax <= 0.0) or (_frac <= _hmax)
+            if _fill:
+                _keep[_lh == _i] = 1
+            if _frac >= 0.0005:
+                _rep.append((_frac, _fill))
+        if os.environ.get("PET_HOLE_DEBUG", "").strip():
+            print("[holes] %d found, %d over 0.05%% of subject: %s  (PET_HOLE_MAX=%s)"
+                  % (_nh - 1, len(_rep),
+                     ", ".join("%.3f%%%s" % (100 * f, "" if k else " REJECTED")
+                               for f, k in sorted(_rep, reverse=True)[:8]) or "none",
+                     _hmax or "off"))
+        holes = _keep
     b = np.clip(b + holes, 0, 1)
     # Torso continuation. The hole fill above can only recover regions the border cannot
     # reach; a neck and chest run OFF the bottom edge, so they are correctly judged "not a
