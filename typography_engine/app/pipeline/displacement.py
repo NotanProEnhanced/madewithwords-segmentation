@@ -1379,6 +1379,17 @@ def render_displacement_portrait(
                 _dump("df", _dfa)
                 _tier = np.digitize(_dfa, [0.45, 0.75, 1.0]).astype(np.float32)  # 0..3
                 _dump("tier", _tier / 3.0)
+                # The same tiers painted over the photograph. A grey ramp cannot be read
+                # against a face -- "is her hair the same tier as his?" is answerable at a
+                # glance here and nowhere else. Red = largest words, blue = smallest.
+                _tc = np.array([(60, 60, 220), (60, 190, 240),
+                                (120, 200, 90), (230, 140, 60)], np.float32)  # BGR, L->Mi
+                _ov = _tc[np.clip(_tier, 0, 3).astype(np.int32)]
+                _ph = np.asarray(bgr_full, np.float32)
+                _ov = _ph * 0.45 + _ov * 0.55
+                _ov = np.where((np.asarray(mask01, np.float32) > 0.5)[..., None], _ov, _ph * 0.35)
+                cv2.imwrite(os.path.join(_dd, "tier_overlay.png"),
+                            np.clip(_ov, 0, 255).astype(np.uint8))
                 _msk = np.asarray(mask01, np.float32) > 0.5
                 if _msk.any():
                     _ds = _dfa[_msk]
