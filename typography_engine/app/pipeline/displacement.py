@@ -1357,13 +1357,26 @@ def render_displacement_portrait(
     _hl = None
     if breathe:
         _face_reg = np.clip(face_norm, 0.0, 1.0)
+        # EVERY face, not just the primary. This protection was built from `pts` -- one
+        # face -- while _skin below is built from face_norm, which covers all of them. So in
+        # a group the primary subject's eyes were spared the shadow cut and everyone else's
+        # were not: their eye sockets are the deepest shadow on the face, lost two thirds of
+        # their ink, and the ground showed through as a dark disc. It reads as sunglasses on
+        # a person who is not wearing any.
+        #
+        # Feathered per face for the same reason as mask_of and _face_w_pf: a smaller face
+        # needs a smaller feather. With one face this is the previous expression exactly, so
+        # single portraits are unchanged.
         _eyeblock = np.zeros((H, W), np.float32)
-        for _k in ("Leye", "Reye", "lips"):
-            _p = np.array([pts[i] for i in _GROUPS[_k] if i < len(pts)], np.int32)
-            if len(_p) >= 3:
-                cv2.fillConvexPoly(_eyeblock, cv2.convexHull(_p), 1.0)
-        _eyeblock = cv2.dilate(_eyeblock, np.ones((9, 9), np.uint8), 1)
-        _eyeblock = np.clip(cv2.GaussianBlur(_eyeblock, (0, 0), sigmaX=max(1.0, fw * 0.02)), 0, 1)
+        for _fp_eb, _fwi_eb in zip(all_pts, _fws):
+            _eb = np.zeros((H, W), np.float32)
+            for _k in ("Leye", "Reye", "lips"):
+                _p = np.array([_fp_eb[i] for i in _GROUPS[_k] if i < len(_fp_eb)], np.int32)
+                if len(_p) >= 3:
+                    cv2.fillConvexPoly(_eb, cv2.convexHull(_p), 1.0)
+            _eb = cv2.dilate(_eb, np.ones((9, 9), np.uint8), 1)
+            _eb = np.clip(cv2.GaussianBlur(_eb, (0, 0), sigmaX=max(1.0, _fwi_eb * 0.02)), 0, 1)
+            _eyeblock = np.maximum(_eyeblock, _eb)
         _skin = _face_reg * (1.0 - _eyeblock)
         _shadow = np.clip((0.33 - lum) / 0.33, 0.0, 1.0) * _skin      # deepest facial shadow
         a = a * (1.0 - 0.66 * _shadow)
