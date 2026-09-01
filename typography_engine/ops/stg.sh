@@ -98,6 +98,14 @@ restore)
     if [ -n "${commit:-}" ]; then
         git -C "$TREE" checkout -q "$commit" -- typography_engine/ 2>/dev/null \
             && echo "  code restored" || echo "  WARNING: could not restore code at $commit"
+        # ...but NOT ops/. These scripts are the instruments -- the harness, the state
+        # store, the comparison. Rolling them back to whatever they were when the state was
+        # saved removes the tools you are in the middle of using, and does it silently. A
+        # state is the PRODUCT (app/, .env, image); the instruments stay at HEAD.
+        if git -C "$TREE" rev-parse --verify -q HEAD >/dev/null; then
+            git -C "$TREE" checkout -q HEAD -- typography_engine/ops/ 2>/dev/null \
+                && echo "  ops/ left at HEAD (tools are not part of a state)"
+        fi
     fi
 
     # 2) settings. The half that git cannot see, and the half that silently keeps an
