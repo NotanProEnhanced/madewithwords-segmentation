@@ -67,8 +67,16 @@ SIG=""
 [ "$BRAND"    = "$DEF_BRAND" ]    || SIG="$SIG-$BRAND"
 [ -z "$PET" ]                     || SIG="$SIG-pet"
 
-OUT="$SET/out/$COMMIT$SIG"
-[ "$DIRTY" = "0" ] || OUT="$OUT-dirty"
+# NAME=<label> for a run whose code did not come from HEAD. Checking out an older app/
+# into the tree -- the way to render what production is running -- leaves HEAD where it
+# was, so the run would be filed under the CURRENT commit and compared against the wrong
+# thing. An explicitly named run is not marked dirty: its tree is meant to be modified.
+if [ -n "${NAME:-}" ]; then
+    OUT="$SET/out/$NAME"
+else
+    OUT="$SET/out/$COMMIT$SIG"
+    [ "$DIRTY" = "0" ] || OUT="$OUT-dirty"
+fi
 mkdir -p "$OUT"
 
 # WAIT for the container, do not probe once. `docker compose up -d` returns when the
@@ -142,7 +150,12 @@ done
 
 echo
 echo "$ok rendered, $bad failed   ->  $OUT"
-[ "$DIRTY" = "0" ] || echo "NOTE: the tree has uncommitted changes, so this is not a reproducible point."
+if [ -n "${NAME:-}" ]; then
+    echo "NOTE: filed as '$NAME' at your request, not under $COMMIT. The tree holds code"
+    echo "      that is not HEAD -- restore it before doing anything else here."
+elif [ "$DIRTY" != "0" ]; then
+    echo "NOTE: the tree has uncommitted changes, so this is not a reproducible point."
+fi
 echo
 echo "Compare against another run:"
 ls -1dt "$SET"/out/*/ 2>/dev/null | head -3 | sed 's/^/  /'
