@@ -150,9 +150,12 @@ done
 
 echo
 echo "$ok rendered, $bad failed   ->  $OUT"
-if [ -n "${NAME:-}" ]; then
-    echo "NOTE: filed as '$NAME' at your request, not under $COMMIT. The tree holds code"
-    echo "      that is not HEAD -- restore it before doing anything else here."
+if [ -n "${NAME:-}" ] && [ "$DIRTY" != "0" ]; then
+    echo "NOTE: filed as '$NAME', not under $COMMIT, and the tree has $DIRTY modified"
+    echo "      file(s) -- it is holding code that is not HEAD. Restore it before"
+    echo "      doing anything else here."
+elif [ -n "${NAME:-}" ]; then
+    echo "NOTE: filed as '$NAME' at your request. The tree is clean at $COMMIT."
 elif [ "$DIRTY" != "0" ]; then
     echo "NOTE: the tree has uncommitted changes, so this is not a reproducible point."
 fi
