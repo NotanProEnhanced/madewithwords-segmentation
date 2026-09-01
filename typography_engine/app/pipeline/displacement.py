@@ -475,8 +475,22 @@ def render_displacement_portrait(
     _dark_lens_eyes = []
     _dark_lens_face_pts = []      # shaded faces (drive the opaque-lens fill)
     _misfit_face_pts = []         # meshes fit so badly the eyes can't be trusted (skip entirely)
+
+    # Per-face eye diagnostics. The existing [eye] line sits AFTER four separate `continue`
+    # statements, so a face that was SKIPPED produced no output at all -- indistinguishable
+    # from a face that was never reached. Chasing dark circles on a three-person photograph,
+    # that gap cost several rounds of inference over a missing log line. Every face now
+    # reports which gate it took and the number that decided it.
+    _eyedbg = bool(os.environ.get("TYPO_EYE_DEBUG", "").strip())
+
+    def _eyelog(_i, _what, _detail=""):
+        if _eyedbg:
+            import sys as _s
+            print("[eye] face=%d %s %s" % (_i, _what, _detail), file=_s.stderr, flush=True)
+
     for _pi, _fp in enumerate(all_pts):
         if len(_fp) < 478:
+            _eyelog(_pi, "SKIP incomplete-mesh", "landmarks=%d" % len(_fp))
             continue
         # Anatomical sanity: a real iris sits BELOW its own eyebrow. On a busy group a
         # face can get a badly-fit mesh whose iris landmarks land on the FOREHEAD, well
@@ -502,6 +516,9 @@ def render_displacement_portrait(
         _mgap = float(os.environ.get("TYPO_MISFIT_GAP", "0.02") or 0.02)
         if len(_gaps) == 2 and any(g < -_mgap * _fh for g in _gaps):
             _misfit_face_pts.append(_fp)
+            _eyelog(_pi, "SKIP mesh-misfit",
+                    "gaps=%s limit=%.1f (iris above brow -> whole face distrusted)"
+                    % ([round(g, 1) for g in _gaps], -_mgap * _fh))
             continue
         _fi = []
         for ic, ring in ((468, (469, 470, 471, 472)), (473, (474, 475, 476, 477))):
@@ -520,6 +537,9 @@ def render_displacement_portrait(
             if ir >= float(os.environ.get("TYPO_IRIS_MIN_PX", "8.0") or 8.0) * _ssn:
                 _fi.append((icx, icy, ir))
         if len(_fi) < 2:
+            _eyelog(_pi, "SKIP iris-too-small",
+                    "resolved=%d/2 min_px=%.1f -- no real eyes for this face"
+                    % (len(_fi), float(os.environ.get("TYPO_IRIS_MIN_PX", "8.0") or 8.0) * _ssn))
             continue
         eye_centers.extend(_fi)
         # Openness gate (both eyes must read open) -- else plain words for this face.
@@ -530,7 +550,12 @@ def render_displacement_portrait(
             v = (float(np.hypot(_p[p2][0] - _p[p6][0], _p[p2][1] - _p[p6][1]))
                  + float(np.hypot(_p[p3][0] - _p[p5][0], _p[p3][1] - _p[p5][1])))
             return v / (2.0 * horiz)
-        if min(_ear(33, 160, 158, 133, 153, 144), _ear(362, 385, 387, 263, 373, 380)) < _EYE_OPEN_EAR:
+        _ear_l = _ear(33, 160, 158, 133, 153, 144)
+        _ear_r = _ear(362, 385, 387, 263, 373, 380)
+        if min(_ear_l, _ear_r) < _EYE_OPEN_EAR:
+            _eyelog(_pi, "SKIP eyes-closed",
+                    "ear=(%.3f, %.3f) < %.3f -- laughing/squinting reads as shut"
+                    % (_ear_l, _ear_r, _EYE_OPEN_EAR))
             continue
         # PER-SUBJECT sunglasses (authoritative): the user tapped exactly which faces wear them.
         # Lens the selected faces unconditionally; leave everyone else with their real eyes. No
@@ -642,7 +667,10 @@ def render_displacement_portrait(
         # false-fire on a real face. Keeping the brightness signals wired (env + log) so a
         # safer detector can be built from data later, but not acting on them.
         if len(ratios) >= 2 and min(ratios) > _EYE_OPEN_IRIS_MAX:
+            _eyelog(_pi, "SKIP no-dark-pupil",
+                    "ratios=%s > %.2f" % ([round(r, 2) for r in ratios], _EYE_OPEN_IRIS_MAX))
             continue                                   # no dark pupil -> not a real eye
+        _eyelog(_pi, "OK real-eyes", "irises=%d" % len(_fi))
         irises.extend(_fi)
         _iris_face_idx.extend([_pi] * len(_fi))
         _eye_face_pts.append(_fp)
