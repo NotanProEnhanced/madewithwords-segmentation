@@ -1464,6 +1464,14 @@ def render_displacement_portrait(
             _stage("16-paper-hair", a)
 
     al = a[..., None]
+    def _t(_lbl):
+        # Checkpoints on the finished image. Defined ABOVE the ink branches so every ink
+        # reaches them -- a sculpt render would otherwise hit an undefined name.
+        if os.environ.get("TYPO_DUMP_FIELDS", "").strip():
+            try:
+                print("[t] %-22s out.mean=%.2f" % (_lbl, float(np.asarray(out).mean())))
+            except Exception:  # noqa: BLE001
+                pass
     if ink == "photo" or ink == "mono":
         # Photo Lifelike composite. Noir (mono) shares this exact path -- full tonal range,
         # polarity shadows, living eyes -- and is desaturated to black & white at the end,
@@ -1654,6 +1662,7 @@ def render_displacement_portrait(
         out = np.array(g["bg"], np.float32) * (1 - al) + np.array(g["ink"], np.float32) * al
 
     # Living eyes, colour: glyphs inside the iris carry the person's TRUE eye
+    _t("A-after-ink-branch")
     # colour -- sampled by the shared gated helper (both irises saturated and
     # hue-consistent, else no tint; sampled, never invented). Dark grounds only:
     # the lifted tint is designed for light-ink-on-dark.
@@ -1844,6 +1853,7 @@ def render_displacement_portrait(
         out = out * (1.0 - _glz) + _bright * _glz
     if discovery:
         out = _add_discovery(out, pts, fw, H, W, discovery)
+        _t("B-after-discovery")
     # =======================================================================
 
     # Noir = the finished Lifelike render in black & white. Desaturate to luminance with a
@@ -1854,6 +1864,7 @@ def render_displacement_portrait(
         _lo = out[..., 0] * 0.114 + out[..., 1] * 0.587 + out[..., 2] * 0.299
         _lo = np.clip((_lo - 128.0) * _nc + 128.0, 0, 255)
         out = np.stack([_lo, _lo, _lo], axis=-1)
+        _t("C-after-mono")
 
     # De-posterize: the tonal floors (highlight wash / shadow lift) and the discrete text-
     # density steps flatten the face into bands. Add the photo's OWN low-frequency light->dark
@@ -1868,9 +1879,11 @@ def render_displacement_portrait(
         _mid = float(np.mean(_plo[mask01 > 0])) if np.any(mask01 > 0) else 0.5
         _mod = 1.0 + _dp * np.clip(_plo - _mid, -0.5, 0.5) * _m
         out = np.clip(out * _mod[..., None], 0, 255)
+        _t("D-after-deposterize")
 
     oh = max(1, int(out_width * h0 / w0))
     out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
+    _t("E-after-resize")
     # Background fill: recolour the region OUTSIDE the subject silhouette. The subject
     # (on its own ground -- e.g. the navy Lifelike sculpt) is NEVER touched; only pixels
     # outside the silhouette move. Two sources, in priority order:
@@ -1919,6 +1932,7 @@ def render_displacement_portrait(
     # so the band is processed identically to the interior ground (no seam).
     from .tonal import _fit_print_canvas
     out = _fit_print_canvas(out, _pad_bg, print_aspect)
+    _t("F-after-canvas")
     from .preprocess import apply_vibrance
     _vib = float(os.environ.get("TYPO_VIBRANCE", "0.22") or 0.22)   # step-3 colour-fidelity knob (was fixed 0.34)
     out = apply_vibrance(out, strength=_vib, bgr=True)   # gentle life (clarity); restrained so colour stays natural and the sclera isn't glow-brightened
