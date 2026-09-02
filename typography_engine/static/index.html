@@ -1882,6 +1882,15 @@ function buildBgSwatches(){
     bgSwatchEl.append(lab);
     FLORALS.forEach(([bg,src,label])=>mk(bg,"img:"+src,label));
   }
+  // Reveal the group from CONTENT, not from an engine flag. #bgGroup is display:none in the
+  // markup and the only code that ever cleared it lived inside _petEngineSetup(). So the
+  // backdrop axis appeared solely on brands routed to the pet engine -- and those are
+  // exactly the brands the floral test above excludes. The floral picker could therefore
+  // never be reached by any brand: memorial brands all carried petEngine, and the one brand
+  // without it never showed the container. Driving it from whether there are chips to show
+  // makes that class of dead control impossible.
+  const _bgg = document.getElementById("bgGroup");
+  if(_bgg) _bgg.style.display = bgSwatchEl.children.length ? "" : "none";
 }
 function markBgSel(){
   if(!bgSwatchEl) return;
