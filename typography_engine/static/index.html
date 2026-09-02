@@ -1325,6 +1325,30 @@ function inputErr(m){ showInputError(m, null, null); }   // upgraded: icon + scr
 // of a dead disabled button the user can't diagnose.
 function refreshCreate(){ if(state.file && words.value.trim() && consent.checked){ const e=document.getElementById("errInput"); if(e) e.style.display="none"; } }
 words.addEventListener("input", refreshCreate);
+// Words or Passage, decided by what was typed rather than by a card the customer has to
+// understand. A list of words or short phrases is a word portrait; anything written in
+// sentences is a passage and must be streamed in written order.
+//
+// The rule is deliberately blunt so it is predictable: sentence-ending punctuation, or a
+// run long enough that it cannot be a word list. Commas do not count -- "GENEROUS, FUNNY,
+// STEADFAST" is a list, not a sentence.
+//
+// The "Writing a letter or a message instead?" link still wins: once someone chooses, the
+// choice is theirs (userTouched) and this stops second-guessing them.
+function _styleForInput(t){
+  const s = (t || "").trim();
+  if(!s) return null;
+  if(/[.!?]["')\]]?(\s|$)/.test(s)) return "message";   // a sentence ends somewhere
+  if(s.split(/\s+/).length > 25) return "message";       // too long to be a word list
+  return "displacement";
+}
+function _autoStyleFromWords(){
+  if(userTouched) return;                                // they chose; leave it alone
+  const want = _styleForInput(words.value);
+  if(want && want !== state.style) setStyle(want, false);
+}
+words.addEventListener("input", _autoStyleFromWords);
+words.addEventListener("change", _autoStyleFromWords);
 consent.addEventListener("change", refreshCreate);
 /* ---------- One box: type words, or paste a story and distill it (memorial) ----
    The single #words field is the canonical input (what's rendered). If the user
@@ -1452,7 +1476,10 @@ function setStyle(newStyle, rerender){
 function updateStyleChooserVisibility(msgMode){
   // Memorial skins keep their own deliberately-curated flow (Lifelike + Passage +
   // Letter); leave those untouched. This collapse applies to the generic studio.
-  if(_isMemorialBrand) return;
+  // Memorial brands used to keep the chooser. They shouldn't: the reasoning below
+  // applies to every brand equally -- all three tiles render through the same engine,
+  // so the picker offered the same portrait under three names. The real variable is the
+  // INPUT, which is now decided from the words themselves (see _styleForInput).
   const seg=document.getElementById("styleSegResult");
   const gal=document.getElementById("styleGallery");
   if(!seg||!gal) return;
@@ -1885,6 +1912,11 @@ function buildBgSwatches(){
   if(_hasFlorals && !_petEngine && FLORALS.length){
     const lab=document.createElement("div"); lab.className="bg-group"; lab.textContent="Florals";
     bgSwatchEl.append(lab);
+    // A way back. Once a frame is chosen the only exit was to notice that the solid chips
+    // above also clear it, which is not obvious when the florals are what you came for.
+    // "__none" is its own key so it does not double-highlight with the Studio chip; it
+    // returns to the default wall and marks itself whenever no floral is active.
+    mk("__none", BACKGROUNDS[0] ? BACKGROUNDS[0][1] : "#e6e6e6", "No frame");
     FLORALS.forEach(([bg,src,label])=>mk(bg,"img:"+src,label));
   }
   // Reveal the group from CONTENT, not from an engine flag. #bgGroup is display:none in the
@@ -1900,7 +1932,11 @@ function buildBgSwatches(){
 function markBgSel(){
   if(!bgSwatchEl) return;
   const sel = _petEngine ? (state.petGround||"dark") : (state.backdrop||"studio");
-  [...bgSwatchEl.children].forEach(c=>c.classList.toggle("sel",(c.dataset.bg||"")===sel));
+  const onFloral = FLORAL_KEYS.indexOf(sel) >= 0;
+  [...bgSwatchEl.children].forEach(c=>{
+    const k = c.dataset.bg || "";
+    c.classList.toggle("sel", k === "__none" ? !onFloral : k === sel);
+  });
 }
 function selectBackground(bg){
   bg = bg || null;
@@ -1910,6 +1946,7 @@ function selectBackground(bg){
     invalidate(); render(state.ink,{animate:false});
     return;
   }
+  if(bg === "__none") bg = "studio";           // clearing a frame returns to the default wall
   if((state.backdrop||null)===(bg||null)) return;
   userTouched=true; state.backdrop=bg; markBgSel();
   { const _st=$("#stage"); if(_st) _st.classList.toggle("cutout", bg==="transparent"); }
