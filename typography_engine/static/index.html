@@ -856,7 +856,7 @@
 <div id="zoomView" class="zoomview">
   <button id="zoomClose" class="zoomclose" aria-label="Close">&times;</button>
   <img id="zoomImg" alt="your typortrait, up close" />
-  <div id="zoomNote" class="zoomnote"><span id="zoomLoad" class="zoomload" style="display:none">Loading a sharper view… &middot; </span>Digital downloads &amp; prints are at a higher resolution than this preview.</div>
+  <div id="zoomNote" class="zoomnote"><span id="zoomLoad" class="zoomload" style="display:none">Preparing the print-quality view… &middot; </span><span id="zoomReal" class="zoomload" style="display:none">Actual print detail, full size &middot; tap to zoom out &middot; </span>Digital downloads &amp; prints are at a higher resolution than this preview.</div>
 </div>
 
 <div id="saveModal" class="savemodal" role="dialog" aria-modal="true" aria-labelledby="saveTitle">
@@ -2970,8 +2970,47 @@ $("#zoomBtn").addEventListener("click", ()=>{
   else zoomImg.addEventListener("load", ()=>{ recalcZoomMax(); applyZoom(); }, {once:true});
   loadZoomHiRes();   // swap in a sharper render when it's ready
 });
-zoomImg.addEventListener("click", e=>{ e.stopPropagation(); zScale = (zScale>=zMax-0.01) ? 1 : Math.min(zMax, zScale+1); applyZoom(); });
-function closeZoom(){ zoomView.classList.remove("on"); }
+// Clicking to look closer swaps in a TRUE 1:1 crop of the delivered file rather than
+// enlarging the preview. Measured (ops/preview-fidelity.sh): a glyph is 4.0px on screen,
+// 6.1px in the whole-frame loupe, 11.0px in the download -- so enlarging the loupe shows a
+// 6px mark blown up, which is blur presented as detail at the moment someone is deciding
+// whether the words are really there. Raising the loupe's resolution does not reach it
+// either; 3000px only gets to 9.2px. Only the delivered file has letterforms in it.
+//
+// Composed on demand and cached server-side by the same call the download uses, so a buyer
+// pays that wait once and downloads instantly afterwards. Gated on an actual zoom, so
+// idle opens of the loupe cost nothing.
+let zoomCrop=false;
+function exitCrop(){
+  zoomCrop=false;
+  const key=zoomKey();
+  zoomImg.src = zoomHiCache[key] || portrait.getAttribute("src") || zoomImg.src;
+  zScale=1; zoomImg.addEventListener("load", ()=>{ recalcZoomMax(); applyZoom(); }, {once:true});
+  const n=document.getElementById("zoomReal"); if(n) n.style.display="none";
+}
+zoomImg.addEventListener("click", async e=>{
+  e.stopPropagation();
+  if(zoomCrop){ exitCrop(); return; }                 // second click returns to the whole frame
+  if(!currentJob){ zScale = (zScale>=zMax-0.01) ? 1 : Math.min(zMax, zScale+1); applyZoom(); return; }
+  const r=zoomImg.getBoundingClientRect();
+  const cx=Math.min(Math.max((e.clientX-r.left)/Math.max(r.width,1),0),1);
+  const cy=Math.min(Math.max((e.clientY-r.top)/Math.max(r.height,1),0),1);
+  setZoomLoading(true);
+  const img=new Image();
+  img.onload=()=>{
+    zoomCrop=true; zScale=1; zoomImg.src=img.src; zoomImg.style.width="100%";
+    zoomImg.style.cursor="zoom-out"; setZoomLoading(false);
+    const n=document.getElementById("zoomReal"); if(n) n.style.display="";
+  };
+  img.onerror=()=>{   // fall back to the old behaviour rather than stranding the viewer
+    setZoomLoading(false);
+    zScale = (zScale>=zMax-0.01) ? 1 : Math.min(zMax, zScale+1); applyZoom();
+  };
+  img.src="/loupe/"+encodeURIComponent(currentJob)
+        +"?cx="+cx.toFixed(4)+"&cy="+cy.toFixed(4)
+        +"&brand="+encodeURIComponent(typeof BRAND_ID!=="undefined"?(BRAND_ID||""):"");
+});
+function closeZoom(){ zoomView.classList.remove("on"); if(zoomCrop) exitCrop(); }
 $("#zoomClose").addEventListener("click", closeZoom);
 zoomView.addEventListener("click", e=>{ if(e.target===zoomView) closeZoom(); });
 window.addEventListener("keydown", e=>{ if(e.key==="Escape") closeZoom(); });

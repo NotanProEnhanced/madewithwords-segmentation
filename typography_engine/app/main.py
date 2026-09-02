@@ -1348,6 +1348,57 @@ def suggest_words_enabled() -> JSONResponse:
     return JSONResponse({"ok": True, "available": bool(suggest.enabled())})
 
 
+@app.get("/loupe/{job}")
+def loupe_crop(job: str, cx: float = 0.5, cy: float = 0.5, brand: str = ""):
+    """A TRUE 1:1 crop of the delivered file, watermarked, for "view up close".
+
+    The whole-frame loupe cannot answer the question it invites. Measured with
+    ops/preview-fidelity.sh: a typical glyph is 4.0px in the on-screen preview, 6.1px in
+    the 2000px loupe and 11.0px in the delivered 3600px file. Everything under ~10px reads
+    as texture, so a customer clicking "view up close" and zooming was shown a 6px mark
+    enlarged -- blur, at the moment they are deciding whether the words are really there.
+    Raising the loupe's width does not fix it: 3000px only reaches 9.2px. Nothing short of
+    delivered resolution shows a letterform, which is why this crops the delivered file
+    itself rather than rendering a bigger preview.
+
+    Cost is one composition per job, cached by _ensure_clean_png -- the same work the
+    download does, moved to the moment the customer asked to wait. A buyer pays it once
+    either way and gets an instant download afterwards.
+
+    Only ever returns a small WATERMARKED crop. The clean file never leaves /download."""
+    if not _JOB_RE.match((job or "").strip().lower()):
+        raise HTTPException(status_code=404)
+    clean = _ensure_clean_png(job)
+    if clean is None or not clean.exists():
+        raise HTTPException(status_code=404)
+    try:
+        import io as _io
+        from PIL import Image as _PI
+        im = _PI.open(clean).convert("RGB")
+        W, H = im.size
+        # A window sized so the crop arrives at ~1:1 on a normal screen: big enough to show
+        # several words in context, small enough that it is never a usable substitute for
+        # the paid file (it is a fraction of the frame, and watermarked).
+        win = max(320, min(1400, int(round(min(W, H) * 0.30))))
+        cx = min(max(float(cx), 0.0), 1.0); cy = min(max(float(cy), 0.0), 1.0)
+        x = int(round(cx * W - win / 2)); y = int(round(cy * H - win / 2))
+        x = max(0, min(x, W - win)); y = max(0, min(y, H - win))
+        buf = _io.BytesIO()
+        im.crop((x, y, x + win, y + win)).save(buf, format="PNG")
+        out = buf.getvalue()
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(e))
+    try:
+        from .pipeline.watermark import add_watermark
+        out = add_watermark(out, brand=brand)
+    except Exception:  # noqa: BLE001 -- a crop must never be served unmarked
+        raise HTTPException(status_code=500, detail="watermark_failed")
+    return Response(content=out, media_type="image/png",
+                    headers={"Cache-Control": "private, max-age=600"})
+
+
 @app.get("/mask/{job}")
 def auto_mask(job: str):
     """Return the AUTOMATIC background mask (PNG, white = subject) for a stored
