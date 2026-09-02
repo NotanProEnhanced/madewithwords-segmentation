@@ -260,8 +260,17 @@ _POSTER = {
 # main.py ROUTES the photo (Original) Mosaic/Passage renders through the Lifelike engine
 # instead. Env-gated (TYPO_LAYERED_PHOTO) so it's off until validated on staging.
 def lifelike_route_on() -> bool:
-    """Whether Mosaic/Passage (Original ink) should render through the Lifelike engine."""
-    return os.environ.get("TYPO_LAYERED_PHOTO", "0").strip().lower() not in ("0", "false", "off", "no", "")
+    """Whether Mosaic/Passage (Original ink) should render through the Lifelike engine.
+
+    Default ON. With it off, choosing Passage -- which is what pasting a tribute produces --
+    drops the render to the layered mosaic engine: even rows of repeated words, and the Type
+    Colour control inert because that renderer takes its palette another way. Only
+    LovedInWords carried the flag, so the same photograph and the same words rendered as a
+    portrait on one brand and as a wall of text on the others.
+
+    TYPO_LAYERED_PHOTO=0 restores the layered route.
+    """
+    return os.environ.get("TYPO_LAYERED_PHOTO", "1").strip().lower() not in ("0", "false", "off", "no", "")
 
 
 def custom_poster(hex_in: str):

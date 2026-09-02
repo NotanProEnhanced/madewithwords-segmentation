@@ -2113,6 +2113,7 @@ function refreshSizeStrip(){ if(_petEngine) return; markSizeSel(); allowedMf.for
 function resetSizeThumbs(){ if(sizeStripEl) sizeStripEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.remove("loading"); }); }
 async function renderSizeThumb(mf){
   if(!state.file) return;
+  _autoStyleFromWords();
   const myGen=gen;
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
@@ -2742,6 +2743,12 @@ function showBusy(animate){
 }
 async function render(ink,{animate=false,background=false,thumb=false,hires=false}={}){
   if(!state.file) return;
+  // Decide the format from the text BEING RENDERED, not from typing events. Listening on
+  // "input" alone was wrong: the field is also replaced programmatically -- "Suggest words"
+  // swaps a pasted tribute for a word list -- and assigning to .value fires no event, so the
+  // style stayed on whatever the tribute had set. A word portrait then rendered as a passage,
+  // and on brands without TYPO_LAYERED_PHOTO that dropped to the layered renderer entirely.
+  _autoStyleFromWords();
   if(KEEPSAKE) animate=false;   // keepsake shows the portrait in a scene; skip the canvas fly-in
   const myGen=gen;
   if(!background && !thumb && !hires) showBusy(animate);
