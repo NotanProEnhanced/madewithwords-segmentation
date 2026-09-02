@@ -8,7 +8,7 @@ value-add and a genuine differentiator versus flowers or a plain print.
 
 Approach: never crop the face. Each target is a solid canvas in the portrait's own
 ground color (sampled from the master's border, so the seam is invisible) with the
-whole portrait scaled to *contain* inside it, centred, plus a whisper of vignette for
+whole portrait scaled to *contain* inside it, centered, plus a whisper of vignette for
 depth. Pure Pillow + NumPy (both already dependencies); no new packages.
 """
 from __future__ import annotations
@@ -48,7 +48,7 @@ def _mat(master: Image.Image, tw: int, th: int, ground: Tuple[int, int, int],
          fit_w: float, fit_h: float, center_y: float = 0.5,
          vignette: float = 0.16) -> Image.Image:
     """Place the whole portrait on a `tw x th` ground canvas, scaled to fit within
-    `fit_w`/`fit_h` of the canvas (contain — never cropped), centred at `center_y`."""
+    `fit_w`/`fit_h` of the canvas (contain — never cropped), centered at `center_y`."""
     canvas = Image.new("RGB", (tw, th), ground)
     if vignette > 0:
         dark = Image.new("RGB", (tw, th), (0, 0, 0))
@@ -73,7 +73,7 @@ def build_wallpaper_set(master_png: bytes) -> Dict[str, bytes]:
     """From the 4:5 print master, return {'phone','desktop','square'} PNG bytes.
 
     - phone   1290x2796 (9:19.5) — lock screen; face sits above where you grip it.
-    - desktop 2560x1440 (16:9)   — background; portrait centred, matted sides.
+    - desktop 2560x1440 (16:9)   — background; portrait centered, matted sides.
     - square  2048x2048 (1:1)    — social / profile sharing.
     """
     master = Image.open(io.BytesIO(master_png)).convert("RGB")

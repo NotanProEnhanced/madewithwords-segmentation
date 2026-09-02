@@ -149,7 +149,7 @@ def run_batch(manifest_path: str, images_dir: str, out_width: int, supersample: 
     idir = Path(images_dir)
     for row in rows:
         if BATCH.get("cancel"):
-            BATCH["log"].append("cancelled by user")
+            BATCH["log"].append("canceled by user")
             break
         item = (row.get("item_id") or "").strip()
         BATCH["current"] = item

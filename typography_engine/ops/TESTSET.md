@@ -8,7 +8,7 @@ Deliberately outside every tree, so a revert cannot take it.
 
 The engine is deterministic — `rng` is seeded with a fixed value — so the same photograph
 and the same words produce a byte-identical render. That is what makes `compare-testset.sh`
-exact: two runs either are the same render or they are not, and there is no judgement in it.
+exact: two runs either are the same render or they are not, and there is no judgment in it.
 It only holds if the photographs and the words never change. Add images; never edit or
 replace one.
 
@@ -58,7 +58,7 @@ rest of the set, and save as the filename given — the leading number is how
 
 **11-black-dog.jpg**
 > A photorealistic studio portrait of a black Labrador, head and chest, facing the camera.
-> Charcoal grey seamless backdrop, soft key light from the upper left. The dog's dark fur
+> Charcoal gray seamless backdrop, soft key light from the upper left. The dog's dark fur
 > and the dark background are close in tone, with only rim light separating them. Sharp
 > focus on the eyes. Natural fur texture, no collar, no props. Vertical 4:5 portrait.
 
@@ -76,7 +76,7 @@ loses low-confidence edges and the body drops out, leaving a floating head.*
 
 **13-dog-and-cat.jpg**
 > A photorealistic studio portrait of a golden retriever and a tabby cat sitting side by
-> side, close together, both facing the camera, heads nearly touching. Mid-grey seamless
+> side, close together, both facing the camera, heads nearly touching. Mid-gray seamless
 > backdrop, soft frontal lighting. A small gap of visible background between their bodies
 > below where their heads meet. Vertical 4:5 portrait.
 
@@ -86,7 +86,7 @@ is what `PET_HOLE_MAX` was introduced for, and it has never been tested on anima
 **14-dog-sitting.jpg**
 > A photorealistic full-body studio portrait of a beagle sitting upright on a plain floor,
 > facing the camera, front legs straight and clearly apart with visible background between
-> them and beneath its chest. Light grey seamless backdrop, soft even lighting, the whole
+> them and beneath its chest. Light gray seamless backdrop, soft even lighting, the whole
 > animal within the frame with space below it. Vertical 4:5 portrait.
 
 *Why: **the important one.** A large, genuine, fully enclosed pocket of background that is
@@ -96,7 +96,7 @@ threshold will prove to be measuring the wrong thing.*
 
 **15-fluffy-dog.jpg**
 > A photorealistic studio portrait of a long-haired Border Collie, head and chest, facing
-> the camera. Mid-tone blue-grey seamless backdrop, soft key light. Long wispy fur at the
+> the camera. Mid-tone blue-gray seamless backdrop, soft key light. Long wispy fur at the
 > edges of the ears and chest breaking up the silhouette against the background. Sharp
 > focus on the eyes. Vertical 4:5 portrait.
 

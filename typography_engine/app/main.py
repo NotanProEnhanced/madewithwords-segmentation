@@ -359,7 +359,7 @@ def _ba_slider_html(before: str = "/static/lovedinwords/before.jpg",
 </style>
 <div class="bfa">
  <img class="bfa-base" src="{_v(after)}" alt="The same face, formed entirely from the words that describe them">
- <img class="bfa-top" src="{_v(before)}" alt="A favourite photograph">
+ <img class="bfa-top" src="{_v(before)}" alt="A favorite photograph">
  <div class="bfa-line"></div>
  <div class="bfa-knob"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M10 7 5 12l5 5M14 7l5 5-5 5" stroke="#1b2340" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
  <span class="bfa-tag bfa-l">Their photo</span>
@@ -422,18 +422,18 @@ def _liw_landing_html(request: Request) -> str:
     return f'''<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{name} &mdash; Memorial portraits made from the words you loved them by</title>
-<meta name="description" content="{name} turns a favourite photograph into a portrait made entirely of the words that describe someone you love — a lasting memorial keepsake. Digital download, archival prints and framed pieces.">
+<meta name="description" content="{name} turns a favorite photograph into a portrait made entirely of the words that describe someone you love — a lasting memorial keepsake. Digital download, archival prints and framed pieces.">
 <link rel="canonical" href="{base}/">
 {_fav_links(b["fav"])}
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{name}">
 <meta property="og:title" content="{name} — remembered in their own words">
-<meta property="og:description" content="A favourite photograph, made into a portrait woven from the words that describe someone you love.">
+<meta property="og:description" content="A favorite photograph, made into a portrait woven from the words that describe someone you love.">
 <meta property="og:image" content="{og}{hero_img}">
 <meta property="og:url" content="{base}/">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{name} — remembered in their own words">
-<meta name="twitter:description" content="A favourite photograph, made into a portrait woven from the words that describe someone you love.">
+<meta name="twitter:description" content="A favorite photograph, made into a portrait woven from the words that describe someone you love.">
 <meta name="twitter:image" content="{og}{hero_img}">
 <script type="application/ld+json">{schema_ld}</script>
 <style>
@@ -449,7 +449,7 @@ def _liw_landing_html(request: Request) -> str:
  header nav a:hover{{color:var(--navy)}}
  /* Narrow screens (iPhone): the brand + nav don't fit one row, so the labels wrapped
     mid-word ("Loved in / Words", "Redeem a / code"). white-space:nowrap keeps each label
-    intact at every width; here we also stack -- brand centred on top, nav centred on its
+    intact at every width; here we also stack -- brand centered on top, nav centered on its
     own line -- so nothing collides. */
  @media(max-width:640px){{
    header{{flex-direction:column;gap:12px;padding:14px 0}}
@@ -510,7 +510,7 @@ def _liw_landing_html(request: Request) -> str:
   <div class="herotext">
    <div class="eyebrow">A Lasting Tribute</div>
    <h1>Someone you love, remembered in their own words.</h1>
-   <p class="lead">{name} turns a favourite photograph into a portrait made entirely of the words that
+   <p class="lead">{name} turns a favorite photograph into a portrait made entirely of the words that
     describe them &mdash; their name, the roles they filled, the qualities you&rsquo;ll always carry.</p>
    <div class="cta">
     <a class="btn" href="{create}">Create a tribute</a>
@@ -918,7 +918,7 @@ def _studio_publish(item_id: str, png_bytes: bytes) -> None:
 
 
 def _studio_form_params(item_id, words, ground, ink, breathe, sculpt):
-    """Normalise + validate submitted studio params. Returns (item, words_list,
+    """Normalize + validate submitted studio params. Returns (item, words_list,
     params_dict, error_message). error_message is non-empty on any validation fail."""
     item = gallery_catalog.get(item_id)
     if not item or not gallery_catalog.base_path(item_id):
@@ -1225,7 +1225,7 @@ def _consent_given(val) -> bool:
 _GEO_BLOCK_DETAIL = ("To comply with the Illinois Biometric Information Privacy "
                      "Act (BIPA), Typortrait is not currently available to visitors "
                      "located in Illinois. We're sorry for the inconvenience.")
-_BIO_CONSENT_DETAIL = ("Creating a portrait analyses facial geometry from your photo. "
+_BIO_CONSENT_DETAIL = ("Creating a portrait analyzes facial geometry from your photo. "
                        "Please confirm the biometric-data consent to continue.")
 
 
@@ -1247,7 +1247,7 @@ async def measure(request: Request, image: UploadFile = File(...), crop: Optiona
                   biometric_consent: str = Form("")) -> JSONResponse:
     """Lightweight pre-render check: detect the subject's face and return its
     width as a fraction of the photo, plus the word sizes that stay readable for
-    that framing. The studio calls this on upload so it can grey out size options
+    that framing. The studio calls this on upload so it can gray out size options
     (e.g. Small) that would produce unreadable type for a far/small subject."""
     gate = _compliance_gate(request, biometric_consent)
     if gate is not None:
@@ -1583,7 +1583,7 @@ async def render(
 
     from .pipeline.tonal import _PALETTES, _GRADIENTS, render_layered_png, custom_poster, lifelike_route_on
     # "custom" = a user-picked color (a (ground, ink) poster pair built from the
-    # hex). Only the layered Words/Message renderer honours it; everything else
+    # hex). Only the layered Words/Message renderer honors it; everything else
     # falls back. Invalid/absent hex -> not custom.
     # The Custom chip is gone from the studio; this catches a cached page or a
     # replayed/hand-made POST so no NEW render can reach the flat sculpt path.
@@ -1604,7 +1604,7 @@ async def render(
     ground_choice = ground if ground in ("paper", "navy", "black") else "navy"
     # "Match your space" backdrop: recolors ONLY the segmented background behind the
     # subject (a named wall color), leaving the Lifelike sculpt untouched. Displacement
-    # only; unknown/blank => None => legacy background behaviour.
+    # only; unknown/blank => None => legacy background behavior.
     # Solid "match your space" walls + the floral FRAMES (wildflowers/roses/eucalyptus/line).
     # A floral key routes the render through the Paper-sculpt + watercolor-mat path (the
     # pipeline forces the Paper ground when it sees a floral backdrop); stored + replayed on
@@ -2116,7 +2116,7 @@ def llms_txt(request: Request) -> Response:
                   f"- 16x20 framed print — ${fr/100:.0f}",
                   "- \"Keep them close\" family set (framed print + smaller prints) — $149",
                   "- Gift codes, redeemable for a personalized portrait"]
-        how = ["1. Upload a favourite photograph of the person being remembered.",
+        how = ["1. Upload a favorite photograph of the person being remembered.",
                "2. Choose the words — their name, the roles they filled, the qualities you loved (or paste an obituary and we draw the words from it).",
                "3. Receive a keepsake: a high-resolution digital download with free wallpapers, plus optional archival prints and framed pieces."]
         pages = [("Home", "/"), ("About", "/about"), ("FAQ", "/faq"),
@@ -2360,7 +2360,7 @@ def _trust_doc(slug: str, b: dict) -> Optional[dict]:
  <p>Bookstores, gift shops, fundraisers and event organisers can offer our framed portraits at wholesale,
   drop-shipped directly to the customer &mdash; no inventory to carry. Ask us for current wholesale pricing.</p>
  <h2>Marketplaces &amp; platforms</h2>
- <p>Run a platform your members would value this on? We offer white-label and prepaid gift-code fulfilment with
+ <p>Run a platform your members would value this on? We offer white-label and prepaid gift-code fulfillment with
   per-referral revenue share &mdash; the same model that powers our marketplace partnerships, ready to plug into
   your checkout or memorial pages.</p>
  <h2>Let&rsquo;s talk</h2>
@@ -2368,7 +2368,7 @@ def _trust_doc(slug: str, b: dict) -> Optional[dict]:
   <a href="mailto:{partners_email}">{partners_email}</a> &mdash; a real person will reply, usually within one
   business day.</p>'''
         return {"pt": "Partners", "eyebrow": "Partner Program", "h1": f"Partner with {name}",
-                "meta": f"Partner with {name} — affiliate & referral commissions, wholesale prints, and white-label / marketplace fulfilment.",
+                "meta": f"Partner with {name} — affiliate & referral commissions, wholesale prints, and white-label / marketplace fulfillment.",
                 "body": body}
 
     if slug == "how-its-made":
@@ -2470,7 +2470,7 @@ button{background:#2e3a5c;color:#fff;border:0;border-radius:24px;padding:12px 24
 <div><label>Words (comma-separated)</label><input type="text" name="words" value="BUDDY, GOOD BOY, LOYAL, RESCUE, FETCH, ZOOMIES, CUDDLES"></div>
 <div><label>Ground</label><select name="ground">
 <option value="dark">Gallery dark &mdash; the hero look</option>
-<option value="mid">Neutral grey</option>
+<option value="mid">Neutral gray</option>
 <option value="charcoal">Charcoal</option>
 <option value="paper">Paper (ink look &mdash; dark-furred pets only)</option>
 <option value="slate">Slate (dark-furred pets only)</option></select></div>
@@ -2628,7 +2628,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
     # Attribution: the storefront sends its brand (or an explicit ?ref) so per-brand and
-    # per-partner revenue breaks out in the admin referral funnel. Sanitised; the metadata
+    # per-partner revenue breaks out in the admin referral funnel. Sanitized; the metadata
     # ref is what _track_purchase_once records as the sale's `source`. Falls back to "gallery".
     src = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40] or "gallery"
     title = str(it.get("title") or "Typortrait")[:120]
@@ -2704,7 +2704,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
         return JSONResponse({"ok": False, "error": "stripe_error", "detail": str(e)}, status_code=502)
     try:
         # job_id carries the gallery item with a sentinel prefix so the shared
-        # fulfilment/order machinery can tell gallery orders from personalized ones.
+        # fulfillment/order machinery can tell gallery orders from personalized ones.
         orders_db.create_pending(
             order_id=order_id, stripe_session_id=session.id, job_id=f"gallery:{item}",
             sku=sku, size=None, variant_id=variant_id, price_cents=eff_price,
@@ -3680,7 +3680,7 @@ def checkout(
             status_code=400,
         )
     if product.bundle_items:
-        variant_id = product.bundle_items[0][0]   # representative variant: keeps the order row + paid-gate happy (fulfilment expands the full bundle)
+        variant_id = product.bundle_items[0][0]   # representative variant: keeps the order row + paid-gate happy (fulfillment expands the full bundle)
     order_id = uuid.uuid4().hex[:16]
     ext = "svg" if fmt == "svg" else "png"
     label_size = f" — {size}" if size else ""
@@ -3759,7 +3759,7 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
     digital download / on-screen proof, cached as `{job}.png`); a physical order
     passes its product's true aspect (e.g. 0.75 for an 18x24 poster) and the file
     is composed + cached per aspect (`{job}.a750.png`) so the art matches the
-    physical size -- face centred, ground-padded, never cropped or stretched."""
+    physical size -- face centered, ground-padded, never cropped or stretched."""
     recipe_path = PRIVATE_DIR / f"{job}.json"
     src_path = PRIVATE_DIR / f"{job}.src"
     if not recipe_path.exists() or not src_path.exists():
@@ -3904,7 +3904,7 @@ def _bundle_readme(label: str) -> str:
 def _ensure_wallpaper_bundle(job: str) -> Optional[Path]:
     """Build (once) the 'digital everywhere' ZIP for a job: the print master plus
     phone / desktop / square wallpapers and a short read-me. Cached on disk next to
-    the other job artefacts, brand-labelled from the recipe. Returns None if the
+    the other job artifacts, brand-labeled from the recipe. Returns None if the
     clean master can't be produced or the bundle can't be built (callers fall back
     to the single print PNG so a purchase is never broken by this value-add)."""
     zip_path = PRIVATE_DIR / f"{job}.bundle.zip"
@@ -3928,7 +3928,7 @@ def _ensure_wallpaper_bundle(job: str) -> Optional[Path]:
             z.writestr("Read Me.txt", _bundle_readme(label))
         tmp.replace(zip_path)
         return zip_path
-    except Exception:  # noqa: BLE001 — never break fulfilment; caller falls back to PNG
+    except Exception:  # noqa: BLE001 — never break fulfillment; caller falls back to PNG
         return None
 
 
@@ -4175,7 +4175,7 @@ def _fulfill_with_printful(order_id: str, recipient: dict) -> None:
         # Compose the high-res print file FIRST so Printful's fetch hits a READY file.
         # (Was a background warm that RACED the order POST: Printful fetches the file
         # during order creation, and for a multi-item bundle the still-composing file
-        # pushed the POST past its read timeout. Fulfilment runs off the webhook now,
+        # pushed the POST past its read timeout. Fulfillment runs off the webhook now,
         # so blocking ~30-45s here is fine.)
         job_id = o["job_id"]
         if str(job_id).startswith("gallery:"):
@@ -4235,8 +4235,8 @@ def _fulfill_with_printful(order_id: str, recipient: dict) -> None:
 
 # ============================= Redemption codes =============================
 # A redemption code is a prepaid ticket for ONE product: the recipient enters it
-# at /redeem, personalises the portrait in the normal studio, and the EXISTING
-# fulfilment path (digital download or _fulfill_with_printful) runs with NO Stripe
+# at /redeem, personalizes the portrait in the normal studio, and the EXISTING
+# fulfillment path (digital download or _fulfill_with_printful) runs with NO Stripe
 # charge — the sale already happened off-platform (an EverLoved order, a gift, a
 # pre-need arrangement). ADDITIVE + FLAG-GATED (TYPO_REDEEM_ENABLED): every route
 # here 404s in prod until deliberately enabled, so the live studio/checkout is
@@ -4431,7 +4431,7 @@ def redeem_fulfill(
     zip_code: Optional[str] = Form(None, alias="zip"),
     phone: Optional[str] = Form(None),
 ):
-    """Consume the code and run fulfilment with NO Stripe charge. Digital → sign a
+    """Consume the code and run fulfillment with NO Stripe charge. Digital → sign a
     download link. Physical → create a $0 paid order and hand it to the same
     Printful path the webhook uses. Atomic: begin_redeem is the double-spend guard;
     any failure releases the code so the customer can retry."""
@@ -4575,7 +4575,7 @@ def redeem_download(job: str, code: str, exp: str, sig: str, fmt: str = "zip"):
 
 def _redeem_notify(product, code: str, *, order_id, email, recipient) -> None:
     """Best-effort admin-only 'redemption fulfilled' email so the operator sees
-    partner/gift redemptions land. Never raises into the fulfilment path."""
+    partner/gift redemptions land. Never raises into the fulfillment path."""
     try:
         code_fmt = redeem_db.format_code(code)
         summary = {
@@ -4875,7 +4875,7 @@ async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Hea
     )
     if transitioned and recipient and transitioned.get("variant_id"):
         import threading
-        # Off the webhook: fulfilment composes a high-res file (~30-45s) which would
+        # Off the webhook: fulfillment composes a high-res file (~30-45s) which would
         # blow Stripe's ~10s webhook timeout. The webhook returns immediately.
         threading.Thread(target=_fulfill_with_printful,
                          args=(transitioned["id"], recipient), daemon=True).start()
@@ -5941,7 +5941,7 @@ def terms(request: Request):
             "<li>it does not depict a minor without the consent of their parent or guardian.</li></ul>"
             "<p>You are solely responsible for the images and words you submit. You grant Typortrait a limited license to process your image and text only to create and deliver your portrait.</p>"),
         ("4. Prohibited uses", "<p>Do not use the Service for unlawful, infringing, deceptive, or harmful purposes; do not upload other people&rsquo;s images without permission; do not resell or redistribute the Service itself.</p>"),
-        ("5. Purchases and refunds", "<p>Prices are shown at checkout and processed securely by Stripe. The preview is free and watermarked; payment unlocks a watermark-free, high-resolution download for your personal and gift use. Digital files are delivered immediately: by purchasing you agree to that immediate delivery and, where applicable, acknowledge that you waive your 14-day right of withdrawal once the download begins. Personalised prints are made to order. If anything is wrong &mdash; a quality issue with your file, or a print that arrives damaged or not as ordered &mdash; <b>we&rsquo;ll fix it or refund it</b>. See our <a href=\"/refunds\">Refund Policy</a> for the details.</p>"),
+        ("5. Purchases and refunds", "<p>Prices are shown at checkout and processed securely by Stripe. The preview is free and watermarked; payment unlocks a watermark-free, high-resolution download for your personal and gift use. Digital files are delivered immediately: by purchasing you agree to that immediate delivery and, where applicable, acknowledge that you waive your 14-day right of withdrawal once the download begins. Personalized prints are made to order. If anything is wrong &mdash; a quality issue with your file, or a print that arrives damaged or not as ordered &mdash; <b>we&rsquo;ll fix it or refund it</b>. See our <a href=\"/refunds\">Refund Policy</a> for the details.</p>"),
         ("6. Intellectual property", "<p>You receive a license to use your generated portrait for personal, non-commercial purposes, including printing and gifting. Typortrait retains all rights in the Service, software, and brand.</p>"),
         ("6.5 Optional social-sharing license", "<p>After purchase you may, at your option, generate a short shareable &ldquo;reel&rdquo; version of your portrait. At that step you will see two checkboxes:</p><ul>"
             "<li><b>Personal use</b> &mdash; confirms that you will share the reel yourself. This does not transfer any rights to Typortrait.</li>"
@@ -5960,9 +5960,9 @@ def refunds(request: Request):
     blocks = [
         ("Our promise", "<p>We want you to love your portrait. If anything is wrong, tell us &mdash; <b>we&rsquo;ll fix it or refund it.</b> Email <a href='mailto:support@typortrait.com'>support@typortrait.com</a>.</p>"),
         ("Digital downloads", "<p>Your watermark-free download is delivered instantly, so purchases are generally final once delivered. But if the file has a quality problem &mdash; a poor likeness, a rendering glitch, or the wrong file &mdash; we will <b>re-create it or refund you in full</b>. Just contact us with your order details.</p>"),
-        ("Prints &amp; physical products", "<p>Prints are made to order, so we don&rsquo;t accept &ldquo;changed my mind&rdquo; returns on a personalised item. But if your print arrives <b>damaged, defective, or not as ordered</b>, we&rsquo;ll <b>reprint or refund it</b> &mdash; send us a photo of the issue and we&rsquo;ll make it right.</p>"),
+        ("Prints &amp; physical products", "<p>Prints are made to order, so we don&rsquo;t accept &ldquo;changed my mind&rdquo; returns on a personalized item. But if your print arrives <b>damaged, defective, or not as ordered</b>, we&rsquo;ll <b>reprint or refund it</b> &mdash; send us a photo of the issue and we&rsquo;ll make it right.</p>"),
         ("How to request a refund", "<p>Email <a href='mailto:support@typortrait.com'>support@typortrait.com</a> with your order number (and a photo, for print issues). Approved refunds go back to your original payment method via Stripe, usually within a few business days.</p>"),
-        ("EU/UK customers", "<p>For digital downloads you agree at checkout to immediate delivery and acknowledge that you lose your 14-day right of withdrawal once the download begins. Personalised prints are likewise exempt from the 14-day withdrawal right. None of this affects your statutory rights regarding faulty goods, which we always honour.</p>"),
+        ("EU/UK customers", "<p>For digital downloads you agree at checkout to immediate delivery and acknowledge that you lose your 14-day right of withdrawal once the download begins. Personalized prints are likewise exempt from the 14-day withdrawal right. None of this affects your statutory rights regarding faulty goods, which we always honor.</p>"),
     ]
     return _policy_page("Refund Policy", blocks, _trust_brand(request.headers.get("host", "")))
 
@@ -5982,14 +5982,14 @@ def privacy(request: Request):
                 "<p>We do <b>not</b> collect photos, images, or biometric data of any kind.</p>"),
             ("How we use it", "<p>Solely to process and deliver your order, provide support, take payment, and operate, secure and improve the site. We do not sell your personal information.</p>"),
             ("Payments", "<p>Payments are handled by <b>Stripe</b>. Your card details go directly to Stripe over an encrypted connection &mdash; we never see or store them.</p>"),
-            ("Print fulfilment", "<p>For physical orders we share only what is needed &mdash; your shipping details and the artwork &mdash; with our print-on-demand partner (<b>Printful</b>) so they can produce and ship your item.</p>"),
+            ("Print fulfillment", "<p>For physical orders we share only what is needed &mdash; your shipping details and the artwork &mdash; with our print-on-demand partner (<b>Printful</b>) so they can produce and ship your item.</p>"),
             ("Retention", "<p>We keep order, payment and transaction records only as long as needed to provide the service and to meet tax, accounting, and other legal obligations, then delete or anonymise them.</p>"),
             ("Sharing and sub-processors", "<p>We share personal data only with the providers needed to run the store:</p><ul>"
                 "<li><b>Stripe</b> &mdash; payment processing.</li>"
-                "<li><b>Printful</b> &mdash; print-on-demand fulfilment, physical orders only (receives your shipping details).</li>"
+                "<li><b>Printful</b> &mdash; print-on-demand fulfillment, physical orders only (receives your shipping details).</li>"
                 "<li><b>IONOS</b> &mdash; hosting and infrastructure.</li>"
                 "<li><b>Umami</b> &mdash; privacy-first, cookieless analytics.</li></ul>"
-                "<p>We <b>do not sell or &ldquo;share&rdquo;</b> your personal information (as defined under U.S. state privacy laws), and we do not use it for cross-context behavioural advertising. We may disclose information if required by law.</p>"),
+                "<p>We <b>do not sell or &ldquo;share&rdquo;</b> your personal information (as defined under U.S. state privacy laws), and we do not use it for cross-context behavioral advertising. We may disclose information if required by law.</p>"),
             ("Cookies", "<p>We use only the essential cookies needed for checkout and to keep the site functioning. We do not run third-party advertising trackers.</p>"),
             ("International transfers", "<p>We operate from the United States, so if you are outside the U.S. your information is transferred to and processed there. Where required, we rely on appropriate safeguards (such as the EU Standard Contractual Clauses).</p>"),
             ("Your rights", "<p>Depending on where you live (including under the EU/UK GDPR, California&rsquo;s CCPA/CPRA, and Canada&rsquo;s PIPEDA), you may have rights to access, correct, delete, or port the personal information associated with your order, and to object to or restrict its processing. To exercise them, email <a href='mailto:{c}'>{c}</a>. We will not discriminate against you for exercising your rights.</p>".format(c=_POLICY_CONTACT)),
@@ -6006,12 +6006,12 @@ def privacy(request: Request):
             "<li><b>Payment information</b>, processed by Stripe. We do not see or store your full card details.</li>"
             "<li><b>Order and contact details</b> (e.g., email; shipping address for prints).</li>"
             "<li><b>Basic technical data</b> (e.g., server logs, approximate region) needed to operate and secure the Service.</li></ul>"),
-        ("Legal bases (GDPR/UK GDPR)", "<p>Where the UK/EU GDPR applies, we rely on: <b>your explicit consent</b> to analyse facial geometry (a special category of data &mdash; we ask before processing); <b>performance of a contract</b> to create and deliver your portrait and fulfil orders; and our <b>legitimate interests</b> in operating, securing, and improving the Service. You can withdraw consent at any time, which stops further processing.</p>"),
+        ("Legal bases (GDPR/UK GDPR)", "<p>Where the UK/EU GDPR applies, we rely on: <b>your explicit consent</b> to analyze facial geometry (a special category of data &mdash; we ask before processing); <b>performance of a contract</b> to create and deliver your portrait and fulfill orders; and our <b>legitimate interests</b> in operating, securing, and improving the Service. You can withdraw consent at any time, which stops further processing.</p>"),
         ("How we use it", "<p>To generate and deliver your portrait, process your payment and any print order, provide support, and operate, secure, and improve the Service. We do <b>not</b> use your photo to train face-recognition systems, and we do not use it to identify anyone.</p>"),
         ("Storage and retention", f"<p>Your uploaded photo and generated files are stored only to provide your preview and download, and are <b>automatically deleted after about {RETENTION_DAYS} days</b>. Facial geometry is computed in memory at render time and discarded immediately &mdash; no faceprint is retained. You can request earlier deletion at any time via our <a href=\"/data-request\">data request page</a>.</p>"
             "<p>We may retain limited order, payment, and transaction records for longer where required for tax, accounting, fraud-prevention, or other legal obligations. We also keep a minimal <b>record of your consent</b> (the fact that you consented and confirmed your age &mdash; no photo or biometric data) for longer, so we can demonstrate that consent was given.</p>"
             "<p>For resilience, we keep encrypted, off-site backups. After you delete your data (or it reaches the deletion period above), a copy may persist in those backups for a short additional period &mdash; about 35 days &mdash; until they rotate and it is purged. Deletions you request take effect in the live Service immediately.</p>"),
-        ("Sharing and sub-processors", "<p>We share personal data only with the service providers (sub-processors) needed to run Typortrait:</p><ul><li><b>Stripe</b> &mdash; payment processing (we never see your full card details).</li><li><b>Printful</b> &mdash; print-on-demand fulfilment, physical orders only (receives your shipping details).</li><li><b>IONOS</b> &mdash; hosting and infrastructure (stores your photo and order data on our behalf).</li><li><b>OpenAI</b> &mdash; content moderation of the words you type (never your photo).</li><li><b>Umami</b> &mdash; privacy-first, cookieless analytics.</li><li><b>Backblaze B2</b> &mdash; encrypted, off-site backups of your data (United States), so we can recover the Service after a failure.</li></ul><p>We <b>do not sell or &ldquo;share&rdquo;</b> your personal information (as those terms are defined under U.S. state privacy laws), and we do not use it for cross-context behavioural advertising. We may disclose information if required by law. This list may change as our providers do; the &ldquo;last updated&rdquo; date above reflects the current set.</p>"
+        ("Sharing and sub-processors", "<p>We share personal data only with the service providers (sub-processors) needed to run Typortrait:</p><ul><li><b>Stripe</b> &mdash; payment processing (we never see your full card details).</li><li><b>Printful</b> &mdash; print-on-demand fulfillment, physical orders only (receives your shipping details).</li><li><b>IONOS</b> &mdash; hosting and infrastructure (stores your photo and order data on our behalf).</li><li><b>OpenAI</b> &mdash; content moderation of the words you type (never your photo).</li><li><b>Umami</b> &mdash; privacy-first, cookieless analytics.</li><li><b>Backblaze B2</b> &mdash; encrypted, off-site backups of your data (United States), so we can recover the Service after a failure.</li></ul><p>We <b>do not sell or &ldquo;share&rdquo;</b> your personal information (as those terms are defined under U.S. state privacy laws), and we do not use it for cross-context behavioral advertising. We may disclose information if required by law. This list may change as our providers do; the &ldquo;last updated&rdquo; date above reflects the current set.</p>"
             "<p><b>Optional social feature.</b> After purchase you may generate a shareable &ldquo;reel&rdquo;; it appears on our channels only if you explicitly tick the optional box (off by default). See section 6.5 of the <a href=\"/terms\">Terms of Use</a>.</p>"),
         ("International transfers", "<p>We operate from the United States, so if you are outside the U.S. your information is transferred to and processed there. Where required, we rely on appropriate safeguards (such as the EU Standard Contractual Clauses) and/or your consent.</p>"),
         ("Your rights", "<p>Depending on where you live, you may have rights to access, correct, delete, port, or object to/restrict processing of your data, and to withdraw consent. To exercise them, use our <a href=\"/data-request\">data request page</a> or email us. We will not discriminate against you for exercising your rights, and we respond within the time limits the law requires.</p>"),
@@ -6020,7 +6020,7 @@ def privacy(request: Request):
             "<b>Personal Information Protection and Electronic Documents Act (PIPEDA)</b> and substantially similar provincial "
             "laws, including <b>Quebec&rsquo;s Law&nbsp;25</b> and the personal-information laws of British Columbia and Alberta. "
             "We collect, use, and disclose personal information only for the purposes described in this policy, and we obtain "
-            "your <b>express consent</b> before analysing the facial geometry in your photo &mdash; sensitive information that "
+            "your <b>express consent</b> before analyzing the facial geometry in your photo &mdash; sensitive information that "
             "we process transiently and <b>never retain as a faceprint</b>. We do <b>not</b> create or maintain a biometric "
             "database (see our <a href=\"/biometric-policy\">Biometric Data Policy</a>). You may <b>access or correct</b> your "
             "information, <b>withdraw consent</b>, or request its deletion at any time through our "
@@ -6041,14 +6041,14 @@ def privacy(request: Request):
 def biometric_policy(request: Request):
     blocks = [
         ("What this covers", "<p>This Biometric Data Policy explains how Typortrait handles facial geometry, including for the purposes of the Illinois Biometric Information Privacy Act (BIPA) and similar laws. It is our publicly available written policy for biometric data.</p>"),
-        ("What we analyse and why", "<p>To turn your photo into a typographic portrait, our software analyses the geometry of the face in the image (the relative positions of facial features) so it can place the type along the contours of the face. This face-geometry analysis is the only biometric processing we perform, and its sole purpose is to render the artwork you requested.</p>"),
+        ("What we analyze and why", "<p>To turn your photo into a typographic portrait, our software analyzes the geometry of the face in the image (the relative positions of facial features) so it can place the type along the contours of the face. This face-geometry analysis is the only biometric processing we perform, and its sole purpose is to render the artwork you requested.</p>"),
         ("We do not store a faceprint", "<p>The facial geometry is computed in memory at the moment of rendering and then discarded. We do <b>not</b> create, store, or maintain a biometric template or &ldquo;faceprint,&rdquo; and we do <b>not</b> use it to identify you or anyone else, for face recognition, for surveillance, or to train such systems.</p>"),
         ("Consent", "<p>Before we process your photo, we ask you to confirm that you understand this analysis and consent to it, and that you have the right to upload the image. We do not process the face until you give that consent, and you can withdraw it at any time.</p>"),
         ("Retention and destruction", f"<p>Because we keep no biometric template, there is nothing biometric to retain beyond the moment of rendering. The <b>source photo</b> you upload is stored only to provide your preview and download and is automatically deleted after about {RETENTION_DAYS} days, or sooner on request, and purged from our encrypted off-site backups as they rotate (within about 35 days). This is our written retention schedule and destruction guideline for biometric data.</p>"),
         ("No sale or disclosure", "<p>We do not sell, lease, trade, or otherwise profit from biometric data, and we do not disclose it to third parties except as strictly necessary to provide the Service or as required by law.</p>"),
         ("Canada (PIPEDA &amp; Quebec Law&nbsp;25)", "<p>For visitors in Canada, the facial-geometry analysis described here is "
             "performed transiently and immediately discarded: we do <b>not</b> create, store, or maintain a biometric "
-            "database. We obtain your <b>express consent</b> before any analysis and honour withdrawal and deletion requests, "
+            "database. We obtain your <b>express consent</b> before any analysis and honor withdrawal and deletion requests, "
             "consistent with <b>PIPEDA</b> and <b>Quebec&rsquo;s Law&nbsp;25</b>. You can withdraw consent and request deletion "
             "at any time via our <a href=\"/data-request\">data request page</a>.</p>"),
         ("Availability", "<p>To reduce risk, the Service may be unavailable to visitors in certain locations (for example, Illinois). Where it is available, the protections above apply.</p>"),
@@ -6127,7 +6127,7 @@ async def data_request_submit(
     details: str = Form(""),
 ):
     """Self-serve data request. A valid job ID is deleted immediately; every
-    request is logged server-side so the operator can fulfil non-job requests
+    request is logged server-side so the operator can fulfill non-job requests
     within the statutory window (see data/data_requests.log)."""
     jid = (job_id or "").strip().lower()
     deleted = _purge_job(jid) if jid else 0

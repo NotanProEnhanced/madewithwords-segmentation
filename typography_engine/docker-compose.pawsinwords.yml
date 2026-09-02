@@ -48,7 +48,7 @@ services:
       - PRINTFUL_STORE_ID=${PRINTFUL_STORE_ID:-}
       - PRINTFUL_API_BASE=${PRINTFUL_API_BASE:-https://api.printful.com}
       - PRINT_URL_SECRET=${PRINT_URL_SECRET:-}
-      # Starts as DRAFTS (safe). Set PRINTFUL_CONFIRM=true in .env to fulfil real prints.
+      # Starts as DRAFTS (safe). Set PRINTFUL_CONFIRM=true in .env to fulfill real prints.
       - PRINTFUL_CONFIRM=${PRINTFUL_CONFIRM:-false}
       - UMAMI_WEBSITE_ID=${UMAMI_WEBSITE_ID:-}
       - UMAMI_HOST=${UMAMI_HOST:-https://cloud.umami.is}

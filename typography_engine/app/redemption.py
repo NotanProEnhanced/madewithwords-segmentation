@@ -2,8 +2,8 @@
 
 A code is a prepaid ticket for exactly one product. A partner (EverLoved), a
 gift buyer, or a pre-need arrangement sells/hands out a code; the recipient
-enters it at /redeem, personalises the portrait in the normal studio, and the
-existing fulfilment path (digital download or Printful print) runs with NO
+enters it at /redeem, personalizes the portrait in the normal studio, and the
+existing fulfillment path (digital download or Printful print) runs with NO
 Stripe charge — the sale already happened off-platform.
 
 Design mirrors app/orders.py: a single-file DB under data/ (volume-mounted so
@@ -15,7 +15,7 @@ Lifecycle:  unused --begin_redeem--> redeeming --complete_redeem--> used
                                          +--release (on failure) --> unused
 
 `begin_redeem` is the atomic double-spend guard: it flips unused->redeeming in
-one UPDATE and only the winning caller proceeds to fulfilment. If fulfilment
+one UPDATE and only the winning caller proceeds to fulfillment. If fulfillment
 then fails, `release` returns the code to unused so the customer can retry. A
 code left 'redeeming' by a crash is reclaimed after REDEEM_STALE_SECONDS.
 """
@@ -37,7 +37,7 @@ _LOCK = threading.Lock()
 _ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 _GROUPS = 3          # LIW-XXXX-XXXX-XXXX
 _GROUP_LEN = 4
-# A code stuck in 'redeeming' longer than this (server died mid-fulfilment) is
+# A code stuck in 'redeeming' longer than this (server died mid-fulfillment) is
 # considered abandoned and becomes redeemable again.
 REDEEM_STALE_SECONDS = 15 * 60
 
@@ -157,7 +157,7 @@ def is_redeemable(code: str) -> bool:
 # --- Atomic redeem --------------------------------------------------------
 
 def begin_redeem(code: str) -> Optional[Dict[str, Any]]:
-    """Atomically claim a code for fulfilment: flip unused->redeeming (or reclaim
+    """Atomically claim a code for fulfillment: flip unused->redeeming (or reclaim
     a stale redeeming) in a single UPDATE. Returns the row dict if THIS caller won
     the claim, else None (unknown code, already used, or a fresh in-flight claim).
     The winner must then call complete_redeem (success) or release (failure)."""

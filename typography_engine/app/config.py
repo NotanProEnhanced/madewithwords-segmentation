@@ -202,8 +202,8 @@ GATHER_ENABLED = (os.environ.get("TYPO_GATHER_ENABLED", "").strip().lower()
 # to expose it. The studio link reveal probes /gallery, so it tracks this flag.
 GALLERY_ENABLED = (os.environ.get("TYPO_GALLERY_ENABLED", "").strip().lower()
                    in ("1", "true", "yes", "on"))
-# Redemption codes (gift/pre-need/partner fulfilment: a code buys the personalize+
-# fulfil flow WITHOUT Stripe). Default OFF so every /redeem route stays inert in prod
+# Redemption codes (gift/pre-need/partner fulfillment: a code buys the personalize+
+# fulfill flow WITHOUT Stripe). Default OFF so every /redeem route stays inert in prod
 # until deliberately enabled (e.g. on staging first). Same additive, flag-gated shape
 # as the gallery: when off, the codes DB is never touched and the studio is unchanged.
 REDEEM_ENABLED = (os.environ.get("TYPO_REDEEM_ENABLED", "").strip().lower()
@@ -238,7 +238,7 @@ LOUPE_PNG_WIDTH = env_int("TYPO_LOUPE_PX", 2000)
 # Print/download long-edge width in px. 3600 clears Printful's 150-PPI floor with
 # margin on every catalogued size: 225 PPI on 16x20, 200 PPI on 18x24 (the widest
 # product) -- crisp paper prints, ~35s to compose (warmed in the background at
-# fulfilment, behind a spinner for the digital download). Bump to 4320 for 240 PPI.
+# fulfillment, behind a spinner for the digital download). Bump to 4320 for 240 PPI.
 DOWNLOAD_PNG_WIDTH = env_int("TYPO_DOWNLOAD_PX", 3600)
 # Uploaded photos, previews and generated files are auto-deleted after this many
 # days so the Privacy Policy's retention statement stays accurate.
@@ -252,7 +252,7 @@ RETENTION_DAYS = env_int("TYPO_RETENTION_DAYS", 30)
 CONSENT_RETENTION_DAYS = env_int("TYPO_CONSENT_RETENTION_DAYS", 2555)
 
 # --- Privacy / biometric compliance (GDPR special-category, BIPA, CCPA) ------
-# We analyse facial geometry from the uploaded photo to place the type; that is
+# We analyze facial geometry from the uploaded photo to place the type; that is
 # "biometric" under BIPA and "special-category data" under GDPR. We store NO
 # faceprint/template (the mesh is computed transiently and discarded), and the
 # source photo auto-deletes per RETENTION_DAYS -- but we still need notice +

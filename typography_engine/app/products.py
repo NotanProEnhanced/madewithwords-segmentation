@@ -22,8 +22,8 @@ class Product:
     price_cents: int              # retail price the customer pays (excl. shipping)
     shipping_cents: int           # flat US shipping the customer pays
     physical: bool                # True if Printful-fulfilled; False = digital
-    # Print canvas aspect (width / height) the fulfilment file is rendered to, so
-    # the art matches the physical size with the face centred and ground-padded
+    # Print canvas aspect (width / height) the fulfillment file is rendered to, so
+    # the art matches the physical size with the face centered and ground-padded
     # (never cropped or stretched). 4:5 = 0.8 for 16x20 / digital; 18x24 = 0.75.
     print_aspect: float = 0.8
     printful_variant_id: Optional[int] = None  # required if physical
@@ -33,8 +33,8 @@ class Product:
     # Tag shown on the product card. Optional.
     tag: Optional[str] = None
     # Bundle: several Printful line items in ONE order, as (variant_id, qty). When
-    # set, printful_variant_id is None and fulfilment expands these. All items must
-    # share one print aspect, so a single render fulfils the whole order.
+    # set, printful_variant_id is None and fulfillment expands these. All items must
+    # share one print aspect, so a single render fulfills the whole order.
     bundle_items: Optional[List[Tuple[int, int]]] = None
     # Show only on the memorial (lovedinwords) brand -- e.g. grief-framed bundles.
     memorial_only: bool = False
@@ -182,7 +182,7 @@ CATALOG: List[Product] = [
         price_cents=2900, shipping_cents=800, physical=True,
         print_aspect=1.25, printful_variant_id=3877,
     ),
-    # --- Bundles (memorial brand only). Single-aspect, so one render fulfils every
+    # --- Bundles (memorial brand only). Single-aspect, so one render fulfills every
     # item; variant IDs are the same verified Printful catalog IDs used above.
     Product(
         sku="bundle_family",

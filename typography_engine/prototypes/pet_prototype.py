@@ -39,13 +39,13 @@ _FONT = next((p for p in [
 GROUNDS = {                     # BGR
     "paper": (232, 240, 244),   # warm ivory -> ink-on-paper look
     "dark":  (40, 26, 20),      # deep navy  -> colors pop (most portrait-like)
-    "slate": (216, 221, 226),   # cool gallery grey
+    "slate": (216, 221, 226),   # cool gallery gray
 }
 
 
 def foreground_mask(bgr):
     """GrabCut with a border-init rectangle -- no model download. Good enough for a
-    centred subject on a distinct background (the common pet-photo case). In the app
+    centered subject on a distinct background (the common pet-photo case). In the app
     this is replaced by a real matte; here it just has to be serviceable."""
     h, w = bgr.shape[:2]
     mask = np.zeros((h, w), np.uint8)
@@ -62,7 +62,7 @@ def foreground_mask(bgr):
 
 
 def detail_map(gray):
-    """Local detail = smoothed Laplacian energy, normalised 0..1. High on eyes,
+    """Local detail = smoothed Laplacian energy, normalized 0..1. High on eyes,
     nose, whiskers and fur edges; low on flat body. This is the landmark-free
     stand-in for the face-mesh feature anchoring."""
     lap = np.abs(cv2.Laplacian(gray.astype(np.float32), cv2.CV_32F, ksize=3))

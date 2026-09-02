@@ -118,7 +118,7 @@ def main():
 
     if args.status in ("shipped", "delivered"):
         raise SystemExit(
-            "refusing --status=%s: that asserts a fulfilment we have not verified.\n"
+            "refusing --status=%s: that asserts a fulfillment we have not verified.\n"
             "If you have proof they shipped (a Printful billing charge, a tracking\n"
             "number), that proof belongs in the record -- set the status by hand for\n"
             "those specific orders rather than sweeping all of them into it."
@@ -217,7 +217,7 @@ def main():
     print("  %s" % backup_dir)
     print("back over data/orders.db, and start it again.")
     print()
-    print("This changed our records only. It did not cancel, refund or fulfil")
+    print("This changed our records only. It did not cancel, refund or fulfill")
     print("anything, and it does not establish whether these customers received")
     print("a print.")
 

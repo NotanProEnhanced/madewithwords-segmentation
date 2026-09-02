@@ -45,19 +45,19 @@ PAPER_FAMILY = frozenset({"paper"})
 # the region OUTSIDE the subject silhouette. The subject is rendered exactly as its
 # ground dictates (e.g. the navy Lifelike sculpt), untouched. Values are BGR wall
 # colors a buyer can match to a room. `None`/unknown => the legacy TYPO_BG_LIGHTEN
-# behaviour (navy sculpt on a lifted-grey backdrop).
+# behavior (navy sculpt on a lifted-gray backdrop).
 BACKDROPS = {
-    "studio": (230, 230, 230),  # the DEFAULT "Studio" wall -- a light neutral grey (#e6e6e6).
+    "studio": (230, 230, 230),  # the DEFAULT "Studio" wall -- a light neutral gray (#e6e6e6).
                                 # Explicit (not the legacy TYPO_BG_LIGHTEN lift) so the studio swatch
                                 # tile matches the render exactly; near-neutral => vibrance/sat leave it put.
-    "gray":  (236, 236, 236),   # soft neutral gallery grey
+    "gray":  (236, 236, 236),   # soft neutral gallery gray
     "ivory": (232, 240, 244),   # warm off-white
     "sand":  (208, 228, 238),   # warm oat / beige
     "slate": (226, 221, 216),   # cool light slate -- RETIRED from the picker (it read as
                                 # the same chip as studio, 14 levels apart) but kept here:
                                 # recipes stored before that carry backdrop="slate", and a
                                 # paid file must replay as the buyer approved it.
-    "sage":  (208, 222, 214),   # muted green-grey
+    "sage":  (208, 222, 214),   # muted green-gray
     "blush": (222, 222, 236),   # soft warm rose
 }
 
@@ -196,7 +196,7 @@ def _sclera_value(gray, all_face_pts, scl, floor=0.60):
     """Per-eye contrast-stretched sclera shading for EVERY subject's eyes. Real sclera
     is not a flat disc: the upper lid shadows its top, it falls off toward the inner/
     outer corners, and it curves away at the edges. Stretching each eye's OWN luminance
-    restores that natural gradient, while normalising PER EYE keeps even a shaded eye
+    restores that natural gradient, while normalizing PER EYE keeps even a shaded eye
     bright (so the dark-merge fix holds without the artificial, uniform-value look).
     `all_face_pts` is a list of per-face landmark arrays; a one-face list reproduces the
     single-subject result exactly (each eye's pixels are set directly, never clamped)."""
@@ -435,7 +435,7 @@ def render_displacement_portrait(
     # Soft alpha matte (hair-preserving feathered edge). Used for the SUBJECT edge and all
     # subject/background compositing so the silhouette doesn't read as a hard "cardboard"
     # cut. Falls back to a gently-blurred binary edge when matting is off/unavailable, so
-    # behaviour is unchanged then. mask01 stays BINARY for density/geometry/guards.
+    # behavior is unchanged then. mask01 stays BINARY for density/geometry/guards.
     _soft = getattr(an.silhouette, "soft", None)
     if _soft is not None:
         soft01 = np.clip(cv2.resize(_soft.astype(np.float32) / 255.0, (W, H),
@@ -462,7 +462,7 @@ def render_displacement_portrait(
     s = float(np.clip(face_frac / 0.47, 0.5, 1.3))   # subject-relative scale (hero anchor = 0.47)
 
     # --- Living eyes: true iris geometry from MediaPipe's iris landmarks ------
-    # (centre + 4-point ring per eye, 478-point mesh only). Drives a round pupil,
+    # (center + 4-point ring per eye, 478-point mesh only). Drives a round pupil,
     # an iris-scaled text tier, a real catchlight, and -- separately gated -- the
     # person's true eye color. Both irises must resolve large enough to carry
     # structure; otherwise every step below falls back to the legacy behavior.
@@ -470,7 +470,7 @@ def render_displacement_portrait(
     # portrait renders identical eyes on all subjects. Each face runs the SAME gates:
     # openness (eye-aspect-ratio), dark-pupil backstop, and dark-lens (sunglasses). A
     # face that fails a gate renders as plain words there; the other faces are
-    # unaffected. Single-subject renders reproduce the previous behaviour exactly.
+    # unaffected. Single-subject renders reproduce the previous behavior exactly.
     # Opacity is MANUAL now (the `sunglasses` flag), not auto-detected: brightness/pupil
     # heuristics cannot separate a tinted lens from a real eye and kept mis-firing (black
     # holes on real eyes, or fabricated eyes on real sunglasses). TYPO_DARKLENS stays only
@@ -620,7 +620,7 @@ def render_displacement_portrait(
                     _pup.append(float(np.percentile(gray[_disc > 0], 10)))
                     _scl.append(float(np.percentile(gray[_ring > 0], 75)))
             # Real-eye VETO (SPATIAL): a real open eye has a bright sclera in the RING right around
-            # the iris and a much darker pupil at the centre. A tinted lens is dark right up to the
+            # the iris and a much darker pupil at the center. A tinted lens is dark right up to the
             # pupil -- no bright ring. Measuring the ring (not the whole box, whose edges catch
             # skin) is what reliably keeps a BARE-EYED subject from being blacked out ("dark
             # circles") when the toggle is on for someone else. Both eyes must show it.
@@ -640,7 +640,7 @@ def render_displacement_portrait(
                 continue
             # else: a real open eye (veto) or bright eyes -> render normally
         # Dark-pupil backstop: a real open eye has a dark pupil in a lighter iris. If the
-        # centre isn't darker than the surround the mesh isn't sitting on an eye -- render
+        # center isn't darker than the surround the mesh isn't sitting on an eye -- render
         # plain words there rather than fabricate an eyeball.
         ratios = []
         scleras = []
@@ -729,8 +729,8 @@ def render_displacement_portrait(
     # Dark-lens gray fill: darken the lens region so the density/displacement field stays
     # low there (helps the lens read as an opaque dark surface). Alpha is cleared below too.
     # Anchor it to the EYELID hull (Leye/Reye) -- the reliable lens position -- NOT the iris
-    # centres: behind sunglasses MediaPipe frequently guesses the iris landmarks and can drop
-    # them onto the brow, so an iris-centred fill paints stray dark circles on the forehead
+    # centers: behind sunglasses MediaPipe frequently guesses the iris landmarks and can drop
+    # them onto the brow, so an iris-centered fill paints stray dark circles on the forehead
     # above the lenses. The eyelid hull is where the opaque alpha fill lands too, so the two
     # stay registered on the actual lens.
     if _dark_lens_eyes:
@@ -831,7 +831,7 @@ def render_displacement_portrait(
     # with visibly different type: one global scale, taken from one of them.
     #
     # With a single face these are identical to the old global values, so nothing changes on
-    # a one-subject photograph. TYPO_PER_FACE=0 restores the previous behaviour.
+    # a one-subject photograph. TYPO_PER_FACE=0 restores the previous behavior.
     _perface = (os.environ.get("TYPO_PER_FACE", "1").strip().lower()
                 not in ("0", "false", "no", "off"))
     # The PRIMARY face keeps exactly `fw`, and the others are scaled relative to it by
@@ -996,7 +996,7 @@ def render_displacement_portrait(
             # differently from a shorter one's and the type jumps between people. Build a
             # smooth per-COLUMN chin / face-top / face-height by weighting every face's value
             # by horizontal proximity (Gaussian on |x - face_centre|, sigma ~ face width), so
-            # the reference blends seamlessly across neighbours with no seam. Then, instead of
+            # the reference blends seamlessly across neighbors with no seam. Then, instead of
             # a hard step at the chin (which snaps small->large), hold df up right under the
             # chin and DECAY it over ~0.9 face-heights: the neck/upper-chest eases through a
             # medium band before the long ramp grows the type toward the hem -- small (face) ->
@@ -1189,7 +1189,7 @@ def render_displacement_portrait(
         _dx = (float(_gf[_R].mean()) - float(_gf[_L].mean())) if _R.any() and _L.any() else 0.0
         _dy = (float(_gf[_B].mean()) - float(_gf[_T].mean())) if _B.any() and _T.any() else 0.0
         _mag = (_dx * _dx + _dy * _dy) ** 0.5
-        _conf = min(1.0, _mag / 35.0)                    # 35 grey-levels of asymmetry -> full effect
+        _conf = min(1.0, _mag / 35.0)                    # 35 gray-levels of asymmetry -> full effect
         if _conf > 0.05 and _mag > 1e-3:
             _sx, _sy = -_dx / _mag, -_dy / _mag          # shadow direction (away from the light)
             _rad = 0.5 * float(fw) + 1e-3
@@ -1287,7 +1287,7 @@ def render_displacement_portrait(
         _stage("06-anchor-dark", a)
 
     # Round pupil + catchlight from the true iris geometry. The pupil is a
-    # feathered DISC at the iris centre (not the blocky gap the text rows happen
+    # feathered DISC at the iris center (not the blocky gap the text rows happen
     # to leave), and the catchlight sits at the eye's real brightest pixel inside
     # the iris -- the glint that makes the portrait look back at you.
     if irises:
@@ -1479,7 +1479,7 @@ def render_displacement_portrait(
             _stage("15-paper-face", a)
         # Light-hair floor: silver/blonde hair on the ivory washes out (light on light), so a
         # silver-haired subject reads as a floating face. Give the HAIR region an ink-density
-        # floor so light hair renders as delicate grey words instead of vanishing. Dark hair
+        # floor so light hair renders as delicate gray words instead of vanishing. Dark hair
         # already has density (max() leaves it untouched). TYPO_PAPER_HAIR (default 0.35; 0 off).
         _ph = float(os.environ.get("TYPO_PAPER_HAIR", "0.35") or 0.35)
         if _ph > 0.0:
@@ -1543,7 +1543,7 @@ def render_displacement_portrait(
         # color rather than skin, and the portrait comes out far darker than the source.
         # TYPO_SUBJECT_BASE swaps the base inside the mask for the SOURCE PHOTO, dimmed by
         # TYPO_SUBJECT_DIM so the words still read on top of it. The flat ground stays
-        # BEHIND the subject. 0 (default) is byte-identical to the previous behaviour.
+        # BEHIND the subject. 0 (default) is byte-identical to the previous behavior.
         _sb = float(os.environ.get("TYPO_SUBJECT_BASE", "0") or 0.0)
         _base = np.zeros((H, W, 3), np.float32) + np.array(g["bg"], np.float32)
         if _sb > 0.0:
@@ -1614,7 +1614,7 @@ def render_displacement_portrait(
                 _dump("df", _dfa)
                 _tier = np.digitize(_dfa, [0.45, 0.75, 1.0]).astype(np.float32)  # 0..3
                 _dump("tier", _tier / 3.0)
-                # The same tiers painted over the photograph. A grey ramp cannot be read
+                # The same tiers painted over the photograph. A gray ramp cannot be read
                 # against a face -- "is her hair the same tier as his?" is answerable at a
                 # glance here and nowhere else. Red = largest words, blue = smallest.
                 _tc = np.array([(60, 60, 220), (60, 190, 240),
@@ -1660,7 +1660,7 @@ def render_displacement_portrait(
         # Default 1, matching docker-compose.yml. It read "0" here while compose defaulted
         # it ON in every container, so this whole block ran while the code said it did not.
         if os.environ.get("TYPO_POLARITY", "1").strip().lower() in ("1", "true", "on", "yes"):
-            # Polarity model (the paper-grade shadow behaviour, brought to the dark-ground
+            # Polarity model (the paper-grade shadow behavior, brought to the dark-ground
             # Lifelike look). Instead of "light ink whose COVERAGE follows brightness"
             # (shadow -> no ink -> ground shows -> absence), make the type present at HIGH
             # coverage everywhere and carry the tone in the LETTER COLOR across the full
@@ -1782,7 +1782,7 @@ def render_displacement_portrait(
             # The iris is composited over the GROUND, so wherever ink alpha is low the navy
             # ground (13,27,58 RGB -- a saturated dark blue) shows through and a correctly
             # sampled BROWN iris renders BLUE. TYPO_IRIS_ALPHA floors the alpha inside the
-            # iris so the sampled color wins. 0 (default) keeps the previous behaviour.
+            # iris so the sampled color wins. 0 (default) keeps the previous behavior.
             _ia = float(os.environ.get("TYPO_IRIS_ALPHA", "0") or 0.0)
             _ial = np.maximum(al, _ia) if _ia > 0.0 else al
             iout = np.array(g["bg"], np.float32) * (1 - _ial) + tip * _ial
@@ -1838,10 +1838,10 @@ def render_displacement_portrait(
         if irises:
             # Natural sclera shading from each eye's OWN luminance, stretched PER EYE:
             # the real upper-lid shadow and corner falloff come through as a GRADIENT
-            # instead of a flat grey disc, while per-eye normalisation keeps even a
+            # instead of a flat gray disc, while per-eye normalization keeps even a
             # shaded eye bright (preserving the dark-merge fix without the uniform,
             # artificial look). A faint warm-neutral tint reads more like sclera than
-            # a cool grey.
+            # a cool gray.
             scl_val = _sclera_value(gray, _eye_face_pts, scl, floor=(0.70 if paper_feat else 0.58))
             sw = (scl * scl_val * s_str)[..., None]
             out = out * (1.0 - sw) + np.array(s_col, np.float32) * sw
@@ -1853,7 +1853,7 @@ def render_displacement_portrait(
     if irises and (g["tone"] == "light" or ground in PAPER_FAMILY):
         gl3 = glint[..., None]
         out = out * (1.0 - gl3) + np.float32(238.0) * gl3   # bright glint, below blow-out so vibrance doesn't bloom it
-    # Realistic eyes: composite the photo's OWN eye openings, tone-normalised, OVER the
+    # Realistic eyes: composite the photo's OWN eye openings, tone-normalized, OVER the
     # synthetic fill -- the real eye never glows (the synthetic bright sclera/catchlight
     # does). Applied for EVERY ink on a dark ground; the Photo ink keeps it full color,
     # the tinted/monochrome inks (Noir/Sepia/Navy/Sage) then DESATURATE it into the ink's
@@ -1953,7 +1953,7 @@ def render_displacement_portrait(
     # outside the silhouette move. Two sources, in priority order:
     #   1. An explicit `backdrop` swatch (the "match your space" wall color) -- fills
     #      with that color regardless of ground. This is the user-facing feature.
-    #   2. Else the legacy env TYPO_BG_LIGHTEN lift (navy sculpt on a lighter grey),
+    #   2. Else the legacy env TYPO_BG_LIGHTEN lift (navy sculpt on a lighter gray),
     #      dark grounds only (the light "paper" ground is already bright -> skipped).
     _transparent = (backdrop or "").strip().lower() == "transparent"
     _bd = None if _transparent else (BACKDROPS.get((backdrop or "").strip().lower()) if backdrop else None)

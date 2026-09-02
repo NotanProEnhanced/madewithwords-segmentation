@@ -2,7 +2,7 @@
 """Generate & inspect redemption codes.
 
 A redemption code is a prepaid ticket for one product: the recipient enters it
-at /redeem and gets the full personalise + fulfil flow with no Stripe charge
+at /redeem and gets the full personalize + fulfill flow with no Stripe charge
 (the sale happened off-platform — e.g. an EverLoved order, a gift, a pre-need
 arrangement). Codes are one-time use.
 

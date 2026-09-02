@@ -39,7 +39,7 @@ chmod 600 /root/.typortrait-backup.env
 *(For AWS S3 instead: set `RESTIC_REPOSITORY="s3:s3.amazonaws.com/your-bucket"`
 and `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`.)*
 
-## 5. First run (initialises the repo + first backup)
+## 5. First run (initializes the repo + first backup)
 ```bash
 chmod +x /root/typortrait-prod/typography_engine/ops/backup.sh
 chmod +x /root/typortrait-prod/typography_engine/ops/restore.sh
@@ -103,4 +103,4 @@ Step-by-step, command-level recovery instructions are in **ops/RECOVERY-RUNBOOK.
 
 ## What is NOT backed up (by design — it's recoverable elsewhere)
 Code (GitHub) · container images (rebuilt) · `outputs/` (regenerated from
-recipes) · `models/` (re-downloaded) · payments (Stripe) · fulfilment (Printful).
+recipes) · `models/` (re-downloaded) · payments (Stripe) · fulfillment (Printful).

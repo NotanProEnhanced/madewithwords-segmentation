@@ -210,7 +210,7 @@ def silhouette_from_mask(mask: np.ndarray, w: int, h: int) -> Silhouette:
     """Build a Silhouette from a user-supplied mask (manual background removal),
     bypassing automatic segmentation. `mask` may be any size or channel count;
     pixels > 127 are treated as subject (keep). Resized to the working (w, h) with
-    nearest-neighbour so hard painted edges stay crisp. Confidence is high (0.99)
+    nearest-neighbor so hard painted edges stay crisp. Confidence is high (0.99)
     because the user drew it deliberately."""
     m = mask
     if m.ndim == 3:
@@ -230,7 +230,7 @@ def _pad_for_segmentation(img, frac):
     separate person from environment -- measured: the same photo segments
     cleanly uncropped and badly cropped, in two unrelated model families.
     Replicate-pad, blur the synthetic surround so it presents no false edge,
-    then paste the real pixels back over the centre.
+    then paste the real pixels back over the center.
 
     Returns (padded_image, box) where box is (px, py, w, h) for _unpad.
     """

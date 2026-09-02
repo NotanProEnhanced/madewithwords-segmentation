@@ -48,9 +48,9 @@ for any "is this the memorial experience?" decision; use `ref` only for sales at
   unreliable). Before/after slider's "before" is the server‑cropped photo.
 
 **Print sizing (`05c3409`, `9c16b13`):**
-- Per‑product print aspect (face centred, ground‑padded, never cropped): 16×20 → 0.8, 18×24 → 0.75.
+- Per‑product print aspect (face centered, ground‑padded, never cropped): 16×20 → 0.8, 18×24 → 0.75.
 - 200–225 PPI on every size (`DOWNLOAD_PNG_WIDTH=3600`, env `TYPO_DOWNLOAD_PX`). Print file warmed
-  in the background at fulfilment.
+  in the background at fulfillment.
 
 **Type scaling (`8acacfa`):** Sculpt type now scales gradually on tight crops (face‑relative feathering).
 
@@ -89,7 +89,7 @@ mode (silently shipping a degraded portrait of someone's loved one):
   legacy **node** service (`/var/www/typortrait-render/render-api.js`) — NOT the web app; leave it alone.
   Prod canary: `docker exec typortrait python /app/tools/render_canary.py 2>/dev/null`.
 **Privacy compliance — GDPR / CCPA / BIPA (`640a9ec`, `bb7459a`) — LIVE on prod + staging:**
-- **Biometric consent gate:** the studio greys out the photo drop zone until the `#bioConsent` box is
+- **Biometric consent gate:** the studio grays out the photo drop zone until the `#bioConsent` box is
   ticked; `/measure` + `/render` enforce a `biometric_consent` field server-side (400 without it) and
   store a versioned consent record per job. No faceprint is ever stored (mesh is transient).
 - **Illinois geo-block:** `/measure` + `/render` return 451 for blocked regions; studio disables upload

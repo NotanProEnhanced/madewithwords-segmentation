@@ -137,20 +137,20 @@ _MSG_BOOST = 0.5
 # Every render is composed onto a STANDARD PRINT canvas: 4:5 (16"x20", also
 # 8"x10") so the digital file, the Printful print, and the studio's framed
 # presentation all share one true aspect -- no letterbox gaps in the mat and no
-# crop at the printer. The art is fitted centred and the canvas filled with the
+# crop at the printer. The art is fitted centered and the canvas filled with the
 # ground color, which is seamless because the composite ground is solid.
 _PRINT_ASPECT = 0.8          # width / height = 4:5
 
 
 def _fit_print_canvas(arr: np.ndarray, ground, aspect: float = _PRINT_ASPECT) -> np.ndarray:
     """Fit an HxWx3 image onto a `aspect` (width/height) canvas filled with
-    `ground` (RGB/BGR triple matching the array's channel order). Centred;
+    `ground` (RGB/BGR triple matching the array's channel order). Centered;
     downscales only when the image is taller than the canvas allows. Returns the
     array unchanged when it already matches the target aspect.
 
     `aspect` defaults to 4:5 (the digital download / on-screen proof); the print
     path passes each product's true aspect (e.g. 0.75 for an 18x24 poster) so the
-    fulfilment file matches the physical size with the face centred and ground-
+    fulfillment file matches the physical size with the face centered and ground-
     padded -- never cropped or stretched to fit."""
     h, w = arr.shape[:2]
     if h <= 0 or w <= 0:
@@ -247,7 +247,7 @@ _POSTER = {
     "photo":     ("#0a0a0c", None),       # tint from the source color
     # Original on PAPER: the source color rendered as a colored engraving on a
     # warm white. Darkness drives the ink (shadows/features bold) with a floor so
-    # light skin + grey hair still tint instead of vanishing into the paper.
+    # light skin + gray hair still tint instead of vanishing into the paper.
     "photo_paper": ("#f6f1e8", None),
 }
 
@@ -457,7 +457,7 @@ def _eye_ellipses(an, scale: float) -> List[Tuple[float, float, float, float]]:
 
 
 # --- Living eyes: the person's true iris color carried by the glyphs ---------
-# MediaPipe's 478-point mesh includes the irises: centre + 4-point ring per eye.
+# MediaPipe's 478-point mesh includes the irises: center + 4-point ring per eye.
 _IRIS_L = (468, (469, 470, 471, 472))
 _IRIS_R = (473, (474, 475, 476, 477))
 # Faithfulness gate: tint ONLY when the photo itself clearly carries the eye
@@ -499,7 +499,7 @@ def _teeth_mask(pts, h: int, w: int):
     pw = float(p[:, 0].max() - p[:, 0].min())
     ph = float(p[:, 1].max() - p[:, 1].min())
     # Geometry gate. A closed mouth still has a thin inner-lip ring, so this
-    # ratio is the first line of defence against a false positive.
+    # ratio is the first line of defense against a false positive.
     _tr = float(os.environ.get("TYPO_TEETH_MIN_RATIO", "0.12") or 0.12)
     if os.environ.get("TYPO_TEETH_DEBUG", "").strip().lower() in ("1", "true", "on", "yes"):
         try:
@@ -531,7 +531,7 @@ def _teeth_mask_all(faces, scale: float, h: int, w: int):
 def _catchlight_points(an) -> List[Tuple[float, float, float]]:
     """Catchlight positions, one per iris, in WORKING coords: (gx, gy, glint_r).
     Deterministic and consistent between the two eyes -- the classic upper
-    diagonal at ~0.34 r from the iris centre, on the side the face is lit from.
+    diagonal at ~0.34 r from the iris center, on the side the face is lit from.
     (The photo's own brightest-pixel is unreliable: it often sits on the iris
     circle's rim, landing the glint off the iris and differently per eye.)"""
     circles = _iris_circles(an, 1.0)
@@ -554,10 +554,10 @@ def _catchlight_points(an) -> List[Tuple[float, float, float]]:
 def _photo_eye_overlay(bgr_hw, pts, eye_groups, H: int, W: int):
     """REAL-eye overlay -- the single biggest realism lever. Returns
     (eye_bgr (H,W,3) float32, alpha (H,W) float32): the photo's OWN eye openings,
-    per-eye tone-normalised so they read on any ground while KEEPING every bit of the
-    real modelling -- the spherical-curvature falloff, the upper-lid cast shadow, the
+    per-eye tone-normalized so they read on any ground while KEEPING every bit of the
+    real modeling -- the spherical-curvature falloff, the upper-lid cast shadow, the
     lashes, the iris color + texture, the true catchlight. A flat synthetic sclera
-    disc (one uniform grey, no gradient) was the failure this replaces.
+    disc (one uniform gray, no gradient) was the failure this replaces.
 
     Per eye, each eye is processed in its OWN bounding box at a consistent internal
     resolution (small/low-res eyes -- e.g. a phone screenshot, an old scan -- are
@@ -584,7 +584,7 @@ def _photo_eye_overlay(bgr_hw, pts, eye_groups, H: int, W: int):
         # ORBITAL region, not just the eye opening: cover the eyeball AND the lids,
         # lashes and socket so the eye has a real lid + lash + transition into the
         # skin, instead of a bare eyeball in a dark hole. Eyes are wider than tall, so
-        # size the vertical half-axis off the width too, and bias the centre up toward
+        # size the vertical half-axis off the width too, and bias the center up toward
         # the upper lid.
         # Halo geometry: covers the eyeball + lids + a soft socket transition. Kept
         # modest, and the radial alpha below only PARTIALLY composites the orbital, so
@@ -638,7 +638,7 @@ def _sclera_shade(gray, an, scale: float, sm, floor: float = 0.58):
     `_sclera_value`: the sclera must NOT be painted from the photo's own eye pixels
     (on a deep-set/shadowed eye those are near-black, so the white collapses to the
     dark ground -- the eye reads as a black socket with only a glint). Stretching
-    each eye's OWN luminance restores the natural gradient; normalising PER EYE with
+    each eye's OWN luminance restores the natural gradient; normalizing PER EYE with
     a floor keeps even a shaded eye bright. `scale` maps analysis coords -> (H,W)."""
     H, W = gray.shape
     val = np.full((H, W), floor, np.float32)
@@ -1054,7 +1054,7 @@ def build_tonal_portrait(
     # Subject-relative type scale: size the words to the face's SHARE of the
     # frame, so a close-up and a far/loosely-cropped shot of the same person
     # render with consistent word density and recognisability. The size control
-    # (min_font_px) is the MULTIPLIER on this subject-normalised base, not an
+    # (min_font_px) is the MULTIPLIER on this subject-normalized base, not an
     # absolute pixel size -- so "Giant" is reliably giant relative to the person
     # on every photo. face_frac is the face width as a fraction of the source;
     # ref_frac is a typical head-and-shoulders framing (norm = 1.0 there).
@@ -1579,7 +1579,7 @@ def build_poster(
 # mask), giving real photographic richness inside each letter. Shared by both
 # user-facing styles -- "Words" (the mosaic layout) and "Message" (poster rows).
 # Output is a raster (the richness is photographic), composited in code because
-# CairoSVG does not honour SVG masks.
+# CairoSVG does not honor SVG masks.
 # ---------------------------------------------------------------------------
 
 def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = False,
@@ -1642,7 +1642,7 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     # features pick up ink, so the portrait reads instead of becoming a gray mass.
     if ink == "photo_paper":
         # Photo on PAPER: darkness drives the ink (features/shadows bold) with a
-        # 0.30 floor so the brightest skin + grey hair still carry a soft tint
+        # 0.30 floor so the brightest skin + gray hair still carry a soft tint
         # rather than vanishing into the white -- a colored engraving that reads
         # whole. (Distinct from the mono light-engraving formula below.)
         v = np.clip(0.30 + 0.80 * (1.0 - lum), 0.0, 1.0)
@@ -1662,7 +1662,7 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     if ink == "photo_paper":
         # Eye STRUCTURE forced into the ink array (pre-mask), so it renders THROUGH
         # the words (typographic, never a smooth patch). The photo's own eye is too
-        # light to read on paper for light-eyed/grey subjects, so we lay an explicit
+        # light to read on paper for light-eyed/gray subjects, so we lay an explicit
         # light sclera, a dark iris in the person's HUE, a near-black pupil, and dark
         # upper+lower lids -- the gradation an eye needs. compose() then textures it
         # with the type. Coarse at large word sizes (eye = a few words), finer as the
@@ -2051,7 +2051,7 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     # ground (no visible seam).
     # Shield the photographic eye from the vibrance pass below. Pad the eye-overlay
     # alpha onto the print canvas with the SAME call as `out`, so the mask stays
-    # pixel-aligned through any centre/downscale/pad.
+    # pixel-aligned through any center/downscale/pad.
     _eye_guard = None
     if eyes_e:
         # DILATE the eye alpha before using it as the vibrance guard. Vibrance's clarity
@@ -2070,7 +2070,7 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     # ground, so the worded subject (on its dark navy/black ground) sits against a
     # lighter backdrop. The subject's OWN ground is untouched -- only pixels outside
     # the silhouette are lifted. Gated by env TYPO_BG_LIGHTEN (0..1; 0 = off, current
-    # behaviour: background == ground). The lift is a fraction of the way from the
+    # behavior: background == ground). The lift is a fraction of the way from the
     # ground toward white, so it tracks whatever ink/ground is in use.
     try:
         _bg_lift = float(os.environ.get("TYPO_BG_LIGHTEN", "0"))

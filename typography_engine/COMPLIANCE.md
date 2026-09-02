@@ -33,7 +33,7 @@ auto-deletes them after `TYPO_RETENTION_DAYS` (default 30). We don't sell data.
    written policy. Footer links added.
 4. **Self-serve data requests.** `/data-request` (GET form, POST handler):
    a valid 12-char job ID is **deleted immediately** (`_purge_job`); every
-   request is logged to `data/data_requests.log` for fulfilment of
+   request is logged to `data/data_requests.log` for fulfillment of
    access/correction/objection within the statutory window.
 5. **Debug endpoints disabled in prod.** `/debug/preprocess` and `/debug/regions`
    ran face detection with no consent/geo gate; they now 404 unless
@@ -91,7 +91,7 @@ must be set for state-level blocking to match.
       targeted. We do NOT (and cannot reliably) auto-detect CSAM. Required: a
       written response plan (preserve, do not redistribute, **report to NCMEC** per
       18 U.S.C. 2258A), a monitored abuse channel (`report_abuse` on `/data-request`
-      feeds the admin email + log), and -- as volume grows -- enrol in **PhotoDNA**
+      feeds the admin email + log), and -- as volume grows -- enroll in **PhotoDNA**
       or a provider's CSAM scanning. Take this to counsel; it is not a code feature.
 - [ ] **Confirm the biometric treatment.** We treat MediaPipe face-mesh as
       "biometric" (BIPA) / "special-category" (GDPR). Confirm this conservative
@@ -104,7 +104,7 @@ must be set for state-level blocking to match.
       mechanism (SCCs) and the legal-bases wording.
 - [ ] **CCPA/CPRA:** confirm the California-rights section and that no activity
       counts as a "sale" or "share" (Umami is cookieless; confirm Stripe/Printful
-      cookie behaviour — a cookie audit + possible banner for EU visitors).
+      cookie behavior — a cookie audit + possible banner for EU visitors).
 - [ ] **Sub-processor DPAs:** execute/keep Data Processing Agreements with
       Stripe, Printful, the hosting provider, and Umami; maintain a record of
       processing (GDPR Art. 30).

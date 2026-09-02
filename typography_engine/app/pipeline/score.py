@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 
 # The renderers compose onto a 4:5 print canvas (tonal._fit_print_canvas): the
-# art keeps the working-image aspect, centred, ground-padded. The canvas width
+# art keeps the working-image aspect, centered, ground-padded. The canvas width
 # always equals the pre-pad render width, which lets us reconstruct the art
 # rectangle here without threading geometry through every renderer.
 _PRINT_ASPECT = 0.8

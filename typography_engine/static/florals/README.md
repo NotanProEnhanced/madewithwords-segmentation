@@ -16,7 +16,7 @@ Drop the four PNGs here with these exact names (the pipeline loads by key):
 ## Specs
 - Aspect: EXACTLY 4:5 portrait (width:height = 4:5) — must be exact (no stretch/crop).
 - Size: 4800x6000 recommended (300 PPI on 16x20); 3600x4500 minimum.
-- Format: PNG; cream ground ~#f4efe8 to match the Paper ivory; centre kept clear.
+- Format: PNG; cream ground ~#f4efe8 to match the Paper ivory; center kept clear.
 
 ## Notes
 - This directory is bind-mounted, so swapping art needs NO rebuild — just replace

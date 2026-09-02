@@ -96,7 +96,7 @@ def build_reel(cfg):
         after  = _load_fit(cfg["after"], IW, IH)
         IMG_X = (W - IW) // 2
         top = 56 if minimal else 96
-        IMG_Y = top + max(0, ((H - top - 120) - IH) // 2)   # centre in the free band
+        IMG_Y = top + max(0, ((H - top - 120) - IH) // 2)   # center in the free band
     else:
         # Cover-crop both to the square box so the subject sits at the SAME
         # scale/position in each (a plain resize squishes a non-square render).
@@ -124,7 +124,7 @@ def build_reel(cfg):
             scene_img = None
     # Cohesive vertical fill: a heavily blurred, canvas-filling copy of the scene sits behind
     # the sharp framed scene, so the reel reads as one continuous image instead of the scene
-    # centred on a cream slab with hard grey/white bands top and bottom.
+    # centered on a cream slab with hard gray/white bands top and bottom.
     scene_bg = None
     if scene_img is not None:
         scene_bg = ImageOps.fit(scene_img, (W, H), Image.LANCZOS).filter(ImageFilter.GaussianBlur(34))
@@ -163,7 +163,7 @@ def build_reel(cfg):
 
     # The buyer's words, shown as a tidy centered block — uniform font, size and
     # color, no overlap, every word fully inside the frame. Greedy-wrapped into
-    # centred lines that fade in gently, one after another.
+    # centered lines that fade in gently, one after another.
     display_words = [w.upper() for w in dict.fromkeys(words) if w][:12]
     def words_layer(scale):
         layer=Image.new("RGBA",(IW,IH),(0,0,0,0)); d=ImageDraw.Draw(layer)
@@ -227,7 +227,7 @@ def build_reel(cfg):
             # Framed-on-a-desk presentation: the real scene with the portrait (and
             # its before/after slider) playing inside the frame's mat opening.
             if scene_bg is not None:
-                im.paste(scene_bg, (0, 0))          # cohesive blurred fill -> no grey/white bands
+                im.paste(scene_bg, (0, 0))          # cohesive blurred fill -> no gray/white bands
             im.paste(scene_img, scene_pos)
             im.paste(img_for(t), (IMG_X, IMG_Y))
             d = ImageDraw.Draw(im)

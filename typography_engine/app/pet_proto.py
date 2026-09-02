@@ -37,19 +37,19 @@ _FONT = next((p for p in (
 GROUNDS = {                     # BGR
     # TRUE-TONE grounds: glyphs keep the photo's real luminance/color (nothing faded), so a
     # black-AND-white subject keeps BOTH -- white fur reads as bright text, black fur as dark.
-    "mid":      (128, 128, 128),  # neutral mid-grey  -> both extremes contrast (BEST for B&W pets)
+    "mid":      (128, 128, 128),  # neutral mid-gray  -> both extremes contrast (BEST for B&W pets)
     "dark":     (40, 26, 20),     # deep navy         -> light fur pops; dark fur can go muddy
     "charcoal": (60, 56, 52),     # warm charcoal
     # INK-DENSITY grounds (stylised): light tones fade INTO the ground, so white fur disappears.
     # Only suitable for a subject DARKER than the ground (e.g. an all-black or brown pet).
     "paper":    (232, 240, 244),  # warm ivory (ink-on-paper look; dark-furred pets only)
-    "slate":    (216, 221, 226),  # cool gallery grey (dark-furred pets only)
+    "slate":    (216, 221, 226),  # cool gallery gray (dark-furred pets only)
 }
 _FADE_GROUNDS = ("paper", "slate")   # ink-density styling -> fades light tones (loses white fur)
 
 
 def _grabcut_mask(bgr):
-    """GrabCut border-init FALLBACK (no model). Serviceable for a centred subject on a
+    """GrabCut border-init FALLBACK (no model). Serviceable for a centered subject on a
     distinct background; struggles on white fur against a white background."""
     h, w = bgr.shape[:2]
     mask = np.zeros((h, w), np.uint8)
@@ -162,8 +162,8 @@ def _u2net_session():
 
 def _u2net_mask(bgr):
     """Per-pixel foreground matte from the selected model (isnet/u2net), or None on failure.
-    isnet: 1024x1024, /max, mean 0.5 std 1. u2net: 320x320, ImageNet-normalised. Output saliency
-    min-max normalised either way."""
+    isnet: 1024x1024, /max, mean 0.5 std 1. u2net: 320x320, ImageNet-normalized. Output saliency
+    min-max normalized either way."""
     sess = _u2net_session()
     if sess is None:
         return None
@@ -222,7 +222,7 @@ def _solidify_matte(m, w):
     #
     # PET_HOLE_MAX is the largest hole, as a fraction of the subject's own area, that will
     # still be filled. 0.012 sits in that gap with about a factor of two of margin on each
-    # side. PET_HOLE_MAX=0 restores the old behaviour of filling everything.
+    # side. PET_HOLE_MAX=0 restores the old behavior of filling everything.
     #
     # Calibrated on ONE two-subject photograph and on no animals at all. Three subjects, or a
     # dog with a real gap between its legs, are not represented; treat it as well-founded for
@@ -348,7 +348,7 @@ def _rows(stream, W, H, fs, rng, pad=0):
 
 def _enhance_contrast(bgr, mask):
     """Stretch the subject's tones to the full range so black fur reads black and white fur
-    white. The flat grey wash came from compressed midtones -- this is the punch that makes a
+    white. The flat gray wash came from compressed midtones -- this is the punch that makes a
     black-and-white pet read on any ground."""
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     inside = gray[mask > 0.5]
@@ -388,25 +388,25 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     gray0 = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32)
 
     # FEATURE FIELD (eyes/nose), color-agnostic: markedly DARKER (pupil, wet nose, dark-eyed dog)
-    # OR BRIGHTER (light iris, catchlight) than the broad neighbourhood. Computed UP FRONT so it can
+    # OR BRIGHTER (light iris, catchlight) than the broad neighborhood. Computed UP FRONT so it can
     # PROTECT the eyes from the de-whisker and CONFINE the photographic blend to the features. A
-    # uniform coat sits ~= its neighbourhood and scores ~0, so it is never over-processed.
+    # uniform coat sits ~= its neighborhood and scores ~0, so it is never over-processed.
     _fp = float(os.environ.get("PET_FEATURE_PROTECT", "0.7") or 0.7)
     feat = np.zeros_like(gray0)                                            # 0..1 feature field (eyes/nose)
-    broad = cv2.GaussianBlur(gray0, (0, 0), sigmaX=max(1.0, W * float(os.environ.get("PET_FEATURE_SCOPE","0.06") or 0.06)))  # neighbourhood luminance
+    broad = cv2.GaussianBlur(gray0, (0, 0), sigmaX=max(1.0, W * float(os.environ.get("PET_FEATURE_SCOPE","0.06") or 0.06)))  # neighborhood luminance
     if _fp > 0.0:
         localdark = np.clip((broad - gray0) / 55.0, 0, 1) * mask
         locallight = np.clip((gray0 - broad) / 70.0, 0, 1) * mask          # bright side less sensitive (÷70) -> fur/stripes don't register
         raw = np.maximum(localdark, locallight)
         # A feature is a COMPACT region (eye, nose); a whisker or ear-line is a THIN stroke that
-        # also stands out from its neighbourhood. Morphologically OPEN with a kernel wider than a
+        # also stands out from its neighborhood. Morphologically OPEN with a kernel wider than a
         # whisker: compact features survive, thin strokes are erased. This keeps whiskers OUT of the
         # feature field, so they are neither photo-painted nor shielded from the de-whisker below.
         ok = int(max(3, round(W * 0.011))) | 1
         raw = cv2.morphologyEx(raw, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ok, ok)))
         feat = np.clip(cv2.GaussianBlur(raw, (0, 0), sigmaX=max(1.0, W * 0.012)) * 1.6, 0, 1)
-        # The neighbourhood comparison only fires at a feature's RIM: in the middle of a
-        # large dark region (a nose in a tight crop) the neighbourhood is equally dark, so
+        # The neighborhood comparison only fires at a feature's RIM: in the middle of a
+        # large dark region (a nose in a tight crop) the neighborhood is equally dark, so
         # feat reads 0 and the interior falls to the COARSE tier -- big words on the nose.
         # Seal the rim with a small close, then flood-fill from the border: anything the
         # fill cannot reach is interior. Same technique as _solidify_matte. 0 = off.
@@ -523,10 +523,10 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # 3) Blend tiers by the detail field: coarse text on flat body, fine on features. The feature
     #    field is unioned in so an eye/nose INTERIOR (smooth -> low raw detail -> would otherwise
     #    get the COARSE tier and show big words) is pushed to the FINE tier like its detailed rim.
-    # PET_TIER_GAMMA: `det` is normalised by its own 99th percentile. Measured on a real coat it
+    # PET_TIER_GAMMA: `det` is normalized by its own 99th percentile. Measured on a real coat it
     # spans ~0.25-0.90 (p5-p95), which already crosses all three tier bands -- so the
     # default 1.0 is usually correct. Gamma < 1 compresses toward the FINE tiers and
-    # REDUCES size range; > 1 shifts area toward COARSE. 1.0 = previous behaviour.
+    # REDUCES size range; > 1 shifts area toward COARSE. 1.0 = previous behavior.
     _tg = float(os.environ.get("PET_TIER_GAMMA", "1.0") or 1.0)
     df = np.clip(np.maximum(det, feat), 0, 1)
     if _tg > 0.0 and _tg != 1.0:
@@ -535,7 +535,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # whatever is flattest -- often a smooth patch of ruff at the frame edge rather than the
     # face. Raise df toward the subject's periphery so the outer region takes finer tiers and
     # the largest words stay on the head, where a hero word reads as an anchor rather than a
-    # stray banner. Radius is normalised to the mask's own bounding box, so it follows the
+    # stray banner. Radius is normalized to the mask's own bounding box, so it follows the
     # animal rather than the canvas. 0 (default) = unchanged.
     _hc = float(os.environ.get("PET_HERO_CENTRE", "0") or 0.0)
     if _hc > 0.0:
@@ -584,7 +584,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # inside the mask for the SOURCE PHOTO (dimmed by PET_SUBJECT_DIM so the words still
     # read on top of it), leaving the flat ground only BEHIND the subject. The glyphs
     # themselves are unchanged -- this only alters what sits behind them within the mask.
-    # PET_SUBJECT_BASE=0 (default) is byte-identical to the original behaviour.
+    # PET_SUBJECT_BASE=0 (default) is byte-identical to the original behavior.
     _sb = float(os.environ.get("PET_SUBJECT_BASE", "0") or 0.0)
     if _sb > 0.0:
         _dim = float(os.environ.get("PET_SUBJECT_DIM", "0.45") or 0.0)
@@ -654,7 +654,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         out = out * (1.0 - wgt) + photo_rgb * wgt
 
     # 7) Tonal depth: deepen shadows + lift highlights within the subject so black fur reads
-    #    deep (not flat grey) and lit areas glow -- the pet analogue of the engine's 'breathe'.
+    #    deep (not flat gray) and lit areas glow -- the pet analogue of the engine's 'breathe'.
     #    PET_TONAL scales it (0 = off).
     _tone = float(os.environ.get("PET_TONAL", "1.0") or 1.0)
     if _tone > 0.0:
@@ -720,7 +720,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
 def _fit_print_aspect(bgr, mask, aspect):
     """Pad the (matted) subject to a target print aspect (width/height) so the render composes
     on a proper canvas -- e.g. 0.8 = 4:5. Margins get mask=0 so the render fills them with the
-    ground, and the vignette then lights the whole print. Subject is centred (a touch high)."""
+    ground, and the vignette then lights the whole print. Subject is centered (a touch high)."""
     H, W = bgr.shape[:2]
     cur = W / max(1, H)
     if abs(cur - aspect) < 0.005:

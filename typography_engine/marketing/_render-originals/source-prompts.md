@@ -3,7 +3,7 @@
 A record of the ChatGPT image prompts used to generate the marketing assets,
 so they can be reproduced or tweaked later. Three asset types, in pipeline order:
 
-1. **Source photo** — a plain head-and-shoulders portrait on a grey background.
+1. **Source photo** — a plain head-and-shoulders portrait on a gray background.
    This is the *input* you upload to the Typortrait app.
 2. **Render** — the word-art portrait the app produces (`use-children.*`,
    `use-memorial.*`, `use-graduate.*`).
@@ -16,24 +16,24 @@ so they can be reproduced or tweaked later. Three asset types, in pipeline order
 ## 1. Source-photo prompts
 
 > Produce a plain portrait input. Style is consistent across all three:
-> head-and-shoulders, straight-on, soft even light, light-grey seamless
+> head-and-shoulders, straight-on, soft even light, light-gray seamless
 > background, 85mm at f/4, 1:1 square, no text.
 
 ### Children
 > _Reconstructed in the matching house style — replace with your exact prompt if
 > the one you used differed._
 ```
-A photorealistic studio portrait of a happy young child around 5–6 years old, head-and-shoulders, centered and facing the camera straight on, bright cheerful smile and sparkling eyes, lightly tousled hair. Soft even lighting, plain light-grey seamless background, simple casual top. Sharp focus on the eyes, natural skin tones, shot on an 85mm lens at f/4. 1:1 square aspect ratio, high resolution, no props, no text.
+A photorealistic studio portrait of a happy young child around 5–6 years old, head-and-shoulders, centered and facing the camera straight on, bright cheerful smile and sparkling eyes, lightly tousled hair. Soft even lighting, plain light-gray seamless background, simple casual top. Sharp focus on the eyes, natural skin tones, shot on an 85mm lens at f/4. 1:1 square aspect ratio, high resolution, no props, no text.
 ```
 
 ### Memorial
 ```
-A photorealistic studio portrait of a warm, dignified elderly woman in her late 70s, head-and-shoulders, centered and facing the camera straight on, kind gentle expression, soft natural smile, expressive eyes and graceful wrinkles. Soft even lighting, plain light-grey seamless background, simple elegant blouse. Sharp focus on the eyes, natural skin tones, shot on an 85mm lens at f/4. 1:1 square aspect ratio, high resolution, no props, no text.
+A photorealistic studio portrait of a warm, dignified elderly woman in her late 70s, head-and-shoulders, centered and facing the camera straight on, kind gentle expression, soft natural smile, expressive eyes and graceful wrinkles. Soft even lighting, plain light-gray seamless background, simple elegant blouse. Sharp focus on the eyes, natural skin tones, shot on an 85mm lens at f/4. 1:1 square aspect ratio, high resolution, no props, no text.
 ```
 
 ### Graduate
 ```
-A photorealistic studio portrait of a proud young graduate in their early 20s wearing a black graduation cap and gown, head-and-shoulders, centered and facing the camera straight on, confident happy smile. Soft even lighting, plain light-grey seamless background. Sharp focus on the eyes, natural skin tones, shot on an 85mm lens at f/4. 1:1 square aspect ratio, high resolution, no text, no banner.
+A photorealistic studio portrait of a proud young graduate in their early 20s wearing a black graduation cap and gown, head-and-shoulders, centered and facing the camera straight on, confident happy smile. Soft even lighting, plain light-gray seamless background. Sharp focus on the eyes, natural skin tones, shot on an 85mm lens at f/4. 1:1 square aspect ratio, high resolution, no text, no banner.
 ```
 
 ---

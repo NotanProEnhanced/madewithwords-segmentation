@@ -5,7 +5,7 @@
 #     hard "no text/letters" suffix, so each figure looks DISTINCT (state sex, age, hair, and
 #     facial hair explicitly; veils only where iconographically correct; never veil a man).
 # Weighted to proven-demand subjects. Modern real people (recognisable photos + rights/backlash
-# risk) are intentionally excluded in favour of classical, non-photographic saints.
+# risk) are intentionally excluded in favor of classical, non-photographic saints.
 
 Jesus Christ | Life of Christ | a Middle-Eastern man in his early 30s, brown shoulder-length hair and a full brown beard, gentle and serene
 The Sacred Heart of Jesus | Life of Christ | a Middle-Eastern man in his early 30s, brown hair and full beard, a serene compassionate face with open eyes looking straight ahead, a warm golden glow at his chest
@@ -24,13 +24,13 @@ Guardian Angel | Angels | a serene fair young adult with a calm kind face and cl
 St. Raphael the Archangel | Angels | a kind youthful clean-shaven man with warm eyes and a gentle travelers' air, faint soft wings
 
 St. Peter | Apostles & Prophets | a sturdy elderly man about 65, a weathered fisherman's face, short curly white hair and a full white beard
-St. Paul | Apostles & Prophets | a balding man about 50 with a high forehead, a long dark greying beard, intense penetrating eyes
+St. Paul | Apostles & Prophets | a balding man about 50 with a high forehead, a long dark graying beard, intense penetrating eyes
 St. John the Baptist | Apostles & Prophets | a lean ascetic man about 30, wild dark hair and an unkempt dark beard, a rough camel-hair garment
 Moses | Apostles & Prophets | an elderly Middle-Eastern man about 80, weathered skin, long flowing white beard and white hair, resolute
 King David | Apostles & Prophets | a strong Middle-Eastern man about 40, auburn hair and a short reddish beard, a simple golden circlet crown
 St. Mary Magdalene | Apostles & Prophets | a tender Middle-Eastern woman about 30, long loose auburn hair and no veil, a penitent contemplative gaze
 
-St. Joseph | Beloved Patron Saints | a kind Middle-Eastern man about 50, a short greying brown beard, a gentle steady expression, a plain carpenter's tunic
+St. Joseph | Beloved Patron Saints | a kind Middle-Eastern man about 50, a short graying brown beard, a gentle steady expression, a plain carpenter's tunic
 St. Francis of Assisi | Beloved Patron Saints | a thin Italian man about 40, tonsured brown hair, a short beard, a coarse brown friar's habit and hood
 St. Anthony of Padua | Beloved Patron Saints | a young Franciscan friar about 33, tonsured, clean-shaven and gentle, a brown habit
 St. Jude Thaddeus | Beloved Patron Saints | a Middle-Eastern man about 45, dark hair and a full dark beard, an earnest kind face

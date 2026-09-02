@@ -97,7 +97,7 @@ def _auto_levels(bgr: np.ndarray, warns: WarningCollector) -> np.ndarray:
     """Recover LOW-CONTRAST / washed-out photos that ``_auto_expose`` misses -- it gates
     on mean brightness, so a flat-but-not-dark photo (hazy, underexposed-looking, low
     dynamic range) slips past it untouched. Gate on dynamic RANGE instead: below ~95 of
-    255, apply a per-channel black/white-point stretch plus a median-normalising gamma,
+    255, apply a per-channel black/white-point stretch plus a median-normalizing gamma,
     so contrast, midtones AND color saturation come back (the engine's internal luma
     stretch alone can't restore color). Well-exposed, full-range photos are a near-no-op,
     so this is safe even when enabled. Opt-in via the TYPO_AUTOLEVELS env flag."""

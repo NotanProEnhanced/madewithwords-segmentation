@@ -1,7 +1,7 @@
 """Upstream dependency health checks (Stripe, Printful).
 
 The basic /health endpoint reports local capabilities only. This adds a deeper,
-network check of the two external services that take payment and fulfil orders,
+network check of the two external services that take payment and fulfill orders,
 so a revoked/expired key or an upstream outage is visible to monitoring BEFORE a
 customer hits it at checkout.
 
@@ -92,7 +92,7 @@ def _check_printful() -> dict:
     t0 = time.time()
     try:
         # Probe the orders endpoint -- the capability the app actually uses, so a
-        # least-privilege fulfilment token gets a 200 (or 403, still authenticated).
+        # least-privilege fulfillment token gets a 200 (or 403, still authenticated).
         r = httpx.get(f"{PRINTFUL_API_BASE.rstrip('/')}/orders?limit=1", headers=headers, timeout=_TIMEOUT)
     except httpx.HTTPError as e:
         return {"configured": True, "ok": False, "detail": f"network_error: {type(e).__name__}"}

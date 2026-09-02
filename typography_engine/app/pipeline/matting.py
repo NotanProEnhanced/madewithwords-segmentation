@@ -31,8 +31,8 @@ RVM ONNX I/O (per the model card):
   outputs: fgr, pha (1,1,H,W alpha 0..1), r1o..r4o  -- we use `pha`.
 
 ISNet ONNX I/O:
-  input  : 1,3,1024,1024 float32, RGB, scaled by /max then centred (-0.5)
-  output : saliency logits, min-max normalised here to 0..1
+  input  : 1,3,1024,1024 float32, RGB, scaled by /max then centered (-0.5)
+  output : saliency logits, min-max normalized here to 0..1
 """
 from __future__ import annotations
 

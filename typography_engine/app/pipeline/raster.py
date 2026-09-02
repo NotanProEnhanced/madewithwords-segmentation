@@ -1,7 +1,7 @@
 """SVG -> PNG rasterization. Prefers CairoSVG (production); falls back to
 resvg-py when Cairo's native library is unavailable (e.g. local Windows).
 
-CairoSVG and resvg are NOT pixel-identical: resvg does not honour every blend/
+CairoSVG and resvg are NOT pixel-identical: resvg does not honor every blend/
 mask mode the layered renderer relies on, so a silent fallback quietly drops
 tonal modulation -- a degraded portrait that looks "fine" until you compare it.
 We therefore make the fallback *loud*: log it once, record the active backend,

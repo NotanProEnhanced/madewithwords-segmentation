@@ -184,7 +184,7 @@ _WORDS_SYSTEM = (
     "instruction or reuse the same wording twice. Every prompt MUST begin with 'Photorealistic "
     "front-facing studio portrait, face filling the frame, plain dark background, soft reverent "
     "light: ' and then state the subject's SEX, approximate AGE, ethnicity/skin, hair, and "
-    "FACIAL HAIR stated explicitly ('clean-shaven', 'a full grey beard', etc.), plus one or two "
+    "FACIAL HAIR stated explicitly ('clean-shaven', 'a full gray beard', etc.), plus one or two "
     "defining visual attributes or attire. Middle-Eastern for biblical / Holy Land figures, "
     "region-appropriate for later saints. Put a veil or head-covering ONLY where iconographically "
     "correct (Marian figures, some friars/nuns) -- NEVER veil a male figure. Match sex and age to "

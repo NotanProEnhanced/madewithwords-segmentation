@@ -102,7 +102,7 @@ ls "$R/var/www"                                    # check what the snapshot has
 
 ### 10. Reconcile + smoke test + re-arm backups
 ```bash
-# reconcile in-flight orders against Stripe (payments) and Printful (fulfilment)
+# reconcile in-flight orders against Stripe (payments) and Printful (fulfillment)
 # smoke test: a render, a test checkout, /privacy, both marketing sites
 (crontab -l 2>/dev/null; echo "0 * * * * /root/typortrait-prod/typography_engine/ops/backup.sh") | crontab -
 ```

@@ -2,7 +2,7 @@
 """Turn a source photo + words into a matched 1:1 before/after pair via the engine.
 
 render_pair(photo, words, ink, ...) -> (before_path, after_path)
-  before = the photo, face-centred square crop
+  before = the photo, face-centered square crop
   after  = the rendered word-portrait, same crop, so the before/after slider aligns
 
 Runs the same pipeline the app uses (analyze_image + render_layered_png), so it

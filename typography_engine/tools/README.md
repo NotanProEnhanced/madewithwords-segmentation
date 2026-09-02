@@ -77,9 +77,9 @@ Reels/Stories/TikTok/Pinterest  ->  reach  ->  new users create  ->  (repeat)
 - **Cadence:** batch builds a backlog; schedule a steady drip rather than dumping
   all at once.
 
-## Customising
+## Customizing
 
-All near the top of `make_reel.py`, clearly labelled:
+All near the top of `make_reel.py`, clearly labeled:
 - `WORDS` — the words shown.
 - captions — in `frame()`.
 - timeline — `HOOK_END`, `WORDS_IN/DUR`, `REVEAL0/1`, `SLIDER_END`, `DUR`, `HOLD`.
@@ -130,7 +130,7 @@ audio.
 - Works as-is on **Instagram Reels/Stories, Facebook Reels/Stories, TikTok,
   YouTube Shorts, Pinterest**.
 - **X/Twitter**: not vertical-first — also export a **1:1 or 16:9** crop.
-- Keep all text in the **centre safe zone** (the reel already does) so platform
+- Keep all text in the **center safe zone** (the reel already does) so platform
   UI (caption, buttons, profile) doesn't cover it.
 - **Don't** burn in another platform's watermark (e.g. the TikTok logo) when
   cross-posting — Meta down-ranks it; re-export clean from the master.

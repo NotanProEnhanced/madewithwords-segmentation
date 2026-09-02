@@ -70,11 +70,11 @@ services:
       # repetition so a varied word list reads as varied. Revert by deleting the line.
       - TYPO_WORD_VARIETY=${TYPO_WORD_VARIETY:-}
       # Auto-levels: recover FLAT / low-contrast uploads (per-channel black/white stretch
-      # + median-normalising gamma; restores color the internal luma stretch can't).
+      # + median-normalizing gamma; restores color the internal luma stretch can't).
       # Default OFF (byte-identical); range-gated so good photos are untouched even when on.
       # Set TYPO_AUTOLEVELS=1 in THIS tree's .env to test on staging.
       - TYPO_AUTOLEVELS=${TYPO_AUTOLEVELS:-}
-      # Redemption codes (gift/partner/pre-need: a code buys the personalize+fulfil flow
+      # Redemption codes (gift/partner/pre-need: a code buys the personalize+fulfill flow
       # with NO Stripe charge). Default OFF -- every /redeem route 404s until
       # TYPO_REDEEM_ENABLED=1 is set in THIS tree's .env, so it deploys INERT on staging
       # and is switched on deliberately for testing. TYPO_REDEEM_BRAND picks the studio skin.
@@ -118,7 +118,7 @@ services:
       # Highlight wash: keep bright features (silver hair, pale skin) light on the dark
       # ground so they don't collapse to the ground (0..1; 0 disables). Default 0.5.
       - TYPO_HILIGHT_WASH=${TYPO_HILIGHT_WASH:-0.5}
-      # Shadow lift: preserve modelled detail in a face's shaded side instead of crushing
+      # Shadow lift: preserve modeled detail in a face's shaded side instead of crushing
       # it to the near-black ground (0..1; 0 disables). Default 0.18.
       - TYPO_SHADOW_LIFT=${TYPO_SHADOW_LIFT:-0.18}
       # Color fidelity (step 3): vibrance strength, oversaturation ceiling (HSV S; 0 off),
@@ -155,7 +155,7 @@ services:
       # staging so it can be validated; set =0 in .env to revert. Tuning knobs:
       # TYPO_POLARITY_GAMMA (>1 = harder shadows), TYPO_POLARITY_FLOOR (0 = true-black gaps).
       - TYPO_POLARITY=${TYPO_POLARITY:-1}
-      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-0}   # OFF: photographic eyes are truthful (real brown/blue, real lens); word-formed eyes caused iris-color + sunglasses artefacts
+      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-0}   # OFF: photographic eyes are truthful (real brown/blue, real lens); word-formed eyes caused iris-color + sunglasses artifacts
       # Sunglasses backstop: suppress fabricated eyes on dark lenses (auto). =0 reverts.
       - TYPO_DARKSCLERA=${TYPO_DARKSCLERA:-1}
       - TYPO_LENS_DARKRATIO=${TYPO_LENS_DARKRATIO:-0.62}

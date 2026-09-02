@@ -16,7 +16,7 @@ WHY THIS EXISTS
   df ~ 0, and renders in the largest words on the picture. The engine is not choosing badly.
   It has no concept of hair, and the size it lands on is an accident of geometry.
 
-  This module supplies the missing concept. With regions labelled, hair is hair wherever it
+  This module supplies the missing concept. With regions labeled, hair is hair wherever it
   is and however far from a landmark it happens to sit.
 
 THE MODEL
@@ -30,7 +30,7 @@ THE MODEL
 
   It is trained on PEOPLE. On a photograph of a cat and a dog it returns 99.97% background,
   so `regions()` returns None there and every caller must fall back to its previous
-  behaviour rather than treating "no regions" as "no subject".
+  behavior rather than treating "no regions" as "no subject".
 
 Fail-safe throughout: any failure returns None and the caller carries on unchanged.
 """

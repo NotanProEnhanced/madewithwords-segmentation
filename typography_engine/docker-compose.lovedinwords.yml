@@ -46,7 +46,7 @@ services:
       - PRINTFUL_STORE_ID=${PRINTFUL_STORE_ID:-}
       - PRINTFUL_API_BASE=${PRINTFUL_API_BASE:-https://api.printful.com}
       - PRINT_URL_SECRET=${PRINT_URL_SECRET:-}
-      # Starts as DRAFTS (safe). Set PRINTFUL_CONFIRM=true in .env to fulfil real prints.
+      # Starts as DRAFTS (safe). Set PRINTFUL_CONFIRM=true in .env to fulfill real prints.
       - PRINTFUL_CONFIRM=${PRINTFUL_CONFIRM:-false}
       - UMAMI_WEBSITE_ID=${UMAMI_WEBSITE_ID:-}
       - UMAMI_HOST=${UMAMI_HOST:-https://cloud.umami.is}
@@ -99,7 +99,7 @@ services:
       # Highlight wash: keep bright features (silver hair, pale skin) light on the dark
       # ground so they don't collapse to the ground (0..1; 0 disables). Default 0.5.
       - TYPO_HILIGHT_WASH=${TYPO_HILIGHT_WASH:-0.5}
-      # Shadow lift: preserve modelled detail in a face's shaded side instead of crushing
+      # Shadow lift: preserve modeled detail in a face's shaded side instead of crushing
       # it to the near-black ground (0..1; 0 disables). Default 0.18.
       - TYPO_SHADOW_LIFT=${TYPO_SHADOW_LIFT:-0.18}
       # Color fidelity (step 3): vibrance strength, oversaturation ceiling (HSV S; 0 off),
@@ -134,7 +134,7 @@ services:
       # Lifelike polarity + word-formed eyes. Validated on staging and promoted -> ON.
       # Tuning knobs below; set =0 in .env to revert without a code change.
       - TYPO_POLARITY=${TYPO_POLARITY:-1}
-      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-0}   # OFF: photographic eyes are truthful (real brown/blue, real lens); word-formed eyes caused iris-color + sunglasses artefacts
+      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-0}   # OFF: photographic eyes are truthful (real brown/blue, real lens); word-formed eyes caused iris-color + sunglasses artifacts
       # Sunglasses backstop: suppress fabricated eyes on dark lenses (auto). =0 reverts.
       - TYPO_DARKSCLERA=${TYPO_DARKSCLERA:-1}
       - TYPO_LENS_DARKRATIO=${TYPO_LENS_DARKRATIO:-0.62}

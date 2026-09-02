@@ -10,7 +10,7 @@ WHY IT IS SAFE HERE
   With env_file in place, an entry like `- TYPO_FOO=${TYPO_FOO:-}` on a tree whose
   .env lacks TYPO_FOO yields an empty string -- which is exactly what "absent"
   already meant. Adding the union of keys to every tree is therefore a no-op for
-  behaviour.
+  behavior.
 
 THE ONE HAZARD, AND HOW IT IS HANDLED
   A union entry with a NON-EMPTY default -- ${X:-0.45} -- added to a tree that did
@@ -19,7 +19,7 @@ THE ONE HAZARD, AND HOW IT IS HANDLED
   reports them and you decide before applying.
 
 Usage:
-    python3 compose-template.py            analyse and write the template to /tmp
+    python3 compose-template.py            analyze and write the template to /tmp
     python3 compose-template.py --apply    also install it in every tree
                                            (backs up each existing file first)
 """
@@ -80,14 +80,14 @@ def main():
     if review:
         print("REVIEW -- these carry a non-empty compose default and would be ADDED")
         print("to trees that did not have them. Confirm the default matches what the")
-        print("code already does, or the tree's behaviour changes:")
+        print("code already does, or the tree's behavior changes:")
         for k, dflt, absent in review:
             print("  %-28s default=%-10s would newly apply to: %s"
                   % (k, dflt, ", ".join(absent)))
         print()
     else:
         print("No union key carries a non-empty default that is missing anywhere.")
-        print("Adding the union to every tree is behaviour-neutral.")
+        print("Adding the union to every tree is behavior-neutral.")
         print()
 
     # the template body is taken from the staging file, with the per-service

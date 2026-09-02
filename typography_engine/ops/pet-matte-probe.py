@@ -89,7 +89,7 @@ def main():
     raw = _u2net_mask(bgr)
     if raw is None:
         print("!! the model returned nothing -- this render used the GrabCut fallback,")
-        print("   which is a rectangle-initialised approximation, not a matte.")
+        print("   which is a rectangle-initialized approximation, not a matte.")
         raw = _grabcut_mask(bgr)
         bands(raw, "GrabCut fallback")
     else:

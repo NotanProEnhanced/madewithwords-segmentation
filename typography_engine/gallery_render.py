@@ -83,8 +83,8 @@ def face_crop_45(orig: Image.Image, an) -> Image.Image:
         if cw > W:
             cw = W; ch = cw / AR
         cx = (fx + fw / 2.0) - cw / 2.0
-        cy = (fy + fh / 2.0) - ch * 0.42      # face a touch above centre
-    else:                                      # no face -> centre crop
+        cy = (fy + fh / 2.0) - ch * 0.42      # face a touch above center
+    else:                                      # no face -> center crop
         if W / H > AR:
             ch = H; cw = ch * AR
         else:

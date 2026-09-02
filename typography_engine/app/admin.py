@@ -45,7 +45,7 @@ SMTP_USER      = os.environ.get("TYPO_SMTP_USER", "")
 SMTP_PASS      = os.environ.get("TYPO_SMTP_PASS", "")
 # Optional brand display name for the From header (per-container), e.g. "Loved in
 # Words". Recipients then see 'Loved in Words <account@…>' instead of a bare
-# personal address — friendlier and less spam-prone. Unset => bare address (old behaviour).
+# personal address — friendlier and less spam-prone. Unset => bare address (old behavior).
 MAIL_FROM_NAME = os.environ.get("TYPO_MAIL_FROM_NAME", "").strip()
 COOKIE_SECURE  = PUBLIC_BASE_URL.lower().startswith("https://")
 

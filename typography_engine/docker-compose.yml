@@ -149,7 +149,7 @@ services:
       - TYPO_WM_ALPHA=${TYPO_WM_ALPHA:-}
       - TYPO_WM_GAP=${TYPO_WM_GAP:-}
       - TYPO_WM_SCALE=${TYPO_WM_SCALE:-}
-      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-0}   # OFF: photographic eyes are truthful (real brown/blue, real lens); word-formed eyes caused iris-color + sunglasses artefacts
+      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-0}   # OFF: photographic eyes are truthful (real brown/blue, real lens); word-formed eyes caused iris-color + sunglasses artifacts
       - TYPO_WORD_VARIETY=${TYPO_WORD_VARIETY:-}
       - UMAMI_HOST=${UMAMI_HOST:-https://cloud.umami.is}
       - UMAMI_HOSTNAME=${UMAMI_HOSTNAME:-app.typortrait.com}
@@ -181,7 +181,7 @@ services:
       # Word-variety dial for the Lifelike/Letter renderer. Unset = 0.0 = the original
       # engine, byte-identical. Set TYPO_WORD_VARIETY=0.7 in .env to flatten the lead-word
       # repetition so a varied word list reads as varied. Revert by deleting the line.
-      # Redemption codes (gift/partner/pre-need: a code buys the personalize+fulfil flow
+      # Redemption codes (gift/partner/pre-need: a code buys the personalize+fulfill flow
       # with NO Stripe charge). Default OFF -- every /redeem route 404s until
       # TYPO_REDEEM_ENABLED=1 is set in .env, so the code deploys INERT. Optionally set
       # TYPO_REDEEM_BRAND (default lovedinwords) to choose the studio skin recipients land in.
@@ -193,7 +193,7 @@ services:
       # dark ground (0..1, fraction toward white; 0 = off, background == ground).
       # Highlight wash: keep bright features (silver hair, pale skin) light on the dark
       # ground so they don't collapse to the ground (0..1; 0 disables). Default 0.5.
-      # Shadow lift: preserve modelled detail in a face's shaded side instead of crushing
+      # Shadow lift: preserve modeled detail in a face's shaded side instead of crushing
       # it to the near-black ground (0..1; 0 disables). Default 0.18.
       # Color fidelity (step 3): vibrance strength, oversaturation ceiling (HSV S; 0 off),
       # and word-ink saturation multiplier. Lower vibrance / cap => less orange skin,
