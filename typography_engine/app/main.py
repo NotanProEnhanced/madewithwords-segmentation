@@ -1774,52 +1774,6 @@ async def render(
             "ts": int(_t.time()),
             "region": _region_token(request) or None,
         }), encoding="utf-8")
-        (PRIVATE_DIR / f"{job_id}.json").write_text(json.dumps({
-            "style": style_choice, "ink": ink_choice, "remove_bg": bool(remove_bg),
-            "light": bool(light), "text": text, "uppercase": bool(uppercase),
-            "min_font_px": float(cfg.min_font_px), "ground": ground_choice,
-            "backdrop": backdrop_choice,   # "match your space" background -> paid recompose must match
-            "ink_hex": ink_hex if ink_choice == "custom" else None,   # rebuild the custom colour at download
-            "flow": bool(disp_flow_eff),   # displacement message-flow -> paid recompose must match
-            "disp_route": bool(disp_route),   # Mosaic/Passage rendered via the Lifelike engine -> download must too
-            "aspect": aspect_choice,   # output shape (w/h) -> digital download recomposes to match
-            "sunglasses": bool(sunglasses_on),   # manual opaque-lens flag -> paid recompose must match
-            "sunglass_faces": sunglass_faces_sel,   # per-subject lens selection -> paid recompose must match
-            "pet": bool(pet_on),   # Paws in Words -> paid recompose renders via the pet engine
-            "pet_ground": pet_ground_sel if pet_on else None,
-            "pet_type": pet_type_sel if pet_on else None,   # typography size (small/medium/large)
-            "word_scale": _disp_ws,   # displacement word size -> the paid file must
-                                      # match the size the buyer approved on screen
-            "ref": ref_clean, "brand": brand_clean,
-        }), encoding="utf-8")
-
-    # Likeness score (how well this render preserves the face) -- the studio
-    # compares scores across styles to recommend the best one for this photo.
-    try:
-        from .pipeline.score import likeness_score
-        likeness = likeness_score(an, png_bytes)
-    except Exception:  # noqa: BLE001
-        likeness = None
-
-    # When the upload was cropped, hand the studio a small JPEG of the CROPPED
-    # source so the before/after slider's "before" matches the rendered "after"
-    # (the client can't reliably crop the photo itself). Main render only.
-    source_url = None
-    if not is_thumb and crop:
-        try:
-            import cv2 as _cv2
-            import numpy as _np
-            sa = _cv2.imdecode(_np.frombuffer(img_bytes, _np.uint8), _cv2.IMREAD_COLOR)
-            if sa is not None:
-                sh, sw = sa.shape[:2]
-                sc = 760.0 / max(1, sw)
-                if sc < 1.0:
-                    sa = _cv2.resize(sa, (int(sw * sc), int(sh * sc)), interpolation=_cv2.INTER_AREA)
-                sp = OUTPUTS_DIR / f"{job_id}_src.jpg"
-                if _cv2.imwrite(str(sp), sa, [int(_cv2.IMWRITE_JPEG_QUALITY), 86]):
-                    source_url = f"/outputs/{sp.name}"
-        except Exception:  # noqa: BLE001
-            source_url = None
 
     # How UNCERTAIN is the cutout? The touch-up editor exists for a matte that clipped an ear
     # or left a shoulder of background attached, and it is currently offered on every render --
@@ -1852,6 +1806,60 @@ async def render(
                 _fringe = round(_amb / float(_nb), 2)
     except Exception:  # noqa: BLE001 -- a diagnostic must never fail a render
         _fringe = None
+
+    (PRIVATE_DIR / f"{job_id}.json").write_text(json.dumps({
+            "style": style_choice, "ink": ink_choice, "remove_bg": bool(remove_bg),
+            "light": bool(light), "text": text, "uppercase": bool(uppercase),
+            "min_font_px": float(cfg.min_font_px), "ground": ground_choice,
+            "backdrop": backdrop_choice,   # "match your space" background -> paid recompose must match
+            "ink_hex": ink_hex if ink_choice == "custom" else None,   # rebuild the custom colour at download
+            "flow": bool(disp_flow_eff),   # displacement message-flow -> paid recompose must match
+            "disp_route": bool(disp_route),   # Mosaic/Passage rendered via the Lifelike engine -> download must too
+            "aspect": aspect_choice,   # output shape (w/h) -> digital download recomposes to match
+            "sunglasses": bool(sunglasses_on),   # manual opaque-lens flag -> paid recompose must match
+            "sunglass_faces": sunglass_faces_sel,   # per-subject lens selection -> paid recompose must match
+            "pet": bool(pet_on),   # Paws in Words -> paid recompose renders via the pet engine
+            "pet_ground": pet_ground_sel if pet_on else None,
+            "pet_type": pet_type_sel if pet_on else None,   # typography size (small/medium/large)
+            # Stored so a real distribution accumulates from actual customer uploads.
+            # The touch-up editor should appear only when the cutout is uncertain, and
+            # the threshold for that cannot be chosen from test images: measured across
+            # the fixed set AND every upload on the box, the values sat in one band
+            # (2.3-5.5) with no tail, because they are the same few photographs. Recorded
+            # per job so the question can be answered later from real ones.
+            "matte_fringe": _fringe,
+            "word_scale": _disp_ws,   # displacement word size -> the paid file must
+                                      # match the size the buyer approved on screen
+            "ref": ref_clean, "brand": brand_clean,
+        }), encoding="utf-8")
+
+    # Likeness score (how well this render preserves the face) -- the studio
+    # compares scores across styles to recommend the best one for this photo.
+    try:
+        from .pipeline.score import likeness_score
+        likeness = likeness_score(an, png_bytes)
+    except Exception:  # noqa: BLE001
+        likeness = None
+
+    # When the upload was cropped, hand the studio a small JPEG of the CROPPED
+    # source so the before/after slider's "before" matches the rendered "after"
+    # (the client can't reliably crop the photo itself). Main render only.
+    source_url = None
+    if not is_thumb and crop:
+        try:
+            import cv2 as _cv2
+            import numpy as _np
+            sa = _cv2.imdecode(_np.frombuffer(img_bytes, _np.uint8), _cv2.IMREAD_COLOR)
+            if sa is not None:
+                sh, sw = sa.shape[:2]
+                sc = 760.0 / max(1, sw)
+                if sc < 1.0:
+                    sa = _cv2.resize(sa, (int(sw * sc), int(sh * sc)), interpolation=_cv2.INTER_AREA)
+                sp = OUTPUTS_DIR / f"{job_id}_src.jpg"
+                if _cv2.imwrite(str(sp), sa, [int(_cv2.IMWRITE_JPEG_QUALITY), 86]):
+                    source_url = f"/outputs/{sp.name}"
+        except Exception:  # noqa: BLE001
+            source_url = None
 
     return JSONResponse(
         {
