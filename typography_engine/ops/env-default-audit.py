@@ -74,6 +74,18 @@ def main() -> int:
                                   "%s:%d" % (p.relative_to(HERE),
                                              txt[:m.start()].count("\n") + 1)))
 
+    # Duplicates. A variable listed twice in `environment:` takes the LAST entry silently.
+    # TYPO_LAYERED_PHOTO was declared with :-0 and again with :-1; the file read as if the
+    # feature were off while the container had it on, and neither line looked wrong alone.
+    dupes = collections.Counter(
+        m.group(1) for m in re.finditer(r'^\s+-\s*([A-Z][A-Z0-9_]*)=', compose, re.M))
+    dupes = {k: n for k, n in dupes.items() if n > 1}
+    if dupes:
+        print("DECLARED MORE THAN ONCE  (the last entry wins, silently)")
+        for k, n in sorted(dupes.items()):
+            print("  %-30s %d times" % (k, n))
+        print()
+
     bad = []
     for var, cdef in sorted(passed.items()):
         if cdef in (None, "") or var not in read:
