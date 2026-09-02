@@ -1134,7 +1134,7 @@ async def admin_studio_publish(admin_session: Optional[str] = Cookie(None),
 
 
 # --- Per-photo analysis cache ------------------------------------------------
-# The result screen re-renders the SAME photo many times (every swatch colour,
+# The result screen re-renders the SAME photo many times (every swatch color,
 # size, and the style-recommendation probes). Each /render used to re-run
 # analyze_image -- MediaPipe face mesh + selfie segmentation, by far the most
 # expensive step -- from scratch. But that analysis depends ONLY on the (cropped)
@@ -1383,7 +1383,7 @@ def auto_mask(job: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Inks the displacement (Lifelike) engine can SCULPT: "photo" (per-pixel colour),
+# Inks the displacement (Lifelike) engine can SCULPT: "photo" (per-pixel color),
 # the tinted sculpt palette, and a user-picked "custom" hex (draped as a light tint).
 # Custom ink is RETIRED for new renders: a picked hex falls through to the legacy flat
 # single-ink sculpt, which renders visibly worse than the photo/mono branch. "custom"
@@ -1410,7 +1410,7 @@ async def render(
     background_hex: Optional[str] = Form(None),
     foreground_hex: Optional[str] = Form(None),
     ink: str = Form("navy"),
-    ink_hex: Optional[str] = Form(None),   # for ink="custom": the user-picked colour
+    ink_hex: Optional[str] = Form(None),   # for ink="custom": the user-picked color
     style: str = Form("mosaic"),
     message: Optional[str] = Form(None),
     flow: Optional[str] = Form(None),   # displacement only: stream the text as a MESSAGE
@@ -1426,7 +1426,7 @@ async def render(
     remove_bg: bool = Form(True),
     light: bool = Form(False),
     ground: str = Form("navy"),
-    backdrop: Optional[str] = Form(None),   # "match your space" background colour (displacement)
+    backdrop: Optional[str] = Form(None),   # "match your space" background color (displacement)
     ref: str = Form(""),
     brand: str = Form(""),
     crop: Optional[str] = Form(None),
@@ -1582,7 +1582,7 @@ async def render(
             )
 
     from .pipeline.tonal import _PALETTES, _GRADIENTS, render_layered_png, custom_poster, lifelike_route_on
-    # "custom" = a user-picked colour (a (ground, ink) poster pair built from the
+    # "custom" = a user-picked color (a (ground, ink) poster pair built from the
     # hex). Only the layered Words/Message renderer honours it; everything else
     # falls back. Invalid/absent hex -> not custom.
     # The Custom chip is gone from the studio; this catches a cached page or a
@@ -1602,11 +1602,11 @@ async def render(
     is_displacement = (style == "displacement")
     disp_flow = is_displacement and str(flow or "").strip().lower() in ("1", "true", "yes", "on")
     ground_choice = ground if ground in ("paper", "navy", "black") else "navy"
-    # "Match your space" backdrop: recolours ONLY the segmented background behind the
-    # subject (a named wall colour), leaving the Lifelike sculpt untouched. Displacement
+    # "Match your space" backdrop: recolors ONLY the segmented background behind the
+    # subject (a named wall color), leaving the Lifelike sculpt untouched. Displacement
     # only; unknown/blank => None => legacy background behaviour.
     # Solid "match your space" walls + the floral FRAMES (wildflowers/roses/eucalyptus/line).
-    # A floral key routes the render through the Paper-sculpt + watercolour-mat path (the
+    # A floral key routes the render through the Paper-sculpt + watercolor-mat path (the
     # pipeline forces the Paper ground when it sees a floral backdrop); stored + replayed on
     # the paid recompose like any other backdrop.
     _BACKDROP_KEYS = ("studio", "gray", "ivory", "sand", "slate", "sage", "blush", "transparent",
@@ -1625,7 +1625,7 @@ async def render(
     #
     # Every ink the studio offers must sculpt, not just Original -- a flat, un-sculpted
     # passage on Noir/Sepia/Navy/Custom read as broken next to Original's sculpt. The
-    # displacement engine renders "photo" (per-pixel colour), the tinted sculpt palette
+    # displacement engine renders "photo" (per-pixel color), the tinted sculpt palette
     # (mono/navy/sepia/burgundy/forest/gold_noir), and a "custom" hex (draped as a light
     # tint), so route all of them. Only the loud gradients (spectrum/aurora) can't drape
     # over the form -- they stay on the layered renderer.
@@ -1681,7 +1681,7 @@ async def render(
                 render_displacement_portrait, an, disp_words, ground=ground_choice,
                 out_width=max(320, preview_w), supersample=disp_ss, flow=disp_flow_eff,
                 uppercase=uppercase, ink=("photo" if ink_choice == "photo_paper" else ink_choice),
-                ink_hex=(ink_hex if ink_choice == "custom" else None),   # custom colour -> a light sculpt tint
+                ink_hex=(ink_hex if ink_choice == "custom" else None),   # custom color -> a light sculpt tint
                 # Phase-1 realism 'breathe' pass (env kill-switch STUDIO_BREATHE). MUST match
                 # the paid render in _ensure_clean_png below, or the preview would misrepresent it.
                 breathe=STUDIO_BREATHE,
@@ -1821,7 +1821,7 @@ async def render(
             "light": bool(light), "text": text, "uppercase": bool(uppercase),
             "min_font_px": float(cfg.min_font_px), "ground": ground_choice,
             "backdrop": backdrop_choice,   # "match your space" background -> paid recompose must match
-            "ink_hex": ink_hex if ink_choice == "custom" else None,   # rebuild the custom colour at download
+            "ink_hex": ink_hex if ink_choice == "custom" else None,   # rebuild the custom color at download
             "flow": bool(disp_flow_eff),   # displacement message-flow -> paid recompose must match
             "disp_route": bool(disp_route),   # Mosaic/Passage rendered via the Lifelike engine -> download must too
             "aspect": aspect_choice,   # output shape (w/h) -> digital download recomposes to match
@@ -3778,7 +3778,7 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
     try:
         from .pipeline.tonal import compose_layered, render_layered_png, custom_poster
         r = json.loads(recipe_path.read_text(encoding="utf-8"))
-        # Rebuild the user-picked colour for a "custom" ink so the paid file matches
+        # Rebuild the user-picked color for a "custom" ink so the paid file matches
         # the preview.
         dl_custom = custom_poster(r.get("ink_hex")) if (r.get("ink") == "custom" and r.get("ink_hex")) else None
         dl_sun = bool(r.get("sunglasses"))     # manual opaque-lens flag -> match the preview
@@ -3820,7 +3820,7 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
                 an, (r.get("text", "") or "").split(),
                 ground=r.get("ground", "navy"), out_width=DOWNLOAD_PNG_WIDTH,
                 uppercase=bool(r.get("uppercase", True)), flow=bool(r.get("flow")),
-                ink=r.get("ink"), ink_hex=r.get("ink_hex"),   # custom colour sculpts as its own light tint
+                ink=r.get("ink"), ink_hex=r.get("ink_hex"),   # custom color sculpts as its own light tint
                 print_aspect=aspect, backdrop=r.get("backdrop"),
                 # Same passes as the preview render -- the paid file must match what the
                 # buyer approved on screen (breathe kill-switch + per-style variety: a

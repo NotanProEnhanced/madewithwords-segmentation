@@ -98,7 +98,7 @@ services:
       # Shadow lift: preserve modelled detail in a face's shaded side instead of crushing
       # it to the near-black ground (0..1; 0 disables). Default 0.18.
       - TYPO_SHADOW_LIFT=${TYPO_SHADOW_LIFT:-0.18}
-      # Colour fidelity (step 3): vibrance strength, oversaturation ceiling (HSV S; 0 off),
+      # Color fidelity (step 3): vibrance strength, oversaturation ceiling (HSV S; 0 off),
       # and word-ink saturation multiplier. Lower vibrance / cap => less orange skin,
       # less magenta lips. Defaults tuned for natural skin.
       - TYPO_VIBRANCE=${TYPO_VIBRANCE:-0.22}
@@ -157,7 +157,7 @@ services:
       - TYPO_POLARITY_GAMMA=${TYPO_POLARITY_GAMMA:-1.35}
       - TYPO_POLARITY_FLOOR=${TYPO_POLARITY_FLOOR:-0.18}
       - TYPO_NOIR_CONTRAST=${TYPO_NOIR_CONTRAST:-1.08}
-      # Iris colour fallback lift: brightens a low-saturation (brown) iris so it reads on the dark ground.
+      # Iris color fallback lift: brightens a low-saturation (brown) iris so it reads on the dark ground.
       - TYPO_IRIS_LIFT=${TYPO_IRIS_LIFT:-1.35}
       # De-posterize: add the photo's smooth light->dark falloff back so the face isn't flat/
       # banded (0..1; 0 disables). Default 0.6.

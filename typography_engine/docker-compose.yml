@@ -149,7 +149,7 @@ services:
       - TYPO_WM_ALPHA=${TYPO_WM_ALPHA:-}
       - TYPO_WM_GAP=${TYPO_WM_GAP:-}
       - TYPO_WM_SCALE=${TYPO_WM_SCALE:-}
-      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-0}   # OFF: photographic eyes are truthful (real brown/blue, real lens); word-formed eyes caused iris-colour + sunglasses artefacts
+      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-0}   # OFF: photographic eyes are truthful (real brown/blue, real lens); word-formed eyes caused iris-color + sunglasses artefacts
       - TYPO_WORD_VARIETY=${TYPO_WORD_VARIETY:-}
       - UMAMI_HOST=${UMAMI_HOST:-https://cloud.umami.is}
       - UMAMI_HOSTNAME=${UMAMI_HOSTNAME:-app.typortrait.com}
@@ -195,7 +195,7 @@ services:
       # ground so they don't collapse to the ground (0..1; 0 disables). Default 0.5.
       # Shadow lift: preserve modelled detail in a face's shaded side instead of crushing
       # it to the near-black ground (0..1; 0 disables). Default 0.18.
-      # Colour fidelity (step 3): vibrance strength, oversaturation ceiling (HSV S; 0 off),
+      # Color fidelity (step 3): vibrance strength, oversaturation ceiling (HSV S; 0 off),
       # and word-ink saturation multiplier. Lower vibrance / cap => less orange skin,
       # less magenta lips. Defaults tuned for natural skin.
       # Photographic eye-overlay opacity (0..1). Lower blends the typography through the eye
@@ -229,7 +229,7 @@ services:
       # Matte edge cleanup: drop alpha below FLOOR to 0 (clean background gaps between
       # hair strands, no stray words) then GAMMA sharpens the low end. Matte-model path only.
       # Diagnostics: set TYPO_EYE_DEBUG=1 in .env to log per-face eye/lens detection to stderr.
-      # Iris colour fallback lift: brightens a low-saturation (brown) iris so it reads on the dark ground.
+      # Iris color fallback lift: brightens a low-saturation (brown) iris so it reads on the dark ground.
       # De-posterize: add the photo's smooth light->dark falloff back so the face isn't flat/
       # banded (0..1; 0 disables). Default 0.6.
       # Micro-expression: render facial creases (folds, crow's feet) as fine type (0..1; 0 off). Default 0.22.

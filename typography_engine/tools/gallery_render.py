@@ -46,7 +46,7 @@ def main() -> None:
     ap.add_argument("base", help="base artwork to weave the words into (you must own / it must be public domain)")
     ap.add_argument("--style", default="displacement", choices=["displacement", "words", "message"])
     ap.add_argument("--ground", default="navy", choices=["navy", "paper", "black"])
-    ap.add_argument("--ink", default=None, help="ink/colour key (default: style default)")
+    ap.add_argument("--ink", default=None, help="ink/color key (default: style default)")
     ap.add_argument("--words", default=None, help="override words; else reads tools/gallery_words/<id>.txt")
     ap.add_argument("--out-width", type=int, default=1600)
     ap.add_argument("--supersample", type=int, default=2, help="displacement quality (2 = print)")

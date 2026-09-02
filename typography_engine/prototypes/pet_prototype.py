@@ -13,7 +13,7 @@ landmarks:
   2) build a DETAIL map from the photo (Laplacian energy -> where the fur/eyes/nose are),
   3) fill the silhouette with words, in two SIZE TIERS driven by that detail
      (fine words on high-detail features, coarse on flat body),
-  4) colour every glyph by the photo itself, so the pet emerges FROM the words.
+  4) color every glyph by the photo itself, so the pet emerges FROM the words.
 
 This is species-agnostic: it never looks for eyes or a face, only for photographic
 detail, so it works on a dog, cat, parrot or rabbit alike.
@@ -38,7 +38,7 @@ _FONT = next((p for p in [
 
 GROUNDS = {                     # BGR
     "paper": (232, 240, 244),   # warm ivory -> ink-on-paper look
-    "dark":  (40, 26, 20),      # deep navy  -> colours pop (most portrait-like)
+    "dark":  (40, 26, 20),      # deep navy  -> colors pop (most portrait-like)
     "slate": (216, 221, 226),   # cool gallery grey
 }
 
@@ -85,7 +85,7 @@ def _char_stream(words):
 
 
 def _render_tier(bgr, mask, size, ground_is_light):
-    """Draw one constant-size layer of photo-coloured text across the whole mask.
+    """Draw one constant-size layer of photo-colored text across the whole mask.
     Returns (rgb float HxWx3, alpha float HxW). On a light ground the glyph alpha is
     the ink DENSITY (dark photo -> opaque, light -> faint); on dark it's flat."""
     h, w = bgr.shape[:2]

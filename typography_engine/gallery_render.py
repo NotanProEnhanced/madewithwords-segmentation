@@ -40,7 +40,7 @@ AR = 0.8  # 4:5 print aspect (width / height)
 # text:    space-separated WORDS for words/sculpt; a sentence for message
 # caption: the gallery caption
 # All five: Words style, Medium size (min_font 57), Original ink (photo) -- the
-# full-colour lifelike look. NOTE: "photo" ink encodes the image as per-glyph
+# full-color lifelike look. NOTE: "photo" ink encodes the image as per-glyph
 # tonal modulation in the mask, which the resvg fallback flattens -> muddy. Render
 # this on a host WITH cairosvg (the VPS container or any cairo box) for the wow.
 MIN_FONT = 57   # Medium
@@ -99,7 +99,7 @@ def render_after(an, job) -> bytes:
     cfg = RenderConfig(); cfg.min_font_px = job.get("min_font", MIN_FONT)   # Medium
     warns = WarningCollector()
     if style == "sculpt":
-        # Sculpt has a separate ground (paper/navy/black) and ink (word colour).
+        # Sculpt has a separate ground (paper/navy/black) and ink (word color).
         return render_displacement_portrait(an, text.split(), ground="black", ink=ink,
                                             out_width=1200, supersample=2, uppercase=True)
     tonal._SUPERSAMPLE = 2

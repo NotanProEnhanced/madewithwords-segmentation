@@ -8,7 +8,7 @@ idea works WITHOUT any landmarks:
   1) GrabCut foreground (no model download),
   2) Laplacian DETAIL map -> where the eyes/nose/fur are,
   3) two size tiers driven by that detail (fine on features, coarse on body),
-  4) every glyph coloured by the photo, so the subject emerges FROM the words.
+  4) every glyph colored by the photo, so the subject emerges FROM the words.
 
 Species-agnostic: it never looks for a face, only for photographic detail.
 This is a PROTOTYPE (crude GrabCut matte, no warp/edge-ink) -- a quality gate, not the
@@ -35,7 +35,7 @@ _FONT = next((p for p in (
 ) if os.path.exists(p)), None)
 
 GROUNDS = {                     # BGR
-    # TRUE-TONE grounds: glyphs keep the photo's real luminance/colour (nothing faded), so a
+    # TRUE-TONE grounds: glyphs keep the photo's real luminance/color (nothing faded), so a
     # black-AND-white subject keeps BOTH -- white fur reads as bright text, black fur as dark.
     "mid":      (128, 128, 128),  # neutral mid-grey  -> both extremes contrast (BEST for B&W pets)
     "dark":     (40, 26, 20),     # deep navy         -> light fur pops; dark fur can go muddy
@@ -370,7 +370,7 @@ def _edge_ink(gray):
 def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     """Sculpted landmark-free word-portrait: word rows are WARPED by the photo's luminance so
     the type drapes over the subject's form, blended across detail tiers (fine on features,
-    coarse on the body), then coloured by the photo. Ported from the human displacement engine
+    coarse on the body), then colored by the photo. Ported from the human displacement engine
     but driven by the U2-Net silhouette + saliency -- this module never touches that engine."""
     H, W = bgr.shape[:2]
     gbgr = GROUNDS.get(ground, GROUNDS["dark"])
@@ -387,7 +387,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
 
     gray0 = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32)
 
-    # FEATURE FIELD (eyes/nose), colour-agnostic: markedly DARKER (pupil, wet nose, dark-eyed dog)
+    # FEATURE FIELD (eyes/nose), color-agnostic: markedly DARKER (pupil, wet nose, dark-eyed dog)
     # OR BRIGHTER (light iris, catchlight) than the broad neighbourhood. Computed UP FRONT so it can
     # PROTECT the eyes from the de-whisker and CONFINE the photographic blend to the features. A
     # uniform coat sits ~= its neighbourhood and scores ~0, so it is never over-processed.
@@ -552,7 +552,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         warped = np.where((df >= a0) & (df < b0), ia * (1 - bt) + ib * bt, warped)
     warped = np.where(df >= 1.0, wMi, warped)               # ink density 0..1
 
-    # 4) Colourise: the ink carries the photo's own colour, composited on the ground.
+    # 4) Colorise: the ink carries the photo's own color, composited on the ground.
     col = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2RGB).astype(np.float32)
     dens = np.ones_like(gray)
     if fade:                                                # ink-density styling (dark-furred pets)
@@ -560,7 +560,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         col = col * 0.72
     else:
         # SHADOW LIFT: a dark ground swallows dark-fur words -- so a shadowed neck/chest reads as
-        # an empty void (a "floating head"). Floor the word colour to a dim WARM ink so shadowed
+        # an empty void (a "floating head"). Floor the word color to a dim WARM ink so shadowed
         # fur still shows readable type against the dark ground. PET_SHADOW_LIFT scales it (0 off).
         _slift = float(os.environ.get("PET_SHADOW_LIFT", "1.0") or 1.0)
         if _slift > 0.0:
@@ -580,7 +580,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     ground_rgb = np.full((H, W, 3), gbgr[::-1], np.float32)
     # SUBJECT BASE: the flat ground is painted across the WHOLE canvas, so INSIDE the
     # silhouette it shows through every gap between glyphs and every row gap -- the coat
-    # reads as ground colour instead of the animal's own. PET_SUBJECT_BASE swaps the base
+    # reads as ground color instead of the animal's own. PET_SUBJECT_BASE swaps the base
     # inside the mask for the SOURCE PHOTO (dimmed by PET_SUBJECT_DIM so the words still
     # read on top of it), leaving the flat ground only BEHIND the subject. The glyphs
     # themselves are unchanged -- this only alters what sits behind them within the mask.
@@ -601,7 +601,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     #   glyph   the text field (warped)  -- is any type laid here at all?
     #   dens    the density multiplier   -- is it being thinned away?
     #   alpha   glyph * dens * mask      -- what actually reaches the composite
-    #   ink     the word COLOUR's luma   -- near-white words on pale fur are invisible,
+    #   ink     the word COLOR's luma   -- near-white words on pale fur are invisible,
     #   base    what sits behind them       not absent, and only these two together say which
     _pd = os.environ.get("PET_DUMP_FIELDS", "").strip()
     if _pd:
@@ -672,7 +672,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         out = out * (1.0 - m3) + np.clip(out + _shp * (out - blur), 0, 255) * m3
 
     # 8b) Eye/feature POP: make the eyes read alive and the nose glisten. Within the feature field
-    #     (eyes of any iris colour, wet nose), add crisp local contrast AND amplify the existing
+    #     (eyes of any iris color, wet nose), add crisp local contrast AND amplify the existing
     #     catchlight/shine (the bright specular point already in the photo). Landmark-free: it
     #     rides the same feature field, so a uniform coat (field ~0) is untouched.
     #     PET_EYE_POP scales it (0 disables).
@@ -685,7 +685,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         spec = np.clip((g2 - 175.0) / 60.0, 0, 1)[..., None]                 # existing catchlight / nose shine
         out = np.clip(out + spec * fpk * 95.0, 0, 255)                       # lift it -> a living glint
 
-    # 9) Vibrance: boost less-saturated colours more so warm fur glows without going garish.
+    # 9) Vibrance: boost less-saturated colors more so warm fur glows without going garish.
     _vib = float(os.environ.get("PET_VIBRANCE", "0.35") or 0.35)
     if _vib > 0.0 and not fade:
         hsv = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)

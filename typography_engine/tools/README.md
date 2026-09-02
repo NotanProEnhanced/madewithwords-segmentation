@@ -67,7 +67,7 @@ Create a portrait  ->  auto-package as a reel (this template)  ->  post to
 Reels/Stories/TikTok/Pinterest  ->  reach  ->  new users create  ->  (repeat)
 ```
 
-- **Seed fuel:** batch-generate demo reels (faces × occasions × colours) to keep
+- **Seed fuel:** batch-generate demo reels (faces × occasions × colors) to keep
   the channels full — that's what the manifest + `batch_reels.py` are for.
 - **Compounding fuel:** wire `build_reel()` into the app so every render offers a
   one-tap **"Share as a reel."** User-made reels are authentic, free distribution

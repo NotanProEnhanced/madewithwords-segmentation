@@ -70,7 +70,7 @@ services:
       # repetition so a varied word list reads as varied. Revert by deleting the line.
       - TYPO_WORD_VARIETY=${TYPO_WORD_VARIETY:-}
       # Auto-levels: recover FLAT / low-contrast uploads (per-channel black/white stretch
-      # + median-normalising gamma; restores colour the internal luma stretch can't).
+      # + median-normalising gamma; restores color the internal luma stretch can't).
       # Default OFF (byte-identical); range-gated so good photos are untouched even when on.
       # Set TYPO_AUTOLEVELS=1 in THIS tree's .env to test on staging.
       - TYPO_AUTOLEVELS=${TYPO_AUTOLEVELS:-}
@@ -121,7 +121,7 @@ services:
       # Shadow lift: preserve modelled detail in a face's shaded side instead of crushing
       # it to the near-black ground (0..1; 0 disables). Default 0.18.
       - TYPO_SHADOW_LIFT=${TYPO_SHADOW_LIFT:-0.18}
-      # Colour fidelity (step 3): vibrance strength, oversaturation ceiling (HSV S; 0 off),
+      # Color fidelity (step 3): vibrance strength, oversaturation ceiling (HSV S; 0 off),
       # and word-ink saturation multiplier. Lower vibrance / cap => less orange skin,
       # less magenta lips. Defaults tuned for natural skin.
       - TYPO_VIBRANCE=${TYPO_VIBRANCE:-0.22}
@@ -155,7 +155,7 @@ services:
       # staging so it can be validated; set =0 in .env to revert. Tuning knobs:
       # TYPO_POLARITY_GAMMA (>1 = harder shadows), TYPO_POLARITY_FLOOR (0 = true-black gaps).
       - TYPO_POLARITY=${TYPO_POLARITY:-1}
-      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-0}   # OFF: photographic eyes are truthful (real brown/blue, real lens); word-formed eyes caused iris-colour + sunglasses artefacts
+      - TYPO_WORD_EYES=${TYPO_WORD_EYES:-0}   # OFF: photographic eyes are truthful (real brown/blue, real lens); word-formed eyes caused iris-color + sunglasses artefacts
       # Sunglasses backstop: suppress fabricated eyes on dark lenses (auto). =0 reverts.
       - TYPO_DARKSCLERA=${TYPO_DARKSCLERA:-1}
       - TYPO_LENS_DARKRATIO=${TYPO_LENS_DARKRATIO:-0.62}
@@ -182,7 +182,7 @@ services:
       - TYPO_POLARITY_GAMMA=${TYPO_POLARITY_GAMMA:-1.35}
       - TYPO_POLARITY_FLOOR=${TYPO_POLARITY_FLOOR:-0.18}
       - TYPO_NOIR_CONTRAST=${TYPO_NOIR_CONTRAST:-1.08}
-      # Iris colour fallback lift: brightens a low-saturation (brown) iris so it reads on the dark ground.
+      # Iris color fallback lift: brightens a low-saturation (brown) iris so it reads on the dark ground.
       - TYPO_IRIS_LIFT=${TYPO_IRIS_LIFT:-1.35}
       # De-posterize: add the photo's smooth light->dark falloff back so the face isn't flat/
       # banded (0..1; 0 disables). Default 0.6.

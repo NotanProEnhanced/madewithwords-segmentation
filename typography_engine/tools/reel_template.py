@@ -162,7 +162,7 @@ def build_reel(cfg):
         d.text(((W-cw)//2,py0+12), endcard, font=f_cta, fill=(250,249,247))
 
     # The buyer's words, shown as a tidy centered block — uniform font, size and
-    # colour, no overlap, every word fully inside the frame. Greedy-wrapped into
+    # color, no overlap, every word fully inside the frame. Greedy-wrapped into
     # centred lines that fade in gently, one after another.
     display_words = [w.upper() for w in dict.fromkeys(words) if w][:12]
     def words_layer(scale):

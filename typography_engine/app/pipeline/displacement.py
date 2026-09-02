@@ -26,7 +26,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .analyze import Analysis
 
-# Ground (background + ink) options. BGR colours. ``tone`` selects whether the
+# Ground (background + ink) options. BGR colors. ``tone`` selects whether the
 # ink follows the photo's highlights ("light" -> light ink on a dark ground) or
 # its shadows ("dark" -> dark ink on a light ground).
 GROUNDS = {
@@ -41,10 +41,10 @@ GROUNDS = {
 PAPER_FAMILY = frozenset({"paper"})
 
 # "Match your space" backdrop swatches. Unlike a GROUND (which re-renders the whole
-# subject on that colour), a backdrop recolours ONLY the segmented background --
+# subject on that color), a backdrop recolors ONLY the segmented background --
 # the region OUTSIDE the subject silhouette. The subject is rendered exactly as its
 # ground dictates (e.g. the navy Lifelike sculpt), untouched. Values are BGR wall
-# colours a buyer can match to a room. `None`/unknown => the legacy TYPO_BG_LIGHTEN
+# colors a buyer can match to a room. `None`/unknown => the legacy TYPO_BG_LIGHTEN
 # behaviour (navy sculpt on a lifted-grey backdrop).
 BACKDROPS = {
     "studio": (230, 230, 230),  # the DEFAULT "Studio" wall -- a light neutral grey (#e6e6e6).
@@ -61,8 +61,8 @@ BACKDROPS = {
     "blush": (222, 222, 236),   # soft warm rose
 }
 
-# Floral background FRAMES (memorial). Unlike a BACKDROP (a solid wall colour), a floral
-# fills the region OUTSIDE the subject silhouette with a curated watercolour frame on a
+# Floral background FRAMES (memorial). Unlike a BACKDROP (a solid wall color), a floral
+# fills the region OUTSIDE the subject silhouette with a curated watercolor frame on a
 # cream ground -- so the portrait reads as ink-on-paper inside a floral mat. A floral pairs
 # ONLY with the ink-on-ivory Paper sculpt (forced below), and is composited AFTER the print
 # canvas pad so the blooms (corners / borders / side columns) land on the true canvas edges.
@@ -111,14 +111,14 @@ def _load_floral(key: str) -> Optional[np.ndarray]:
         _floral_cache[key] = None if img is None else _pad_floral_4x5(img.astype(np.float32))
     return _floral_cache[key]
 
-# Paper = an INK-DRAWING on warm ivory. Colouring words by the photo's brightness
+# Paper = an INK-DRAWING on warm ivory. Coloring words by the photo's brightness
 # fails on a light ground (light hair/skin are highlights -> they vanish), so here
 # tone comes from ink DENSITY instead: dark photo areas get heavy dark ink; light
 # areas fade to paper; and an EDGE pass adds ink along contours (hair strands,
 # silhouette, features) so light hair is DRAWN by its structure, not erased. The
 # ink itself is always dark (a warm hue) so wherever it lands it reads on the ivory.
 _PAPER_INK_VALUE = 102      # HSV V cap of the ink -- dark enough to read on ivory
-_PAPER_INK_SAT = 1.95       # COLOUR lives in the GLYPHS: push hue so skin/lips/eyes read
+_PAPER_INK_SAT = 1.95       # COLOR lives in the GLYPHS: push hue so skin/lips/eyes read
 _PAPER_DARK_GAMMA = 0.80    # <1 lifts faint mid-darks so the face isn't too empty
 _PAPER_DARK_GAIN = 1.12     # overall ink weight from darkness
 _PAPER_EDGE_GAIN = 0.85     # extra ink along contours (this is what draws light hair)
@@ -167,7 +167,7 @@ _EYE_SCLERA_MIN = 95.0
 # crop tipped it over), painting dark discs on an open-eyed face.
 _EYE_REFLECTIVE_BOTH = 135.0
 
-# Sculpted ink colours: the WORD colour (BGR) draped on the dark ground. These are
+# Sculpted ink colors: the WORD color (BGR) draped on the dark ground. These are
 # light/bright tints (mirroring the studio's ink swatches) so they read on navy.
 # "photo" is handled separately (per-pixel from the source). Keeps Sculpted's
 # light-on-dark aesthetic while giving it the same palette as Words/Passage.
@@ -326,7 +326,7 @@ def render_displacement_portrait(
     seed: int = 7,
     uppercase: bool = True,
     ink: Optional[str] = None,
-    ink_hex: Optional[str] = None,  # only when ink=="custom": the user-picked colour.
+    ink_hex: Optional[str] = None,  # only when ink=="custom": the user-picked color.
                                   # Draped as a single light tint (lifted to read on the
                                   # dark ground) so a Custom pick SCULPTS in its own hue
                                   # instead of falling back to a flat/photo render.
@@ -355,7 +355,7 @@ def render_displacement_portrait(
                                   # (above face) step down from the largest tier -- plus a hair
                                   # local-contrast 'sculpt'. Default ON; env TYPO_GRADUATE_BODY=0
                                   # reverts with no code change.
-    backdrop: Optional[str] = None,  # "match your space" background colour. Recolours ONLY the
+    backdrop: Optional[str] = None,  # "match your space" background color. Recolors ONLY the
                                   # region outside the subject silhouette (a named key in BACKDROPS);
                                   # the subject render is untouched. None => legacy TYPO_BG_LIGHTEN.
     sunglasses: bool = False,     # MANUAL sunglasses control. Pixels cannot reliably tell a
@@ -388,7 +388,7 @@ def render_displacement_portrait(
     # -- NOT the muted ink-on-ivory Paper treatment (which caps brightness/boosts ink and reads
     # flat and washed). So force the hero DARK ground here: the subject renders exactly like a
     # normal Original portrait, and the floral frame (composited below) fills everything OUTSIDE
-    # the silhouette with the cream watercolour mat, so the visible background is cream, not navy.
+    # the silhouette with the cream watercolor mat, so the visible background is cream, not navy.
     _floral_key = (backdrop or "").strip().lower()
     _floral_key = _floral_key if _floral_key in _FLORAL_KEYS else None
     if _floral_key:
@@ -464,7 +464,7 @@ def render_displacement_portrait(
     # --- Living eyes: true iris geometry from MediaPipe's iris landmarks ------
     # (centre + 4-point ring per eye, 478-point mesh only). Drives a round pupil,
     # an iris-scaled text tier, a real catchlight, and -- separately gated -- the
-    # person's true eye colour. Both irises must resolve large enough to carry
+    # person's true eye color. Both irises must resolve large enough to carry
     # structure; otherwise every step below falls back to the legacy behavior.
     # Collect open, unshaded eyes across EVERY face (primary + secondary) so a group
     # portrait renders identical eyes on all subjects. Each face runs the SAME gates:
@@ -711,9 +711,9 @@ def render_displacement_portrait(
         emask = np.zeros((H, W), np.uint8)
         for icx, icy, ir in eye_centers:
             cv2.circle(emask, (int(round(icx)), int(round(icy))), int(ir * 4.0), 1, -1)
-        # The reflection is bright AND/OR strongly COLOURED (a blue lens glare spans a
+        # The reflection is bright AND/OR strongly COLORED (a blue lens glare spans a
         # wide luminance, so brightness alone misses most of it). Catch both, then tone
-        # toward neutral skin so the lens reads as a muted area, not a coloured,
+        # toward neutral skin so the lens reads as a muted area, not a colored,
         # eye-like blob. Only runs when eyes are suppressed -> real eyes untouched.
         _sat = cv2.cvtColor(cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA),
                             cv2.COLOR_BGR2HSV)[..., 1].astype(np.float32)
@@ -724,7 +724,7 @@ def render_displacement_portrait(
             skin = float(np.median(skin_px)) * 0.9 if skin_px.size else 120.0
             gm = cv2.GaussianBlur(spec.astype(np.float32), (0, 0), max(2.0, _ssn * 4.0))
             gray = gray * (1.0 - gm) + skin * gm        # density/displacement sees no glare
-            _eye_deglare = (gm, float(skin))            # reused on the colour source below
+            _eye_deglare = (gm, float(skin))            # reused on the color source below
 
     # Dark-lens gray fill: darken the lens region so the density/displacement field stays
     # low there (helps the lens read as an opaque dark surface). Alpha is cleared below too.
@@ -1070,7 +1070,7 @@ def render_displacement_portrait(
     warped = np.where(df >= 1.0, wMi, warped)
 
     # Iris circles take the eye-scaled tier (feathered edge); iris_m is reused
-    # below for the colour blend.
+    # below for the color blend.
     iris_m = None
     if irises and t_iris is not None:
         iris_m = np.zeros((H, W), np.float32)
@@ -1414,7 +1414,7 @@ def render_displacement_portrait(
         a = a * (1.0 - 0.92 * teeth)
         _stage("11-teeth", a)
     if ground in PAPER_FAMILY:
-        # INK-DRAWING density: tone is how much ink lands, not its colour. Heavy ink
+        # INK-DRAWING density: tone is how much ink lands, not its color. Heavy ink
         # where the photo is dark; fade to paper where it's light; an edge boost draws
         # contours/hair strands so light hair isn't erased on the ivory.
         valn = gray / 255.0
@@ -1516,21 +1516,21 @@ def render_displacement_portrait(
         # Photo Lifelike composite. Noir (mono) shares this exact path -- full tonal range,
         # polarity shadows, living eyes -- and is desaturated to black & white at the end,
         # so it's a B&W Lifelike, not the old flat single-ink sculpt.
-        # Words take the photo's OWN colours, draped over the form, on the ground.
+        # Words take the photo's OWN colors, draped over the form, on the ground.
         bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
-        if _eye_deglare is not None:        # tone the suppressed-eye glare out of the colour too
+        if _eye_deglare is not None:        # tone the suppressed-eye glare out of the color too
             gm, skin = _eye_deglare
             bgr_full = bgr_full * (1.0 - gm[..., None]) + np.float32(skin) * gm[..., None]
         hsv = cv2.cvtColor(np.clip(bgr_full, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
         if ground in PAPER_FAMILY:
-            # Ink-drawing with COLOURED glyphs: the words keep the photo's hue at high
-            # saturation but a capped dark value, so each word reads as coloured TYPE on
-            # ivory (skin/lips/eyes show) -- colour from the glyphs, not a photo overlay.
+            # Ink-drawing with COLORED glyphs: the words keep the photo's hue at high
+            # saturation but a capped dark value, so each word reads as colored TYPE on
+            # ivory (skin/lips/eyes show) -- color from the glyphs, not a photo overlay.
             # Tone is the ink DENSITY applied above; minimum() keeps deep shadows deep.
             hsv[..., 1] = np.clip(hsv[..., 1] * _PAPER_INK_SAT, 0, 255)
             hsv[..., 2] = np.minimum(hsv[..., 2], np.float32(_PAPER_INK_VALUE))
         else:
-            hsv[..., 1] = np.clip(hsv[..., 1] * float(os.environ.get("TYPO_INK_SAT", "1.02") or 1.02), 0, 255)  # step-3 colour-fidelity knob (was fixed 1.02)
+            hsv[..., 1] = np.clip(hsv[..., 1] * float(os.environ.get("TYPO_INK_SAT", "1.02") or 1.02), 0, 255)  # step-3 color-fidelity knob (was fixed 1.02)
             # On a dark ground the gaps between glyphs show GROUND, so the render reads
             # darker than the source photograph. This lifts the ink value to compensate.
             # Multiplier and offset were hardcoded at 1.14 / 14 -- both now tunable.
@@ -1540,7 +1540,7 @@ def render_displacement_portrait(
         ink_col = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
         # SUBJECT BASE: the ground is painted across the whole canvas, so INSIDE the
         # silhouette it shows through every gap between glyphs -- the face reads as ground
-        # colour rather than skin, and the portrait comes out far darker than the source.
+        # color rather than skin, and the portrait comes out far darker than the source.
         # TYPO_SUBJECT_BASE swaps the base inside the mask for the SOURCE PHOTO, dimmed by
         # TYPO_SUBJECT_DIM so the words still read on top of it. The flat ground stays
         # BEHIND the subject. 0 (default) is byte-identical to the previous behaviour.
@@ -1571,10 +1571,10 @@ def render_displacement_portrait(
                 _dump("soft01", soft01)
                 _dump("alpha", al)
                 _dump("base", _base)
-                # The COLOUR the glyphs are painted in. Where alpha is near 1 the output is
+                # The COLOR the glyphs are painted in. Where alpha is near 1 the output is
                 # essentially this layer alone, so a portrait that reads too dark with the
                 # photographic base making no difference is a statement about ink_col and
-                # nothing else. Dumped with its own statistics because a picture of a colour
+                # nothing else. Dumped with its own statistics because a picture of a color
                 # layer is easy to misjudge by eye.
                 try:
                     _ic = np.asarray(ink_col, np.float32)
@@ -1663,7 +1663,7 @@ def render_displacement_portrait(
             # Polarity model (the paper-grade shadow behaviour, brought to the dark-ground
             # Lifelike look). Instead of "light ink whose COVERAGE follows brightness"
             # (shadow -> no ink -> ground shows -> absence), make the type present at HIGH
-            # coverage everywhere and carry the tone in the LETTER COLOUR across the full
+            # coverage everywhere and carry the tone in the LETTER COLOR across the full
             # range: near-black letters in deep shadow (a heavy dark mass to lean into),
             # light letters in highlight. Two tuning knobs (env; iterate without a rebuild):
             #   TYPO_POLARITY_GAMMA (>1 drives deep shadow harder to black; default 1.35)
@@ -1708,8 +1708,8 @@ def render_displacement_portrait(
         word = np.array(_SCULPT_INK[ink], np.float32)
         out = np.array(g["bg"], np.float32) * (1 - al) + word * al
     elif ink == "custom" and ink_hex:
-        # A user-picked colour, sculpted as a single light tint. Reuse the poster
-        # helper's dark-colour lift (hue preserved, brightened if it's too dark to
+        # A user-picked color, sculpted as a single light tint. Reuse the poster
+        # helper's dark-color lift (hue preserved, brightened if it's too dark to
         # read on the dark ground), then drape it like any other sculpt ink.
         from .tonal import custom_poster
         _cp = custom_poster(ink_hex)
@@ -1722,9 +1722,9 @@ def render_displacement_portrait(
     else:
         out = np.array(g["bg"], np.float32) * (1 - al) + np.array(g["ink"], np.float32) * al
 
-    # Living eyes, colour: glyphs inside the iris carry the person's TRUE eye
+    # Living eyes, color: glyphs inside the iris carry the person's TRUE eye
     _t("A-after-ink-branch")
-    # colour -- sampled by the shared gated helper (both irises saturated and
+    # color -- sampled by the shared gated helper (both irises saturated and
     # hue-consistent, else no tint; sampled, never invented). Dark grounds only:
     # the lifted tint is designed for light-ink-on-dark.
     # TYPO_EYE_PLAIN: render the eye as TYPE and nothing else. The iris tint, limbal
@@ -1739,7 +1739,7 @@ def render_displacement_portrait(
         from .tonal import _iris_tint, _iris_tint_face
 
         def _iris_layer(_tint):
-            """The colour laid inside an iris: the sampled tint when the gate passed, else
+            """The color laid inside an iris: the sampled tint when the gate passed, else
             the source's own iris pixels lifted so a dark brown reads on the dark ground."""
             if _tint is not None:
                 _tp = np.array(_tint[1][::-1], np.float32)   # lifted RGB -> BGR
@@ -1756,8 +1756,8 @@ def render_displacement_portrait(
 
         if (os.environ.get("TYPO_IRIS_PER_FACE", "").strip().lower() in ("1", "true", "on", "yes")
                 and _iris_face_idx):
-            # Each face gets ITS OWN sampled colour on ITS OWN irises. Previously one tint
-            # from faces[0] was painted onto every iris in the image, so a mixed-eye-colour
+            # Each face gets ITS OWN sampled color on ITS OWN irises. Previously one tint
+            # from faces[0] was painted onto every iris in the image, so a mixed-eye-color
             # group inherited the primary face's eyes. A face whose gate rejects now falls
             # back alone rather than forcing the fallback on everyone.
             for _fx in sorted(set(_iris_face_idx)):
@@ -1782,7 +1782,7 @@ def render_displacement_portrait(
             # The iris is composited over the GROUND, so wherever ink alpha is low the navy
             # ground (13,27,58 RGB -- a saturated dark blue) shows through and a correctly
             # sampled BROWN iris renders BLUE. TYPO_IRIS_ALPHA floors the alpha inside the
-            # iris so the sampled colour wins. 0 (default) keeps the previous behaviour.
+            # iris so the sampled color wins. 0 (default) keeps the previous behaviour.
             _ia = float(os.environ.get("TYPO_IRIS_ALPHA", "0") or 0.0)
             _ial = np.maximum(al, _ia) if _ia > 0.0 else al
             iout = np.array(g["bg"], np.float32) * (1 - _ial) + tip * _ial
@@ -1802,8 +1802,8 @@ def render_displacement_portrait(
             iout = np.array(g["bg"], np.float32) * (1 - al) + iris_col * al
             out = out * (1.0 - im3) + iout * im3
     elif irises and iris_m is not None and ground in PAPER_FAMILY and ink == "photo":
-        # Paper: keep the iris its TRUE source colour. The Keep-Paper-Light lift
-        # mutes everything toward the paper, which would wash the eye colour out --
+        # Paper: keep the iris its TRUE source color. The Keep-Paper-Light lift
+        # mutes everything toward the paper, which would wash the eye color out --
         # so re-lay the source's own iris pixels here, saturated but NOT lifted, so
         # the real hue (her green/hazel/blue) pops against the airy face.
         bf = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
@@ -1824,8 +1824,8 @@ def render_displacement_portrait(
     # shadow gradient, not a flat disc) -- the SAME treatment in every ink. Using
     # the photo's actual pixels in Photo mode read too bright/warm (the whites
     # glowed and picked up the render's cast); the neutral tone never glows and
-    # never takes the ink's colour. The iris still carries the subject's real eye
-    # colour in Photo mode (handled separately above).
+    # never takes the ink's color. The iris still carries the subject's real eye
+    # color in Photo mode (handled separately above).
     if (g["tone"] == "light" or ground in PAPER_FAMILY) and (irises or teeth is not None):
         gshade = np.clip((gray / 255.0 - 0.20) / 0.55, 0.0, 1.0)
         # On the mid greige paper ground the sclera/teeth must be painted brighter
@@ -1849,21 +1849,21 @@ def render_displacement_portrait(
             tw = (teeth * gshade * t_str)[..., None]
             out = out * (1.0 - tw) + np.array(t_col, np.float32) * tw
     # Catchlight is a SPECULAR highlight: always white (the lightest thing on the
-    # face), never ink- or iris-coloured -- painted over the colour composite.
+    # face), never ink- or iris-colored -- painted over the color composite.
     if irises and (g["tone"] == "light" or ground in PAPER_FAMILY):
         gl3 = glint[..., None]
         out = out * (1.0 - gl3) + np.float32(238.0) * gl3   # bright glint, below blow-out so vibrance doesn't bloom it
     # Realistic eyes: composite the photo's OWN eye openings, tone-normalised, OVER the
     # synthetic fill -- the real eye never glows (the synthetic bright sclera/catchlight
-    # does). Applied for EVERY ink on a dark ground; the Photo ink keeps it full colour,
+    # does). Applied for EVERY ink on a dark ground; the Photo ink keeps it full color,
     # the tinted/monochrome inks (Noir/Sepia/Navy/Sage) then DESATURATE it into the ink's
-    # palette so a full-colour eye doesn't clash with the tinted face. Gated by the
+    # palette so a full-color eye doesn't clash with the tinted face. Gated by the
     # openness check (closed eyes skipped); paper keeps its words-form-the-eye treatment.
     # Word-formed eyes (paper's treatment, brought to the dark ground): when TYPO_WORD_EYES
     # is on, the Photo Lifelike look SKIPS this photographic paste and lets the eye be built
     # from the synthetic sclera + tinted-iris words + limbal ring + catchlight already laid
     # above -- so the eye reads as part of the typography, not a photo patch. Tinted inks
-    # (Noir/Sepia/...) still get the photographic eye (they have no colour clash to word-form).
+    # (Noir/Sepia/...) still get the photographic eye (they have no color clash to word-form).
     _word_eyes = os.environ.get("TYPO_WORD_EYES", "0").strip().lower() in ("1", "true", "on", "yes")
     if irises and g["tone"] == "light" and not (_word_eyes and ink in ("photo", "mono")):
         from .tonal import _photo_eye_overlay
@@ -1948,11 +1948,11 @@ def render_displacement_portrait(
     oh = max(1, int(out_width * h0 / w0))
     out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
     _t("E-after-resize")
-    # Background fill: recolour the region OUTSIDE the subject silhouette. The subject
+    # Background fill: recolor the region OUTSIDE the subject silhouette. The subject
     # (on its own ground -- e.g. the navy Lifelike sculpt) is NEVER touched; only pixels
     # outside the silhouette move. Two sources, in priority order:
-    #   1. An explicit `backdrop` swatch (the "match your space" wall colour) -- fills
-    #      with that colour regardless of ground. This is the user-facing feature.
+    #   1. An explicit `backdrop` swatch (the "match your space" wall color) -- fills
+    #      with that color regardless of ground. This is the user-facing feature.
     #   2. Else the legacy env TYPO_BG_LIGHTEN lift (navy sculpt on a lighter grey),
     #      dark grounds only (the light "paper" ground is already bright -> skipped).
     _transparent = (backdrop or "").strip().lower() == "transparent"
@@ -1998,11 +1998,11 @@ def render_displacement_portrait(
     out = _fit_print_canvas(out, _pad_bg, print_aspect)
     _t("F-after-canvas")
     from .preprocess import apply_vibrance
-    _vib = float(os.environ.get("TYPO_VIBRANCE", "0.22") or 0.22)   # step-3 colour-fidelity knob (was fixed 0.34)
-    out = apply_vibrance(out, strength=_vib, bgr=True)   # gentle life (clarity); restrained so colour stays natural and the sclera isn't glow-brightened
-    # Colour fidelity: soft-cap HSV saturation so the oversaturated extremes -- magenta lips,
+    _vib = float(os.environ.get("TYPO_VIBRANCE", "0.22") or 0.22)   # step-3 color-fidelity knob (was fixed 0.34)
+    out = apply_vibrance(out, strength=_vib, bgr=True)   # gentle life (clarity); restrained so color stays natural and the sclera isn't glow-brightened
+    # Color fidelity: soft-cap HSV saturation so the oversaturated extremes -- magenta lips,
     # orange-boosted skin highlights -- compress toward a natural ceiling while ordinary skin
-    # keeps its colour. Only saturation ABOVE the cap is compressed (35% slope), so nothing
+    # keeps its color. Only saturation ABOVE the cap is compressed (35% slope), so nothing
     # below it is touched. TYPO_SAT_CAP=0 disables. Default 170 (gentle).
     _scap = float(os.environ.get("TYPO_SAT_CAP", "150") or 150)
     if _scap > 0:
@@ -2011,7 +2011,7 @@ def render_displacement_portrait(
         _hh[..., 1] = np.where(_s > _scap, _scap + (_s - _scap) * 0.35, _s)
         out = cv2.cvtColor(_hh.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
     if _floral_key and _floral_inside is not None:
-        # Floral frame: composite the watercolour frame everywhere OUTSIDE the subject, on the
+        # Floral frame: composite the watercolor frame everywhere OUTSIDE the subject, on the
         # padded canvas (blooms land on the true edges). Pad the subject alpha to the SAME canvas
         # (0 outside) so hair feathers into the frame; a missing art file -> a plain cream mat.
         _fl = _load_floral(_floral_key)

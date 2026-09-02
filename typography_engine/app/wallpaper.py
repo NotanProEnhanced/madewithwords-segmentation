@@ -7,7 +7,7 @@ everywhere*, not only on a wall. That "digital everywhere" bundle is a zero-COGS
 value-add and a genuine differentiator versus flowers or a plain print.
 
 Approach: never crop the face. Each target is a solid canvas in the portrait's own
-ground colour (sampled from the master's border, so the seam is invisible) with the
+ground color (sampled from the master's border, so the seam is invisible) with the
 whole portrait scaled to *contain* inside it, centred, plus a whisper of vignette for
 depth. Pure Pillow + NumPy (both already dependencies); no new packages.
 """
@@ -21,7 +21,7 @@ from PIL import Image
 
 
 def _ground_color(im: Image.Image) -> Tuple[int, int, int]:
-    """Median colour of the master's outer border — the flat ground the portrait
+    """Median color of the master's outer border — the flat ground the portrait
     sits on. Robust to the odd stray bright letter that reaches the edge."""
     a = np.asarray(im.convert("RGB"))
     h, w = a.shape[:2]

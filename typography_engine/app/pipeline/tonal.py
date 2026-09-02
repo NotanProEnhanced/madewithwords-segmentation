@@ -49,8 +49,8 @@ _ROW_HEIGHT_FRAC = 0.88
 _SUPERSAMPLE = 2
 _SS_MAX_RENDER_W = 3200
 
-# Selective colour: in the COLOUR inks (and Custom), the eyes + teeth keep their
-# true photo colours (the same look "Original" gives) so they pop against the
+# Selective color: in the COLOR inks (and Custom), the eyes + teeth keep their
+# true photo colors (the same look "Original" gives) so they pop against the
 # tinted face. 0 = off (fully monochrome ink), 1 = full natural in those regions;
 # values between dial the strength. Edges are always feathered.
 _SELCOLOR = 1.0
@@ -138,7 +138,7 @@ _MSG_BOOST = 0.5
 # 8"x10") so the digital file, the Printful print, and the studio's framed
 # presentation all share one true aspect -- no letterbox gaps in the mat and no
 # crop at the printer. The art is fitted centred and the canvas filled with the
-# ground colour, which is seamless because the composite ground is solid.
+# ground color, which is seamless because the composite ground is solid.
 _PRINT_ASPECT = 0.8          # width / height = 4:5
 
 
@@ -182,10 +182,10 @@ def _auto_message_font(text: str) -> float:
     f = 24.0 - 3.5 * math.log2(max(n, 24) / 24.0)
     return float(max(13.0, min(25.0, f)))
 
-# Named ink treatments. Each duotone is (light_end, dark_end): the colour at the
+# Named ink treatments. Each duotone is (light_end, dark_end): the color at the
 # brightest tone and at the darkest. Light end is near the background so
 # highlights melt into it; dark end carries the features. "photo" samples the
-# source image's own colour. Background pairs with the chosen ink.
+# source image's own color. Background pairs with the chosen ink.
 _PALETTES = {
     "mono":     ("#bebebe", "#000000", "#ffffff"),   # reference grayscale
     "navy":     ("#dbe4f1", "#08111f", "#ffffff"),
@@ -202,7 +202,7 @@ def _hex_to_rgb(h: str) -> Tuple[int, int, int]:
 
 
 # Positional-gradient inks: hue runs top->bottom independent of the photo; tone
-# still drives density. Stops are (vertical_fraction, colour).
+# still drives density. Stops are (vertical_fraction, color).
 _GRADIENTS = {
     "spectrum": [(0.00, "#f2b705"), (0.18, "#f25c05"), (0.38, "#e6002e"),
                  (0.58, "#b5179e"), (0.78, "#6a1fb5"), (1.00, "#1f3fb5")],
@@ -223,7 +223,7 @@ def _grad_rgb(stops, v: float) -> Tuple[int, int, int]:
     return _hex_to_rgb(stops[-1][1])
 
 # Calligram looks, keyed by the same swatch names as the mosaic inks:
-# (ink/full-darkness colour, background). gold_noir is light ink on a dark page.
+# (ink/full-darkness color, background). gold_noir is light ink on a dark page.
 _CALLIGRAM = {
     "navy":      ("#0d1b3a", "#ffffff"),
     "sepia":     ("#2a1808", "#fbf6ea"),
@@ -244,8 +244,8 @@ _POSTER = {
     "forest":    ("#06110b", "#cfe6d6"),
     "gold_noir": ("#0b0a06", "#e8c66a"),
     "mono":      ("#0a0a0a", "#f2ece0"),
-    "photo":     ("#0a0a0c", None),       # tint from the source colour
-    # Original on PAPER: the source colour rendered as a coloured engraving on a
+    "photo":     ("#0a0a0c", None),       # tint from the source color
+    # Original on PAPER: the source color rendered as a colored engraving on a
     # warm white. Darkness drives the ink (shadows/features bold) with a floor so
     # light skin + grey hair still tint instead of vanishing into the paper.
     "photo_paper": ("#f6f1e8", None),
@@ -255,7 +255,7 @@ _POSTER = {
 # Mosaic (Words) and Passage (Message) read "dark" because they run through the
 # LAYERED renderer (words scattered on a near-black ground), a fundamentally
 # different engine from Lifelike (displacement: words follow the facial form, full
-# photographic colour). Recolouring the layered engine can make it brighter but never
+# photographic color). Recoloring the layered engine can make it brighter but never
 # makes it read as Lifelike -- the scatter layout is the tell. So when this flag is on,
 # main.py ROUTES the photo (Original) Mosaic/Passage renders through the Lifelike engine
 # instead. Env-gated (TYPO_LAYERED_PHOTO) so it's off until validated on staging.
@@ -264,7 +264,7 @@ def lifelike_route_on() -> bool:
 
     Default ON. With it off, choosing Passage -- which is what pasting a tribute produces --
     drops the render to the layered mosaic engine: even rows of repeated words, and the Type
-    Colour control inert because that renderer takes its palette another way. Only
+    Color control inert because that renderer takes its palette another way. Only
     LovedInWords carried the flag, so the same photograph and the same words rendered as a
     portrait on one brand and as a wall of text on the others.
 
@@ -274,7 +274,7 @@ def lifelike_route_on() -> bool:
 
 
 def custom_poster(hex_in: str):
-    """Build a (ground, ink) poster pair from a user-picked colour for the 'custom'
+    """Build a (ground, ink) poster pair from a user-picked color for the 'custom'
     ink. The near-black ground is fixed; the chosen hue is lifted toward white if
     it's too dark to read on that ground (hue preserved, just brightened). Returns
     None on a malformed hex so the caller can fall back."""
@@ -305,9 +305,9 @@ _FEATURE_GROUPS = (_EYE_L, _EYE_R, _BROW_L, _BROW_R, _LIPS, _NOSE)
 _EYE_LUMA_CAP = 198.0
 
 # Eye treatment is chosen by INK, not by style: the realistic photographic eye only
-# matches a full-colour face (the Photo / "Original" ink), so it is used there; the
+# matches a full-color face (the Photo / "Original" ink), so it is used there; the
 # tinted/monochrome inks (Noir/Sepia/Navy/Sage) render the stylized TYPOGRAPHIC eye
-# instead, in the ink's palette, so a full-colour eye never clashes with a tinted
+# instead, in the ink's palette, so a full-color eye never clashes with a tinted
 # face. (A brief detour rendered a typographic eye for ALL Mosaic/Passage inks; the
 # user rejected it for the Photo ink -- realism wins there -- so the split is by ink.)
 
@@ -456,21 +456,21 @@ def _eye_ellipses(an, scale: float) -> List[Tuple[float, float, float, float]]:
     return out
 
 
-# --- Living eyes: the person's true iris colour carried by the glyphs ---------
+# --- Living eyes: the person's true iris color carried by the glyphs ---------
 # MediaPipe's 478-point mesh includes the irises: centre + 4-point ring per eye.
 _IRIS_L = (468, (469, 470, 471, 472))
 _IRIS_R = (473, (474, 475, 476, 477))
 # Faithfulness gate: tint ONLY when the photo itself clearly carries the eye
-# colour. Both irises must be reasonably saturated and hue-consistent with each
+# color. Both irises must be reasonably saturated and hue-consistent with each
 # other; faded/B&W/dim photos fail the gate and render exactly as before. We
-# sample colour, never invent it (same doctrine as the enhancement stage).
+# sample color, never invent it (same doctrine as the enhancement stage).
 _IRIS_MIN_SAT = 50.0     # OpenCV HSV S (0-255); pale blue irises sit ~60-80
 _IRIS_HUE_TOL = 22.0     # max circular hue difference between the two eyes
 
 
 def _iris_circles(an, scale: float) -> List[Tuple[float, float, float]]:
     """Per-iris (cx, cy, r) circles in render coords from the 478-mesh iris
-    landmarks (geometry only, no colour gate); [] when unavailable/too small."""
+    landmarks (geometry only, no color gate); [] when unavailable/too small."""
     out: List[Tuple[float, float, float]] = []
     for face in _faces_of(an):
         pts = face.points
@@ -556,7 +556,7 @@ def _photo_eye_overlay(bgr_hw, pts, eye_groups, H: int, W: int):
     (eye_bgr (H,W,3) float32, alpha (H,W) float32): the photo's OWN eye openings,
     per-eye tone-normalised so they read on any ground while KEEPING every bit of the
     real modelling -- the spherical-curvature falloff, the upper-lid cast shadow, the
-    lashes, the iris colour + texture, the true catchlight. A flat synthetic sclera
+    lashes, the iris color + texture, the true catchlight. A flat synthetic sclera
     disc (one uniform grey, no gradient) was the failure this replaces.
 
     Per eye, each eye is processed in its OWN bounding box at a consistent internal
@@ -565,7 +565,7 @@ def _photo_eye_overlay(bgr_hw, pts, eye_groups, H: int, W: int):
     canvas size and the on-screen PREVIEW eye is as crisp as the paid file. An
     edge-preserving (bilateral) clean removes low-res blockiness while keeping the
     iris rim, lid and lash edges; the tone is FAITHFUL -- the photo's own brightness
-    and colour are kept, only the deepest socket shadows are gently lifted, so the
+    and color are kept, only the deepest socket shadows are gently lifted, so the
     sclera is never brighter than the source and the lids/lashes keep their real
     shading. The composited region is the whole ORBITAL area (lids + lashes + socket),
     feathered into the surrounding words, so the eye has a natural transition rather
@@ -605,7 +605,7 @@ def _photo_eye_overlay(bgr_hw, pts, eye_groups, H: int, W: int):
         # Edge-preserving clean: low-res sources are blocky after the upscale; bilateral
         # smooths the blocks while keeping the iris/lid/lash edges.
         big = cv2.bilateralFilter(np.clip(big, 0, 255).astype(np.uint8), 7, 30, 7).astype(np.float32)
-        # FAITHFUL tone: keep the photo's OWN brightness + colour. Lift ONLY the deep
+        # FAITHFUL tone: keep the photo's OWN brightness + color. Lift ONLY the deep
         # shadows (a recessed socket) so it isn't pure black; the sclera and midtones
         # are left exactly as shot -> the eye-white is never brighter than the source,
         # and the lids/lashes keep their natural shading.
@@ -676,8 +676,8 @@ def _iris_tint(an):
 
 
 def _iris_tint_face(an, idx: int = 0):
-    """Sample ONE face's iris colour. Returns ([(cx, cy, r)] in working coords,
-    lifted RGB tip colour) when both of that face's irises pass the colour gate,
+    """Sample ONE face's iris color. Returns ([(cx, cy, r)] in working coords,
+    lifted RGB tip color) when both of that face's irises pass the color gate,
     else None -- in which case THAT face falls back to the plain ink, without
     affecting any other face in the image."""
     faces = _faces_of(an)
@@ -718,18 +718,18 @@ def _iris_tint_face(an, idx: int = 0):
     if len(circles) < 2:
         return None
     if any(h[1] < _IRIS_MIN_SAT for h in hsvs):
-        return None                            # photo doesn't carry the colour
+        return None                            # photo doesn't carry the color
     dh = abs(float(hsvs[0][0]) - float(hsvs[1][0]))
     if min(dh, 180.0 - dh) > _IRIS_HUE_TOL:
         return None                            # eyes disagree -> unreliable sample
-    # Shared colour with a gentle saturation nudge. The ink VALUE tracks the true
+    # Shared color with a gentle saturation nudge. The ink VALUE tracks the true
     # eye lightness: pale blue / light-brown irises render lighter than deep
-    # brown, so the rendered eye colour is honest to the person, not uniform.
+    # brown, so the rendered eye color is honest to the person, not uniform.
     hsv = np.mean(hsvs, 0)
     # Plausibility guard: a real iris is brown/amber (hue ~2-25), hazel/green (~25-90) or
     # blue/gray (~90-135) -- never magenta/pink/violet. A sample landing on a lid, lash-line
     # or lipstick reads in that band (OpenCV hue ~140-176; measured 167 on one photo), which
-    # is never an eye colour, so drop the tint and render a neutral eye instead of a bright
+    # is never an eye color, so drop the tint and render a neutral eye instead of a bright
     # magenta iris. The warm-red end (<4) is LEFT alone -- deep brown eyes live there.
     if 140.0 <= float(hsv[0]) <= 176.0:
         return None
@@ -861,7 +861,7 @@ def build_calligram(
     tone so the face emerges from the text's density. Unlike the word-mosaic this
     keeps the words in order and unbroken (you can read it), fills the whole
     masked region (faint in highlights, dark in shadows), and runs in straight
-    lines like a page. Ink colour is derived from `ink_hex` (the dark end)."""
+    lines like a page. Ink color is derived from `ink_hex` (the dark end)."""
     words = [w for w in str(text).split() if w]
     if not words:
         warns.error("text", "no_words", "No passage supplied for the calligram.")
@@ -1068,7 +1068,7 @@ def build_tonal_portrait(
     face_font = float(max(8.0, base * 1.0))
     eye_font = float(max(5.0, face_font * 0.45))   # finest: words sized to eye anatomy
 
-    # Ink treatment: grayscale (mono), a named duotone, or colour sampled from
+    # Ink treatment: grayscale (mono), a named duotone, or color sampled from
     # the source photo. Mono keeps the existing gray ramp untouched.
     photo_ink = ink == "photo"
     grad = _GRADIENTS.get(ink)
@@ -1099,7 +1099,7 @@ def build_tonal_portrait(
         if photo_ink and src is not None:
             b0, g0, r0 = int(src[0]), int(src[1]), int(src[2])  # BGR
             luma = 0.299 * r0 + 0.587 * g0 + 0.114 * b0
-            s = g / max(luma, 1.0)  # tint source colour to our tonal lightness
+            s = g / max(luma, 1.0)  # tint source color to our tonal lightness
             return f"#{min(255,int(r0*s)):02x}{min(255,int(g0*s)):02x}{min(255,int(b0*s)):02x}"
         if duo is not None:
             cr = int(round(lo_rgb[0] + (hi_rgb[0] - lo_rgb[0]) * t_dark))
@@ -1589,7 +1589,7 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     Dark ground (default): brightness-positive -- lit areas are the bright ink,
     shadows fall to the dark ground. Light ground: dark ink on a light paper --
     shadows/features are the dark ink, highlights melt into the paper (an
-    engraving look). Colours are more muted/inky on light paper than on dark."""
+    engraving look). Colors are more muted/inky on light paper than on dark."""
     gray = _sharpen(cv2.resize(an.img.gray, (W, H), interpolation=cv2.INTER_CUBIC)).astype(np.float32) / 255.0
     lo, hi = np.percentile(gray, [2, 99])
     lum = np.clip((gray - lo) / max(1e-3, hi - lo), 0.0, 1.0)
@@ -1617,7 +1617,7 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
         ck = _CALLIGRAM.get(ink, ("#15202b", "#ffffff"))   # (dark ink, light paper)
         ground_hex, ink_hex = ck[1], ck[0]
     elif ink == "custom" and custom:
-        ground_hex, ink_hex = custom                       # (ground, ink) from a user-picked colour
+        ground_hex, ink_hex = custom                       # (ground, ink) from a user-picked color
     else:
         ground_hex, ink_hex = _POSTER.get(ink, ("#0a0a0c", "#f2ece0"))
     ground = np.array(_hex_to_rgb(ground_hex), dtype=np.float32)
@@ -1643,7 +1643,7 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
     if ink == "photo_paper":
         # Photo on PAPER: darkness drives the ink (features/shadows bold) with a
         # 0.30 floor so the brightest skin + grey hair still carry a soft tint
-        # rather than vanishing into the white -- a coloured engraving that reads
+        # rather than vanishing into the white -- a colored engraving that reads
         # whole. (Distinct from the mono light-engraving formula below.)
         v = np.clip(0.30 + 0.80 * (1.0 - lum), 0.0, 1.0)
         # Eye detail is injected into the ink array just below (after `out`), so it
@@ -1672,10 +1672,10 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
             if _ee:
                 _be = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)[..., ::-1]
                 eye_r = float(np.mean([e[2] for e in _ee]))
-                def _stamp(mask, colour, strength):
+                def _stamp(mask, color, strength):
                     nonlocal out
                     m = cv2.GaussianBlur(mask, (0, 0), sigmaX=max(0.4, eye_r * 0.06))[..., None] * strength
-                    out = out * (1.0 - m) + np.asarray(colour, np.float32) * m
+                    out = out * (1.0 - m) + np.asarray(color, np.float32) * m
                 # 1) Sclera: a light base across the whole eye (the eye-white).
                 scl = np.zeros((H, W), np.float32)
                 for ex, ey, rx, ry in _ee:
@@ -1700,23 +1700,23 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
                 _stamp(lid, (30.0, 28.0, 26.0), 0.88)
         except Exception:
             pass
-    # Living eyes: inside each iris, carry the person's TRUE eye colour in the
+    # Living eyes: inside each iris, carry the person's TRUE eye color in the
     # glyphs (sampled, never invented -- _iris_tint gates on the photo actually
-    # holding the colour; gated-off photos render byte-identical). The tonal
+    # holding the color; gated-off photos render byte-identical). The tonal
     # field `v` is kept, so iris structure and the catchlight stay; only the
     # ink hue changes, feathered at the iris edge. Dark ground only: the dormant
     # light/engraving path uses dark ink on paper, where a brightness-lifted
     # tint would read wrong.
-    # Selective colour: bring the EYES (whole eyeball) and TEETH back to their TRUE
-    # photo colours -- the exact natural rendering "Original" (photo ink) produces,
+    # Selective color: bring the EYES (whole eyeball) and TEETH back to their TRUE
+    # photo colors -- the exact natural rendering "Original" (photo ink) produces,
     # confined to those regions and feathered -- so they pop against the tinted
     # face (living eyes, a natural smile). Skipped for the photo ink (already fully
     # natural), in light/engraving mode, and when _SELCOLOR is 0.
-    if not light and ink not in ("photo", "photo_paper") and _SELCOLOR > 0:   # all colour inks incl. Custom; not Original
+    if not light and ink not in ("photo", "photo_paper") and _SELCOLOR > 0:   # all color inks incl. Custom; not Original
         sel = np.zeros((H, W), np.float32)
         ircs = _iris_circles(an, fscale)
         if ircs:
-            # Colour the iris only, SMALLER than the iris radius so it can never spill
+            # Color the iris only, SMALLER than the iris radius so it can never spill
             # past the eyeball onto the lower lid / under-eye skin (the pink patches).
             for (cx, cy, r) in ircs:
                 cv2.circle(sel, (int(round(cx)), int(round(cy))), max(2, int(round(r * 0.85))), 1.0, -1)
@@ -1729,19 +1729,19 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
             tmask = _teeth_mask_all(_faces_of(an), fscale, H, W)   # inner mouth of EVERY face (None if all closed)
             if tmask is not None:
                 # Teeth are bright AND neutral; the lip is bright but SATURATED (pink).
-                # Gate on both so only teeth take colour, never the lip.
+                # Gate on both so only teeth take color, never the lip.
                 _b2 = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
                 _sat = (_b2.max(2) - _b2.min(2)) / (_b2.max(2) + 1e-3)
                 bright = np.clip((v - 0.55) / 0.30, 0.0, 1.0)
                 lowsat = np.clip((0.30 - _sat) / 0.18, 0.0, 1.0)
                 sel = np.maximum(sel, tmask * bright * lowsat)
         if float(sel.max()) > 0.0:
-            # Tight feather so the colour stays on the eyeball/teeth, not bleeding
+            # Tight feather so the color stays on the eyeball/teeth, not bleeding
             # onto surrounding skin.
             sel = np.clip(cv2.GaussianBlur(sel, (0, 0), max(1.0, W * 0.0016)), 0.0, 1.0) * float(_SELCOLOR)
             # Render these pixels as the photo ink would, but on a NEUTRAL dark
             # ground (not the tinted ink ground) so the hue matches the source
-            # instead of picking up the ink colour in the shadows. Mild saturation.
+            # instead of picking up the ink color in the shadows. Mild saturation.
             ngd = np.array(_hex_to_rgb("#0a0a0c"), dtype=np.float32)
             bgr2 = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
             rgb2 = bgr2[..., ::-1]
@@ -1758,7 +1758,7 @@ def _tint_photo(an, W: int, H: int, ink: str, remove_bg: bool, light: bool = Fal
 
 
 def _mask_svg(colored_svg: str) -> str:
-    """Coloured layout SVG -> white-on-black text mask for clean CairoSVG text."""
+    """Colored layout SVG -> white-on-black text mask for clean CairoSVG text."""
     s = re.sub(r'fill="#[0-9a-fA-F]{6}"', 'fill="#ffffff"', colored_svg)
     s = re.sub(r'(<rect x="0" y="0"[^>]*?)fill="#ffffff"', r'\1fill="#000000"', s, count=1)
     return s
@@ -1785,7 +1785,7 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
     # --- Dedicated light/engraving renderer (Words style) --------------------
     # On white paper, compositing the photo through a text mask washes out or
     # jumbles. Instead, draw the tonally-shaded words DIRECTLY on the paper: each
-    # glyph is coloured by the tone it sits on (faint near-white in highlights,
+    # glyph is colored by the tone it sits on (faint near-white in highlights,
     # bold/dark in shadows), which reads as a clean engraving. This is a separate
     # path from the dark/photo-composite renderer. No mask is returned, so the
     # paid high-res download re-renders through here.
@@ -1811,9 +1811,9 @@ def render_layered_png(an, text: str, style: str, cfg: RenderConfig, warns: Warn
         return epng, eres.runs, eground, ""
 
     # The layout only needs glyph POSITIONS (we whiten them into a mask); the
-    # colour/ink is applied separately by _tint_photo. Build the layout with a
+    # color/ink is applied separately by _tint_photo. Build the layout with a
     # neutral ink so the ink choice never touches the layout (and we avoid the
-    # mosaic's photo-ink colour path, which isn't needed here).
+    # mosaic's photo-ink color path, which isn't needed here).
     if style == "message":
         # Message/prose has no manual size knob: build_poster repeats the message
         # to fill the face, so size never affects fit — only legibility vs density.
@@ -1884,7 +1884,7 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     # Catchlight: a SPECULAR white glint at the eye's real brightest pixel inside
     # each iris, painted over the finished composite (above the text mask) so the
     # eye looks back. Always white -- the lightest thing on the face -- never ink-
-    # or iris-coloured. Dark grounds only; before the pad so coords hold.
+    # or iris-colored. Dark grounds only; before the pad so coords hold.
     # photo_paper takes its OWN white-ground eye treatment below -- the dark-ground
     # catchlight/limbal here darkens toward the ground, which inverts on white.
     eyes_e = []          # photo_paper (word-formed eyes) + light-message skip the block below
@@ -1944,7 +1944,7 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         _dark_lens = bool(_lens_eyes)
         # Eye-white + teeth fill. In Photo ink the photo's OWN pixels can carry a
         # warm cast (warm light + warm ink), so take mostly LUMINANCE + a trace of
-        # colour -> natural neutral whites. Other inks keep the tinted photo (it
+        # color -> natural neutral whites. Other inks keep the tinted photo (it
         # already matches the duotone face), so they're left as-is.
         if ink == "photo":
             gp = (photo[..., 0] * 0.299 + photo[..., 1] * 0.587 + photo[..., 2] * 0.114)[..., None]
@@ -1986,9 +1986,9 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
         # under vibrance. The real-eye overlay below carries the photo's own catchlight.
         # Real-eye overlay for EVERY ink -- the photo's own eye, which never glows (it
         # overrides the bright synthetic sclera/catchlight above). For the Photo ink it
-        # stays full colour; for the tinted inks (Noir/Sepia/Navy/Sage) it is then
-        # DESATURATED into the ink's palette so a full-colour eye doesn't clash with the
-        # tinted face -- realistic structure, no glow, no colour clash.
+        # stays full color; for the tinted inks (Noir/Sepia/Navy/Sage) it is then
+        # DESATURATED into the ink's palette so a full-color eye doesn't clash with the
+        # tinted face -- realistic structure, no glow, no color clash.
         if eyes_e:
             bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
             # Photographic eye overlay for EVERY subject (primary + all secondary), so a
@@ -2023,10 +2023,10 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
             a3 = eye_a[..., None]   # FULL alpha -- no bright-word bleed through the eyeball
             out = (out.astype(np.float32) * (1.0 - a3) + eye_bgr * a3).clip(0, 255).astype(np.uint8)
             # Light desaturation so the eye sits in the ink's palette: tinted inks pull most
-            # of the way to mono (a full-colour eye would clash with the tinted face), while
-            # Photo/Original keeps the iris its true (now correctly-coloured) hue with only a
+            # of the way to mono (a full-color eye would clash with the tinted face), while
+            # Photo/Original keeps the iris its true (now correctly-colored) hue with only a
             # whisper of taming. (The old heavy pull was masking the BGR/RGB swap above; with
-            # the swap fixed the eye is the right colour, so it no longer needs hiding.)
+            # the swap fixed the eye is the right color, so it no longer needs hiding.)
             _desat = 0.12 if ink == "photo" else 0.78
             of = out.astype(np.float32)
             lum = (of[..., 0] * 0.299 + of[..., 1] * 0.587 + of[..., 2] * 0.114)[..., None]   # RGB luma
@@ -2094,7 +2094,7 @@ def compose_layered(mask_svg: str, an, ink: str, remove_bg: bool, out_width: int
     if boost and boost > 0.0:        # lift dark Message renders (shadows/midtones)
         f = (out.astype(np.float32) / 255.0) ** (1.0 / (1.0 + float(boost)))
         out = (f * 255.0).clip(0, 255).astype(np.uint8)
-    if not light:                    # gentle life (clarity); restrained so colour stays natural, not cartoonish
+    if not light:                    # gentle life (clarity); restrained so color stays natural, not cartoonish
         from .preprocess import apply_vibrance
         _pre = out
         out = apply_vibrance(out, strength=0.34, bgr=False)

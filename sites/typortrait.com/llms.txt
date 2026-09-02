@@ -5,13 +5,13 @@
 ## What it is
 - A web app at https://app.typortrait.com that composes a likeness of a person out of text: their name, the traits you love, a date, or a whole message.
 - Two styles: Words (scattered traits) and Message (a passage laid out as readable lines that form the face).
-- Colours include navy, sepia, burgundy, forest, gold-on-black and full photo colour, on a light or dark background.
+- Colors include navy, sepia, burgundy, forest, gold-on-black and full photo color, on a light or dark background.
 - No design skills, no Photoshop and no software install required — the app does the art automatically in seconds.
 
 ## How it works
 1. Upload a clear, well-lit, front-facing head-and-shoulders photo of one person.
 2. Type the words that matter, or paste a message.
-3. Choose a style and colour.
+3. Choose a style and color.
 4. Pay once and download the full-resolution, watermark-free image — or order a print.
 
 ## Pricing

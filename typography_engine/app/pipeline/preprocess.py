@@ -73,7 +73,7 @@ def _auto_expose(bgr: np.ndarray, warns: WarningCollector) -> np.ndarray:
     untouched, so good inputs never regress. Only clearly-underexposed photos get a
     gamma lift (stronger the darker they are) toward a ~120 target mean, then a
     gentle luminance range-stretch. The same curve is applied to all channels, so
-    colour is preserved."""
+    color is preserved."""
     g = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     mean = float(g.mean())
     if mean >= 75.0:
@@ -98,8 +98,8 @@ def _auto_levels(bgr: np.ndarray, warns: WarningCollector) -> np.ndarray:
     on mean brightness, so a flat-but-not-dark photo (hazy, underexposed-looking, low
     dynamic range) slips past it untouched. Gate on dynamic RANGE instead: below ~95 of
     255, apply a per-channel black/white-point stretch plus a median-normalising gamma,
-    so contrast, midtones AND colour saturation come back (the engine's internal luma
-    stretch alone can't restore colour). Well-exposed, full-range photos are a near-no-op,
+    so contrast, midtones AND color saturation come back (the engine's internal luma
+    stretch alone can't restore color). Well-exposed, full-range photos are a near-no-op,
     so this is safe even when enabled. Opt-in via the TYPO_AUTOLEVELS env flag."""
     g = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     p2, p50, p98 = (float(x) for x in np.percentile(g, [2.0, 50.0, 98.0]))

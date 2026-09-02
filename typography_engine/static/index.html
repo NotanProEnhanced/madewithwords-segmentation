@@ -252,7 +252,7 @@
   /* Relief has only 2 grounds -> centre them, no scroll arrows */
   .carousel.relief .arrow{display:none}
   .carousel.relief .swatches{justify-content:center}
-  /* "Make it yours" splits into two labelled axes: Type colour (a live-thumbnail
+  /* "Make it yours" splits into two labelled axes: Type color (a live-thumbnail
      carousel) and Background (solid preview tiles). A quiet divider + heading make it
      clear the two rows do different things. */
   .swatchgroup .ctl-lbl{text-align:center}
@@ -380,7 +380,7 @@
   body.guided .gstep.open .gstep-num{background:var(--navy);color:#fff}
   body.guided .gstep.done .gstep-num{background:var(--navy);color:#fff;font-size:0}
   body.guided .gstep.done .gstep-num::after{content:"\2713";font-size:14px}
-  /* Distinct, calm colour for each guided step badge (1 / 2 / 3) -- in every state
+  /* Distinct, calm color for each guided step badge (1 / 2 / 3) -- in every state
      (placed after the open/done rules so it wins). Locked steps dim via opacity. */
   body.guided .gstep[data-step="1"] .gstep-num{background:#c85b57;color:#fff}
   body.guided .gstep[data-step="2"] .gstep-num{background:#d0982f;color:#fff}
@@ -732,12 +732,12 @@
       <div class="ctl-hint" id="bestNote" style="display:none"></div>
     </div>
     <div class="ctl swatchgroup" id="inkGroup" style="margin-top:14px">
-      <div class="ctl-lbl">Type colour</div>
-      <div class="ctl-hint">The colour of the words that form the portrait.</div>
+      <div class="ctl-lbl">Type color</div>
+      <div class="ctl-hint">The color of the words that form the portrait.</div>
       <div class="carousel">
-        <button type="button" class="arrow left" id="arrowL" aria-label="Previous colours">&#8249;</button>
+        <button type="button" class="arrow left" id="arrowL" aria-label="Previous colors">&#8249;</button>
         <div id="swatches" class="swatches"></div>
-        <button type="button" class="arrow right" id="arrowR" aria-label="More colours">&#8250;</button>
+        <button type="button" class="arrow right" id="arrowR" aria-label="More colors">&#8250;</button>
       </div>
     </div>
     <div class="ctl swatchgroup" id="bgGroup" style="display:none">
@@ -901,10 +901,10 @@ const INKS = [["photo","conic","Original"],["photo_paper","conic_paper","Paper"]
   ["forest","#0f2e1e","Sage"],["spectrum","spectrum","Spectrum"],["aurora","aurora","Aurora"]];
 // "Paper" grounds the WHOLE portrait (subject included) on warm ivory -- its own look.
 const PAPER_INK_IDS = {photo_paper:"paper"};
-// "Match your space" backdrops: recolour ONLY the segmented region behind the subject,
+// "Match your space" backdrops: recolor ONLY the segmented region behind the subject,
 // leaving the sculpt untouched. Now a first-class, INDEPENDENT axis (state.backdrop) --
-// any type colour can sit on any background. [backdropKey, previewSwatch, label];
-// every entry is an EXPLICIT backdrop key the server fills with a known colour, so each
+// any type color can sit on any background. [backdropKey, previewSwatch, label];
+// every entry is an EXPLICIT backdrop key the server fills with a known color, so each
 // tile matches the render (no guessing at env behaviour). "studio" is the default. These
 // render as solid preview tiles (a background is flat -- no per-face render to preview).
 const BACKGROUNDS = [
@@ -921,7 +921,7 @@ const BACKGROUNDS = [
   ["sand",        "#eee4d0", "Sand"],
   ["transparent", "checker", "Cutout"],   // transparent PNG (checkerboard preview)
 ];
-// Floral FRAMES (memorial only). A curated watercolour frame fills the region behind the
+// Floral FRAMES (memorial only). A curated watercolor frame fills the region behind the
 // subject; selecting one forces the Paper sculpt (dark ink on warm ivory) so the portrait
 // reads as ink-on-paper inside a floral mat. [key, thumbnail src, label]. The thumbnails are
 // the same bind-mounted art the server composites, so a chip always matches its render.
@@ -958,7 +958,7 @@ const _qp=new URLSearchParams(location.search);
 // Registry of brand front-ends — same engine, different face. `host` lets the
 // studio also recognize the brand from the referring domain. Add partners here.
 // A brand re-dresses this one engine: name/tagline/title, an optional softer
-// colour theme (CSS-var overrides), and an opening default look. `style`/`ink`
+// color theme (CSS-var overrides), and an opening default look. `style`/`ink`
 // set the first render; `pinStyle` keeps that style (the recommender still hints
 // the best fit as a badge, but doesn't auto-switch away from the brand's look).
 // `memorial:true` switches on the whole grief-keepsake experience for a brand:
@@ -1087,7 +1087,7 @@ function _petSetup(){
   try{
     ["styleGallery","inkGroup","sizeFilm","caseCtl","sunRow","dropTips"].forEach(function(id){ var e=document.getElementById(id); if(e) e.style.display="none"; });
     var _bl=document.querySelector("#bgGroup .ctl-lbl"); if(_bl) _bl.textContent="Look";
-    var _bh=document.querySelector("#bgGroup .ctl-hint"); if(_bh) _bh.textContent="The background colour behind your pet.";
+    var _bh=document.querySelector("#bgGroup .ctl-hint"); if(_bh) _bh.textContent="The background color behind your pet.";
     // Typography size: Small (fine detail) / Medium / Large (bold & graphic). Drives
     // state.petType -> pet_type on the render POST -> tier scale in the pet engine.
     var _bg=document.getElementById("bgGroup");
@@ -1189,7 +1189,7 @@ if(!_isMemorialBrand){
 // Memorial skins keep a calmer flow and name the styles by WHAT THE VISITOR PROVIDES --
 // Words / Passage / Letter (short -> long) -- rather than by abstract style jargon. It's
 // self-evident with no friction for a grieving visitor, avoids "lifelike" (off-tone for
-// someone who has passed), and never reuses "Original" (already the colour swatch). Mosaic
+// someone who has passed), and never reuses "Original" (already the color swatch). Mosaic
 // (the scattered word-cloud) is hidden here -- in grief, fewer choices land better.
 // Generic Typortrait is untouched: it doesn't show this chooser at all.
 if(_isMemorialBrand && !_petEngine){
@@ -1246,10 +1246,10 @@ if(BRAND){
     if(_isMemorialBrand) _memorialSetup();
   }catch(e){}
 }
-// Memorial-clean studio: on a grief keepsake the Type colour axis is friction -- the
-// portrait uses the rich Lifelike ink and families don't want to fuss with word colour.
+// Memorial-clean studio: on a grief keepsake the Type color axis is friction -- the
+// portrait uses the rich Lifelike ink and families don't want to fuss with word color.
 // Hide it so the Background section rises directly under the style/word steps. Gated on
-// _isMemorialBrand -> every other brand keeps the full Type colour palette.
+// _isMemorialBrand -> every other brand keeps the full Type color palette.
 function _memorialSetup(){
   try{
     var e=document.getElementById("inkGroup"); if(e) e.style.display="none";
@@ -1268,11 +1268,11 @@ const GROUNDS_SW=[["g_navy","#0d1b3a","Navy"],["g_black","#111317","Black"]];
 // Sculpted now uses the same ink palette as Words/Passage (minus the gradient
 // inks, which don't drape cleanly over the form): Photo + solid/duotone tints.
 const SCULPT_INKS=INKS.filter(s=>s[0]!=="spectrum" && s[0]!=="aurora");
-// TYPE COLOUR palette (the colour of the words). Background treatments used to live in
+// TYPE COLOR palette (the color of the words). Background treatments used to live in
 // this same list, which conflated two different choices; they're now their own axis
 // (BACKGROUNDS). Both brands offer Original + Noir here; the generic studio adds the
 // Custom picker (in buildSwatches). Memorial keeps it to the two curated tones (no free
-// colour picker for grieving families).
+// color picker for grieving families).
 const MEMORIAL_INK_IDS=["photo","mono"];
 const MEMORIAL_INKS=MEMORIAL_INK_IDS.map(id=>INKS.find(s=>s[0]===id)).filter(Boolean);
 const GENERIC_INK_IDS=["photo","mono"];
@@ -1296,10 +1296,10 @@ function currentBackgrounds(){
   return _isMemorialBrand ? BACKGROUNDS.filter(b=>b[0]!=="transparent") : BACKGROUNDS;
 }
 function variantPost(id){
-  // `id` is the selected TYPE COLOUR (photo / mono / custom). The BACKGROUND is an
+  // `id` is the selected TYPE COLOR (photo / mono / custom). The BACKGROUND is an
   // independent axis (state.backdrop), layered on top -- so e.g. Noir type can sit on a
-  // Sand ground, or a Custom colour on a transparent Cutout. The subject always sculpts
-  // in the chosen ink; the backdrop only recolours (or clears) the region behind them.
+  // Sand ground, or a Custom color on a transparent Cutout. The subject always sculpts
+  // in the chosen ink; the backdrop only recolors (or clears) the region behind them.
   // Letter/Lifelike are the words sculpt (style "displacement"); Passage keeps "message"
   // so the server streams the passage in written order. The flow flag is sent in render().
   // Paws in Words: the pet engine uses its own grounds (dark/mid/paper…), driven off the pet
@@ -1438,7 +1438,7 @@ const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch"), sunSwitch=$("#sunSwitch");
 function setStyle(newStyle, rerender){
   const wasDisp = state.style==="displacement" || state.style==="letter";
   state.style=newStyle;
-  // Type colour (photo/mono/custom) and background are independent axes now, and both
+  // Type color (photo/mono/custom) and background are independent axes now, and both
   // work in every mode -- so neither is reset on a style switch; the user's picks persist.
   document.querySelectorAll('#styleSeg button, #styleSegResult button')
     .forEach(c=>c.classList.toggle("on", c.dataset.style===newStyle));
@@ -1899,13 +1899,13 @@ const swatchEl=$("#swatches");
 const carouselEl=document.querySelector(".carousel");
 const bgSwatchEl=$("#bgSwatches");
 // Background axis: solid preview tiles (Studio / Sand / Slate / Cutout). A background is
-// a flat colour, so it needs no per-face render to preview -- unlike the type-colour
+// a flat color, so it needs no per-face render to preview -- unlike the type-color
 // chips, which are live thumbnails. Selecting one is a GLOBAL change (it re-grounds every
 // render), so it invalidates the ink thumbnails and re-warms them at the new background.
 function buildBgSwatches(){
   if(!bgSwatchEl) return;
   bgSwatchEl.innerHTML="";
-  // One chip. `col` is a solid colour / gradient key, OR "img:<src>" for a floral thumbnail.
+  // One chip. `col` is a solid color / gradient key, OR "img:<src>" for a floral thumbnail.
   const mk=(bg,col,label)=>{
     const el=document.createElement("button"); el.type="button";
     el.className="thumb"+(((state.backdrop||"")===bg)?" sel":""); el.dataset.bg=bg;
@@ -1978,19 +1978,19 @@ function selectBackground(bg){
   const pic=swatchEl.querySelector(`.pic[data-ink="${state.ink}"]`); if(pic) pic.classList.add("loading");
   render(state.ink,{animate:false});
   refreshSizeStrip(); prewarmSizes();
-  if(!_isMemorialBrand) prewarm();   // re-fill the type-colour chips at the new background
+  if(!_isMemorialBrand) prewarm();   // re-fill the type-color chips at the new background
 }
 function buildSwatches(){
   if(carouselEl) carouselEl.classList.toggle("relief", false);  // Sculpted now uses the full ink carousel
   swatchEl.innerHTML="";
   currentSwatches().forEach(([id,col,label])=>{
-    // Type-colour chips (Original/Noir) -- one consistent set in every mode. "Paper" (a
+    // Type-color chips (Original/Noir) -- one consistent set in every mode. "Paper" (a
     // white-ground sculpt) is the lone Lifelike-only look, guarded here if ever added.
     if(PAPER_INK_IDS[id] && state.style!=="displacement" && state.style!=="letter") return;
     const el=document.createElement("button"); el.type="button";
     el.className="thumb"+(id===state.ink?" sel":""); el.dataset.ink=id;
     const pic=document.createElement("div"); pic.className="pic"; pic.dataset.ink=id;
-    // Set the colour/gradient placeholder on its own longhand -- the `background`
+    // Set the color/gradient placeholder on its own longhand -- the `background`
     // shorthand would reset background-size to auto and break the cover crop when
     // the thumbnail image is applied later.
     const ph=placeholderBg(col);
@@ -2000,10 +2000,10 @@ function buildSwatches(){
     el.addEventListener("click", ()=>{ selectInk(id); });
     swatchEl.append(el);
   });
-  // "Custom colour" chip (curated swatches stay; this is additive). The Sculpt engine
-  // now draws a picked colour as a light tint, so Custom is offered in EVERY mode
+  // "Custom color" chip (curated swatches stay; this is additive). The Sculpt engine
+  // now draws a picked color as a light tint, so Custom is offered in EVERY mode
   // (words or message) for one consistent palette. Still hidden on the memorial skins:
-  // a free colour picker invites a clashing/illegible result and adds decision burden
+  // a free color picker invites a clashing/illegible result and adds decision burden
   // for grieving families -- the curated palette is the tasteful, finite set there.
   if(ALLOW_CUSTOM_INK && !_isMemorialBrand){
     const cel=document.createElement("button"); cel.type="button";
@@ -2013,7 +2013,7 @@ function buildSwatches(){
     else { cpic.style.backgroundImage="conic-gradient(#e8746c,#e8c66a,#6db98a,#5b8fd6,#b07cd6,#e8746c)"; }
     const cnm=document.createElement("div"); cnm.className="nm"; cnm.textContent="Custom";
     const cin=document.createElement("input"); cin.type="color"; cin.value=state.inkHex||"#3a6df0";
-    cin.setAttribute("aria-label","Pick a custom colour");
+    cin.setAttribute("aria-label","Pick a custom color");
     cin.style.cssText="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none";
     cel.append(cpic,cnm,cin);
     cel.addEventListener("click", ()=>{ try{ cin.click(); }catch(e){} });
@@ -2021,7 +2021,7 @@ function buildSwatches(){
     swatchEl.append(cel);
   }
   // Re-paint any already-rendered thumbnail onto its fresh chip. Without this, a
-  // rebuild (e.g. picking a Custom colour) drops every chip back to its gradient
+  // rebuild (e.g. picking a Custom color) drops every chip back to its gradient
   // placeholder -- most visibly the Original chip, whose placeholder is the rainbow
   // conic -- until a prewarm slowly re-fills them. Cached inks repaint instantly.
   currentSwatches().forEach(([id])=>updateThumb(id));
@@ -2040,7 +2040,7 @@ window.addEventListener("resize", updateCarouselArrows);
 function pickCustom(hex){
   userTouched=true; state.inkHex=hex; state.ink="custom";
   sizeThumbCache={}; resetSizeThumbs();
-  // A colour change only invalidates the CUSTOM variant -- every other ink's render
+  // A color change only invalidates the CUSTOM variant -- every other ink's render
   // is unaffected, so keep their cached thumbnails. (invalidate() dropped ALL of them,
   // which flashed the Original chip back to its rainbow placeholder.) Bump gen so any
   // stale in-flight custom render is discarded.
@@ -2778,7 +2778,7 @@ async function render(ink,{animate=false,background=false,thumb=false,hires=fals
   fd.append("min_font_px", String(state.minFont||57));   // was ||20 -- a different default from the
                                                           // other two call sites, and now a visible one
   if(thumb){
-    // A 74px chip needs only the colour and rough likeness; a small canvas
+    // A 74px chip needs only the color and rough likeness; a small canvas
     // renders fast even on a slow single core.
     fd.append("png_width","380"); fd.append("render_w","760");
   } else if(hires){

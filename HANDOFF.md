@@ -39,7 +39,7 @@ for any "is this the memorial experience?" decision; use `ref` only for sales at
 - No typography on teeth or sclera; round pupils, limbal ring, deterministic white catchlights.
 - Sclera/teeth take the photo's own pixels in Words; **Sculpt uses one neutral, dim tone for every
   ink** (the photo‑pixel version glowed on the solid ground). Photo‑ink eye/teeth are neutralised so
-  they don't pick up the warm cast. Iris keeps the real eye colour in Photo mode.
+  they don't pick up the warm cast. Iris keeps the real eye color in Photo mode.
 
 **Crop on upload (`f24ed27`, `25656f0`, `bd81171`):**
 - Every upload opens a crop editor, auto‑framed on the detected face, locked to 4:5, draggable with

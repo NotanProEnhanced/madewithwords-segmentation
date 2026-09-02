@@ -2,7 +2,7 @@
 
 Opt-in. Embeds the portrait SVG (which uses no <defs>/xlink, so it nests
 cleanly) into a larger poster canvas with generous margins, a thin rule, the
-subject's name in an elegant serif, and an optional custom caption/date. Colours
+subject's name in an elegant serif, and an optional custom caption/date. Colors
 are derived from the chosen ink so the framing matches the portrait (navy ink ->
 navy on white, gold_noir -> gold on charcoal).
 """
@@ -15,7 +15,7 @@ from .svgbuild import esc, require_hex
 
 _SERIF = "Georgia, 'Times New Roman', serif"
 
-# Per-ink poster colours: (background, title/ink, muted caption+rule).
+# Per-ink poster colors: (background, title/ink, muted caption+rule).
 _POSTER_COLORS = {
     "navy":      ("#ffffff", "#0d1b3a", "#6b7790"),
     "sepia":     ("#fbf7ee", "#2e1c0a", "#8a795f"),

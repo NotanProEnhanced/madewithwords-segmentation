@@ -88,7 +88,7 @@ def _tile_watermark(im: Image.Image, mark: str = "typortrait.com", alpha: int = 
 
 def _subject_mask(im: Image.Image) -> Image.Image:
     """Rough 'figure vs flat ground' mask. The preview's background is a flat ground
-    colour (renders run bg-removed), so pixels far from the sampled corner colour are
+    color (renders run bg-removed), so pixels far from the sampled corner color are
     the subject. Returns an L image (255 = subject) used to confine the watermark to
     the figure so the background stays clean."""
     arr = np.asarray(im.convert("RGB")).astype(np.int16)

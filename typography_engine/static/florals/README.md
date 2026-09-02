@@ -1,6 +1,6 @@
 # Floral background frames (lovedinwords)
 
-Curated watercolour frames composited OUTSIDE the subject silhouette, behind the
+Curated watercolor frames composited OUTSIDE the subject silhouette, behind the
 Paper sculpt (dark ink on warm ivory). Selecting a floral in the studio's
 Background axis forces the Paper ground automatically.
 
