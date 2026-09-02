@@ -66,6 +66,7 @@ BACKDROPS = {
 # Art lives in static/florals/<key>.png (bind-mounted -> swap the art without a rebuild) at
 # 4:5, ideally 4800x6000. A missing/broken file falls back to a flat cream mat (never crashes).
 _FLORAL_KEYS = ("wildflowers", "roses", "eucalyptus", "line")
+_CALL_N = 0                    # renders since start; stamps every diagnostic line
 _FLORAL_CREAM = (232.0, 240.0, 244.0)   # BGR, matches the Paper ground so the pad is seamless
 _FLORAL_DIR = (os.environ.get("TYPO_FLORAL_DIR", "").strip()
                or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
@@ -1468,7 +1469,12 @@ def render_displacement_portrait(
     # ONCE per request and reading one call's composite against another call's result is
     # what turned a one-line question into an afternoon. out_width and the mask coverage
     # identify which call is which.
-    _cid = "%04x" % (id(an) & 0xFFFF)
+    # A real counter. id(an) was used first and is unsound: CPython reuses addresses, so
+    # two sequential calls can report the same "id" and a two-call sequence reads as one --
+    # which is exactly the impossible arithmetic this was meant to resolve.
+    global _CALL_N
+    _CALL_N += 1
+    _cid = "#%d" % _CALL_N
     _mmean = float(np.asarray(mask01, np.float32).mean())
     def _t(_lbl):
         # Checkpoints on the finished image. Defined ABOVE the ink branches so every ink
