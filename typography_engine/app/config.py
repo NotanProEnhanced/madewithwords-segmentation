@@ -148,7 +148,16 @@ PRIVATE_DIR = BASE_DIR / "private"
 PRIVATE_DIR.mkdir(exist_ok=True)
 
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
-DOWNLOAD_PRICE_CENTS = env_int("TYPO_PRICE_CENTS", 1499)     # e.g. 1499 = $14.99
+# The digital keepsake price, in cents. Set per tree in .env, which reaches the container
+# through env_file -- compose no longer names this variable, so it cannot speak for it.
+#
+# It did: compose defaulted 900 while this line read 1499 and every .env set 2900. Live
+# pricing was correct only because all five trees carried the .env line; a tree brought
+# up without it would have sold at $9.00 and nothing would have said so.
+#
+# The default here is now the real list price, so the worst case of a missing setting is
+# the correct price rather than a silent discount.
+DOWNLOAD_PRICE_CENTS = env_int("TYPO_PRICE_CENTS", 2900)     # 2900 = $29.00
 CURRENCY = os.environ.get("TYPO_CURRENCY", "usd")
 # Public base URL of the app, used to build Stripe success/cancel redirects.
 PUBLIC_BASE_URL = os.environ.get("TYPO_PUBLIC_URL", f"http://127.0.0.1:{PORT}")
