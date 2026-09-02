@@ -53,6 +53,7 @@ from .config import (
     LOUPE_PNG_WIDTH,
     OUTPUTS_DIR,
     PREVIEW_PNG_WIDTH,
+    OPS_PREVIEW_MAX_PX,
     PRINTFUL_API_TOKEN,
     PRINTFUL_CONFIRM,
     PRIVATE_DIR,
@@ -1650,6 +1651,11 @@ async def render(
         # is crisp; every other preview stays web-light at PREVIEW_PNG_WIDTH.
         _is_loupe = str(loupe or "").strip().lower() in ("1", "true", "yes", "on")
         _preview_cap = LOUPE_PNG_WIDTH if _is_loupe else PREVIEW_PNG_WIDTH
+        # Ops escape (TYPO_OPS_PREVIEW_PX, 0 = off and off everywhere but staging). Without
+        # it no tool that talks to this endpoint can render at delivered size, so engine
+        # work is judged on a quarter of the pixels the customer gets. Still watermarked.
+        if OPS_PREVIEW_MAX_PX > 0:
+            _preview_cap = max(_preview_cap, OPS_PREVIEW_MAX_PX)
         preview_w = min(int(png_width), _preview_cap)
         if pet_on:
             # PET engine: landmark-free (U2-Net matte + saliency drape + photographic eyes).

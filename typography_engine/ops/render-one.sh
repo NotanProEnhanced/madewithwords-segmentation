@@ -19,6 +19,10 @@
 # Same knobs as render-testset.sh, same defaults, so the two are directly comparable:
 #   PORT PNG_W RENDER_W STYLE INK GROUND BACKDROP ASPECT MIN_FONT BRAND PET
 #
+#   FULL=1 renders at DELIVERED size (3600px) instead of preview size. Needs
+#   TYPO_OPS_PREVIEW_PX set on the tree; it says so if the cap clamped it anyway.
+#     FULL=1 ./render-one.sh photo.jpg "..." delivered.png
+#
 # PRIVACY
 #   A customer's source photograph is personal data under a ~30-day deletion promise.
 #   Render it where you must, look, and delete both the copy and the output. Do not leave
@@ -37,6 +41,20 @@ BACKDROP="${BACKDROP:-studio}"
 ASPECT="${ASPECT:-0.8}"
 MIN_FONT="${MIN_FONT:-57}"
 PET="${PET:-}"
+
+# FULL=1 -- render at the size the customer receives, not the size the browser shows.
+#
+# /render clamps output to PREVIEW_PNG_WIDTH, so by default nothing reachable from here can
+# show you the delivered file. Measured on 01-hat: a typical glyph is 4px on screen against
+# ~15px in the download. Judging type, tone or eyes on the preview is judging a quarter of
+# the pixels, and the two smallest tiers are texture there and letterforms in the file.
+#
+# The tree must have TYPO_OPS_PREVIEW_PX set (staging only) or the cap still applies -- so
+# this checks the result rather than trusting the request, and says so if it was clamped.
+if [ "${FULL:-}" = "1" ]; then
+    PNG_W="${PNG_W_OVERRIDE:-3600}"
+    RENDER_W="${RENDER_W_OVERRIDE:-2600}"
+fi
 
 IMG="${1:-}"
 WORDS="${2:-}"
@@ -67,3 +85,17 @@ if [ -z "$prev" ]; then
     exit 1
 fi
 curl -s --max-time 120 -o "$OUT" "$BASE$prev" && echo "wrote $OUT  ($(du -h "$OUT" | cut -f1))"
+
+# Report the size actually returned. A clamped render looks exactly like a full one on
+# disk, and a judgement made on it would be wrong in the direction that matters.
+_w=$(python3 -c "import cv2,sys;i=cv2.imread(sys.argv[1]);print(i.shape[1] if i is not None else 0)" "$OUT" 2>/dev/null || echo 0)
+[ "$_w" != "0" ] && echo "        $_w px wide"
+if [ "${FULL:-}" = "1" ] && [ "$_w" != "0" ] && [ "$_w" -lt "$PNG_W" ]; then
+    cat <<EOF
+
+  NOT the delivered size: asked for ${PNG_W}px, got ${_w}px.
+  /render caps at PREVIEW_PNG_WIDTH unless the tree sets TYPO_OPS_PREVIEW_PX.
+  On staging, add to .env and recreate:   TYPO_OPS_PREVIEW_PX=3600
+  Leave it unset on the live trees -- a 3600px preview is ~4x the pixels on every swatch.
+EOF
+fi

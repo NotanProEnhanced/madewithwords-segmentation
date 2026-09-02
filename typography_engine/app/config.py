@@ -240,6 +240,14 @@ LOUPE_PNG_WIDTH = env_int("TYPO_LOUPE_PX", 2000)
 # product) -- crisp paper prints, ~35s to compose (warmed in the background at
 # fulfillment, behind a spinner for the digital download). Bump to 4320 for 240 PPI.
 DOWNLOAD_PNG_WIDTH = env_int("TYPO_DOWNLOAD_PX", 3600)
+# OPS ONLY -- raises the preview cap so a render can be inspected at the size the customer
+# receives. /render otherwise clamps to PREVIEW_PNG_WIDTH, which means no tool that talks to
+# it can ever show the delivered file: measured on 01-hat, a typical glyph is 4px on screen
+# against ~15px in the download, so every judgement about small type is made on a quarter of
+# what is sold. Renders stay watermarked at any size, so this exposes nothing the loupe does
+# not already. 0 = off, and it MUST stay 0 on the live trees: a 3600px preview is ~4x the
+# pixels and ~20s, on every swatch. Set it on staging only, for measurement.
+OPS_PREVIEW_MAX_PX = env_int("TYPO_OPS_PREVIEW_PX", 0)
 # Uploaded photos, previews and generated files are auto-deleted after this many
 # days so the Privacy Policy's retention statement stays accurate.
 RETENTION_DAYS = env_int("TYPO_RETENTION_DAYS", 30)
