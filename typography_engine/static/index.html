@@ -652,9 +652,12 @@
          Shown only on memorial skins (see brand-apply JS); fails soft to typing. -->
     <div id="storyStep" class="story-step" style="display:none">
       <div class="story-actions">
-        <button type="button" id="suggestWords" class="btn secondary">Find the words</button>
+        <button type="button" id="suggestWords" class="btn secondary">Turn this into words</button>
         <button type="button" id="undoSuggest" class="linklike" style="display:none">&#8617; Back to what I wrote</button>
       </div>
+      <!-- Says what the button DOES. "Find the words" told people nothing: it reads the box
+           above and REPLACES what is in it, and neither half was apparent until it happened. -->
+      <div class="hint" id="storyHint" style="margin-top:6px">Reads what you wrote above and replaces it with a short list of words. You can undo it.</div>
       <details class="story-more" id="storyMore">
         <summary>Add a few more details</summary>
         <div class="story-grid">
@@ -1220,7 +1223,7 @@ if(BRAND){
       const _ss=document.getElementById("storyStep"); if(_ss) _ss.style.display="block";          // generate helper under the one box = memorial
       // The one box becomes "tell us about them": paste a tribute OR list words.
       const _wl=document.getElementById("wordsLbl"); if(_wl) _wl.textContent="Tell us about them";
-      const _wh=document.getElementById("wordsHint"); if(_wh) _wh.textContent="Paste an obituary or tribute, share a memory, or just list a few words — then tap “Find the words.” You can edit everything.";
+      const _wh=document.getElementById("wordsHint"); if(_wh) _wh.textContent="Paste an obituary or tribute, share a memory, or just list a few words. If you paste something long, “Turn this into words” shortens it for you.";
       const _wt=document.getElementById("words"); if(_wt){ _wt.setAttribute("placeholder","Paste a tribute, share a memory, or list a few words…"); _wt.rows=5; }
     }
     // Brand header glyph: memorial shows the heart (above); a brand can opt into a
@@ -1379,7 +1382,7 @@ consent.addEventListener("change", refreshCreate);
     const details={nickname:val("dtNickname"), role:val("dtRole"), sayings:val("dtSaying"), three_words:val("dtThree"), hobby:val("dtHobby"), known:val("dtKnown"), legacy:val("dtLegacy")};
     const hasDetail=Object.values(details).some(Boolean);
     if(!text && !hasDetail){ say("Write or paste something about them, or add a detail or two."); words.focus(); return; }
-    btn.disabled=true; const label=btn.textContent; btn.textContent="Finding the words…"; say("");
+    btn.disabled=true; const label=btn.textContent; btn.textContent="Reading what you wrote…"; say("");
     try{
       const fd=new FormData();
       fd.append("story", text);
@@ -1395,6 +1398,9 @@ consent.addEventListener("change", refreshCreate);
         words.value=ws.join(", "); refreshCreate();
         setLabels(REVIEW_LBL, REVIEW_HINT);                         // write -> review, SAME box
         if(undoBtn) undoBtn.style.display="";
+        // The standing explanation describes an action now taken; it would read as an
+        // instruction to repeat it. The undo link carries the state from here.
+        { const _sh=document.getElementById("storyHint"); if(_sh) _sh.style.display="none"; }
         say("");   // the review hint + filled box + undo convey success; no redundant status line
         tp_track("story_suggest_ok",{n:ws.length});
         document.dispatchEvent(new CustomEvent("lw:words-suggested"));
@@ -1413,7 +1419,9 @@ consent.addEventListener("change", refreshCreate);
   if(undoBtn) undoBtn.addEventListener("click", ()=>{
     if(prevText!=null){ words.value=prevText; refreshCreate(); }
     if(prevLbl!=null) setLabels(prevLbl, prevHint);
-    if(undoBtn) undoBtn.style.display="none"; say(""); words.focus();
+    if(undoBtn) undoBtn.style.display="none";
+    { const _sh=document.getElementById("storyHint"); if(_sh) _sh.style.display=""; }
+    say(""); words.focus();
   });
 })();
 // Style toggle: word mosaic vs continuous-prose story.
@@ -3212,7 +3220,7 @@ function fetchWithTimeout(url, opts, ms){
       // titles the field, so its own label is hidden to avoid a redundant heading.
       if(elStory){ elStory.style.display="block"; }
       if(_wl) _wl.style.display="none";
-      if(_wh){ _wh.textContent="Paste a tribute or share a memory — or just list a few words. Then tap “Find the words,” and edit anything."; _wh.style.display=""; }
+      if(_wh){ _wh.textContent="Paste a tribute or share a memory — or just list a few words. If you paste something long, “Turn this into words” shortens it for you."; _wh.style.display=""; }
       S[2].b.append.apply(S[2].b, [elWords, elStory, elSize].filter(Boolean));
       // Drop the "Writing a letter or a message instead?" link -- the one box already
       // takes a letter/tribute/prose. (Message style stays reachable from the result.)
@@ -3293,7 +3301,7 @@ function fetchWithTimeout(url, opts, ms){
       setv("dtNickname","Bob"); setv("dtRole","Dad, Grandpa, my rock"); setv("dtSaying","There’s good in everyone."); setv("dtThree","kind, wise, patient"); setv("dtHobby","fishing"); setv("dtKnown","his bear hugs, Sunday pancakes"); setv("dtLegacy","patience, faith");
       var sm=document.getElementById("storyMore"); if(sm) sm.open=true;
       if(window.guidedOpenStep) setTimeout(function(){ try{ guidedOpenStep(2); }catch(e){} },60);
-      var msg=document.getElementById("storyMsg"); if(msg) msg.textContent="Example loaded — tap “Find the words,” then “Create their portrait.”";
+      var msg=document.getElementById("storyMsg"); if(msg) msg.textContent="Example tribute loaded — tap “Turn this into words” to shorten it, then “Create their portrait.”";
     }catch(e){ var m=document.getElementById("storyMsg"); if(m) m.textContent="Couldn’t load the example — please try again."; }
     if(sb){ sb.disabled=false; sb.textContent="✨ See a sample"; }
   }
