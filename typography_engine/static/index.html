@@ -2913,7 +2913,33 @@ $("#arrowR").addEventListener("click", ()=> swatchEl.scrollBy({left:200,behavior
 
 /* ---------- zoom / view up close ---------- */
 const zoomView=$("#zoomView"), zoomImg=$("#zoomImg"); let zScale=1;
-function applyZoom(){ zoomImg.style.width=(zScale*100)+"%"; zoomImg.style.cursor = zScale>=3 ? "zoom-out" : "zoom-in"; }
+// Stop zooming at the point the browser starts inventing pixels.
+//
+// This used to go to 3x unconditionally. The loupe render is a whole frame, and a glyph in
+// it measures about 8px (0.34% of frame height, measured -- see ops/preview-fidelity.sh),
+// so past native scale the viewer is shown an 8px mark blown up: blur, presented as a close
+// look at what they are buying. Worse than uninformative, because the honest note beneath
+// promises the download is sharper while the screen appears to show otherwise.
+//
+// zMax is how far the loaded image can be enlarged before one image pixel covers more than
+// one screen pixel. It is recomputed when the sharper render swaps in, so the ceiling rises
+// with the resolution rather than being a guess.
+let zMax=3;
+function recalcZoomMax(){
+  // Measure from a known state. Deriving the container width by dividing out the current
+  // zScale reads wrong whenever style.width is left over from a previous open, so put the
+  // image back to 100% first; applyZoom() sets the real width immediately after.
+  const prev=zoomImg.style.width;
+  zoomImg.style.width="100%";
+  const nat=zoomImg.naturalWidth||0, box=zoomImg.clientWidth||0;
+  zMax = (nat && box) ? Math.max(1, Math.min(6, nat/box)) : 3;
+  zoomImg.style.width=prev;
+}
+function applyZoom(){
+  zScale=Math.min(zScale, zMax);
+  zoomImg.style.width=(zScale*100)+"%";
+  zoomImg.style.cursor = zScale>=zMax ? "zoom-out" : "zoom-in";
+}
 // The on-screen preview is deliberately low-res (fast; the paid file is the full-detail
 // asset). On "view up close", upgrade the loupe to a higher-res WATERMARKED render (2000px
 // via the loupe flag) on every brand -- memorial's 900px light preview and generic's 1400px
@@ -2928,16 +2954,23 @@ async function loadZoomHiRes(){
   setZoomLoading(true);
   try{
     const url=await render(state.ink,{hires:true});
-    if(url){ zoomHiCache[key]=url; if(zoomView.classList.contains("on") && zoomKey()===key) zoomImg.src=url; }
+    if(url){ zoomHiCache[key]=url;
+      if(zoomView.classList.contains("on") && zoomKey()===key){
+        // The ceiling belongs to the image on screen, so it moves when the image does.
+        zoomImg.addEventListener("load", ()=>{ recalcZoomMax(); applyZoom(); }, {once:true});
+        zoomImg.src=url;
+      } }
   }catch(e){}
   setZoomLoading(false);
 }
 $("#zoomBtn").addEventListener("click", ()=>{
   const src=portrait.getAttribute("src"); if(!src) return;
-  zoomImg.src=src; zScale=1; applyZoom(); zoomView.classList.add("on"); zoomView.scrollTop=0;
+  zoomImg.src=src; zScale=1; zoomView.classList.add("on"); zoomView.scrollTop=0;
+  if(zoomImg.complete) { recalcZoomMax(); applyZoom(); }
+  else zoomImg.addEventListener("load", ()=>{ recalcZoomMax(); applyZoom(); }, {once:true});
   loadZoomHiRes();   // swap in a sharper render when it's ready
 });
-zoomImg.addEventListener("click", e=>{ e.stopPropagation(); zScale = zScale>=3 ? 1 : zScale+1; applyZoom(); });
+zoomImg.addEventListener("click", e=>{ e.stopPropagation(); zScale = (zScale>=zMax-0.01) ? 1 : Math.min(zMax, zScale+1); applyZoom(); });
 function closeZoom(){ zoomView.classList.remove("on"); }
 $("#zoomClose").addEventListener("click", closeZoom);
 zoomView.addEventListener("click", e=>{ if(e.target===zoomView) closeZoom(); });
