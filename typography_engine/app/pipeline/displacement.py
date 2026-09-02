@@ -778,12 +778,19 @@ def render_displacement_portrait(
             wi = 0
             target = float(W) + fs * 6.0
             ry = 0
+            # The rows BELOW the frame draw from their own generator. Sharing `rng` would
+            # consume extra draws and shift the jitter of every tier built afterwards, so
+            # padding the canvas would silently re-lay the whole portrait -- it did, on all
+            # ten test images -- and no comparison could then say whether a change came from
+            # the fix or from the reshuffle.
+            _prng = random.Random(seed ^ 0x9E3779B9)
             while y < H + _row_pad + fs:
+                _r = rng if y < H + fs else _prng
                 parts, row_w = [], 0.0
                 while row_w < target and len(parts) < 20000:   # cap: never hang a row
                     tok = _vocab_stream[wi % n]; wi += 1
                     parts.append(tok); row_w += adv.get(tok, space)
-                _ox = -(rng.randint(0, int(fs * _fjit)) if _fjit > 0 else int((ry % 5) * fs * 0.5))
+                _ox = -(_r.randint(0, int(fs * _fjit)) if _fjit > 0 else int((ry % 5) * fs * 0.5))
                 d.text((_ox, y), " ".join(parts), font=f, fill=0)
                 y += max(6, int(fs)); ry += 1
         else:
@@ -798,8 +805,10 @@ def render_displacement_portrait(
             # once -- it never varied per row.
             bw = max(1.0, float(d.textlength(base, font=f)))
             line = base * max(2, int((W + fs * 7) / bw) + 2)
-            while y < H + _row_pad + fs:
-                d.text((-rng.randint(0, int(fs * 6)), y), line, font=f, fill=0)
+            _prng = random.Random(seed ^ 0x9E3779B9)   # see the note above: pad rows must
+            while y < H + _row_pad + fs:                # not disturb the main sequence
+                _r = rng if y < H + fs else _prng
+                d.text((-_r.randint(0, int(fs * 6)), y), line, font=f, fill=0)
                 y += max(6, int(fs))
         return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
 
