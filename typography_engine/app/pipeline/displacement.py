@@ -746,9 +746,21 @@ def render_displacement_portrait(
         _dlm = np.clip(cv2.GaussianBlur(_dlm, (0, 0), sigmaX=max(1.0, _dlr * 0.30)), 0, 1)
         gray = gray * (1.0 - 0.90 * _dlm)
 
+    # The text canvas is drawn TALLER than the frame. The drape below samples DOWNWARD on
+    # bright regions -- my = yy + amp*dn -- so at the bottom edge it reaches past the canvas,
+    # where a zero border returns no glyphs. The pet engine had the identical construction and
+    # it produced a measurable stripe: glyph coverage held at 0.25 to 94% of the frame and
+    # collapsed to 0.098 below it, on a pale chest that ran to the bottom of the picture.
+    #
+    # Padding by the drape's own maximum reach gives it real rows to find. Subjects here are
+    # usually inset from the edge, so this may change little -- but the construction was the
+    # same and the failure needs only a bright region touching the bottom, which a light shirt
+    # is.
+    _row_pad = int(round(float(os.environ.get("TYPO_DRAPE", "64") or 64.0) * s * _ssn)) + 8
+
     def rows(fs: float) -> np.ndarray:
         f = _font(fs)
-        im = Image.new("L", (W, H), 255)
+        im = Image.new("L", (W, H + _row_pad), 255)
         d = ImageDraw.Draw(im)
         y = 0
         if flow:
@@ -766,7 +778,7 @@ def render_displacement_portrait(
             wi = 0
             target = float(W) + fs * 6.0
             ry = 0
-            while y < H + fs:
+            while y < H + _row_pad + fs:
                 parts, row_w = [], 0.0
                 while row_w < target and len(parts) < 20000:   # cap: never hang a row
                     tok = _vocab_stream[wi % n]; wi += 1
@@ -786,7 +798,7 @@ def render_displacement_portrait(
             # once -- it never varied per row.
             bw = max(1.0, float(d.textlength(base, font=f)))
             line = base * max(2, int((W + fs * 7) / bw) + 2)
-            while y < H + fs:
+            while y < H + _row_pad + fs:
                 d.text((-rng.randint(0, int(fs * 6)), y), line, font=f, fill=0)
                 y += max(6, int(fs))
         return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
