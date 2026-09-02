@@ -1597,6 +1597,17 @@ def render_displacement_portrait(
             except Exception as _e:  # noqa: BLE001
                 print("[dump] failed: %s" % _e)
         out = _base * (1 - al) + ink_col * al
+        # One line that settles whether this composite is the image the caller receives.
+        # _base provably changes with TYPO_SUBJECT_DIM (the dumps differ) while the returned
+        # PNG does not, which cannot both be true of a single render. Printing the means of
+        # the inputs AND of the result here, plus the mean of the final array at encode time,
+        # localises the break to one side of the function.
+        if os.environ.get("TYPO_DUMP_FIELDS", "").strip():
+            print("[trace] ink=%r sb=%.2f dim=%.2f  base.mean=%.2f al.mean=%.3f "
+                  "ink_col.mean=%.2f -> out.mean=%.2f"
+                  % (ink, _sb, float(os.environ.get("TYPO_SUBJECT_DIM", "0.45") or 0.0),
+                     float(np.asarray(_base).mean()), float(np.asarray(al).mean()),
+                     float(np.asarray(ink_col).mean()), float(np.asarray(out).mean())))
         if os.environ.get("TYPO_POLARITY", "0").strip().lower() in ("1", "true", "on", "yes"):
             # Polarity model (the paper-grade shadow behaviour, brought to the dark-ground
             # Lifelike look). Instead of "light ink whose COVERAGE follows brightness"
@@ -1947,4 +1958,7 @@ def render_displacement_portrait(
         ok, buf = cv2.imencode(".png", np.clip(out, 0, 255).astype(np.uint8))
     if not ok:
         raise ValueError("encode_failed")
+    if os.environ.get("TYPO_DUMP_FIELDS", "").strip():
+        print("[trace] encode  out.mean=%.2f  bytes=%d"
+              % (float(np.asarray(out).mean()), len(buf.tobytes())))
     return buf.tobytes()
