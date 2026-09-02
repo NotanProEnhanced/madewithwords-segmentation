@@ -231,6 +231,29 @@ put the app in **draft mode** first:
 > `typography_engine/data/orders.db`, which is volume-mounted, so it survives
 > `docker compose up --build` and code updates. Don't delete the `data/` folder.
 
+### 3c. The Printful webhook (shipment updates)
+
+Printful's classic webhooks carry **no signature**, so `/webhook/printful` is guarded by a
+secret in the query string: the registered URL is
+`https://app.typortrait.com/webhook/printful?k=<PRINTFUL_WEBHOOK_SECRET>`.
+
+**There is no page in the Printful dashboard for this.** Classic webhooks are registered
+only through the API (`POST /webhooks`), and Printful keeps **one** webhook URL per store —
+registering a new one replaces the old, including its event types. Settings → API in the
+dashboard is only where the API token lives.
+
+    # what is registered now (nothing is changed)
+    /root/typortrait-prod/typography_engine/ops/rotate-printful-secret.sh
+
+    # new secret, updated .env, re-registered URL, verified
+    /root/typortrait-prod/typography_engine/ops/rotate-printful-secret.sh --rotate
+
+Rotate if the secret is ever exposed. Someone holding it can forge a `package_shipped` for
+an order whose id they already know, which marks it shipped and emails that customer a
+"your order has shipped" message with a tracking link of their choosing, from your domain.
+Order ids are `uuid4().hex[:12]` and cannot be guessed, so the risk is narrow — but the
+email goes out under your name.
+
 > **Verify the Printful variant IDs before your first real sale.** The product
 > sizes/IDs are in `app/products.py`; if Printful changes a catalog ID, update it
 > there. Run one test order end-to-end (Stripe test mode + a cheap product) to
