@@ -1,6 +1,6 @@
 #!/bin/bash
 # Typortrait fleet tool -- one command per operation across all five trees.
-#   tt list                     trees, ports, roles, git branch + dirty count
+#   tt list                     trees, ports, roles, git commit + branch + dirty count
 #   tt patch <script.py> <rel>  run a patch script against <rel> in every tree
 #   tt build [tree ...]         docker compose up -d --build (all, or named)
 #   tt verify <needle>          HTTP code + occurrences of <needle> in served page
@@ -12,9 +12,16 @@ TREES="typortrait-stg:8078:staging typortrait-prod:8077:PROD-typortrait typortra
 cmd=$1; shift
 case "$cmd" in
 list)
+  # The COMMIT is the column that matters. Branch alone once showed five identical
+  # names while one tree sat three commits behind and served the old code -- a deploy
+  # had skipped it and this table reported all-green. Remote name is here for the same
+  # reason: a tree whose remote isn't called what the pull command says is a tree the
+  # pull silently misses.
   for e in $TREES; do d=${e%%:*}; r=${e#*:}; p=${r%%:*}; o=${r#*:}
-    printf '%-26s %-5s %-18s %-30s dirty=%s\n' "$d" "$p" "$o" \
+    printf '%-26s %-5s %-18s %-9s %-30s %-8s dirty=%s\n' "$d" "$p" "$o" \
+      "$(git -C /root/$d rev-parse --short HEAD 2>/dev/null || echo NO-GIT)" \
       "$(git -C /root/$d rev-parse --abbrev-ref HEAD 2>/dev/null || echo NO-GIT)" \
+      "$(git -C /root/$d remote 2>/dev/null | paste -sd, -)" \
       "$(git -C /root/$d status --porcelain 2>/dev/null | wc -l)"
   done ;;
 patch)
