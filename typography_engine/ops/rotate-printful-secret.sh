@@ -98,6 +98,22 @@ fi
 echo "== .env updated (backup alongside it); restarting"
 ( cd "$TREE/typography_engine" && docker compose up -d ) || { echo "restart FAILED -- .env is changed, Printful is not"; exit 1; }
 
+# WAIT for the app to actually serve before going any further. `docker compose up -d`
+# returns when the container STARTS, not when uvicorn is accepting requests -- this engine
+# loads MediaPipe and an ONNX matte first, which takes many seconds. The first run of this
+# script registered the new URL and then tested it against an app that was still booting:
+# 502 from nginx and 000 from inside the container, both read as failures when nothing was
+# wrong. Worse, it would have re-registered with Printful even if the app never came up.
+echo "== waiting for the app to serve"
+_up=0
+for _i in $(seq 1 60); do
+    _c=$(docker exec "$CONTAINER" sh -lc "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8077/health" 2>/dev/null)
+    if [ "$_c" = "200" ]; then _up=1; echo "   serving after ${_i}s"; break; fi
+    sleep 1
+done
+[ "$_up" = "1" ] || { echo "app is NOT serving after 60s. .env carries the new secret, Printful still has the old one."
+                      echo "Printful was NOT re-registered -- fix the app, then re-run --rotate."; exit 1; }
+
 BODY="$(python3 -c '
 import json,sys
 print(json.dumps({"url": sys.argv[1] + "/webhook/printful?k=" + sys.argv[2],
@@ -112,7 +128,7 @@ echo
 echo "== verifying"
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$PUBLIC_URL/webhook/printful?k=deliberately-wrong")
 echo "wrong secret -> HTTP $code   (want 403)"
-code=$(docker exec "$CONTAINER" sh -lc "curl -s -o /dev/null -w '%{http_code}' -X POST 'http://127.0.0.1:8077/webhook/printful?k=$K'")
+code=$(docker exec "$CONTAINER" sh -lc 'curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:8077/webhook/printful?k=$PRINTFUL_WEBHOOK_SECRET"')
 echo "new secret   -> HTTP $code   (want 400: accepted, then rejected the empty body)"
 echo
 echo "Done. The old secret is dead. Delete the .env backup once the next shipment arrives."
