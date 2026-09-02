@@ -1821,11 +1821,47 @@ async def render(
         except Exception:  # noqa: BLE001
             source_url = None
 
+    # How UNCERTAIN is the cutout? The touch-up editor exists for a matte that clipped an ear
+    # or left a shoulder of background attached, and it is currently offered on every render --
+    # planting doubt before the customer has looked. To offer it only when it is useful, the
+    # uncertainty has to be measured.
+    #
+    # silhouette.confidence does not measure this: it scores framing (how big the subject is,
+    # whether it touches the border), not edge quality.
+    #
+    # `fringe` is the width of the ambiguous band, in pixels, around the silhouette: how many
+    # part-transparent pixels there are per pixel of boundary. A clean matte feathers over two
+    # or three; a matte unsure where the subject ends spreads much wider. `touch` counts frame
+    # edges the subject runs off, which is the other failure the editor fixes -- a clipped ear.
+    #
+    # REPORTED ONLY. Nothing is gated on it until there are values from real photographs, good
+    # and bad, to choose a threshold from. Guessing one is how a prompt ends up hidden on the
+    # renders that needed it.
+    _fringe = None
+    try:
+        import cv2 as _cv2f
+        import numpy as _npf
+        _sil = getattr(an, "silhouette", None) if an is not None else None
+        if _sil is not None and getattr(_sil, "soft", None) is not None:
+            _sm = _npf.asarray(_sil.soft, _npf.float32) / 255.0
+            _bin = (_npf.asarray(_sil.mask, _npf.uint8) > 127).astype(_npf.uint8)
+            _bnd = _cv2f.morphologyEx(_bin, _cv2f.MORPH_GRADIENT, _npf.ones((3, 3), _npf.uint8))
+            _nb = int(_bnd.sum())
+            if _nb > 0:
+                _amb = int(((_sm > 0.10) & (_sm < 0.90)).sum())
+                _fringe = round(_amb / float(_nb), 2)
+    except Exception:  # noqa: BLE001 -- a diagnostic must never fail a render
+        _fringe = None
+
     return JSONResponse(
         {
             "ok": True,
             "job_id": job_id,
             "job": job_id,
+            "matte_fringe": _fringe,      # ambiguous px per boundary px; None if no soft matte
+            "matte_conf": (round(float(getattr(an.silhouette, "confidence", 0.0)), 3)
+                           if an is not None and getattr(an, "silhouette", None) is not None
+                           else None),
             "faces": (len(an.faces) if an is not None else 1),   # pet path has no face analyze
             "likeness": likeness,
             "ink": ink_choice,
