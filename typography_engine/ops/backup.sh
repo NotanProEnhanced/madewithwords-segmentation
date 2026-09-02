@@ -69,7 +69,29 @@ for _d in "${APP_DIRS[@]}"; do
 done
 
 # 2) Initialise the repo on first run (no-op once it exists).
-restic snapshots >/dev/null 2>&1 || restic init
+#
+# This used to be `restic snapshots >/dev/null 2>&1 || restic init`, which
+# answers "I cannot READ the repository" and "there is no repository" with the
+# same action. On 2 Sep 2026 B2 returned 403 on every read -- the daily Class B
+# transaction cap -- and the job's response was to try to initialise ON TOP of a
+# live repository holding every backup we have. It failed only because init also
+# needs a read. That must never be left to luck: a transient read error is not
+# evidence that the repository is gone.
+if _cfg_err="$(restic cat config 2>&1 >/dev/null)"; then
+  :                                   # repository is there and readable
+else
+  case "$_cfg_err" in
+    *403*|*"Access Denied"*|*"denied"*)
+      fail "cannot READ the repository: $_cfg_err
+  A 403 from B2 usually means the daily Class B transaction cap is reached.
+  restic must read the config and indexes before it can write, so BACKUPS ARE
+  STOPPED until the cap resets at 00:00 UTC or is raised on the Caps & Alerts
+  page. Deliberately NOT initialising -- the repository is almost certainly
+  intact and unreadable, not missing." ;;
+  esac
+  echo "-- no repository at this location; initialising a new one"
+  restic init
+fi
 
 # 3) DR set — everything, tagged 'data'. SHORT retention (below) so source
 #    photos roll off in ~35 days, matching our ~30-day deletion promise to users.
