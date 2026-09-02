@@ -875,7 +875,9 @@ def render_displacement_portrait(
     # TYPO_FACE_DETAIL is the TARGET fineness FLOOR for the face+ears (0..1): a floor, not an
     # add, so the ear (which starts at df~0 = the LARGEST tier) is forced straight to fine
     # rather than merely nudged. Default 0.8; 0 reverts.
-    _fdt = float(os.environ.get("TYPO_FACE_DETAIL", "0.8") or 0.8)
+    # 0.95 to match docker-compose.yml, which is what every container actually runs.
+    # The code said 0.8 and the measured field came back at 0.95 all day.
+    _fdt = float(os.environ.get("TYPO_FACE_DETAIL", "0.95") or 0.95)
     if _fdt > 0.0:
         # Detail mask = the TIGHT face interior (not the wide face_norm feather, so the chin/
         # jaw/cheekbones get the FULL lift right to the jawline) PLUS an estimated EAR region on
@@ -1631,7 +1633,9 @@ def render_displacement_portrait(
                      ink, _sb, float(os.environ.get("TYPO_SUBJECT_DIM", "0.45") or 0.0),
                      float(np.asarray(_base).mean()), float(np.asarray(al).mean()),
                      float(np.asarray(ink_col).mean()), float(np.asarray(out).mean())))
-        if os.environ.get("TYPO_POLARITY", "0").strip().lower() in ("1", "true", "on", "yes"):
+        # Default 1, matching docker-compose.yml. It read "0" here while compose defaulted
+        # it ON in every container, so this whole block ran while the code said it did not.
+        if os.environ.get("TYPO_POLARITY", "1").strip().lower() in ("1", "true", "on", "yes"):
             # Polarity model (the paper-grade shadow behaviour, brought to the dark-ground
             # Lifelike look). Instead of "light ink whose COVERAGE follows brightness"
             # (shadow -> no ink -> ground shows -> absence), make the type present at HIGH
@@ -1849,7 +1853,10 @@ def render_displacement_portrait(
             _tk = _ea > eye_a
             eye_a = np.where(_tk, _ea, eye_a)
             eye_bgr[_tk] = _eb[_tk]
-        a3 = (eye_a * float(os.environ.get("TYPO_EYE_PHOTO", "0.5") or 0.5))[..., None]   # 1=opaque photo eye; lower (default 0.5) blends the typography through so the eye reads as part of the words
+        # 1.0 to match docker-compose.yml. Worth knowing what that means: the eye is an
+        # OPAQUE paste of the photograph's own pixels, not typography blended over it. The
+        # code claimed 0.5 -- half blended -- and no container has ever run that.
+        a3 = (eye_a * float(os.environ.get("TYPO_EYE_PHOTO", "1.0") or 1.0))[..., None]   # 1=opaque photo eye; lower blends the typography through so the eye reads as part of the words
         out = out * (1.0 - a3) + eye_bgr * a3
         # A NON-closeup source has small, soft eyes, so the pasted eye reads flat/muddy.
         # Sharpen + lift local contrast INSIDE the eye opening so the iris/pupil/catchlight
