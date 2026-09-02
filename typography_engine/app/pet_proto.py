@@ -492,7 +492,16 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     mx = xx
 
     def R(t):
-        return cv2.remap(t, mx, my, cv2.INTER_LINEAR, borderValue=0.0)
+        # REPLICATE, not a zero border. my = yy + amp*dn, so a BRIGHT region drapes the
+        # sample point downward -- at PET_DRAPE=110 that is ~110px. Near the bottom edge it
+        # lands outside the canvas, and a zero border returns no glyphs: a blank band exactly
+        # where the fur is brightest and the frame ends. Measured on a French bulldog, the
+        # bottom tenth carried 70% of the glyph coverage the rest of the frame had, and the
+        # ratio held whatever the row gap was set to.
+        #
+        # The text field is a tiling of identical rows, so continuing it past the edge is what
+        # the drape was always reaching for.
+        return cv2.remap(t, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
 
     wL, wM, wF, wMi = R(tL), R(tM), R(tF), R(tMi)
 
