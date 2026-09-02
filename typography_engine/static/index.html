@@ -2946,7 +2946,30 @@ function applyZoom(){
 // preview both sharpen. Cached per variant so reopening is instant.
 let zoomHiCache={};
 function zoomKey(){ return [gen,state.ink,state.inkHex,state.backdrop,state.style,state.minFont,(state.sunglassFaces||[]).join(",")].join("|"); }
-function setZoomLoading(on){ const el=$("#zoomLoad"); if(el) el.style.display = on ? "" : "none"; }
+let _zLoad=0;
+function setZoomLoading(on){
+  _zLoad=Math.max(0,_zLoad+(on?1:-1));      // counted: two requests overlap, one boolean would race
+  const el=$("#zoomLoad"); if(el) el.style.display = _zLoad>0 ? "" : "none";
+}
+// Start composing the delivered file the moment the loupe OPENS, not when someone zooms.
+// The composition takes ~30s, and on the zoom that wait sits between the customer asking to
+// look closely and seeing anything. Starting it here spends it while they are looking at the
+// whole frame, so by the time they click the crop is usually already there.
+//
+// Once per job. A new ink or size is a new job_id and a new recipe (main.py: job_id =
+// uuid4().hex[:12] per render), so a warmed file can never be stale -- but it does mean
+// trying five inks and opening the loupe on each composes five delivered files.
+let loupeWarmed={};
+function warmLoupe(){
+  if(!currentJob || loupeWarmed[currentJob]) return;
+  loupeWarmed[currentJob]=1;
+  setZoomLoading(true);
+  const img=new Image();
+  img.onload =()=>setZoomLoading(false);
+  img.onerror=()=>{ delete loupeWarmed[currentJob]; setZoomLoading(false); };  // let a zoom retry
+  img.src="/loupe/"+encodeURIComponent(currentJob)+"?cx=0.5&cy=0.5&brand="
+        +encodeURIComponent(typeof BRAND_ID!=="undefined"?(BRAND_ID||""):"");
+}
 async function loadZoomHiRes(){
   if(!state.file) return;
   const key=zoomKey();
@@ -2969,6 +2992,7 @@ $("#zoomBtn").addEventListener("click", ()=>{
   if(zoomImg.complete) { recalcZoomMax(); applyZoom(); }
   else zoomImg.addEventListener("load", ()=>{ recalcZoomMax(); applyZoom(); }, {once:true});
   loadZoomHiRes();   // swap in a sharper render when it's ready
+  warmLoupe();       // and start the delivered file now, so the zoom does not wait for it
 });
 // Clicking to look closer swaps in a TRUE 1:1 crop of the delivered file rather than
 // enlarging the preview. Measured (ops/preview-fidelity.sh): a glyph is 4.0px on screen,

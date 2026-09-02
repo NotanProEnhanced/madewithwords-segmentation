@@ -3803,6 +3803,34 @@ def _stripe_to_dict(obj):
         return {}
 
 
+# One composer per output file, and an atomic write.
+#
+# `path.exists()` goes true the moment the file is CREATED, not when it is complete, and
+# write_bytes is not atomic -- so two callers racing on the same job could serve a truncated
+# PNG, and both would spend ~30s composing the same image. Rare when only /download composed;
+# routine now that the loupe warms the same file on open and may be clicked mid-compose.
+_CLEAN_LOCKS: Dict[str, _threading.Lock] = {}
+_CLEAN_LOCKS_GUARD = _threading.Lock()
+
+
+def _clean_lock(key: str) -> _threading.Lock:
+    with _CLEAN_LOCKS_GUARD:
+        return _CLEAN_LOCKS.setdefault(key, _threading.Lock())
+
+
+def _write_atomic(path: Path, data: bytes) -> None:
+    """Write via a temp file in the same directory, then rename. A reader either sees the
+    old file or the complete new one, never a half-written PNG."""
+    tmp = path.with_suffix(path.suffix + f".tmp{uuid.uuid4().hex[:8]}")
+    try:
+        tmp.write_bytes(data)
+        tmp.replace(path)
+    finally:
+        if tmp.exists():
+            try: tmp.unlink()
+            except OSError: pass
+
+
 def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path]:
     """Compose (once) and return the path to the clean print-resolution PNG for
     `job`, or None if the job's inputs are missing or composition fails.
@@ -3832,6 +3860,16 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
     path = PRIVATE_DIR / f"{job}{tag}.png"
     if path.exists():
         return path
+    # Serialise on this exact output. The second caller waits, then finds the finished file
+    # on the re-check below instead of composing it a second time.
+    with _clean_lock(str(path)):
+        if path.exists():
+            return path
+        return _compose_clean_png(job, aspect, path, recipe_path, src_path)
+
+
+def _compose_clean_png(job, aspect, path, recipe_path, src_path):
+    """The composition itself. Split out only so the lock above reads as one statement."""
     try:
         from .pipeline.tonal import compose_layered, render_layered_png, custom_poster
         r = json.loads(recipe_path.read_text(encoding="utf-8"))
@@ -3855,7 +3893,7 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
                 print_aspect=aspect, type_scale=_dl_pt)
             if not png_bytes:
                 return None
-            path.write_bytes(png_bytes)
+            _write_atomic(path, png_bytes)
             return path
         warns2 = WarningCollector()
         _bgmask = None
@@ -3890,7 +3928,7 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
                 sunglasses=dl_sun, sunglass_faces=dl_sunf)
             if not png_bytes:
                 return None
-            path.write_bytes(png_bytes)
+            _write_atomic(path, png_bytes)
             return path
         mask_path = PRIVATE_DIR / f"{job}.mask.svg"
         if mask_path.exists():
@@ -3918,7 +3956,7 @@ def _ensure_clean_png(job: str, aspect: Optional[float] = None) -> Optional[Path
                 sunglasses=dl_sun, backdrop=r.get("backdrop"))
         if not png_bytes:
             return None
-        path.write_bytes(png_bytes)
+        _write_atomic(path, png_bytes)
         return path
     except Exception:  # noqa: BLE001
         return None
