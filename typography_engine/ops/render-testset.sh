@@ -40,13 +40,14 @@ BRAND="${BRAND:-lovedinwords}"
 # are part of what makes two runs comparable.
 DEF_PNG_W=900; DEF_RENDER_W=1500; DEF_STYLE=displacement; DEF_MIN_FONT=57
 DEF_BRAND=lovedinwords
+DEF_INK=photo; DEF_GROUND=navy; DEF_BACKDROP=studio; DEF_ASPECT=0.8
 PNG_W="${PNG_W:-$DEF_PNG_W}"
 RENDER_W="${RENDER_W:-$DEF_RENDER_W}"
 STYLE="${STYLE:-$DEF_STYLE}"
-INK="${INK:-photo}"
-GROUND="${GROUND:-navy}"
-BACKDROP="${BACKDROP:-studio}"
-ASPECT="${ASPECT:-0.8}"
+INK="${INK:-$DEF_INK}"
+GROUND="${GROUND:-$DEF_GROUND}"
+BACKDROP="${BACKDROP:-$DEF_BACKDROP}"
+ASPECT="${ASPECT:-$DEF_ASPECT}"
 MIN_FONT="${MIN_FONT:-$DEF_MIN_FONT}"
 PET="${PET:-}"                 # PET=1 to exercise the landmark-free engine instead
 
@@ -66,6 +67,13 @@ SIG=""
 [ "$STYLE"    = "$DEF_STYLE" ]    || SIG="$SIG-$STYLE"
 [ "$BRAND"    = "$DEF_BRAND" ]    || SIG="$SIG-$BRAND"
 [ -z "$PET" ]                     || SIG="$SIG-pet"
+# The product has more axes than the baseline configuration. A floral or a tinted ink is a
+# different render, not a different version of the same one, and filing it under the plain
+# commit would overwrite the baseline with something not comparable to it.
+[ "$INK"      = "$DEF_INK" ]      || SIG="$SIG-$INK"
+[ "$GROUND"   = "$DEF_GROUND" ]   || SIG="$SIG-$GROUND"
+[ "$BACKDROP" = "$DEF_BACKDROP" ] || SIG="$SIG-$BACKDROP"
+[ "$ASPECT"   = "$DEF_ASPECT" ]   || SIG="$SIG-ar$ASPECT"
 
 # NAME=<label> for a run whose code did not come from HEAD. Checking out an older app/
 # into the tree -- the way to render what production is running -- leaves HEAD where it
