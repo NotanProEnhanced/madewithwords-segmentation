@@ -316,13 +316,17 @@ def _weighted_stream(words):
     return [p for _, _, p in items]
 
 
-def _rows(stream, W, H, fs, rng):
-    """A full-canvas grayscale INK-COVERAGE map (1 = ink, 0 = ground) of horizontal rows of the
+def _rows(stream, W, H, fs, rng, pad=0):
+    """A grayscale INK-COVERAGE map (1 = ink, 0 = ground) of horizontal rows of the
     (importance-weighted) phrase stream at font size `fs`. Each row's horizontal start is
-    jittered so a short list doesn't tile into wallpaper."""
+    jittered so a short list doesn't tile into wallpaper.
+
+    `pad` extends the canvas BELOW the frame. The drape samples downward on bright regions,
+    so without it the bottom edge has nothing real to read and the type stops short."""
     fs = max(6, int(round(fs)))
+    pad = max(0, int(pad))
     font = ImageFont.truetype(_FONT, fs) if _FONT else ImageFont.load_default()
-    im = Image.new("L", (W, H), 255)
+    im = Image.new("L", (W, H + pad), 255)
     d = ImageDraw.Draw(im)
     # Subtle letter tracking so glyphs in a row don't crowd -- a hair of space between words
     # opens the type up (reads less like a solid mass). PET_TRACK adds inter-phrase spacing.
@@ -336,7 +340,7 @@ def _rows(stream, W, H, fs, rng):
     _gap = float(os.environ.get("PET_ROW_GAP", "1.12") or 1.12)
     step = max(6, int(round(fs * _gap)))
     y = 0
-    while y < H + fs:
+    while y < H + pad + fs:
         d.text((-rng.randint(0, int(fs * 6)), y), line, font=font, fill=0)
         y += step
     return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
@@ -471,10 +475,21 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
             _brief = [q for q in _lead if len(q.split()) <= 3]
             _hero = _brief[:max(1, int(round(_n * 0.30)))] or _lead[:1]
             _mid = _lead
-    tL = _rows(_hero, W, H, _tc * sc * _tsc, rng)
-    tM = _rows(_mid, W, H, 40 * sc * _tsc, rng)
-    tF = _rows(stream, W, H, 26 * sc * _tsc, rng)
-    tMi = _rows(stream, W, H, 16 * sc * _tsc, rng)
+    # The text canvas is drawn TALLER than the frame, because the drape below samples
+    # DOWNWARD on bright regions -- my = yy + amp*dn -- and at the bottom edge that reaches
+    # past the canvas. A zero border returned no glyphs there; replicating returned row H-1
+    # smeared down, which is a gap if that row happens to fall between two lines. Measured on
+    # a pale chest, glyph coverage held at 0.25 to 94% of the frame and then collapsed to
+    # 0.098 -- a stripe that no row-gap or border setting could close, because there was
+    # nothing real to sample.
+    #
+    # Padding by the drape's maximum reach gives it real, varied rows to find.
+    _drape_max = float(os.environ.get("PET_DRAPE", "68") or 68.0) * sc
+    _pad = int(round(_drape_max)) + int(round(_tc * sc * _tsc)) + 8
+    tL = _rows(_hero, W, H, _tc * sc * _tsc, rng, pad=_pad)
+    tM = _rows(_mid, W, H, 40 * sc * _tsc, rng, pad=_pad)
+    tF = _rows(stream, W, H, 26 * sc * _tsc, rng, pad=_pad)
+    tMi = _rows(stream, W, H, 16 * sc * _tsc, rng, pad=_pad)
 
     # 2) Drape: warp the rows VERTICALLY by smoothed luminance so they ride the form. Damp the
     #    warp on high-detail features (eyes/nose) so they stay crisp. PET_DRAPE tunes wrap depth;
