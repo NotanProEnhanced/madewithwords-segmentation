@@ -1654,8 +1654,16 @@ def render_displacement_portrait(
             # both existing knobs at their limits moved near-black pixels from 13.2% to 8.4%
             # of the frame -- real, and far below noticeable.
             #
-            # 3.0 is the previous value, so the default is byte-identical.
-            _pol_i = float(os.environ.get("TYPO_POLARITY_INK_FLOOR", "3.0") or 3.0)
+            # 40 chosen by sweep on 08-white-hair, a fair white-haired subject on a light
+            # ground -- the case where this failed worst. Near-black pixels: 13.2% of the
+            # frame at 3, 7.3% at 40, 1.0% at 80. 80 removed the black the model exists to
+            # provide; 3 rendered the eyes as holes.
+            #
+            # This default MATCHES docker-compose.yml. The two disagreeing is what turned a
+            # dark render into an afternoon: compose defaults TYPO_POLARITY to 1 while the
+            # code reads "0", so the polarity model was running in every container and
+            # reading .env said otherwise.
+            _pol_i = float(os.environ.get("TYPO_POLARITY_INK_FLOOR", "40") or 40.0)
             _ink = _pc / _pl * (_pol_i + (253.0 - _pol_i) * _tone)   # keep the photo HUE, re-map brightness full-range
             _ink = np.minimum(_ink, np.float32([255, 255, 255])) # (hue*value can exceed 255 on saturated pixels)
             # Coverage rises INTO the shadows (heavier, denser type there) and eases in highlights, and
