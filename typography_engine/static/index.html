@@ -983,7 +983,7 @@ const BRANDS={
   // so a direct visit brands correctly with no ?brand param. (name/tag/theme are a first
   // pass -- easy to tune.)
   faithinwords:{ name:"Faith in Words", owned:true, tag:"A sacred portrait, in the words of Scripture.", title:"Faith in Words — a sacred portrait made from Scripture", host:"faithinwords.com",
-    style:"displacement", ink:"photo", pinStyle:true, glyph:"cross",
+    style:"displacement", ink:"photo", pinStyle:true, glyph:"cross", florals:true,
     theme:{ "--navy":"#33405f", "--ink":"#2a2f40", "--paper":"#f4f0e6", "--card":"#fffdf7", "--line":"#e7dfca", "--muted":"#77705f" } },
   // Paws in Words (pawsinwords.com) -- pet word-portraits. NOT the human face engine:
   // `pet:true` + style "pet" route rendering to the landmark-free pet renderer (U2-Net matte,
@@ -1023,6 +1023,11 @@ const BRAND=BRANDS[BRAND_ID]||null;
 const BRANDNAME=(BRAND&&BRAND.name)||"Typortrait";   // customer-facing brand name (generic = Typortrait)
 // Any brand flagged memorial gets the full grief-keepsake experience (see BRANDS).
 const _isMemorialBrand=!!(BRAND && BRAND.memorial);
+// Floral frames are a CAPABILITY, not an identity. They were gated on `memorial`, which
+// meant a brand could not have them without also inheriting the remembrance flow --
+// the same conflation that made petEngine decide both the renderer AND which controls
+// appear. Memorial brands keep them by default; any brand can opt in with florals:true.
+const _hasFlorals=!!(BRAND && (BRAND.florals || BRAND.memorial));
 const _isPet=!!(BRAND && BRAND.pet);   // pet STUDIO: the Paws in Words interface (word chips, Look, no ink axis)
 // Which ENGINE renders. `pet` implies both; `petEngine` asks for the landmark-free renderer
 // while KEEPING this brand's own studio -- the memorial tribute box, the Words/Passage
@@ -1877,7 +1882,7 @@ function buildBgSwatches(){
   // the engine is not enough -- this needs its own guard. The pet engine reads only its
   // own grounds and never looks at `backdrop`, so a floral chip there would change
   // nothing while appearing to.
-  if(_isMemorialBrand && !_petEngine && FLORALS.length){
+  if(_hasFlorals && !_petEngine && FLORALS.length){
     const lab=document.createElement("div"); lab.className="bg-group"; lab.textContent="Florals";
     bgSwatchEl.append(lab);
     FLORALS.forEach(([bg,src,label])=>mk(bg,"img:"+src,label));
