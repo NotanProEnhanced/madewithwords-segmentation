@@ -1338,6 +1338,15 @@ async def suggest_words_endpoint(
     return JSONResponse({"ok": True, "words": words, "available": True})
 
 
+@app.get("/suggest-words/enabled")
+def suggest_words_enabled() -> JSONResponse:
+    """Whether word suggestion is configured on THIS tree (i.e. a key is set).
+    The studio asks before it offers the control: a tree without a key can never
+    suggest, so the button, its explanation and the sample tribute that depends on
+    it are removed rather than left to fail on a click. Cheap, no upstream call."""
+    return JSONResponse({"ok": True, "available": bool(suggest.enabled())})
+
+
 @app.get("/mask/{job}")
 def auto_mask(job: str):
     """Return the AUTOMATIC background mask (PNG, white = subject) for a stored

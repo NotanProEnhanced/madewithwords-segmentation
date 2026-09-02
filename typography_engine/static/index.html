@@ -1405,7 +1405,13 @@ consent.addEventListener("change", refreshCreate);
         tp_track("story_suggest_ok",{n:ws.length});
         document.dispatchEvent(new CustomEvent("lw:words-suggested"));
       }else if(j && j.available===false){
-        say("Word suggestions aren’t available right now — please add the words by hand.");
+        // Only reachable if the load probe hasn't answered yet (or failed). Not a
+        // transient outage: this studio has no suggestion service configured.
+        say("This studio doesn’t shorten writing for you — write or paste the words yourself, and they’ll render as they are.");
+        window.TP_SUGGEST_OFF = true;
+        // Not #storyStep -- the message above lives inside it. Take away the controls only.
+        ["suggestWords","storyHint","storyMore","trySample"]
+          .forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display="none"; });
       }else{
         say("We couldn’t pull words from that — please add them by hand.");
         tp_track("story_suggest_empty");
@@ -3230,7 +3236,7 @@ function fetchWithTimeout(url, opts, ms){
       // to distill them in place. The separate story textarea is dropped.
       if(_wl) _wl.style.display="none";
       if(_wh) _wh.style.display="none";
-      const _help=document.createElement("div"); _help.className="story-p";
+      const _help=document.createElement("div"); _help.className="story-p"; _help.id="genericWordsHelp";
       _help.textContent = "A few words, separated by commas — their name, traits, a date, an inside joke. Not sure where to start? Paste a few sentences about them and tap Suggest words to pull them out.";
       S[2].b.append.apply(S[2].b, [_help, elWords, elSuggest, elStoryMsg, elToggle, elSize].filter(Boolean));
       if(elStory && elStory.parentNode) elStory.parentNode.removeChild(elStory);
@@ -3306,6 +3312,7 @@ function fetchWithTimeout(url, opts, ms){
     if(sb){ sb.disabled=false; sb.textContent="✨ See a sample"; }
   }
   function inject(){
+    if(window.TP_SUGGEST_OFF) return;   // the sample pastes an obituary for the button to shorten
     var input=document.getElementById("input"); if(!input || document.getElementById("trySample")) return;
     var b=document.createElement("button"); b.type="button"; b.id="trySample"; b.className="btn secondary";
     b.style.cssText="width:100%;margin:0 0 16px;font-size:14.5px"; b.textContent="✨ See a sample";
@@ -3313,6 +3320,27 @@ function fetchWithTimeout(url, opts, ms){
     b.addEventListener("click", loadSample);
   }
   setTimeout(inject, 0);   // after the guided flow has restructured #input
+})();
+// --- Word suggestion: offered only where it is configured -------------------
+// A tree without an OPENAI_API_KEY can never suggest words. It used to say so on
+// the click -- "aren't available right now", which reads as a passing outage and
+// leaves the user waiting for it to come back. Ask once on load instead and take
+// the control away: the button, its explanation, the extra-details panel that
+// feeds only that call, and the sample tribute that exists to be shortened by it.
+// What remains is an honest manual flow: write or paste, and it renders.
+(function(){
+  fetch("/suggest-words/enabled").then(r=>r.json()).then(j=>{
+    if(!j || j.available !== false) return;   // configured (or unknown) -> leave the studio alone
+    window.TP_SUGGEST_OFF = true;
+    ["storyStep","suggestWords","undoSuggest","storyHint","storyMore","trySample"]
+      .forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display="none"; });
+    // Both hints end with a sentence about the button. Drop that sentence; pasting a
+    // tribute still works -- it simply renders as a passage instead of being shortened.
+    const _wh=document.getElementById("wordsHint");
+    if(_wh) _wh.textContent="Paste a tribute or share a memory — or just list a few words.";
+    const _gh=document.getElementById("genericWordsHelp");
+    if(_gh) _gh.textContent="A few words, separated by commas — their name, traits, a date, an inside joke.";
+  }).catch(()=>{});   // probe failed -> assume it works; the click still fails soft
 })();
 // --- Gather (crowd-sourced words) entry point ------------------------------
 // Self-contained + gated: the card only appears when GET /api/gather/enabled is
