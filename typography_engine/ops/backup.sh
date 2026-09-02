@@ -124,10 +124,29 @@ restic forget --tag data    --keep-within-hourly 24h --keep-within-daily 35d
 # that no newer backup has replaced. Tiny text files, so over-retention costs
 # nothing and under-retention is unrecoverable.
 restic forget --tag consent --keep-daily 30 --keep-monthly 12 --keep-yearly 7
-restic prune
 
-# 5) Fast structural integrity check (non-fatal warning if it flags anything).
-restic check || echo "WARN: restic check reported an issue — investigate."
+# 5) MAINTENANCE -- only with --maintain, which cron runs ONCE A DAY.
+#
+# `prune` and `check` both read the whole repository's metadata: check downloads
+# every index and snapshot file, prune reads the indexes and rewrites packs. On
+# B2 each of those file reads is a billable Class B transaction, and this script
+# runs hourly -- so 24 full metadata reads a day exhausted the free Class B
+# allowance and Backblaze capped the account on 2 Sep 2026.
+#
+# Nothing above this line needs them. `forget` still runs hourly, so retention is
+# decided on time; prune is what actually reclaims the bytes, and daily is well
+# inside the ~30-day deletion promise (data is kept 35d).
+#
+# The cost of skipping a day is bytes left in the repo a few hours longer. The
+# cost of running them hourly is that reads get denied at the cap -- including a
+# restore, exactly when it is needed.
+if [ "${1:-}" = "--maintain" ]; then
+  echo "-- maintenance: prune + check"
+  restic prune
+  restic check || echo "WARN: restic check reported an issue — investigate."
+else
+  echo "-- maintenance skipped (run with --maintain; cron does this daily)"
+fi
 
 rm -rf "$STAGING"
 echo "===== backup ok ====="

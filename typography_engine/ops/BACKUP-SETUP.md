@@ -47,12 +47,24 @@ chmod +x /root/typortrait-prod/typography_engine/ops/restore.sh
 tail -n 30 /var/log/typortrait-backup.log       # expect "backup ok"
 ```
 
-## 6. Schedule it (hourly)
+## 6. Schedule it (hourly backup, daily maintenance)
 ```bash
 crontab -e
-# add:
+# add BOTH lines:
 0 * * * * /root/typortrait-prod/typography_engine/ops/backup.sh
+20 3 * * * /root/typortrait-prod/typography_engine/ops/backup.sh --maintain
 ```
+
+Two lines, not one. `prune` and `check` read the whole repository's metadata —
+`check` downloads every index and snapshot file — and on B2 each of those reads
+is a billable **Class B transaction**. They used to run on every hourly pass:
+24 full metadata reads a day, which exhausted the free Class B allowance and got
+the account capped on 2 Sep 2026. They now run only under `--maintain`.
+
+That cap matters more than the cost. Class B is *reads*, so a capped account
+can still take backups but cannot be **restored from** — the limit bites exactly
+when you need the repository most. Set the Class B cap on the Caps & Alerts page
+to a small non-zero amount rather than leaving it at the free ceiling.
 
 ## 7. (Recommended) Dead-man's-switch alerting
 Create a free check at healthchecks.io, set its ping URL as `HEALTHCHECK_URL`
