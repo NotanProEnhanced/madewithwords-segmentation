@@ -905,12 +905,17 @@ const PAPER_INK_IDS = {photo_paper:"paper"};
 // tile matches the render (no guessing at env behaviour). "studio" is the default. These
 // render as solid preview tiles (a background is flat -- no per-face render to preview).
 const BACKGROUNDS = [
-  ["studio",      "#e6e6e6", "Studio"],   // the default -- an explicit light-neutral wall
+  ["studio",      "#e6e6e6", "Slate"],    // the default -- an explicit light-neutral wall
                                           // (server fills the same #e6e6e6), so the tile
                                           // matches the render instead of guessing at the
                                           // legacy TYPO_BG_LIGHTEN lift.
+                                          //
+                                          // Labelled "Slate": the old Studio (#e6e6e6) and
+                                          // Slate (#d8dde2) were 14 levels apart and read as
+                                          // the same chip. The KEY stays "studio" -- it is the
+                                          // default the whole studio falls back to, and every
+                                          // stored recipe names it.
   ["sand",        "#eee4d0", "Sand"],
-  ["slate",       "#d8dde2", "Slate"],
   ["transparent", "checker", "Cutout"],   // transparent PNG (checkerboard preview)
 ];
 // Floral FRAMES (memorial only). A curated watercolour frame fills the region behind the

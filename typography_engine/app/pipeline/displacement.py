@@ -53,7 +53,10 @@ BACKDROPS = {
     "gray":  (236, 236, 236),   # soft neutral gallery grey
     "ivory": (232, 240, 244),   # warm off-white
     "sand":  (208, 228, 238),   # warm oat / beige
-    "slate": (226, 221, 216),   # cool light slate
+    "slate": (226, 221, 216),   # cool light slate -- RETIRED from the picker (it read as
+                                # the same chip as studio, 14 levels apart) but kept here:
+                                # recipes stored before that carry backdrop="slate", and a
+                                # paid file must replay as the buyer approved it.
     "sage":  (208, 222, 214),   # muted green-grey
     "blush": (222, 222, 236),   # soft warm rose
 }
