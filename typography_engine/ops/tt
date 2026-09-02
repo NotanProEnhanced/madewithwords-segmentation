@@ -37,10 +37,16 @@ build)
     ( cd /root/$d/typography_engine && docker compose up -d --build ) || echo "   ^ BUILD FAILED"
   done ;;
 verify)
+  # A count of 0 from a page that never arrived is not a pass. During a rebuild the
+  # container is briefly gone, curl returns nothing, grep counts 0, and an absent tree
+  # reads exactly like a clean one. So the count is only reported for a 200; anything
+  # else says so and is worth re-running once the tree is up.
   for e in $TREES; do d=${e%%:*}; r=${e#*:}; p=${r%%:*}
-    printf '%-26s %-5s http=%s  hits=%s\n' "$d" "$p" \
-      "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$p/static/index.html)" \
-      "$(curl -s http://127.0.0.1:$p/static/index.html | grep -c "$1")"
+    body="$(curl -s -w '\n%{http_code}' http://127.0.0.1:$p/static/index.html)"
+    code="${body##*$'\n'}"
+    if [ "$code" = "200" ]; then hits="$(printf '%s' "${body%$'\n'*}" | grep -c "$1")"
+    else hits="n/a -- no page"; fi
+    printf '%-26s %-5s http=%-4s hits=%s\n' "$d" "$p" "$code" "$hits"
   done ;;
 *) sed -n '2,7p' "$0" ;;
 esac
