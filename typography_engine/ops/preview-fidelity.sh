@@ -52,7 +52,7 @@ PNG_W=3600 RENDER_W=2600 "$HERE/render-one.sh" "$IMG" "$WORDS" "$OUTDIR/paid.png
 echo
 
 python3 - "$OUTDIR/preview.png" "$OUTDIR/paid.png" "$OUTDIR/diff.png" <<'PY'
-import sys, cv2, numpy as np
+import sys, os, cv2, numpy as np
 
 prev_p, paid_p, diff_p = sys.argv[1:4]
 prev = cv2.imread(prev_p); paid = cv2.imread(paid_p)
@@ -99,9 +99,23 @@ print(f"\npaid downscaled to preview size: mean abs diff {d.mean():6.2f} / 255"
 cv2.imwrite(diff_p, (255 - np.clip(d.max(axis=2) * 3, 0, 255)).astype(np.uint8))
 print(f"wrote {diff_p} -- dark areas are where the two disagree most")
 
-# The legibility half of the question: what the smallest type actually measures on screen.
+# /render clamps to PREVIEW_PNG_WIDTH (main.py: preview_w = min(png_width, _preview_cap)),
+# so asking it for 3600 does NOT produce the paid file -- it produces a capped one at
+# supersample 2. The supersample comparison above is still valid; the RESOLUTION comparison
+# is not, and saying so is the difference between a measurement and a misleading number.
+DOWNLOAD_W = int(os.environ.get("TYPO_DOWNLOAD_PX", "3600") or 3600)
+if paid.shape[1] < DOWNLOAD_W:
+    print(f"\nNOTE: the 'paid' render came back {paid.shape[1]}px wide, not {DOWNLOAD_W}px --")
+    print(f"  /render caps output at PREVIEW_PNG_WIDTH. Supersample 2 still applied, so the")
+    print(f"  ratio above is a real SS=1 vs SS=2 comparison. Delivered sizes below are")
+    print(f"  computed from the measured percentage against a {DOWNLOAD_W}px-wide file.")
+
 if len(ph) and len(dh):
-    print("\nsmallest tier in DELIVERED pixels (p25 of blob heights):")
-    print(f"  preview {np.percentile(ph,25)/100*pH:6.1f}px      paid {np.percentile(dh,25)/100*dH:6.1f}px")
-    print("  A tier under ~10px is being judged as texture, not as words.")
+    dev_H = DOWNLOAD_W / 0.8                       # 4:5, the studio's print aspect
+    print("\ntypical glyph, in the pixels each viewer actually gets:")
+    print(f"  on screen (preview {pH}px tall) {np.median(ph)/100*pH:6.1f}px")
+    print(f"  in the download ({int(dev_H)}px tall) {np.median(dh)/100*dev_H:6.1f}px")
+    print("  Under ~10px a mark reads as texture, not as a word. If the first number is")
+    print("  below that and the second is not, every judgement about small type has been")
+    print("  made on something the customer never sees.")
 PY
