@@ -75,10 +75,24 @@ def glyph_heights(bgr):
     h = h[(h >= 2) & (h <= H * 0.10)]
     return (h / H) * 100.0, H
 
+# MEASURE BOTH AT THE SAME PIXEL SIZE.
+#
+# Connected components are not scale-invariant: at 900px adjacent letters merge into one
+# blob, at 3600px they separate. The same artwork gave 1843 blobs at 900px and 5460 at
+# 3600px, and the median blob height fell 31% purely from that -- which this script first
+# reported as "COMPOSITION DIFFERS". It was the instrument, not the engine. The tell was
+# p75 being IDENTICAL in both: a real composition change scales every percentile together.
+#
+# So the ratio is computed on the paid render downscaled to the preview's size, where both
+# sides merge alike. Native-resolution numbers are still reported below, for legibility --
+# a different question, and the one that is genuinely about delivered pixels.
+paid_small = cv2.resize(paid, (prev.shape[1], prev.shape[0]), interpolation=cv2.INTER_AREA)
 ph, pH = glyph_heights(prev)
-dh, dH = glyph_heights(paid)
+dh, dH = glyph_heights(paid_small)
+native_dh, _ = glyph_heights(paid)       # native resolution: the legibility question
 print(f"preview  {prev.shape[1]}x{prev.shape[0]}   {len(ph):6d} ink blobs")
-print(f"paid     {paid.shape[1]}x{paid.shape[0]}   {len(dh):6d} ink blobs")
+print(f"paid     {paid.shape[1]}x{paid.shape[0]}, measured at {prev.shape[1]}x{prev.shape[0]}"
+      f"   {len(dh):6d} ink blobs")
 print()
 print("glyph height as % of frame height -- these should MATCH if composition is faithful")
 print(f"{'':10s} {'p25':>7s} {'median':>7s} {'p75':>7s} {'p95':>7s}")
@@ -88,8 +102,20 @@ for name, a in (("preview", ph), ("paid", dh)):
     print(f"{name:10s} " + " ".join(f"{v:7.3f}" for v in q))
 if len(ph) and len(dh):
     r = np.median(dh) / np.median(ph)
+    # The band comes from the instrument's resolution, not from taste.
+    #
+    # A median glyph in the 900px preview is FOUR PIXELS. Blob heights are integers, so the
+    # ratio can only land on 4/4, 4/5, 5/4 -- steps of roughly 25%. Synthetic controls at 4x
+    # resolution confirm it: an identical layout reads 1.11, 1.2x larger reads 1.33, 1.4x
+    # reads 1.56, 2x reads 2.11. Real differences separate cleanly; anything under ~25% does
+    # not, and no band makes that untrue.
+    #
+    # That limit is itself worth knowing: the preview is too coarse to MEASURE its own type,
+    # which is the same reason it is too coarse to judge it by eye. The fault this is hunting
+    # -- _ssn failing to normalize supersample -- would read 0.5 or 2.0, far outside the noise.
+    _ok = 0.75 <= r <= 1.30
     print(f"\nratio paid/preview at the median: {r:.3f}   "
-          f"({'faithful' if 0.9 <= r <= 1.1 else 'COMPOSITION DIFFERS -- _ssn is not holding'})")
+          f"({'faithful -- within what a 4px preview glyph can resolve' if _ok else 'COMPOSITION DIFFERS -- look at _ssn'})")
 
 # Same picture, same size: how far apart are they once resolution is taken out?
 small = cv2.resize(paid, (prev.shape[1], prev.shape[0]), interpolation=cv2.INTER_AREA)
@@ -114,7 +140,7 @@ if len(ph) and len(dh):
     dev_H = DOWNLOAD_W / 0.8                       # 4:5, the studio's print aspect
     print("\ntypical glyph, in the pixels each viewer actually gets:")
     print(f"  on screen (preview {pH}px tall) {np.median(ph)/100*pH:6.1f}px")
-    print(f"  in the download ({int(dev_H)}px tall) {np.median(dh)/100*dev_H:6.1f}px")
+    print(f"  in the download ({int(dev_H)}px tall) {np.median(native_dh)/100*dev_H:6.1f}px")
     print("  Under ~10px a mark reads as texture, not as a word. If the first number is")
     print("  below that and the second is not, every judgement about small type has been")
     print("  made on something the customer never sees.")
