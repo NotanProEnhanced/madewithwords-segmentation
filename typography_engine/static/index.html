@@ -1914,9 +1914,12 @@ function buildBgSwatches(){
     bgSwatchEl.append(lab);
     // A way back. Once a frame is chosen the only exit was to notice that the solid chips
     // above also clear it, which is not obvious when the florals are what you came for.
+    // Labelled "None" rather than "No frame": the group heading already says Florals, so
+    // the chip only has to say "not one of these". "No frame" named a thing customers have
+    // no word for.
     // "__none" is its own key so it does not double-highlight with the Studio chip; it
     // returns to the default wall and marks itself whenever no floral is active.
-    mk("__none", BACKGROUNDS[0] ? BACKGROUNDS[0][1] : "#e6e6e6", "No frame");
+    mk("__none", BACKGROUNDS[0] ? BACKGROUNDS[0][1] : "#e6e6e6", "None");
     FLORALS.forEach(([bg,src,label])=>mk(bg,"img:"+src,label));
   }
   // Reveal the group from CONTENT, not from an engine flag. #bgGroup is display:none in the
