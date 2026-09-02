@@ -1360,7 +1360,7 @@ words.addEventListener("change", _autoStyleFromWords);
 consent.addEventListener("change", refreshCreate);
 /* ---------- One box: type words, or paste a story and distill it (memorial) ----
    The single #words field is the canonical input (what's rendered). If the user
-   pastes an obituary or tribute into it, "Suggest words" sends THAT text to
+   pastes an obituary or tribute into it, "Turn this into words" sends THAT text to
    /suggest-words and REPLACES the field with the suggested words, in place -- no
    second box, no chips. Fails soft: on no suggestion / error / no key, we leave
    their text untouched and nudge them to edit by hand. */
@@ -2763,7 +2763,7 @@ function showBusy(animate){
 async function render(ink,{animate=false,background=false,thumb=false,hires=false}={}){
   if(!state.file) return;
   // Decide the format from the text BEING RENDERED, not from typing events. Listening on
-  // "input" alone was wrong: the field is also replaced programmatically -- "Suggest words"
+  // "input" alone was wrong: the field is also replaced programmatically -- "Turn this into words"
   // swaps a pasted tribute for a word list -- and assigning to .value fires no event, so the
   // style stayed on whatever the tribute had set. A word portrait then rendered as a passage,
   // and on brands without TYPO_LAYERED_PHOTO that dropped to the layered renderer entirely.
@@ -3215,7 +3215,7 @@ function fetchWithTimeout(url, opts, ms){
 
     S[1].b.append(elBio, elDrop, elPrev, elNote);
     // ONE box for the words step: the user types words, OR pastes a story into the
-    // same field and taps Suggest words to distill it in place. The field's own
+    // same field and taps "Turn this into words" to distill it in place. The field's own
     // label/hint are hidden (the step header titles it) and a helper explains both
     // uses. The old separate story textarea is dropped entirely.
     const _wl=g("wordsLbl"), _wh=g("wordsHint");
@@ -3232,12 +3232,18 @@ function fetchWithTimeout(url, opts, ms){
       // takes a letter/tribute/prose. (Message style stays reachable from the result.)
       if(elToggle && elToggle.parentNode) elToggle.parentNode.removeChild(elToggle);
     }else{
-      // Generic: ONE box -- type words, or paste a few sentences and tap Suggest words
+      // Generic: ONE box -- type words, or write a few sentences and tap "Turn this into words"
       // to distill them in place. The separate story textarea is dropped.
       if(_wl) _wl.style.display="none";
       if(_wh) _wh.style.display="none";
       const _help=document.createElement("div"); _help.className="story-p"; _help.id="genericWordsHelp";
-      _help.textContent = "A few words, separated by commas — their name, traits, a date, an inside joke. Not sure where to start? Paste a few sentences about them and tap Suggest words to pull them out.";
+      // Second guard on the suggestion gate: the probe below rewrites this helper by id,
+      // but on a fast reply it can answer BEFORE this node exists. Reading the flag here
+      // covers the other order, so neither timing leaves a sentence pointing at a button
+      // that isn't there.
+      _help.textContent = window.TP_SUGGEST_OFF
+        ? "A few words, separated by commas — their name, traits, a date, an inside joke."
+        : "A few words, separated by commas — their name, traits, a date, an inside joke. Not sure where to start? Write a few sentences about them and “Turn this into words” will shorten them for you.";
       S[2].b.append.apply(S[2].b, [_help, elWords, elSuggest, elStoryMsg, elToggle, elSize].filter(Boolean));
       if(elStory && elStory.parentNode) elStory.parentNode.removeChild(elStory);
     }
@@ -3303,7 +3309,7 @@ function fetchWithTimeout(url, opts, ms){
       var resp=await fetch("sample-keeper.jpg"); var blob=await resp.blob();
       var file=new File([blob],"sample-keeper.jpg",{type:blob.type||"image/jpeg"});
       if(typeof useCroppedFile==="function") useCroppedFile(file); else if(typeof setFile==="function") setFile(file);
-      setv("words", SAMPLE_OBIT);   // the one box now holds the story; "Find the words" distills it in place
+      setv("words", SAMPLE_OBIT);   // the one box now holds the story; "Turn this into words" distills it in place
       setv("dtNickname","Bob"); setv("dtRole","Dad, Grandpa, my rock"); setv("dtSaying","There’s good in everyone."); setv("dtThree","kind, wise, patient"); setv("dtHobby","fishing"); setv("dtKnown","his bear hugs, Sunday pancakes"); setv("dtLegacy","patience, faith");
       var sm=document.getElementById("storyMore"); if(sm) sm.open=true;
       if(window.guidedOpenStep) setTimeout(function(){ try{ guidedOpenStep(2); }catch(e){} },60);
