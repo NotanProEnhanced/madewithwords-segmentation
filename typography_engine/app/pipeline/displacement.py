@@ -1464,12 +1464,20 @@ def render_displacement_portrait(
             _stage("16-paper-hair", a)
 
     al = a[..., None]
+    # Every diagnostic line carries the same call id, because this engine runs MORE THAN
+    # ONCE per request and reading one call's composite against another call's result is
+    # what turned a one-line question into an afternoon. out_width and the mask coverage
+    # identify which call is which.
+    _cid = "%04x" % (id(an) & 0xFFFF)
+    _mmean = float(np.asarray(mask01, np.float32).mean())
     def _t(_lbl):
         # Checkpoints on the finished image. Defined ABOVE the ink branches so every ink
         # reaches them -- a sculpt render would otherwise hit an undefined name.
         if os.environ.get("TYPO_DUMP_FIELDS", "").strip():
             try:
-                print("[t] %-22s out.mean=%.2f" % (_lbl, float(np.asarray(out).mean())))
+                print("[t %s w=%d m=%.3f] %-22s out.mean=%.2f"
+                      % (_cid, int(out_width), _mmean, _lbl,
+                         float(np.asarray(out).mean())))
             except Exception:  # noqa: BLE001
                 pass
     if ink == "photo" or ink == "mono":
@@ -1611,9 +1619,10 @@ def render_displacement_portrait(
         # the inputs AND of the result here, plus the mean of the final array at encode time,
         # localises the break to one side of the function.
         if os.environ.get("TYPO_DUMP_FIELDS", "").strip():
-            print("[trace] ink=%r sb=%.2f dim=%.2f  base.mean=%.2f al.mean=%.3f "
-                  "ink_col.mean=%.2f -> out.mean=%.2f"
-                  % (ink, _sb, float(os.environ.get("TYPO_SUBJECT_DIM", "0.45") or 0.0),
+            print("[trace %s w=%d m=%.3f] ink=%r sb=%.2f dim=%.2f  base.mean=%.2f "
+                  "al.mean=%.3f ink_col.mean=%.2f -> out.mean=%.2f"
+                  % (_cid, int(out_width), _mmean,
+                     ink, _sb, float(os.environ.get("TYPO_SUBJECT_DIM", "0.45") or 0.0),
                      float(np.asarray(_base).mean()), float(np.asarray(al).mean()),
                      float(np.asarray(ink_col).mean()), float(np.asarray(out).mean())))
         if os.environ.get("TYPO_POLARITY", "0").strip().lower() in ("1", "true", "on", "yes"):
@@ -1973,6 +1982,7 @@ def render_displacement_portrait(
     if not ok:
         raise ValueError("encode_failed")
     if os.environ.get("TYPO_DUMP_FIELDS", "").strip():
-        print("[trace] encode  out.mean=%.2f  bytes=%d"
-              % (float(np.asarray(out).mean()), len(buf.tobytes())))
+        print("[trace %s w=%d m=%.3f] encode  out.mean=%.2f  bytes=%d"
+              % (_cid, int(out_width), _mmean,
+                 float(np.asarray(out).mean()), len(buf.tobytes())))
     return buf.tobytes()
