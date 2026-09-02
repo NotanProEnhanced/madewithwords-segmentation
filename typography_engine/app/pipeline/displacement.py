@@ -1523,6 +1523,28 @@ def render_displacement_portrait(
                 _dump("soft01", soft01)
                 _dump("alpha", al)
                 _dump("base", _base)
+                # The COLOUR the glyphs are painted in. Where alpha is near 1 the output is
+                # essentially this layer alone, so a portrait that reads too dark with the
+                # photographic base making no difference is a statement about ink_col and
+                # nothing else. Dumped with its own statistics because a picture of a colour
+                # layer is easy to misjudge by eye.
+                try:
+                    _ic = np.asarray(ink_col, np.float32)
+                    _dump("ink_col", _ic)
+                    _icl = (_ic[..., 0] * 0.114 + _ic[..., 1] * 0.587 + _ic[..., 2] * 0.299)
+                    _mk = np.asarray(mask01, np.float32) > 0.5
+                    _src = cv2.resize(np.asarray(an.img.bgr, np.float32), (W, H),
+                                      interpolation=cv2.INTER_AREA)
+                    _sl2 = (_src[..., 0] * 0.114 + _src[..., 1] * 0.587 + _src[..., 2] * 0.299)
+                    if _mk.any():
+                        print("[dump] on subject  source luma mean=%.1f p10=%.1f p90=%.1f   "
+                              "ink_col luma mean=%.1f p10=%.1f p90=%.1f"
+                              % (float(_sl2[_mk].mean()), float(np.percentile(_sl2[_mk], 10)),
+                                 float(np.percentile(_sl2[_mk], 90)),
+                                 float(_icl[_mk].mean()), float(np.percentile(_icl[_mk], 10)),
+                                 float(np.percentile(_icl[_mk], 90))))
+                except Exception as _e:  # noqa: BLE001
+                    print("[dump] ink_col failed: %s" % _e)
                 # anchor carries EVERY deliberate facial mark: lip and eye outlines, the
                 # nostril dots, the legacy eye blob. When something dark appears over an eye
                 # and the code paths that could draw it have been excluded one by one, this
