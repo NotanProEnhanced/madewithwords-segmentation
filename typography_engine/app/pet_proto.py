@@ -570,6 +570,46 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         ground_rgb = ground_rgb * (1.0 - _m3) + _pbase * _m3
     out = ground_rgb * (1.0 - a) + col * a
 
+    # PET_DUMP_FIELDS=<dir>. The human engine grew this hook today and it ended several
+    # rounds of guessing; the pet engine had none, so "the chest has no typography" could
+    # only be argued about. Reports, band by band down the frame and INSIDE the mask only:
+    #
+    #   glyph   the text field (warped)  -- is any type laid here at all?
+    #   dens    the density multiplier   -- is it being thinned away?
+    #   alpha   glyph * dens * mask      -- what actually reaches the composite
+    #   ink     the word COLOUR's luma   -- near-white words on pale fur are invisible,
+    #   base    what sits behind them       not absent, and only these two together say which
+    _pd = os.environ.get("PET_DUMP_FIELDS", "").strip()
+    if _pd:
+        try:
+            os.makedirs(_pd, exist_ok=True)
+            _lum = lambda _x: (_x[..., 0] * 0.299 + _x[..., 1] * 0.587 + _x[..., 2] * 0.114)
+            _al = np.asarray(a, np.float32)[..., 0]
+            _ink_l, _base_l = _lum(np.asarray(col, np.float32)), _lum(np.asarray(ground_rgb, np.float32))
+            for _nm, _arr in (("mask", mask), ("glyph", warped), ("dens", dens), ("alpha", _al)):
+                _q = np.asarray(_arr, np.float32)
+                cv2.imwrite(os.path.join(_pd, "pet-%s.png" % _nm),
+                            np.clip(_q * (255.0 if float(_q.max()) <= 1.001 else 1.0),
+                                    0, 255).astype(np.uint8))
+            cv2.imwrite(os.path.join(_pd, "pet-out.png"),
+                        cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_RGB2BGR))
+            print("[pet] band  %8s %8s %8s %8s %8s" % ("glyph", "dens", "alpha", "ink", "base"))
+            _mk = np.asarray(mask, np.float32) > 0.5
+            for _i in range(10):
+                _y0, _y1 = int(H * _i / 10), int(H * (_i + 1) / 10)
+                _b = _mk[_y0:_y1]
+                if not _b.any():
+                    print("[pet] %3d%%  (no subject)" % (10 * _i + 5)); continue
+                print("[pet] %3d%%  %8.3f %8.3f %8.3f %8.1f %8.1f"
+                      % (10 * _i + 5,
+                         float(np.asarray(warped, np.float32)[_y0:_y1][_b].mean()),
+                         float(np.asarray(dens, np.float32)[_y0:_y1][_b].mean()),
+                         float(_al[_y0:_y1][_b].mean()),
+                         float(_ink_l[_y0:_y1][_b].mean()),
+                         float(_base_l[_y0:_y1][_b].mean())))
+        except Exception as _e:  # noqa: BLE001
+            print("[pet] dump failed: %s" % _e)
+
     # 5) Feature edge-ink: darken along real internal edges so the face reads.
     edge = (_edge_ink(gray.astype(np.uint8)) * mask)[..., None]
     ink = np.array([28.0, 24.0, 20.0], np.float32)
