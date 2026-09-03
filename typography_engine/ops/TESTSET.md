@@ -217,3 +217,27 @@ sleeping") or a photo of a sleeping pet-adjacent subject is not a rare case. Dis
 but related to, the earlier laughing-eyes fix: that fix stopped MISCLASSIFIED open eyes from
 triggering this same visual failure as often; it never gave the engine a way to render a
 CORRECTLY classified closed eye well. Real, customer-facing, and open.
+
+**Root cause found (2026-09-03).** Not a bug that draws something wrong -- a missing case.
+Confirmed with a marker drawn directly at the `eye_centers` coordinates used for
+measurement: it lands exactly on the visible disc, so every earlier "clean" numeric
+reading was correct, not mis-sampled -- the region really does measure sat=45-47, genuinely
+non-zero. It is simply DARK: BGR~(74,77,91), roughly 36% brightness. At that low a value,
+real measurable color reads as flat gray to the eye long before it reads as zero saturation
+-- the numbers and the screenshot were never in conflict.
+
+The photo-ink formula (`_ink = _pc/_pl * (_pol_i + range*_tone)`, displacement.py ~1695)
+scales brightness toward a floor (`_pol_i`, default 40) in shadowed regions, and an eye
+socket is naturally one of the more shadowed parts of any face. For an OPEN eye this is
+never visible: it gets painted over with a bright iris, pupil and catchlight (values up to
+246). For a CLOSED eye none of that painting happens -- correctly, since there is no eye to
+draw -- but nothing replaces it either. The natural socket shadow is left standing alone,
+dense with overlapping type, and reads as a flat dark disc.
+
+The fix is a real, scoped feature, not a one-line patch: closed eyes need SOME treatment
+that counteracts the natural socket shadow the way the iris/catchlight does for open ones
+-- most likely a local brightness lift over the eyelid hull (which the code already computes
+for the unrelated "breathe" shadow-protection pass) tuned for a closed eye specifically, or
+a soft, deliberately-anatomical closed-eyelid render in place of raw shadow. Not attempted
+tonight -- worth its own session, with 18/19 as the test cases and TYPO_DUMP_FIELDS'
+eye-region readout + the MARKED dump as the tools to judge it by.
