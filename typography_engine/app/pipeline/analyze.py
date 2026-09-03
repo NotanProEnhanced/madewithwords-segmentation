@@ -42,7 +42,10 @@ def analyze_image(img_bytes: bytes, cfg: RenderConfig, warns: WarningCollector,
     if manual_mask is not None:
         sil = silhouette_from_mask(manual_mask, img.w, img.h)
     else:
-        sil = extract_silhouette(img, warns, face_bbox=face_bbox)
+        # Pass EVERY detected face, not just the first. The matte keeps any blob that
+        # holds a face, and a group portrait has more than one.
+        sil = extract_silhouette(img, warns, face_bbox=face_bbox,
+                                 face_boxes=[f.bbox for f in faces] if faces else None)
     edges = detect_edges(img, warns, cfg.canny_low, cfg.canny_high, mask=sil.mask)
     regions = build_regions(landmarks, sil, warns)
 

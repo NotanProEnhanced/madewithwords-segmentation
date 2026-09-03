@@ -285,11 +285,74 @@ def _unpad(arr, box):
     return arr[py:py + h, px:px + w]
 
 
+def _face_components(fg: np.ndarray, face_boxes, warns: WarningCollector):
+    """Keep only the blobs that contain a DETECTED FACE.
+
+    RVM and MediaPipe selfie segmentation both answer "which pixels are a person?". In a
+    photograph taken at a stadium, a crowd is people, and both models say so correctly.
+    _clean_mask then keeps every blob down to 15% of the largest -- written so a second
+    person standing apart survives -- so the crowd survives with them. A LovedInWords
+    portrait shipped with rows of spectators cut out above the subject's head.
+
+    We know who the subjects are: faces were detected before this ran. This drops any blob
+    with no face in it.
+
+    FAILS SAFE in both directions: with no faces, or if the filter would keep nothing, the
+    mask is returned untouched -- a portrait with extra background beats an empty one.
+
+    It cannot help when the crowd is CONTIGUOUS with a subject (one blob, one face, kept
+    whole). TYPO_MASK_DEBUG reports exactly that, which is why the report exists and why
+    this is off by default: whether the fix applies is a property of the photograph."""
+    dbg = os.environ.get("TYPO_MASK_DEBUG", "") not in ("", "0", "false", "off", "no")
+    num, labels, stats, _ = cv2.connectedComponentsWithStats((fg > 127).astype(np.uint8), 8)
+    if num <= 1:
+        return fg
+    frame = float(fg.shape[0] * fg.shape[1])
+    boxes = []
+    for fb in (face_boxes or []):
+        try:
+            x, y, bw, bh = [float(v) for v in fb]
+            boxes.append((int(x + bw / 2.0), int(y + bh / 2.0)))
+        except Exception:  # noqa: BLE001
+            continue
+    keep = []
+    for i in range(1, num):
+        area = float(stats[i, cv2.CC_STAT_AREA])
+        has_face = any(0 <= cy < labels.shape[0] and 0 <= cx < labels.shape[1]
+                       and labels[cy, cx] == i for cx, cy in boxes)
+        if has_face:
+            keep.append(i)
+        if dbg:
+            print("[mask] blob %d: %.3f%% of frame, face=%s" % (i, 100.0 * area / frame, has_face))
+    if dbg:
+        print("[mask] %d blobs, %d faces detected, keeping %d" % (num - 1, len(boxes), len(keep)))
+    if not keep:
+        if dbg:
+            print("[mask] no blob contains a face -- leaving the mask untouched")
+        return fg
+    out = np.where(np.isin(labels, keep), 255, 0).astype(np.uint8)
+    if dbg:
+        before = float((fg > 127).sum()) / frame
+        after = float((out > 127).sum()) / frame
+        print("[mask] coverage %.2f%% -> %.2f%%" % (100 * before, 100 * after))
+        if after > before * 0.98:
+            print("[mask] nothing removed: any extra background is CONTIGUOUS with a "
+                  "subject, so component filtering cannot fix this photograph")
+    return out
+
+
+def _face_anchor_on() -> bool:
+    """Off by default. It changes who is in every portrait, so it is enabled per tree
+    once measured against the fixed set, not shipped switched on."""
+    return os.environ.get("TYPO_FACE_ANCHORED_MATTE", "0") not in ("", "0", "false", "off", "no")
+
+
 def extract_silhouette(
     img: LoadedImage,
     warns: WarningCollector,
     face_bbox: tuple | None = None,
     iters: int = 5,
+    face_boxes=None,
 ) -> Silhouette:
     h, w = img.bgr.shape[:2]
 
@@ -314,6 +377,11 @@ def extract_silhouette(
         alpha = _unpad(matting.matte(_seg_img.bgr, warns), _seg_box)
         if alpha is not None:
             binm = _clean_mask((alpha > 0.5).astype(np.uint8) * 255)
+            if _face_anchor_on() or os.environ.get("TYPO_MASK_DEBUG", ""):
+                _fb = face_boxes if face_boxes else ([face_bbox] if face_bbox else [])
+                _anch = _face_components(binm, _fb, warns)
+                if _face_anchor_on():
+                    binm = _anch
             cov = float((binm > 127).sum()) / float(h * w)
             if 0.02 < cov < 0.98:
                 # Constrain the alpha to the cleaned blobs so a dropped speck can't leave
