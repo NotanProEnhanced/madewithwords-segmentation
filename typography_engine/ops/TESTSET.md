@@ -149,3 +149,46 @@ ships off. `TYPO_MASK_DEBUG` should report "nothing removed ... CONTIGUOUS" here
 is written next -- a face-scale or distance rule -- has to be judged on this one, not on 16.*
 
 Render these with `TYPO_MATTE_MODEL=1` set, or the matte path under test does not run.
+
+## Prompts for the closed-eye sources (18-19)
+
+`_EYE_OPEN_EAR` gates whether an iris, pupil and catchlight get drawn at all -- below it,
+the code treats the eye as shut and draws nothing (`app/pipeline/displacement.py:577`).
+It moved from 0.15 to 0.09 to stop laughing/squinting people (measured 0.10-0.13) from
+losing their eyes entirely. Nothing has since confirmed the new, much more permissive
+threshold still catches an eye that is ACTUALLY shut -- every EAR value measured so far
+in this project came from open or squinting eyes, never a closed one. The code's own
+comment already flags this: "worth being able to move ... once there is data on where
+shut really begins." There still isn't any.
+
+The risk is not a photo of someone plainly asleep -- that should measure close to zero and
+clear the gate easily. It is the closer case: eyes at rest, heavy-lidded, gently shut --
+exactly the kind of photo a memorial or "as if sleeping" portrait actually asks for, and
+exactly where an EAR could land inside the 0.09-0.15 band the threshold move opened up. If
+it does, the gate now says "open" for an eye that plainly is not, and the engine fabricates
+an iris and catchlight on a shut eye -- a specific, visible wrongness, not a vague one.
+
+Two sources, deliberately a pair like 16/17: one unambiguous, one testing the actual risk.
+
+**18-eyes-shut.jpg**
+> A photorealistic portrait, head and shoulders, of a person with their eyes fully and
+> plainly closed, as if sleeping peacefully. Soft even studio light, calm relaxed
+> expression, no squinting or smiling. Front-facing, simple backdrop. Vertical 4:5
+> portrait.
+
+*Why: the easy case. Should measure an EAR close to 0 and clear `_EYE_OPEN_EAR` with
+margin -- confirms the gate still works at all, not just that it stopped over-triggering.*
+
+**19-eyes-resting.jpg**
+> A photorealistic close portrait, head and shoulders, of a person with their eyes gently
+> and softly closed -- relaxed, heavy-lidded, NOT squeezed shut or squinting, a calm
+> peaceful "resting" closed-eye expression rather than a full deliberate blink. Soft
+> directional light, front-facing, simple backdrop. Vertical 4:5 portrait.
+
+*Why: the actual risk case. This is the expression most likely to land inside the 0.09-0.15
+band the threshold move opened up -- close enough to open-eyed squinting that the gate may
+read it as open and draw eyes on a face whose eyes are shut. `TYPO_EYE_DEBUG=1` prints the
+measured EAR per face; read it against 0.09 before judging the render by eye.*
+
+Render both with `TYPO_EYE_DEBUG=1` and read the printed `ear=(...)` values first -- they
+answer the calibration question directly. Only then look at whether the render drew eyes.
