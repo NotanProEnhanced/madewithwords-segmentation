@@ -382,7 +382,7 @@ def _alpha_sweep(alpha: np.ndarray, face_boxes) -> None:
               % (t, 100.0 * float((fg > 127).sum()) / frame, len(big), withface))
 
 
-def _face_region(shape, face_boxes):
+def _face_region(shape, face_boxes, above=None, side=None):
     """A plausible-subject region built from the detected faces, or None.
 
     The alpha sweep on the stadium photograph settled that confidence cannot separate the
@@ -397,8 +397,10 @@ def _face_region(shape, face_boxes):
     a beehive or a broad pair of shoulders. Defaults are a starting point to be measured,
     which is what TYPO_MASK_DEBUG reports before anything is applied."""
     h, w = shape[:2]
-    above = float(os.environ.get("TYPO_FACE_REGION_ABOVE", "1.4") or 1.4)
-    side = float(os.environ.get("TYPO_FACE_REGION_SIDE", "2.0") or 2.0)
+    if above is None:
+        above = float(os.environ.get("TYPO_FACE_REGION_ABOVE", "1.4") or 1.4)
+    if side is None:
+        side = float(os.environ.get("TYPO_FACE_REGION_SIDE", "2.0") or 2.0)
     reg = np.zeros((h, w), np.uint8)
     n = 0
     for fb in (face_boxes or []):
@@ -416,25 +418,35 @@ def _face_region(shape, face_boxes):
 
 
 def _face_region_report(fg: np.ndarray, face_boxes) -> None:
-    """How much of the current mask falls OUTSIDE the face region -- without applying it.
+    """What the region rule would remove, across a GRID of settings, applying none of them.
 
-    Run this across the fixed set before switching it on anywhere. A portrait on a clean
-    background should lose almost nothing; if 01-hat or 05-couple lose real area, the
-    defaults clip hair or shoulders and the numbers say so before a customer does."""
-    reg = _face_region(fg.shape, face_boxes)
-    if reg is None:
-        print("[mask] face region: no usable face boxes")
-        return
+    One render prints the whole table, because the useful setting is found by comparing the
+    stadium photograph against the ten known-good ones at the SAME values, and restarting
+    the container per combination made that a twenty-minute loop.
+
+    Read it as a pair of numbers. The right setting removes a real share of the crowd here
+    and 0.0% on all ten. Either alone proves nothing: at the first defaults (1.4/2.0) every
+    one of the ten dropped 0.00% -- not because the rule was safe, but because the region
+    covered the entire frame and the rule did nothing to anybody."""
     frame = float(fg.shape[0] * fg.shape[1])
     cur = (fg > 127)
-    kept = cur & (reg > 0)
-    print("[mask] face region (above=%s side=%s): mask %.2f%% -> %.2f%%  (would drop %.2f%% "
-          "of the frame, %.1f%% of the subject)"
-          % (os.environ.get("TYPO_FACE_REGION_ABOVE", "1.4"),
-             os.environ.get("TYPO_FACE_REGION_SIDE", "2.0"),
-             100.0 * cur.sum() / frame, 100.0 * kept.sum() / frame,
-             100.0 * (cur.sum() - kept.sum()) / frame,
-             100.0 * (cur.sum() - kept.sum()) / max(1.0, float(cur.sum()))))
+    base = float(cur.sum())
+    if base <= 0:
+        print("[mask] face region: empty mask")
+        return
+    reg0 = _face_region(fg.shape, face_boxes)
+    if reg0 is None:
+        print("[mask] face region: no usable face boxes")
+        return
+    print("[mask] face region grid -- share of the SUBJECT each setting would remove")
+    print("[mask]   above \\ side " + "".join("%8.1f" % sd for sd in (0.8, 1.2, 1.6, 2.0)))
+    for ab in (0.3, 0.5, 0.8, 1.2):
+        row = []
+        for sd in (0.8, 1.2, 1.6, 2.0):
+            reg = _face_region(fg.shape, face_boxes, above=ab, side=sd)
+            kept = cur & (reg > 0) if reg is not None else cur
+            row.append(100.0 * (base - float(kept.sum())) / base)
+        print("[mask]   %-12.1f" % ab + "".join("%7.1f%%" % v for v in row))
 
 
 def _face_region_on() -> bool:
