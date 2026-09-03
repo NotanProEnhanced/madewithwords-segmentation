@@ -382,6 +382,67 @@ def _alpha_sweep(alpha: np.ndarray, face_boxes) -> None:
               % (t, 100.0 * float((fg > 127).sum()) / frame, len(big), withface))
 
 
+def _face_region(shape, face_boxes):
+    """A plausible-subject region built from the detected faces, or None.
+
+    The alpha sweep on the stadium photograph settled that confidence cannot separate the
+    crowd: coverage went 76.45% -> 71.94% from threshold 0.5 to 0.95, one blob throughout.
+    The model is as sure about the spectators as about the couple, and it is right -- they
+    are people. "Which people are the SUBJECT" is not a question the matte can answer, and
+    the only thing that knows is the face detector.
+
+    So: per face, a box reaching UP by `above` face-heights (hair, hats), DOWN to the frame
+    bottom (torso), and OUT by `side` face-widths each way (shoulders). Union across faces.
+    Generous on purpose -- this trims a crowd above and beside the heads, and must not clip
+    a beehive or a broad pair of shoulders. Defaults are a starting point to be measured,
+    which is what TYPO_MASK_DEBUG reports before anything is applied."""
+    h, w = shape[:2]
+    above = float(os.environ.get("TYPO_FACE_REGION_ABOVE", "1.4") or 1.4)
+    side = float(os.environ.get("TYPO_FACE_REGION_SIDE", "2.0") or 2.0)
+    reg = np.zeros((h, w), np.uint8)
+    n = 0
+    for fb in (face_boxes or []):
+        try:
+            fx, fy, fw, fh = [float(v) for v in fb]
+        except Exception:  # noqa: BLE001
+            continue
+        x0 = int(max(0, round(fx + fw / 2.0 - fw * (0.5 + side))))
+        x1 = int(min(w, round(fx + fw / 2.0 + fw * (0.5 + side))))
+        y0 = int(max(0, round(fy - fh * above)))
+        if x1 > x0:
+            reg[y0:h, x0:x1] = 255
+            n += 1
+    return reg if n else None
+
+
+def _face_region_report(fg: np.ndarray, face_boxes) -> None:
+    """How much of the current mask falls OUTSIDE the face region -- without applying it.
+
+    Run this across the fixed set before switching it on anywhere. A portrait on a clean
+    background should lose almost nothing; if 01-hat or 05-couple lose real area, the
+    defaults clip hair or shoulders and the numbers say so before a customer does."""
+    reg = _face_region(fg.shape, face_boxes)
+    if reg is None:
+        print("[mask] face region: no usable face boxes")
+        return
+    frame = float(fg.shape[0] * fg.shape[1])
+    cur = (fg > 127)
+    kept = cur & (reg > 0)
+    print("[mask] face region (above=%s side=%s): mask %.2f%% -> %.2f%%  (would drop %.2f%% "
+          "of the frame, %.1f%% of the subject)"
+          % (os.environ.get("TYPO_FACE_REGION_ABOVE", "1.4"),
+             os.environ.get("TYPO_FACE_REGION_SIDE", "2.0"),
+             100.0 * cur.sum() / frame, 100.0 * kept.sum() / frame,
+             100.0 * (cur.sum() - kept.sum()) / frame,
+             100.0 * (cur.sum() - kept.sum()) / max(1.0, float(cur.sum()))))
+
+
+def _face_region_on() -> bool:
+    """Off. It can clip real hair and shoulders, so it goes on per tree after the fixed set
+    has been measured with the report above -- never because it fixed one photograph."""
+    return os.environ.get("TYPO_FACE_REGION", "0") not in ("", "0", "false", "off", "no")
+
+
 def _face_anchor_on() -> bool:
     """Off by default. It changes who is in every portrait, so it is enabled per tree
     once measured against the fixed set, not shipped switched on."""
@@ -421,11 +482,17 @@ def extract_silhouette(
             if os.environ.get("TYPO_MASK_DEBUG", "") not in ("", "0", "false", "off", "no"):
                 _alpha_sweep(alpha, face_boxes if face_boxes else ([face_bbox] if face_bbox else []))
             binm = _clean_mask((alpha > _athr).astype(np.uint8) * 255)
-            if _face_anchor_on() or os.environ.get("TYPO_MASK_DEBUG", ""):
+            if _face_anchor_on() or _face_region_on() or os.environ.get("TYPO_MASK_DEBUG", ""):
                 _fb = face_boxes if face_boxes else ([face_bbox] if face_bbox else [])
                 _anch = _face_components(binm, _fb, warns)
                 if _face_anchor_on():
                     binm = _anch
+                if os.environ.get("TYPO_MASK_DEBUG", ""):
+                    _face_region_report(binm, _fb)
+                if _face_region_on():
+                    _reg = _face_region(binm.shape, _fb)
+                    if _reg is not None:
+                        binm = _clean_mask(np.where(_reg > 0, binm, 0).astype(np.uint8))
             cov = float((binm > 127).sum()) / float(h * w)
             if 0.02 < cov < 0.98:
                 # Constrain the alpha to the cleaned blobs so a dropped speck can't leave
