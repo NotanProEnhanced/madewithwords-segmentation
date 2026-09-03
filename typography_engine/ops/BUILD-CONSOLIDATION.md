@@ -76,3 +76,32 @@ own header rather than left as a silent assumption to rediscover the hard way.
 Nothing here is one-way. To go back to per-tree builds on any file, add `build: .`
 back next to its `image:` line — that's the whole revert. `ops/stg.sh` states
 saved before this change restore exactly as before.
+
+## Rolled out (2026-09-03)
+
+Executed live against all five trees, backups taken first (`stg.sh save
+pre-consolidation-<tree>` on each, plus a plain file copy of every `.env` and
+compose file). Three real bugs found during the actual rollout, not in review:
+
+1. `build-image.sh`'s git-repo detection (`[ -d "$TREE/.git" ]`) failed on the
+   very first VPS run -- couldn't tell "inside a repo" from "at its root",
+   and a worktree's `.git` is a file, not a directory. Replaced with
+   `git rev-parse --show-toplevel`.
+2. Under `set -euo pipefail`, a failing command inside a bare `VAR="$(cmd)"`
+   assignment kills the script silently -- no message, just cmd's exit code.
+   Found testing the fix above (a bad path exited 128 with nothing printed),
+   then found the identical shape in `promote.sh`'s container-name lookup by
+   testing for it specifically rather than assuming one instance was the
+   only one.
+3. The real near-miss: `build-image.sh` defaulted `SRC` to a hardcoded
+   `/root/typortrait-prod`. Run from staging right after staging had just
+   pulled, it silently built from **prod's** stale source instead --
+   produced a real, successfully-tagged image from old code, no error
+   anywhere. Caught only because the printed tag didn't match the commit
+   just pulled, before anything was promoted with it. Fixed: `SRC` now
+   defaults to the tree the invoked script itself lives in.
+
+Final state: all five trees confirmed independently at three layers --
+`promote.sh`'s own post-promotion check (`confirmed: container is running
+<tag>`), `tt list`'s commit column, and `tt verify`'s live HTTP probe. All
+five agreed: `a65d480`, `hits=2`, every tree.
