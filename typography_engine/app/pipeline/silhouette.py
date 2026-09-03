@@ -341,6 +341,37 @@ def _face_components(fg: np.ndarray, face_boxes, warns: WarningCollector):
     return out
 
 
+def _alpha_sweep(alpha: np.ndarray, face_boxes) -> None:
+    """Print what the mask would be at a range of alpha thresholds.
+
+    When a crowd is CONTIGUOUS with the subject, dropping blobs cannot help -- but the two
+    may still be separable if the model is less certain about the people further away. That
+    is a property of this photograph, not something to reason about: this measures it.
+
+    Read it as: if coverage falls sharply and the blob count RISES as the threshold climbs,
+    the crowd is lower-confidence and detaches -- TYPO_MATTE_ALPHA is the whole fix. If
+    coverage barely moves until the subject itself starts eroding, the model is equally sure
+    about the crowd, and only a geometric rule anchored on the faces can separate them."""
+    boxes = []
+    for fb in (face_boxes or []):
+        try:
+            x, y, bw, bh = [float(v) for v in fb]
+            boxes.append((int(x + bw / 2.0), int(y + bh / 2.0)))
+        except Exception:  # noqa: BLE001
+            continue
+    frame = float(alpha.shape[0] * alpha.shape[1])
+    print("[mask] alpha sweep (threshold -> coverage, blobs, blobs holding a face)")
+    for t in (0.5, 0.6, 0.7, 0.8, 0.9, 0.95):
+        fg = (alpha > t).astype(np.uint8) * 255
+        num, labels, stats, _ = cv2.connectedComponentsWithStats(fg, 8)
+        big = [i for i in range(1, num) if stats[i, cv2.CC_STAT_AREA] >= 0.005 * frame]
+        withface = sum(1 for i in big
+                       if any(0 <= cy < labels.shape[0] and 0 <= cx < labels.shape[1]
+                              and labels[cy, cx] == i for cx, cy in boxes))
+        print("[mask]   %.2f -> %6.2f%%  %3d blobs (>=0.5%% of frame)  %d with a face"
+              % (t, 100.0 * float((fg > 127).sum()) / frame, len(big), withface))
+
+
 def _face_anchor_on() -> bool:
     """Off by default. It changes who is in every portrait, so it is enabled per tree
     once measured against the fixed set, not shipped switched on."""
@@ -376,7 +407,10 @@ def extract_silhouette(
     if matting.enabled():
         alpha = _unpad(matting.matte(_seg_img.bgr, warns), _seg_box)
         if alpha is not None:
-            binm = _clean_mask((alpha > 0.5).astype(np.uint8) * 255)
+            _athr = float(os.environ.get("TYPO_MATTE_ALPHA", "0.5") or 0.5)
+            if os.environ.get("TYPO_MASK_DEBUG", "") not in ("", "0", "false", "off", "no"):
+                _alpha_sweep(alpha, face_boxes if face_boxes else ([face_bbox] if face_bbox else []))
+            binm = _clean_mask((alpha > _athr).astype(np.uint8) * 255)
             if _face_anchor_on() or os.environ.get("TYPO_MASK_DEBUG", ""):
                 _fb = face_boxes if face_boxes else ([face_bbox] if face_bbox else [])
                 _anch = _face_components(binm, _fb, warns)
