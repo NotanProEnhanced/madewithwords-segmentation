@@ -30,9 +30,22 @@
 #   until a tree is deliberately promoted.
 set -euo pipefail
 
-TREE="${SRC:-/root/typortrait-prod}"
-[ -d "$TREE/.git" ] || TREE="$(dirname "$TREE")"   # tolerate SRC pointing at typography_engine/
-[ -d "$TREE/.git" ] || { echo "no git repo at or above $TREE"; exit 1; }
+_arg="${SRC:-/root/typortrait-prod}"
+# `git -C <anywhere inside a repo> ...` succeeds -- git walks UPWARD looking for .git, so
+# it can't be used to tell "this is the repo root" from "this is some subdirectory of it".
+# The first version of this script tried `[ -d "$TREE/.git" ]` plus a `dirname` fallback,
+# which broke two different ways: a worktree's .git is a FILE, not a directory, so that
+# check fails on a perfectly good repo; and passing SRC=.../typography_engine (a valid
+# subdirectory) satisfied the check WITHOUT correcting to the root, so the later `git
+# archive ... -- typography_engine` pathspec looked for a typography_engine/ folder
+# inside typography_engine/ and found nothing. `--show-toplevel` asks git directly for
+# the actual root, correct for a plain clone, a worktree, or a subdirectory of either.
+TREE="$(git -C "$_arg" rev-parse --show-toplevel 2>/dev/null)" || true
+# `|| true` above matters under `set -e`: without it, a FAILING command inside a bare
+# assignment kills the script right there -- silently, with git's own exit code, before
+# the friendly message below ever runs. A real thing that happened testing this: SRC
+# pointing at a path with no git repo exited 128 with no output at all.
+[ -n "$TREE" ] || { echo "no git repo at or above $_arg -- pass SRC=<tree with a working checkout>, e.g. SRC=/root/typortrait-stg"; exit 1; }
 
 SHA="${1:-$(git -C "$TREE" rev-parse --short HEAD)}"
 git -C "$TREE" cat-file -e "$SHA" 2>/dev/null || { echo "no commit $SHA in $TREE"; exit 1; }

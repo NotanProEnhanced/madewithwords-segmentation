@@ -50,7 +50,13 @@ echo "-- $TREE -> $TAG"
 # all five docker-compose*.yml files, and only that tree's own .env (COMPOSE_FILE
 # or equivalent, not tracked in git) says which one is actually in play. Grepping
 # a filename here would guess; asking compose from this directory does not.
-CN="$(cd "$ENG" && docker compose ps --format '{{.Name}}' 2>/dev/null | head -1)"
+CN="$(cd "$ENG" && docker compose ps --format '{{.Name}}' 2>/dev/null | head -1)" || true
+# `|| true` matters under set -euo pipefail: without it, `docker compose ps` failing
+# (empty project, container not yet registered) kills the whole SCRIPT right here --
+# silently, no message, right after "docker compose up -d" may have just succeeded.
+# Proven, not assumed: the equivalent bug in build-image.sh did exactly this on the
+# first real run tonight (exit 128, nothing printed) before this same fix was applied
+# there; the identical shape here was found by testing for it, not by inspection.
 [ -n "$CN" ] || { echo "   could not identify the running container -- check by hand: (cd $ENG && docker compose ps)"; exit 1; }
 RUNNING="$(docker inspect "$CN" --format '{{.Config.Image}}' 2>/dev/null || echo '?')"
 if [ "$RUNNING" = "$TAG" ]; then
