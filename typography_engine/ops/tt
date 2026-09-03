@@ -2,12 +2,23 @@
 # Typortrait fleet tool -- one command per operation across all five trees.
 #   tt list                     trees, ports, roles, git commit + branch + dirty count
 #   tt patch <script.py> <rel>  run a patch script against <rel> in every tree
-#   tt build [tree ...]         docker compose up -d --build (all, or named)
+#   tt build [tree ...]         build ONE image, promote it to the named trees (or all)
+#   tt promote <tree> [tag]     point one tree at an ALREADY-built tag, no build
 #   tt verify <needle>          HTTP code + occurrences of <needle> in served page
 #
 # Directory names now match their role: typortrait-stg is staging, typortrait-prod
 # is production. Before 2026-08-29 production lived in a directory called
 # "typortrait-staging", which was a standing invitation to edit the wrong tree.
+#
+# `tt build` used to run `docker compose up -d --build` separately in each tree: five
+# independent builds of what should be identical source, each keyed to whatever was
+# checked out in that tree's own working directory. On 2026-09-03 that let four live
+# brands sit nine commits behind while `tt list`'s commit column looked current -- git
+# HEAD was right, the served image was not, and nothing forced them to agree. `tt build`
+# now builds once (ops/build-image.sh, from a pinned commit via `git archive`, immune to
+# an ambient dirty working tree) and promotes each requested tree to that tag
+# (ops/promote.sh, which also verifies the RUNNING container's image matches what was
+# asked, not just that the command exited 0).
 TREES="typortrait-stg:8078:staging typortrait-prod:8077:PROD-typortrait typortrait-faithinwords:8079:PROD-faith typortrait-lovedinwords:8080:PROD-loved typortrait-pawsinwords:8081:PROD-paws"
 cmd=$1; shift
 case "$cmd" in
@@ -32,23 +43,27 @@ patch)
   done ;;
 build)
   # Named trees must be the FULL directory name (typortrait-prod, not prod) -- that is what
-  # $d holds. A name that matches nothing used to fall through silently: the loop produced
-  # zero output and the script still exited 0, indistinguishable from "built everything you
-  # asked for". `tt build prod faithinwords lovedinwords pawsinwords` did exactly that --
-  # matched none of the five (real names all start typortrait-), built nothing, said nothing.
-  # Now it counts matches and refuses to report success on zero.
+  # $d holds. A name that matches nothing used to fall through silently once (2026-09-03):
+  # the loop produced zero output and the script still exited 0, indistinguishable from
+  # "built everything you asked for". Still counts matches and refuses success on zero.
+  HERE="$(cd "$(dirname "$0")" && pwd)"
+  TAG="$("$HERE/build-image.sh")" || { echo "build failed -- no tree touched"; exit 1; }
   _n=0
   for e in $TREES; do d=${e%%:*}
     [ $# -eq 0 ] || echo "$*" | grep -qw "$d" || continue
     _n=$((_n+1))
-    printf '== %s\n' "$d"
-    ( cd /root/$d/typography_engine && docker compose up -d --build ) || echo "   ^ BUILD FAILED"
+    "$HERE/promote.sh" "$d" "$TAG" || echo "   ^ PROMOTE FAILED for $d"
   done
   if [ $# -gt 0 ] && [ "$_n" -eq 0 ]; then
     echo "no tree matched any of: $*"
     echo "names are the FULL directory, e.g. typortrait-prod -- not 'prod'"
     exit 1
   fi ;;
+promote)
+  d=$1; tag=$2
+  [ -n "$d" ] || { echo "usage: tt promote <tree> [tag]"; exit 2; }
+  HERE="$(cd "$(dirname "$0")" && pwd)"
+  "$HERE/promote.sh" "$d" "$tag" ;;
 verify)
   # A count of 0 from a page that never arrived is not a pass. During a rebuild the
   # container is briefly gone, curl returns nothing, grep counts 0, and an absent tree

@@ -21,8 +21,14 @@
 name: typortrait-lovedinwords
 services:
   typortrait:
-    build: .
-    image: typortrait-lovedinwords:latest
+    # Built once, from any tree, by ops/build-image.sh -- not by this file. `build: .`
+    # deliberately removed: without it, a stray `docker compose up -d --build` fails
+    # loudly instead of silently rebuilding from whatever happens to be checked out
+    # here, which was the whole point of the 2026-09-03 build consolidation. To go
+    # back to a per-tree build, add `build: .` back and this becomes what it always
+    # was. IMAGE_TAG comes from .env (ops/promote.sh sets it); no image can start
+    # until IMAGE_TAG is set and that tag has actually been built.
+    image: ${IMAGE_TAG}
     container_name: typortrait-lovedinwords
     restart: unless-stopped
     ports:

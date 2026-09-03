@@ -118,8 +118,18 @@ restore)
         docker image tag "$image" "$(_img)" && echo "  image re-tagged (no rebuild)"
         (cd "$ENG" && docker compose up -d 2>&1 | tail -2)
     else
-        echo "  saved image is gone -- rebuilding instead (slower)"
-        (cd "$ENG" && docker compose up -d --build 2>&1 | tail -2)
+        # The saved image is gone (pruned, or a state from before 2026-09-03). Compose
+        # files no longer carry `build: .` -- see ops/build-image.sh -- so a blind
+        # `docker compose up -d --build` here would now fail instead of quietly working.
+        # Rebuild the SAME commit this state recorded, then land it exactly where the
+        # fast path above would have: retagged as this tree's IMAGE_TAG.
+        echo "  saved image is gone -- rebuilding commit ${commit:0:10} instead (slower)"
+        if [ -n "${commit:-}" ] && NEWTAG="$(SRC="$ENG" "$(dirname "$0")/build-image.sh" "$commit")"; then
+            docker image tag "$NEWTAG" "$(_img)" && echo "  built and tagged as $(_img)"
+            (cd "$ENG" && docker compose up -d 2>&1 | tail -2)
+        else
+            echo "  could not rebuild (no commit recorded, or the build failed) -- restore incomplete"
+        fi
     fi
     echo "restored. Hard-reload the browser before judging a render."
     ;;
