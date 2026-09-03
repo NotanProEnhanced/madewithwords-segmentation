@@ -1546,8 +1546,23 @@ def render_displacement_portrait(
         if _sd:
             try:
                 os.makedirs(_sd, exist_ok=True)
-                cv2.imwrite(os.path.join(_sd, "color-%s.png" % _lbl),
-                            np.clip(np.asarray(out, np.float32), 0, 255).astype(np.uint8))
+                _frame = np.clip(np.asarray(out, np.float32), 0, 255).astype(np.uint8)
+                cv2.imwrite(os.path.join(_sd, "color-%s.png" % _lbl), _frame)
+                # MARKED variant: draw exactly where eye_centers says the eyes are, in a
+                # color that cannot occur naturally (magenta). The eye-crop readout claimed
+                # "clean" at this exact checkpoint while the plain dump showed a disc --
+                # meaning that readout was never proven to sample the right pixels. This
+                # answers it by looking, not by trusting the crop math a fourth time: if the
+                # marker lands on the visible disc, the coordinates are right and the color
+                # formula is the real cause; if it lands elsewhere, the coordinates
+                # themselves are wrong and every earlier "clean" reading is explained.
+                _marked = _frame.copy()
+                for _ex, _ey, _er in eye_centers:
+                    cv2.drawMarker(_marked, (int(round(_ex)), int(round(_ey))),
+                                   (255, 0, 255), cv2.MARKER_CROSS, 30, 3)
+                    cv2.circle(_marked, (int(round(_ex)), int(round(_ey))),
+                              max(4, int(round(_er * 1.5))), (255, 0, 255), 2)
+                cv2.imwrite(os.path.join(_sd, "MARKED-%s.png" % _lbl), _marked)
             except Exception as _e:  # noqa: BLE001
                 print("[cdump] %s failed: %s" % (_lbl, _e))
     if ink == "photo" or ink == "mono":
