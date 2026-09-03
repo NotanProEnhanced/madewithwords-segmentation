@@ -202,3 +202,18 @@ image generator for subtle eyelid position, not of the test design. The gate has
 shown correct on two DEEPLY closed examples; it has still never been measured against a
 truly borderline one. A real photograph of a drowsy or half-lidded subject, not a generated
 one, is the next thing that would actually close this question.
+
+**A different, more serious defect found instead (2026-09-03).** The gate worked -- both
+correctly SKIP'd -- but the render itself has no way to draw a CLOSED eye. Both 18 and 19
+came back with a flat, solid dark disc over each eye, not a natural closed eyelid. This is
+not `TYPO_EYE_BLOB` (confirmed off, and its own comment says it was disabled for measuring
+this exact defect on laughing faces) and not the pupil/catchlight block (gated `if irises:`,
+which is empty here). The precise stage responsible was not pinned down before stopping --
+`TYPO_DUMP_STAGES=1` on 18 is the next step, reading which of the 16 named stages first shows
+the disc.
+
+This affects any genuinely closed-eye photo -- which for a memorial business ("as if
+sleeping") or a photo of a sleeping pet-adjacent subject is not a rare case. Distinct from,
+but related to, the earlier laughing-eyes fix: that fix stopped MISCLASSIFIED open eyes from
+triggering this same visual failure as often; it never gave the engine a way to render a
+CORRECTLY classified closed eye well. Real, customer-facing, and open.
