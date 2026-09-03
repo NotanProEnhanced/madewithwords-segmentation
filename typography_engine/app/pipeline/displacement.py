@@ -1762,6 +1762,7 @@ def render_displacement_portrait(
 
     # Living eyes, color: glyphs inside the iris carry the person's TRUE eye
     _t("A-after-ink-branch")
+    _cdump("A-after-ink-branch")
     # color -- sampled by the shared gated helper (both irises saturated and
     # hue-consistent, else no tint; sampled, never invented). Dark grounds only:
     # the lifted tint is designed for light-ink-on-dark.
@@ -1982,6 +1983,7 @@ def render_displacement_portrait(
         _mod = 1.0 + _dp * np.clip(_plo - _mid, -0.5, 0.5) * _m
         out = np.clip(out * _mod[..., None], 0, 255)
         _t("D-after-deposterize")
+        _cdump("D-after-deposterize")
 
     oh = max(1, int(out_width * h0 / w0))
     out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
