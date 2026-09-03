@@ -50,6 +50,15 @@ that could show the threshold to be wrong.
 
 **Multi-subject.** One image. A fix validated on `05-couple` is validated on a sample of one.
 
+**Backgrounds.** Every one of the first ten is a clean studio backdrop. Not one has another
+person behind the subject, and the matte model on the memorial brands
+(`TYPO_MATTE_MODEL=1` -> RVM) answers exactly one question: *which pixels are a person?* A
+crowd is people, so it says yes, and `_clean_mask` keeps every blob down to 15% of the
+largest. A LovedInWords portrait shipped with rows of spectators cut out above the
+subject's head, and the set could not have caught it: there is nothing behind anyone in it.
+Sources 16 and 17 exist to fix that, and they are deliberately a PAIR -- see below.
+
+
 ## Prompts for the pet sources (11-15)
 
 Paste each into an image generator. Ask for **1122x1402 (4:5 portrait)** so they match the
@@ -111,3 +120,32 @@ detail. The union of the two is the part of `_solidify_matte` nothing currently 
 Existing runs will show the new images as "only in B", which the comparison reports rather
 than hides. Re-render whichever baseline you want to compare against so both runs cover the
 same set.
+
+## Prompts for the background sources (16-17)
+
+These two are a **pair**, and the pair is the point. A crowd that is separate from the
+subject can be dropped by keeping only the blobs that contain a detected face
+(`TYPO_FACE_ANCHORED_MATTE`). A crowd that TOUCHES the subject cannot -- it is one
+connected component holding one face, so it is kept whole. The fix works on 16 and not on
+17, and a set containing only 16 would report a solved problem.
+
+**16-crowd-behind.jpg**
+> A photorealistic candid photograph of two people, head and shoulders, smiling at the
+> camera at an outdoor sports stadium. Behind them and clearly separated by several feet,
+> a blurred crowd of spectators in blue and yellow. Daylight. The two subjects are sharply
+> focused and their outlines do not overlap anyone behind them. Vertical 4:5 portrait.
+
+*Why: the separable case. The crowd is its own connected region with no detected face in
+it, so face-anchored filtering should remove it and leave both subjects whole.*
+
+**17-crowd-touching.jpg**
+> A photorealistic candid photograph of one person, head and shoulders, at a crowded
+> outdoor event, taken from close range. Spectators stand directly behind them so that the
+> subject's hair overlaps the people behind with no gap of background between them.
+> Daylight, everyone in similar tones. Vertical 4:5 portrait.
+
+*Why: the case component filtering CANNOT fix, and the reason `TYPO_FACE_ANCHORED_MATTE`
+ships off. `TYPO_MASK_DEBUG` should report "nothing removed ... CONTIGUOUS" here. Whatever
+is written next -- a face-scale or distance rule -- has to be judged on this one, not on 16.*
+
+Render these with `TYPO_MATTE_MODEL=1` set, or the matte path under test does not run.
