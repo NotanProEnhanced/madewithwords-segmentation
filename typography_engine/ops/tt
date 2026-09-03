@@ -31,11 +31,24 @@ patch)
     python3 "$s" /root/$d/typography_engine/$rel || echo "   ^ SKIPPED"
   done ;;
 build)
+  # Named trees must be the FULL directory name (typortrait-prod, not prod) -- that is what
+  # $d holds. A name that matches nothing used to fall through silently: the loop produced
+  # zero output and the script still exited 0, indistinguishable from "built everything you
+  # asked for". `tt build prod faithinwords lovedinwords pawsinwords` did exactly that --
+  # matched none of the five (real names all start typortrait-), built nothing, said nothing.
+  # Now it counts matches and refuses to report success on zero.
+  _n=0
   for e in $TREES; do d=${e%%:*}
     [ $# -eq 0 ] || echo "$*" | grep -qw "$d" || continue
+    _n=$((_n+1))
     printf '== %s\n' "$d"
     ( cd /root/$d/typography_engine && docker compose up -d --build ) || echo "   ^ BUILD FAILED"
-  done ;;
+  done
+  if [ $# -gt 0 ] && [ "$_n" -eq 0 ]; then
+    echo "no tree matched any of: $*"
+    echo "names are the FULL directory, e.g. typortrait-prod -- not 'prod'"
+    exit 1
+  fi ;;
 verify)
   # A count of 0 from a page that never arrived is not a pass. During a rebuild the
   # container is briefly gone, curl returns nothing, grep counts 0, and an absent tree
