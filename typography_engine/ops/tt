@@ -2,7 +2,13 @@
 # Typortrait fleet tool -- one command per operation across all five trees.
 #   tt list                     trees, ports, roles, git commit + branch + dirty count
 #   tt patch <script.py> <rel>  run a patch script against <rel> in every tree
-#   tt build [tree ...]         build ONE image, promote it to the named trees (or all)
+#   tt build [tree ...]         build ONE image, promote it to the named trees (or all).
+#                                Builds from wherever THIS tt lives -- by convention that
+#                                is prod's ops/, so `tt build` builds prod's CURRENT commit.
+#                                Pull prod first if you want it to include prod's latest.
+#                                A real run built from a stale prod by exactly this implicit
+#                                assumption before it was made explicit here -- git pull the
+#                                tree you actually mean before trusting the default.
 #   tt promote <tree> [tag]     point one tree at an ALREADY-built tag, no build
 #   tt verify <needle>          HTTP code + occurrences of <needle> in served page
 #

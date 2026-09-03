@@ -55,6 +55,22 @@ directory and checking for `Dockerfile` before this ever ran against a live tree
 `build-image.sh` now does that check itself, every time, and refuses to build if
 it fails.
 
+**A second one, caught on the first real VPS run rather than in testing.** The
+first version defaulted `SRC` to a hardcoded `/root/typortrait-prod`, regardless
+of which tree's `./ops/build-image.sh` you actually ran. Run from staging right
+after staging had just pulled the latest commit, it silently built from **prod's**
+source instead — prod hadn't been pulled and was several commits behind — and
+produced a real image, tagged and reported as "built" with no error, from stale
+code. Caught only because the printed tag (`typortrait:af209dd`) didn't match the
+commit that had just been pulled, and nobody had promoted it yet.
+
+Fixed: `SRC` now defaults to the tree the invoked script itself lives in
+(`dirname "$0"`, one level up — the same pattern `tt` already uses to find its
+own path), not a hardcoded tree. `./ops/build-image.sh` run from any tree now
+builds from that tree, always. `tt build` still builds from wherever `tt` itself
+lives — prod's `ops/`, by convention — which is now stated explicitly in `tt`'s
+own header rather than left as a silent assumption to rediscover the hard way.
+
 ## Rollback
 
 Nothing here is one-way. To go back to per-tree builds on any file, add `build: .`

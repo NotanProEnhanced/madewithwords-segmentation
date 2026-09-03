@@ -30,7 +30,14 @@
 #   until a tree is deliberately promoted.
 set -euo pipefail
 
-_arg="${SRC:-/root/typortrait-prod}"
+# Defaults to the tree THIS COPY OF THE SCRIPT lives in, not a hardcoded tree -- a real
+# run tonight, invoked from staging with no SRC=, silently built from prod's source
+# instead (the previous default) because prod happened to still exist at some other
+# commit. The image looked fine (built, tagged, no error) and was built from the WRONG,
+# STALE commit, missing everything staging had just pulled. Whichever tree's ./ops/
+# you actually run this from is now what it builds, matching how `tt` already resolves
+# its own path -- no tree name to remember or get wrong.
+_arg="${SRC:-$(cd "$(dirname "$0")/.." && pwd)}"
 # `git -C <anywhere inside a repo> ...` succeeds -- git walks UPWARD looking for .git, so
 # it can't be used to tell "this is the repo root" from "this is some subdirectory of it".
 # The first version of this script tried `[ -d "$TREE/.git" ]` plus a `dirname` fallback,
