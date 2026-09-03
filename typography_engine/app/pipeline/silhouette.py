@@ -360,6 +360,16 @@ def _alpha_sweep(alpha: np.ndarray, face_boxes) -> None:
         except Exception:  # noqa: BLE001
             continue
     frame = float(alpha.shape[0] * alpha.shape[1])
+    # Describe the array before interpreting it. "0% at every threshold" has at least three
+    # causes that look identical in the sweep: an all-zero matte, an alpha in 0..255 that
+    # every float threshold passes, and a crop that returned the padding instead of the
+    # image. These four numbers tell them apart at a glance.
+    try:
+        print("[mask] alpha %s %s  min=%.3f max=%.3f mean=%.3f  >0.5=%.2f%%"
+              % (alpha.dtype, alpha.shape, float(alpha.min()), float(alpha.max()),
+                 float(alpha.mean()), 100.0 * float((alpha > 0.5).sum()) / frame))
+    except Exception as e:  # noqa: BLE001
+        print("[mask] alpha could not be summarised: %s" % e)
     print("[mask] alpha sweep (threshold -> coverage, blobs, blobs holding a face)")
     for t in (0.5, 0.6, 0.7, 0.8, 0.9, 0.95):
         fg = (alpha > t).astype(np.uint8) * 255
