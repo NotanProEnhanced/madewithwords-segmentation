@@ -1533,6 +1533,23 @@ def render_displacement_portrait(
                          float(np.asarray(out).mean()), _eyestr))
             except Exception as _e:  # noqa: BLE001
                 print("[t %s] %s failed: %s" % (_cid, _lbl, _e))
+
+    def _cdump(_lbl):
+        # Full-frame COLOR dump, reusing the already-proven TYPO_DUMP_STAGES directory (the
+        # density-field dump was tested end to end and produced exact, correct results
+        # earlier tonight). Added because _t()'s eye crop uses `eye_centers` coordinates from
+        # BEFORE any resize/canvas-fit -- correct through D-after-deposterize, silently wrong
+        # after E-after-resize (a uniform scale) and further wrong after F-after-canvas
+        # (`_fit_print_canvas` in tonal.py adds a CENTERED PAD with an additive offset, not
+        # just a scale -- reverse-deriving that live risked a third coordinate bug in one
+        # night). Saving the real frame sidesteps the math entirely: look at the eye directly.
+        if _sd:
+            try:
+                os.makedirs(_sd, exist_ok=True)
+                cv2.imwrite(os.path.join(_sd, "color-%s.png" % _lbl),
+                            np.clip(np.asarray(out, np.float32), 0, 255).astype(np.uint8))
+            except Exception as _e:  # noqa: BLE001
+                print("[cdump] %s failed: %s" % (_lbl, _e))
     if ink == "photo" or ink == "mono":
         # Photo Lifelike composite. Noir (mono) shares this exact path -- full tonal range,
         # polarity shadows, living eyes -- and is desaturated to black & white at the end,
@@ -1969,6 +1986,7 @@ def render_displacement_portrait(
     oh = max(1, int(out_width * h0 / w0))
     out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
     _t("E-after-resize")
+    _cdump("E-after-resize")
     # Background fill: recolor the region OUTSIDE the subject silhouette. The subject
     # (on its own ground -- e.g. the navy Lifelike sculpt) is NEVER touched; only pixels
     # outside the silhouette move. Two sources, in priority order:
@@ -2018,6 +2036,7 @@ def render_displacement_portrait(
     from .tonal import _fit_print_canvas
     out = _fit_print_canvas(out, _pad_bg, print_aspect)
     _t("F-after-canvas")
+    _cdump("F-after-canvas")
     from .preprocess import apply_vibrance
     _vib = float(os.environ.get("TYPO_VIBRANCE", "0.22") or 0.22)   # step-3 color-fidelity knob (was fixed 0.34)
     out = apply_vibrance(out, strength=_vib, bgr=True)   # gentle life (clarity); restrained so color stays natural and the sclera isn't glow-brightened
