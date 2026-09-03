@@ -1505,13 +1505,34 @@ def render_displacement_portrait(
     def _t(_lbl):
         # Checkpoints on the finished image. Defined ABOVE the ink branches so every ink
         # reaches them -- a sculpt render would otherwise hit an undefined name.
+        #
+        # Added a per-eye region readout (2026-09-03, chasing the closed-eye disc defect):
+        # `out.mean()` is a WHOLE-FRAME average, and an eye is a small fraction of the
+        # frame -- a real, concentrated change there can be invisible in that number. The
+        # code already computes `eye_centers` (icx, icy, ir) for every detected eye BEFORE
+        # the open/closed gate runs, so it exists even when the eye is correctly read as
+        # shut. Reading directly from that, at a small window around each real coordinate,
+        # is exact -- not a guessed crop like ops/region-saturation.py used against the
+        # raw source photo.
         if os.environ.get("TYPO_DUMP_FIELDS", "").strip():
             try:
-                print("[t %s w=%d m=%.3f] %-22s out.mean=%.2f"
+                _eye_bits = []
+                for _ex, _ey, _er in eye_centers:
+                    _r = max(4, int(round(_er * 1.5)))
+                    _y0, _y1 = max(0, int(_ey) - _r), min(H, int(_ey) + _r)
+                    _x0, _x1 = max(0, int(_ex) - _r), min(W, int(_ex) + _r)
+                    _crop = np.asarray(out, np.float32)[_y0:_y1, _x0:_x1]
+                    if _crop.size:
+                        _bgr = _crop.reshape(-1, 3).mean(axis=0)
+                        _hsv = cv2.cvtColor(_crop.astype(np.uint8), cv2.COLOR_BGR2HSV)
+                        _eye_bits.append("bgr=(%.0f,%.0f,%.0f) sat=%.0f" %
+                                         (_bgr[0], _bgr[1], _bgr[2], float(_hsv[..., 1].mean())))
+                _eyestr = "  eyes[" + " | ".join(_eye_bits) + "]" if _eye_bits else "  eyes[none]"
+                print("[t %s w=%d m=%.3f] %-22s out.mean=%.2f%s"
                       % (_cid, int(out_width), _mmean, _lbl,
-                         float(np.asarray(out).mean())))
-            except Exception:  # noqa: BLE001
-                pass
+                         float(np.asarray(out).mean()), _eyestr))
+            except Exception as _e:  # noqa: BLE001
+                print("[t %s] %s failed: %s" % (_cid, _lbl, _e))
     if ink == "photo" or ink == "mono":
         # Photo Lifelike composite. Noir (mono) shares this exact path -- full tonal range,
         # polarity shadows, living eyes -- and is desaturated to black & white at the end,
