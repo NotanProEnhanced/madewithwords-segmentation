@@ -192,3 +192,13 @@ measured EAR per face; read it against 0.09 before judging the render by eye.*
 
 Render both with `TYPO_EYE_DEBUG=1` and read the printed `ear=(...)` values first -- they
 answer the calibration question directly. Only then look at whether the render drew eyes.
+
+**Measured (2026-09-03).** 18 came back `ear=(0.013, 0.008)`; 19 came back
+`ear=(0.017, 0.016)`. Both well under 0.09, both correctly gated SKIP -- no iris, pupil or
+catchlight drawn on either face. Good news, but not the full answer: source 19 was meant
+to test the actual risk band, 0.09-0.15, and its generated eyes came out almost as
+extreme as 18's rather than genuinely heavy-lidded/resting -- a limitation of prompting an
+image generator for subtle eyelid position, not of the test design. The gate has now been
+shown correct on two DEEPLY closed examples; it has still never been measured against a
+truly borderline one. A real photograph of a drowsy or half-lidded subject, not a generated
+one, is the next thing that would actually close this question.
