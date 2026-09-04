@@ -2122,8 +2122,7 @@ def _sitemap_paths(host: str, brand_q: str = "") -> list:
         if cat["brand"] != fav:
             continue
         ex_dir = STATIC_DIR / "examples" / slug
-        if any((ex_dir / f"{img['id']}-before.jpg").exists() and (ex_dir / f"{img['id']}-after.png").exists()
-               for img in cat["images"]):
+        if any(_examples_pair_ready(ex_dir, img["id"]) for img in cat["images"]):
             paths.append(f"/examples/{slug}")
     if not GALLERY_ENABLED:
         return paths
@@ -3643,6 +3642,19 @@ def guide_page(slug: str, request: Request) -> HTMLResponse:
 _EXAMPLES_GRID_CAP = 3
 
 
+def _examples_pair_ready(ex_dir, iid: str) -> bool:
+    """True once ALL FOUR files for one /examples image id exist: the full-resolution
+    before/after (still used by the "View detail" link, the "Look closer" zoomed crop,
+    and as the source for any future card regeneration) and the compressed -card.jpg
+    pair the page actually displays (ops/render-examples.sh generates all four
+    together). Requiring all four -- not just the two full-res files, as an earlier
+    version of this check did -- means a page never tries to serve a -card.jpg that
+    doesn't exist yet if code ships before the batch script has backfilled cards for
+    already-rendered images."""
+    return (ex_dir / f"{iid}-before.jpg").exists() and (ex_dir / f"{iid}-after.png").exists() \
+        and (ex_dir / f"{iid}-before-card.jpg").exists() and (ex_dir / f"{iid}-after-card.jpg").exists()
+
+
 # Simple line-icon set for the "rich" /examples template (2026-09-04). Hand-authored
 # inline SVG, not fetched from an icon library -- consistent stroke style, 24x24,
 # `currentColor` so each usage site controls its own color via CSS.
@@ -3708,8 +3720,8 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
             f'<figure class="pair">'
             f'<div class="slide" role="slider" tabindex="0" aria-label="Drag to compare {label}" '
             f'aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">'
-            f'<img class="after" src="/static/examples/{slug}/{iid}-after.png" alt="{label}" loading="lazy" decoding="async">'
-            f'<img class="before" src="/static/examples/{slug}/{iid}-before.jpg" alt="Original source photo for {label}" loading="lazy" decoding="async" style="clip-path:inset(0 50% 0 0)">'
+            f'<img class="after" src="/static/examples/{slug}/{iid}-after-card.jpg" alt="{label}" loading="lazy" decoding="async">'
+            f'<img class="before" src="/static/examples/{slug}/{iid}-before-card.jpg" alt="Original source photo for {label}" loading="lazy" decoding="async" style="clip-path:inset(0 50% 0 0)">'
             f'<div class="handle" style="left:50%"><span class="grip">&#8596;</span></div>'
             f'<span class="tag tag-l">Photo</span><span class="tag tag-r">{_h.escape(site["name"])}</span>'
             f'<a class="viewdetail" href="/static/examples/{slug}/{iid}-after.png" target="_blank" rel="noopener" '
@@ -3744,9 +3756,7 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
         if oslug == slug or ocat["brand"] != cat["brand"]:
             continue
         oex_dir = STATIC_DIR / "examples" / oslug
-        oready = any((oex_dir / f"{img['id']}-before.jpg").exists()
-                     and (oex_dir / f"{img['id']}-after.png").exists()
-                     for img in ocat["images"])
+        oready = any(_examples_pair_ready(oex_dir, img["id"]) for img in ocat["images"])
         if not oready:
             continue
         more_links += f'<a href="/examples/{_h.escape(oslug)}{_qs}">{_h.escape(ocat.get("nav_label", ocat["h1"]))}</a>'
@@ -3762,7 +3772,11 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
         ],
     })
 
-    hero_after = f'/static/examples/{slug}/{_h.escape(hero["id"])}-after.png' if hero else ""
+    # Hero uses the compressed card (plenty sharp at its actual display width, and it's
+    # the single biggest image on the page). The detail/"look closer" crop deliberately
+    # keeps the FULL-res file -- that section CSS-zooms scale(1.7) into a crop of it
+    # specifically to show fine typography detail, which the 800px card doesn't have.
+    hero_after = f'/static/examples/{slug}/{_h.escape(hero["id"])}-after-card.jpg' if hero else ""
     detail_after = f'/static/examples/{slug}/{_h.escape(detail["id"])}-after.png' if detail else ""
 
     return f"""<!doctype html><html lang="en"><head>
@@ -3775,6 +3789,10 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
 <meta property="og:description" content="{_h.escape(cat['meta'])}">
 <meta property="og:url" content="{_h.escape(page_url)}">
 {f'<meta property="og:image" content="{_h.escape(hero_img)}">' if hero_img else ''}
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{_h.escape(cat['h1'])}">
+<meta name="twitter:description" content="{_h.escape(cat['meta'])}">
+{f'<meta name="twitter:image" content="{_h.escape(hero_img)}">' if hero_img else ''}
 <script type="application/ld+json">{ld}</script>
 <style>
   @font-face{{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;
@@ -3837,6 +3855,7 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
   figcaption{{padding-top:14px;font-size:14px}}
   figcaption b{{display:block;color:var(--navy);font-weight:700;margin-bottom:5px;letter-spacing:.02em}}
   figcaption .tags{{display:block;color:var(--muted);font-size:12px;letter-spacing:.02em;line-height:1.6}}
+  .soon{{color:var(--muted);font-style:italic;margin:0 0 20px}}
   .detail-section{{display:grid;grid-template-columns:1.1fr 1fr;gap:0;align-items:stretch;margin:64px 0 8px;
     background:var(--soft);border-radius:var(--radius);overflow:hidden}}
   .detail-crop{{position:relative;min-height:340px;overflow:hidden}}
@@ -3907,6 +3926,7 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
 </section>
 
 <section class="grid-section" id="examples">
+  {'' if pairs else '<p class="soon">More examples for this category are on the way.</p>'}
   <div class="grid">{cards}</div>
 </section>
 
@@ -4007,13 +4027,7 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
     base = _req_base(request)
     page_url = f"{base}/examples/{slug}"
     ex_dir = STATIC_DIR / "examples" / slug
-    pairs = []
-    for img in cat["images"]:
-        iid = img["id"]
-        before = ex_dir / f"{iid}-before.jpg"
-        after = ex_dir / f"{iid}-after.png"
-        if before.exists() and after.exists():
-            pairs.append(img)
+    pairs = [img for img in cat["images"] if _examples_pair_ready(ex_dir, img["id"])]
     # Cap the DISPLAYED grid to a clean single row on desktop -- a category with more
     # ready images (dog-portraits has 7 on disk) still only shows _EXAMPLES_GRID_CAP,
     # so the last row never dangles with one orphaned card. The rest stay rendered on
@@ -4023,7 +4037,10 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
     for img in pairs:
         iid = img["id"]
         if not hero_img:
-            hero_img = f"{base}/static/examples/{slug}/{iid}-after.png"
+            # The compressed card, not the full 1600px render -- this is what social
+            # platforms fetch for a link preview, and a multi-MB og:image is slow or
+            # gets rejected outright by some crawlers.
+            hero_img = f"{base}/static/examples/{slug}/{iid}-after-card.jpg"
         list_items.append({"@type": "ListItem", "position": len(list_items) + 1, "name": img["label"]})
 
     if cat.get("template") == "rich":
@@ -4039,8 +4056,8 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
             f'<figure class="pair">'
             f'<div class="slide" role="slider" tabindex="0" aria-label="Drag to compare {label}" '
             f'aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">'
-            f'<img class="after" src="/static/examples/{slug}/{iid}-after.png" alt="{label}" loading="lazy" decoding="async">'
-            f'<img class="before" src="/static/examples/{slug}/{iid}-before.jpg" alt="Original source photo for {label}" loading="lazy" decoding="async" style="clip-path:inset(0 50% 0 0)">'
+            f'<img class="after" src="/static/examples/{slug}/{iid}-after-card.jpg" alt="{label}" loading="lazy" decoding="async">'
+            f'<img class="before" src="/static/examples/{slug}/{iid}-before-card.jpg" alt="Original source photo for {label}" loading="lazy" decoding="async" style="clip-path:inset(0 50% 0 0)">'
             f'<div class="handle" style="left:50%"><span class="grip">&#8596;</span></div>'
             f'<span class="tag tag-l">Photo</span><span class="tag tag-r">{_h.escape(site["name"])}</span>'
             f'<a class="viewlg" href="/static/examples/{slug}/{iid}-after.png" target="_blank" rel="noopener" '
@@ -4068,9 +4085,7 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
         if oslug == slug or ocat["brand"] != cat["brand"]:
             continue
         oex_dir = STATIC_DIR / "examples" / oslug
-        oready = any((oex_dir / f"{img['id']}-before.jpg").exists()
-                     and (oex_dir / f"{img['id']}-after.png").exists()
-                     for img in ocat["images"])
+        oready = any(_examples_pair_ready(oex_dir, img["id"]) for img in ocat["images"])
         if not oready:
             continue
         more_links += f'<a href="/examples/{_h.escape(oslug)}{_qs}">{_h.escape(ocat.get("nav_label", ocat["h1"]))}</a>'
@@ -4107,6 +4122,10 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
 <meta property="og:description" content="{_h.escape(cat['meta'])}">
 <meta property="og:url" content="{_h.escape(page_url)}">
 {f'<meta property="og:image" content="{_h.escape(hero_img)}">' if hero_img else ''}
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{_h.escape(cat['h1'])}">
+<meta name="twitter:description" content="{_h.escape(cat['meta'])}">
+{f'<meta name="twitter:image" content="{_h.escape(hero_img)}">' if hero_img else ''}
 <script type="application/ld+json">{ld}</script>
 <style>
   :root{{color-scheme:light dark;--ink:#1c2430;--sub:#5a6472;--bg:#faf8f4;--card:#fff;--line:#e7e2d8;--accent:#1c3a5e}}
