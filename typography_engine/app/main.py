@@ -3706,16 +3706,14 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
             _h.escape(w.strip()) for w in img.get("words", "").split(",") if w.strip())
         cards += (
             f'<figure class="pair">'
-            f'<div class="slide">'
+            f'<div class="slide" role="slider" tabindex="0" aria-label="Drag to compare {label}" '
+            f'aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">'
             f'<img class="after" src="/static/examples/{slug}/{iid}-after.png" alt="{label}" loading="lazy" decoding="async">'
-            f'<img class="before" id="rb-{iid}" src="/static/examples/{slug}/{iid}-before.jpg" alt="Original source photo for {label}" loading="lazy" decoding="async" style="clip-path:inset(0 50% 0 0)">'
-            f'<div class="handle" id="rh-{iid}" style="left:50%"></div>'
+            f'<img class="before" src="/static/examples/{slug}/{iid}-before.jpg" alt="Original source photo for {label}" loading="lazy" decoding="async" style="clip-path:inset(0 50% 0 0)">'
+            f'<div class="handle" style="left:50%"><span class="grip">&#8596;</span></div>'
             f'<span class="tag tag-l">Photo</span><span class="tag tag-r">{_h.escape(site["name"])}</span>'
             f'<a class="viewdetail" href="/static/examples/{slug}/{iid}-after.png" target="_blank" rel="noopener" '
             f'aria-label="View full-size image of {label}">&#128269; View detail</a>'
-            f'<input type="range" class="cmpr-overlay" min="0" max="100" value="50" aria-label="Drag to compare {label}" '
-            f'oninput="document.getElementById(\'rb-{iid}\').style.clipPath=\'inset(0 \'+(100-this.value)+\'% 0 0)\';'
-            f'document.getElementById(\'rh-{iid}\').style.left=this.value+\'%\'">'
             f'</div>'
             f'<figcaption><b>{caption}</b><span class="tags">{words_disp}</span></figcaption>'
             f'</figure>'
@@ -3821,17 +3819,21 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
   .grid-section{{padding:8px 28px 8px;max-width:1180px;margin:0 auto}}
   .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:26px}}
   .pair{{margin:0}}
-  .slide{{position:relative;aspect-ratio:4/5;overflow:hidden;border-radius:20px;background:#111}}
-  .slide img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}}
-  .handle{{position:absolute;top:0;bottom:0;width:2px;background:rgba(255,255,255,.9);pointer-events:none}}
+  .slide{{position:relative;aspect-ratio:4/5;overflow:hidden;border-radius:20px;background:#111;
+    cursor:ew-resize;touch-action:none;-webkit-user-select:none;user-select:none}}
+  .slide img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;
+    -webkit-user-drag:none;pointer-events:none}}
+  .handle{{position:absolute;top:0;bottom:0;width:2px;background:rgba(255,255,255,.92);
+    box-shadow:0 0 0 1px rgba(0,0,0,.18);transform:translateX(-1px);pointer-events:none;z-index:2}}
+  .grip{{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38px;height:38px;
+    border-radius:50%;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.28);display:flex;
+    align-items:center;justify-content:center;color:var(--navy);font-size:16px;font-weight:700;line-height:1}}
   .tag{{position:absolute;top:12px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
-    color:#fff;background:rgba(0,0,0,.5);padding:4px 10px;border-radius:20px}}
+    color:#fff;background:rgba(0,0,0,.5);padding:4px 10px;border-radius:20px;pointer-events:none}}
   .tag-l{{left:12px}} .tag-r{{right:12px}}
   .viewdetail{{position:absolute;right:12px;bottom:14px;font-size:12px;font-weight:600;color:#fff;
-    background:rgba(0,0,0,.55);padding:7px 13px;border-radius:20px;text-decoration:none}}
+    background:rgba(0,0,0,.55);padding:7px 13px;border-radius:20px;text-decoration:none;z-index:3}}
   .viewdetail:hover{{background:rgba(0,0,0,.75)}}
-  input.cmpr-overlay{{position:absolute;left:8px;right:8px;bottom:-2px;width:calc(100% - 16px);opacity:0;
-    height:34px;cursor:ew-resize}}
   figcaption{{padding-top:14px;font-size:14px}}
   figcaption b{{display:block;color:var(--navy);font-weight:700;margin-bottom:5px;letter-spacing:.02em}}
   figcaption .tags{{display:block;color:var(--muted);font-size:12px;letter-spacing:.02em;line-height:1.6}}
@@ -3932,6 +3934,49 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
 
 {more_html}
 <div class="faq">{faq_html}</div>
+<script>
+// Drag-to-compare, ported from the homepage's own proven slider (static/index.html's
+// #cmpHandle) rather than the earlier <input type="range" opacity:0> overlay hack,
+// which iOS Safari can't drag from anywhere -- it only recognizes a grab starting
+// exactly on the native thumb, which is invisible here. Pointer Events + touch-
+// action:none on .slide work reliably across mouse, touch and pen. The whole card is
+// the drag target (not just a thin handle), more forgiving on a touchscreen; a
+// pointerdown on the "View detail" link is explicitly excluded so it still opens
+// normally instead of being swallowed by the drag.
+(function(){{
+  document.querySelectorAll('.slide').forEach(function(slide){{
+    var before = slide.querySelector('.before');
+    var handle = slide.querySelector('.handle');
+    if(!before || !handle) return;
+    var dragging = false;
+    function setPct(p){{
+      p = Math.max(2, Math.min(98, p));
+      before.style.clipPath = 'inset(0 ' + (100 - p) + '% 0 0)';
+      handle.style.left = p + '%';
+      slide.setAttribute('aria-valuenow', Math.round(p));
+    }}
+    function fromX(x){{
+      var r = slide.getBoundingClientRect();
+      if(r.width) setPct((x - r.left) / r.width * 100);
+    }}
+    slide.addEventListener('pointerdown', function(e){{
+      if(e.target.closest('.viewdetail')) return;
+      dragging = true;
+      try{{ slide.setPointerCapture(e.pointerId); }}catch(_){{}}
+      fromX(e.clientX);
+      e.preventDefault();
+    }});
+    slide.addEventListener('pointermove', function(e){{ if(dragging) fromX(e.clientX); }});
+    slide.addEventListener('pointerup', function(){{ dragging = false; }});
+    slide.addEventListener('pointercancel', function(){{ dragging = false; }});
+    slide.addEventListener('keydown', function(e){{
+      var cur = parseFloat(slide.getAttribute('aria-valuenow')) || 50;
+      if(e.key === 'ArrowLeft'){{ setPct(cur - 5); e.preventDefault(); }}
+      else if(e.key === 'ArrowRight'){{ setPct(cur + 5); e.preventDefault(); }}
+    }});
+  }});
+}})();
+</script>
 </body></html>"""
 
 
@@ -3992,17 +4037,15 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
             _h.escape(w.strip()) for w in img.get("words", "").split(",") if w.strip())
         cards += (
             f'<figure class="pair">'
-            f'<div class="slide">'
+            f'<div class="slide" role="slider" tabindex="0" aria-label="Drag to compare {label}" '
+            f'aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">'
             f'<img class="after" src="/static/examples/{slug}/{iid}-after.png" alt="{label}" loading="lazy" decoding="async">'
-            f'<img class="before" id="b-{iid}" src="/static/examples/{slug}/{iid}-before.jpg" alt="Original source photo for {label}" loading="lazy" decoding="async" style="clip-path:inset(0 50% 0 0)">'
-            f'<div class="handle" id="h-{iid}" style="left:50%"></div>'
+            f'<img class="before" src="/static/examples/{slug}/{iid}-before.jpg" alt="Original source photo for {label}" loading="lazy" decoding="async" style="clip-path:inset(0 50% 0 0)">'
+            f'<div class="handle" style="left:50%"><span class="grip">&#8596;</span></div>'
             f'<span class="tag tag-l">Photo</span><span class="tag tag-r">{_h.escape(site["name"])}</span>'
             f'<a class="viewlg" href="/static/examples/{slug}/{iid}-after.png" target="_blank" rel="noopener" '
             f'aria-label="View full-size image of {label}">&#128269; View large</a>'
             f'</div>'
-            f'<input type="range" class="cmpr" min="0" max="100" value="50" aria-label="Drag to compare {label}" '
-            f'oninput="document.getElementById(\'b-{iid}\').style.clipPath=\'inset(0 \'+(100-this.value)+\'% 0 0)\';'
-            f'document.getElementById(\'h-{iid}\').style.left=this.value+\'%\'">'
             f'<figcaption>{label}'
             + (f'<span class="words">Words: {words_disp}</span>' if words_disp else '')
             + '</figcaption>'
@@ -4076,17 +4119,22 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
   .intro p{{margin:0 0 14px}}
   .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:28px;margin:36px 0}}
   .pair{{margin:0}}
-  .slide{{position:relative;aspect-ratio:4/5;overflow:hidden;border-radius:12px;background:#111;box-shadow:0 1px 3px rgba(0,0,0,.15)}}
-  .slide img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}}
-  .handle{{position:absolute;top:0;bottom:0;width:2px;background:rgba(255,255,255,.9);transform:translateX(-1px);pointer-events:none}}
+  .slide{{position:relative;aspect-ratio:4/5;overflow:hidden;border-radius:12px;background:#111;
+    box-shadow:0 1px 3px rgba(0,0,0,.15);cursor:ew-resize;touch-action:none;-webkit-user-select:none;user-select:none}}
+  .slide img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;
+    -webkit-user-drag:none;pointer-events:none}}
+  .handle{{position:absolute;top:0;bottom:0;width:2px;background:rgba(255,255,255,.9);
+    transform:translateX(-1px);pointer-events:none;z-index:2}}
+  .grip{{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:34px;height:34px;
+    border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.28);display:flex;
+    align-items:center;justify-content:center;color:var(--ink);font-size:14px;font-weight:700;line-height:1}}
   .tag{{position:absolute;top:10px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
-    color:#fff;background:rgba(0,0,0,.45);padding:3px 8px;border-radius:20px}}
+    color:#fff;background:rgba(0,0,0,.45);padding:3px 8px;border-radius:20px;pointer-events:none}}
   .tag-l{{left:10px}} .tag-r{{right:10px}}
   .viewlg{{position:absolute;left:10px;bottom:10px;font-size:12px;font-weight:600;color:#fff;
     background:rgba(0,0,0,.55);padding:6px 12px;border-radius:20px;text-decoration:none;
-    backdrop-filter:blur(2px)}}
+    backdrop-filter:blur(2px);z-index:3}}
   .viewlg:hover,.viewlg:focus-visible{{background:rgba(0,0,0,.75)}}
-  input.cmpr{{width:100%;margin:10px 0 4px;accent-color:var(--accent)}}
   figcaption{{font-size:13px;color:var(--sub)}}
   figcaption .words{{display:block;margin-top:3px;font-size:11.5px;letter-spacing:.02em;
     color:var(--sub);opacity:.8}}
@@ -4118,6 +4166,45 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
   {more_html}
   <div class="faq">{faq_html}</div>
 </div>
+<script>
+// Drag-to-compare via Pointer Events + touch-action:none (see the identical, more
+// detailed comment on the "rich" template's copy of this script) -- reliable on iOS
+// Safari, unlike an <input type="range" opacity:0> overlay which only drags from its
+// invisible native thumb.
+(function(){{
+  document.querySelectorAll('.slide').forEach(function(slide){{
+    var before = slide.querySelector('.before');
+    var handle = slide.querySelector('.handle');
+    if(!before || !handle) return;
+    var dragging = false;
+    function setPct(p){{
+      p = Math.max(2, Math.min(98, p));
+      before.style.clipPath = 'inset(0 ' + (100 - p) + '% 0 0)';
+      handle.style.left = p + '%';
+      slide.setAttribute('aria-valuenow', Math.round(p));
+    }}
+    function fromX(x){{
+      var r = slide.getBoundingClientRect();
+      if(r.width) setPct((x - r.left) / r.width * 100);
+    }}
+    slide.addEventListener('pointerdown', function(e){{
+      if(e.target.closest('.viewlg')) return;
+      dragging = true;
+      try{{ slide.setPointerCapture(e.pointerId); }}catch(_){{}}
+      fromX(e.clientX);
+      e.preventDefault();
+    }});
+    slide.addEventListener('pointermove', function(e){{ if(dragging) fromX(e.clientX); }});
+    slide.addEventListener('pointerup', function(){{ dragging = false; }});
+    slide.addEventListener('pointercancel', function(){{ dragging = false; }});
+    slide.addEventListener('keydown', function(e){{
+      var cur = parseFloat(slide.getAttribute('aria-valuenow')) || 50;
+      if(e.key === 'ArrowLeft'){{ setPct(cur - 5); e.preventDefault(); }}
+      else if(e.key === 'ArrowRight'){{ setPct(cur + 5); e.preventDefault(); }}
+    }});
+  }});
+}})();
+</script>
 </body></html>"""
     return HTMLResponse(html)
 
