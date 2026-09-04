@@ -3650,7 +3650,10 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
     if not cat:
         raise HTTPException(status_code=404, detail="not_found")
     host = request.headers.get("host", "") or ""
-    site = _site_brand(host=host)
+    # ?brand= override, same convention as the homepage's brand routing (root_page) --
+    # staging has one hostname, so this is how a brand-specific page gets tested there.
+    brand_q = (request.query_params.get("brand", "") or "").lower()
+    site = _site_brand(brand_id=brand_q, host=host)
     if site["fav"] != cat["brand"]:
         raise HTTPException(status_code=404, detail="not_found")
 
