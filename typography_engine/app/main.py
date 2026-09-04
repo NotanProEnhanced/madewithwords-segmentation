@@ -3636,6 +3636,13 @@ def guide_page(slug: str, request: Request) -> HTMLResponse:
     return HTMLResponse(html)
 
 
+# Max image pairs shown on one /examples/<slug> page (2026-09-04) -- a 4th (or, for
+# dog-portraits, 5th-7th) card dangles alone on its own row on a typical desktop grid
+# of minmax(270px,1fr) columns. Capping to a clean single row keeps every category
+# page looking finished regardless of how many pairs are actually rendered on disk.
+_EXAMPLES_GRID_CAP = 3
+
+
 # Simple line-icon set for the "rich" /examples template (2026-09-04). Hand-authored
 # inline SVG, not fetched from an icon library -- consistent stroke style, 24x24,
 # `currentColor` so each usage site controls its own color via CSS.
@@ -3938,17 +3945,24 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
     base = _req_base(request)
     page_url = f"{base}/examples/{slug}"
     ex_dir = STATIC_DIR / "examples" / slug
-    pairs, list_items, hero_img = [], [], ""
+    pairs = []
     for img in cat["images"]:
         iid = img["id"]
         before = ex_dir / f"{iid}-before.jpg"
         after = ex_dir / f"{iid}-after.png"
-        if not (before.exists() and after.exists()):
-            continue
-        pairs.append(img)
+        if before.exists() and after.exists():
+            pairs.append(img)
+    # Cap the DISPLAYED grid to a clean single row on desktop -- a category with more
+    # ready images (dog-portraits has 7 on disk) still only shows _EXAMPLES_GRID_CAP,
+    # so the last row never dangles with one orphaned card. The rest stay rendered on
+    # disk and tracked by render-examples.sh; they're just not shown on this page.
+    pairs = pairs[:_EXAMPLES_GRID_CAP]
+    list_items, hero_img = [], ""
+    for img in pairs:
+        iid = img["id"]
         if not hero_img:
             hero_img = f"{base}/static/examples/{slug}/{iid}-after.png"
-        list_items.append({"@type": "ListItem", "position": len(pairs), "name": img["label"]})
+        list_items.append({"@type": "ListItem", "position": len(list_items) + 1, "name": img["label"]})
 
     if cat.get("template") == "rich":
         return HTMLResponse(_rich_examples_html(cat, pairs, site, page_url, hero_img, slug, base, host))
