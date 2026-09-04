@@ -3797,6 +3797,8 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
   .navcta:hover{{opacity:.9}}
   .hero{{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center;padding:20px 28px 56px;
     max-width:1180px;margin:0 auto}}
+  @media(max-width:820px){{.hero{{grid-template-columns:1fr;gap:28px;padding:16px 20px 40px}}
+    .hero-image{{order:-1}}}}
   .eyebrow{{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--navy);
     opacity:.75;margin-bottom:10px}}
   h1{{font-size:clamp(30px,3.4vw,44px);line-height:1.15;margin:0 0 18px;color:var(--navy);text-wrap:balance}}
@@ -3853,7 +3855,8 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
   .stage .ico{{width:44px;height:44px;border-radius:50%;background:var(--soft);color:var(--navy);
     display:flex;align-items:center;justify-content:center}}
   .stage .ico svg{{width:22px;height:22px}}
-  .closing{{margin:56px 0 0;background:var(--navy);border-radius:var(--radius);padding:52px 44px;color:#fff}}
+  .closing{{max-width:1180px;margin:56px auto 0;background:var(--navy);border-radius:var(--radius);
+    padding:52px 44px;color:#fff}}
   .closing h2{{font-size:clamp(22px,2.6vw,30px);margin:0 0 10px;max-width:20ch}}
   .closing p{{color:#c9d0de;font-size:15.5px;margin:0 0 24px}}
   .closing .cta-primary{{background:#fff;color:var(--navy)}}
@@ -3866,6 +3869,20 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
   .qa{{margin:0 0 20px}}
   .qa h3{{font-size:16px;margin:0 0 4px;color:var(--navy)}}
   .qa p{{margin:0;color:var(--muted)}}
+  @media(max-width:640px){{
+    .wrap{{padding:0 20px}}
+    nav.top{{padding:16px 20px;flex-wrap:wrap;gap:10px}}
+    .brand{{font-size:18px}}
+    .navcta{{font-size:13px;padding:10px 16px}}
+    h1{{font-size:clamp(26px,7vw,34px)}}
+    .subhead{{font-size:15px}}
+    .grid-section,.stages{{padding-left:20px;padding-right:20px}}
+    .grid{{gap:20px}}
+    .detail-text{{padding:30px 22px}}
+    .detail-text h2{{font-size:22px}}
+    .closing{{padding:36px 24px}}
+    .more,.faq{{padding-left:20px;padding-right:20px}}
+  }}
 </style>
 </head><body>
 <nav class="top"><a class="brand" href="/">TYPORTRAIT</a><a class="navcta" href="/">Create Your Portrait</a></nav>
