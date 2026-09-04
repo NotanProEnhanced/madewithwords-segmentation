@@ -3700,6 +3700,31 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
             f'</figure>'
         )
 
+    # Cross-link the OTHER categories for this same brand -- never across brands, a
+    # PawsInWords visitor should never land on a human-portrait page. Only link to a
+    # category that already has a real pair on disk, same bar the sitemap uses, so a
+    # visitor never clicks through to an empty "coming soon" page.
+    #
+    # Carry ?brand= only when THIS host's own Host header wouldn't naturally resolve to
+    # it -- i.e. we only got to this page via the override (staging's one hostname).
+    # A real brand domain (pawsinwords.com) resolves correctly on its own, so its
+    # internal links stay clean without a stray query param.
+    _host_only_brand = _site_brand(host=host)["fav"]
+    _qs = f"?brand={cat['brand']}" if _host_only_brand != cat["brand"] else ""
+    more_links = ""
+    for oslug, ocat in examples_content.EXAMPLES.items():
+        if oslug == slug or ocat["brand"] != cat["brand"]:
+            continue
+        oex_dir = STATIC_DIR / "examples" / oslug
+        oready = any((oex_dir / f"{img['id']}-before.jpg").exists()
+                     and (oex_dir / f"{img['id']}-after.png").exists()
+                     for img in ocat["images"])
+        if not oready:
+            continue
+        more_links += f'<a href="/examples/{_h.escape(oslug)}{_qs}">{_h.escape(ocat["h1"])}</a>'
+    more_html = (f'<nav class="more"><b>More examples:</b>{more_links}</nav>'
+                if more_links else "")
+
     faq_html = "".join(
         f'<div class="qa"><h3>{_h.escape(q)}</h3><p>{_h.escape(a)}</p></div>'
         for q, a in cat.get("faq", []))
@@ -3764,6 +3789,10 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
   .cta{{display:inline-block;margin-top:32px;background:var(--accent);color:#fff;text-decoration:none;
     font-weight:600;padding:14px 26px;border-radius:8px}}
   .cta:hover{{opacity:.92}}
+  .more{{margin-top:28px;font-size:14px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline}}
+  .more b{{color:var(--ink);font-weight:600}}
+  .more a{{color:var(--accent);text-decoration:none}}
+  .more a:hover{{text-decoration:underline}}
   @media (prefers-color-scheme:dark){{
     :root:not([data-theme="light"]){{--ink:#eee;--sub:#a7aeb8;--bg:#14171c;--card:#1c2027;--line:#2a2f38}}
   }}
@@ -3777,6 +3806,7 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
   {note}
   <div class="grid">{cards}</div>
   <a class="cta" href="/">Start your own portrait &rarr;</a>
+  {more_html}
   <div class="faq">{faq_html}</div>
 </div>
 </body></html>"""
