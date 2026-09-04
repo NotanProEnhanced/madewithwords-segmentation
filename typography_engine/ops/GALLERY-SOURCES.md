@@ -53,7 +53,26 @@ prompts.
 
 ---
 
-## Typortrait.com — humans (18)
+## Category → landing-page assignments
+
+These are the `/examples/<slug>` pages this set is actually meant to build
+(see the 2026-09-04 conversation: generating renders with no destination is
+a waste of a render). Each page needs 4-5 solid images -- the ones below are
+picked for that, not for engine-diversity coverage. Everything NOT listed
+here (H01-H03, H07-H09, H12-H14, H17) is general variety, useful as
+supporting/rotating images inside a page but not the reason any page exists.
+
+| Page | Slug | Images |
+|---|---|---|
+| Gifts for Parents & Grandparents | `portraits-for-parents-grandparents` | H04, H05, H15, H16 |
+| Couple & Anniversary Portraits | `couple-anniversary-portraits` | H10, H19, H20 |
+| Family Portraits | `family-portraits` | H11, H18, H21, H22 |
+| Kids & Baby Portraits | `kids-baby-portraits` | H06, H23, H24, H25 |
+| Dog Portraits | `dog-portraits` | P01, P02, P03, P04, P08, P11, P13 |
+| Cat Portraits | `cat-portraits` | P05, P06, P07, P12 |
+| Pet Memorial Portraits | `pet-memorial-portraits` | P09, P15, P16, P17 |
+
+## Typortrait.com — humans (25)
 
 ### H01 — light skin, dark hair, studio softbox, solo
 ```
@@ -207,9 +226,68 @@ camera, genuine smiles, all eyes clearly open.
 ```
 Words: `FRIENDS, TOGETHER, JOY, US, ALWAYS, HOME, LAUGH, TRUE`
 
+### H19 — young couple, mixed skin tones, outdoor golden hour
+```
+A couple in their late 20s -- one with light skin and dark hair, one with
+medium-brown skin and curly black hair -- standing close together outdoors
+at golden hour, foreheads touching, soft warm backlight, plain blurred
+golden-field background, both smiling gently with eyes clearly open.
+```
+Words: `TOGETHER, FOREVER, US, JOURNEY, LOVE, HOME, GROW, ALWAYS`
+
+### H20 — senior couple, anniversary, warm indoor light
+```
+A couple in their late 60s, both with light skin and gray/white hair,
+cheek to cheek, warm soft indoor lamp lighting, plain warm-beige
+background, both smiling warmly with eyes clearly open.
+```
+Words: `ANNIVERSARY, TIMELESS, US, FOREVER, GRACE, JOURNEY, LOVE, HOME`
+
+### H21 — family of 4, outdoor natural light
+```
+Two parents (one light skin, one medium skin tone) with two children
+(ages about 6 and 9), all facing the camera, outdoors in soft natural
+daylight, plain blurred park-green background, genuine smiles, all eyes
+clearly open.
+```
+Words: `FAMILY, TOGETHER, HOME, GROW, LOVE, ALWAYS, US, ROOTS`
+
+### H22 — multi-generational family, indoor warm light
+```
+Three generations -- a grandparent (70s, gray hair), a parent (40s), and
+a child (8) -- light-to-medium skin tones, standing together indoors,
+warm soft window light, plain neutral indoor background, all facing the
+camera with genuine smiles, eyes clearly open.
+```
+Words: `LEGACY, FAMILY, ROOTS, LOVE, GENERATIONS, HOME, ALWAYS, GRACE`
+
+### H23 — baby, soft studio light, close-up
+```
+A close-up of a 1-year-old baby's face, light skin, soft wispy hair,
+softly lit by an even studio light, plain warm-cream background, calm
+curious expression, eyes wide open and bright.
+```
+Words: `NOAH, WONDER, PRECIOUS, NEW, JOY, PURE, BEGIN, LOVE`
+
+### H24 — two young siblings, outdoor bright light
+```
+Two siblings (ages about 4 and 7), light-to-medium skin tone, standing
+close together outdoors in bright natural daylight, plain blurred green
+background, both laughing genuinely, eyes clearly open and bright.
+```
+Words: `SIBLINGS, JOY, TOGETHER, GIGGLE, PLAY, FOREVER, BOND, LIGHT`
+
+### H25 — toddler, big grin, outdoors
+```
+A 3-year-old child with medium skin tone and short curly hair, outdoors
+in soft natural daylight, big genuine open-mouthed grin, plain blurred
+neutral outdoor background, eyes clearly open and bright.
+```
+Words: `SOPHIE, JOY, WONDER, BRIGHT, GIGGLE, PURE, LIGHT, PLAY`
+
 ---
 
-## PawsInWords.com — pets (14)
+## PawsInWords.com — pets (17)
 
 ### P01 — Golden Retriever, outdoor natural light, close-up
 ```
@@ -324,3 +402,30 @@ lighting, plain light-gray background, head turned toward the camera, eye
 clearly open and bright with a visible catchlight.
 ```
 Words: `SKY, BRIGHT, CHEERFUL, FREE, VIBRANT, JOY, LIGHT, SING`
+
+### P15 — senior gray-muzzle cat, warm indoor light
+```
+A close-up of an older cat's face with visible gray/white fur around the
+muzzle, warm soft indoor lamp lighting, plain warm-brown blurred
+background, calm gentle expression, eyes clearly open and soft with a
+visible catchlight.
+```
+Words: `WHISKERS, GENTLE, FAITHFUL, FOREVER, WARM, LOYAL, PEACE, TRUE`
+
+### P16 — dog with graying face, resting pose, golden light
+```
+A close-up of a dog's face with a visibly graying muzzle and around the
+eyes, medium-brown coat, resting calmly, warm soft golden-hour light,
+plain blurred warm background, gentle peaceful expression, eyes clearly
+open and soft with a visible catchlight.
+```
+Words: `BEAR, GENTLE, FAITHFUL, PEACE, FOREVER, LOYAL, WARM, REST`
+
+### P17 — older cat resting in a sunbeam, warm gentle mood
+```
+A cat with a light tabby coat and some visible gray around the face,
+resting in a warm beam of soft window light, plain neutral background,
+calm serene expression, eyes clearly open and soft with a visible
+catchlight.
+```
+Words: `SUNNY, PEACE, GENTLE, WARM, FOREVER, SOFT, LOYAL, TRUE`
