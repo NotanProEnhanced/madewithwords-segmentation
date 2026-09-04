@@ -1263,8 +1263,17 @@ if(BRAND){
     };
     var items=byBrand[BRAND_ID||""];
     var el=document.getElementById("footExamples");
+    // Propagate ?brand= into the links ONLY when it's how we got the brand in the
+    // first place (staging's single hostname, tested via ?brand= all session) -- a
+    // real brand domain (pawsinwords.com) resolves on its own via location.hostname,
+    // so a relative /examples/... link there needs no override and stays clean.
+    // Without this, a footer link generated under ?brand=pawsinwords on staging would
+    // 404 the moment it's clicked: the target URL has no override of its own, and
+    // staging's real hostname doesn't naturally resolve to pawsinwords.
+    var _qsBrand=(_qp.get("brand")||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
+    var _qs=_qsBrand?("?brand="+_qsBrand):"";
     if(el && items && items.length){
-      el.innerHTML=items.map(function(it){ return '<a href="/examples/'+it[0]+'">'+it[1]+'</a>'; }).join(" &middot; ")+'<br>';
+      el.innerHTML=items.map(function(it){ return '<a href="/examples/'+it[0]+_qs+'">'+it[1]+'</a>'; }).join(" &middot; ")+'<br>';
     }
   }catch(e){}
 })();
