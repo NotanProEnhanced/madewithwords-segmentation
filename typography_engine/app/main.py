@@ -3636,6 +3636,273 @@ def guide_page(slug: str, request: Request) -> HTMLResponse:
     return HTMLResponse(html)
 
 
+# Simple line-icon set for the "rich" /examples template (2026-09-04). Hand-authored
+# inline SVG, not fetched from an icon library -- consistent stroke style, 24x24,
+# `currentColor` so each usage site controls its own color via CSS.
+_RICH_ICONS = {
+    "gift": '<rect x="3" y="9" width="18" height="11" rx="1.5"/><path d="M3 13h18"/>'
+            '<path d="M12 9v11"/><path d="M12 9c-2-4-7-4-7-1 0 1.5 2 1 7 1Z"/>'
+            '<path d="M12 9c2-4 7-4 7-1 0 1.5-2 1-7 1Z"/>',
+    "heart": '<path d="M12 20.5S3 14.8 3 8.9C3 5.8 5.4 4 7.8 4c1.7 0 3.3.9 4.2 2.4'
+             'C13 4.9 14.6 4 16.2 4 18.6 4 21 5.8 21 8.9c0 5.9-9 11.6-9 11.6Z"/>',
+    "shield": '<path d="M12 3l7 3v6c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3Z"/><path d="M9 12l2 2 4-4.5"/>',
+    "baby": '<rect x="9" y="8" width="6" height="12" rx="2"/><rect x="10" y="4" width="4" height="4" rx="1"/>'
+            '<path d="M9 12h6"/>',
+    "crib": '<rect x="4" y="7" width="16" height="9" rx="1.5"/><path d="M7 16v3M17 16v3"/>'
+            '<path d="M4 11h16"/><path d="M12 3v4"/><circle cx="12" cy="2.5" r=".8" fill="currentColor" stroke="none"/>',
+    "cake": '<rect x="4" y="12" width="16" height="8" rx="1.5"/><path d="M4 16h16"/>'
+            '<path d="M9 12V9M12 12V9M15 12V9"/>'
+            '<path d="M9 6.5c0-1 .8-1.2.8-2S9 3 9 3M12 6.5c0-1 .8-1.2.8-2S12 3 12 3M15 6.5c0-1 .8-1.2.8-2S15 3 15 3"/>',
+    "siblings": '<circle cx="8.5" cy="7" r="2.5"/><path d="M3.5 20v-2a5 5 0 0 1 10 0v2"/>'
+                '<circle cx="17" cy="9" r="2"/><path d="M13.5 20v-1.5a4 4 0 0 1 7 0V20"/>',
+    "grad": '<path d="M2 9l10-4 10 4-10 4-10-4Z"/><path d="M6 11v4c0 1.5 2.7 3 6 3s6-1.5 6-3v-4"/><path d="M20 9v6"/>',
+}
+
+
+def _rich_icon(key: str) -> str:
+    body = _RICH_ICONS.get(key, "")
+    return (f'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" '
+            f'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{body}</svg>')
+
+
+def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
+                        hero_img: str, slug: str, base: str, host: str) -> str:
+    """The editorial /examples template (2026-09-04) -- hero, before/after cards with
+    real captions and word tags, a zoomed 'look closer' detail section, a stage-icon
+    row, and a closing CTA. Reuses the site's actual design tokens (navy/paper/ink,
+    self-hosted Inter) rather than inventing a new visual language. No fabricated
+    testimonial -- every image on this page is a synthetic/stock photo, not a real
+    customer, so a quote attributed to a "happy customer" would be a fake testimonial
+    on a real business site. Opt-in per category via cat["template"] == "rich"; every
+    other category keeps the simpler default template."""
+    import html as _h
+    import json as _j
+
+    by_id = {img["id"]: img for img in cat["images"]}
+    hero = by_id.get(cat.get("hero_id", ""))
+    detail = by_id.get(cat.get("detail_id", ""))
+
+    cards = ""
+    for img in pairs:
+        iid = _h.escape(img["id"])
+        label = _h.escape(img["label"])
+        caption = _h.escape(img.get("caption") or img["label"])
+        words_disp = " &middot; ".join(
+            _h.escape(w.strip()) for w in img.get("words", "").split(",") if w.strip())
+        cards += (
+            f'<figure class="pair">'
+            f'<div class="slide">'
+            f'<img class="after" src="/static/examples/{slug}/{iid}-after.png" alt="{label}" loading="lazy" decoding="async">'
+            f'<img class="before" id="rb-{iid}" src="/static/examples/{slug}/{iid}-before.jpg" alt="Original source photo for {label}" loading="lazy" decoding="async" style="clip-path:inset(0 50% 0 0)">'
+            f'<div class="handle" id="rh-{iid}" style="left:50%"></div>'
+            f'<span class="tag tag-l">Photo</span><span class="tag tag-r">{_h.escape(site["name"])}</span>'
+            f'<a class="viewdetail" href="/static/examples/{slug}/{iid}-after.png" target="_blank" rel="noopener" '
+            f'aria-label="View full-size image of {label}">&#128269; View detail</a>'
+            f'<input type="range" class="cmpr-overlay" min="0" max="100" value="50" aria-label="Drag to compare {label}" '
+            f'oninput="document.getElementById(\'rb-{iid}\').style.clipPath=\'inset(0 \'+(100-this.value)+\'% 0 0)\';'
+            f'document.getElementById(\'rh-{iid}\').style.left=this.value+\'%\'">'
+            f'</div>'
+            f'<figcaption><b>{caption}</b><span class="tags">{words_disp}</span></figcaption>'
+            f'</figure>'
+        )
+
+    features_html = "".join(
+        f'<div class="feat"><span class="ico">{_rich_icon(k)}</span><span>{_h.escape(t)}</span></div>'
+        for k, t in cat.get("features", []))
+    stages_html = "".join(
+        f'<div class="stage"><span class="ico">{_rich_icon(k)}</span><span>{_h.escape(t)}</span></div>'
+        for k, t in cat.get("stages", []))
+
+    faq_html = "".join(
+        f'<div class="qa"><h3>{_h.escape(q)}</h3><p>{_h.escape(a)}</p></div>'
+        for q, a in cat.get("faq", []))
+    faq_ld = [{"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}}
+              for q, a in cat.get("faq", [])]
+    list_items = [{"@type": "ListItem", "position": i + 1, "name": img.get("caption") or img["label"]}
+                  for i, img in enumerate(pairs)]
+
+    # Same logic as the simple template: carry ?brand= into cross-links only when this
+    # host's own Host header wouldn't naturally resolve to this brand on its own.
+    _host_only_brand = _site_brand(host=host)["fav"]
+    _qs = f"?brand={cat['brand']}" if _host_only_brand != cat["brand"] else ""
+
+    more_links = ""
+    for oslug, ocat in examples_content.EXAMPLES.items():
+        if oslug == slug or ocat["brand"] != cat["brand"]:
+            continue
+        oex_dir = STATIC_DIR / "examples" / oslug
+        oready = any((oex_dir / f"{img['id']}-before.jpg").exists()
+                     and (oex_dir / f"{img['id']}-after.png").exists()
+                     for img in ocat["images"])
+        if not oready:
+            continue
+        more_links += f'<a href="/examples/{_h.escape(oslug)}{_qs}">{_h.escape(ocat.get("nav_label", ocat["h1"]))}</a>'
+    more_html = f'<nav class="more"><b>More examples:</b>{more_links}</nav>' if more_links else ""
+
+    ld = _j.dumps({
+        "@context": "https://schema.org",
+        "@graph": [
+            {"@type": "CollectionPage", "name": cat["h1"], "description": cat["meta"],
+             "url": page_url, "isPartOf": {"@type": "WebSite", "name": site["name"], "url": base + "/"},
+             "mainEntity": {"@type": "ItemList", "numberOfItems": len(pairs), "itemListElement": list_items}},
+            {"@type": "FAQPage", "mainEntity": faq_ld},
+        ],
+    })
+
+    hero_after = f'/static/examples/{slug}/{_h.escape(hero["id"])}-after.png' if hero else ""
+    detail_after = f'/static/examples/{slug}/{_h.escape(detail["id"])}-after.png' if detail else ""
+
+    return f"""<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_h.escape(cat['title'])}</title>
+<meta name="description" content="{_h.escape(cat['meta'])}">
+<link rel="canonical" href="{_h.escape(page_url)}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{_h.escape(cat['h1'])}">
+<meta property="og:description" content="{_h.escape(cat['meta'])}">
+<meta property="og:url" content="{_h.escape(page_url)}">
+{f'<meta property="og:image" content="{_h.escape(hero_img)}">' if hero_img else ''}
+<script type="application/ld+json">{ld}</script>
+<style>
+  @font-face{{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;
+    src:url('/static/fonts/InterVariable.woff2') format('woff2')}}
+  @font-face{{font-family:'Inter';font-style:italic;font-weight:100 900;font-display:swap;
+    src:url('/static/fonts/InterVariable-Italic.woff2') format('woff2')}}
+  :root{{color-scheme:light;--navy:#0d1b3a;--ink:#1d1d1f;--paper:#f8f6f3;--card:#fff;
+    --muted:#6f6a66;--line:#ded8d2;--soft:#f3f1ee;--radius:28px}}
+  *{{box-sizing:border-box}}
+  body{{margin:0;background:var(--paper);color:var(--ink);font-family:'Inter',-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased}}
+  .wrap{{max-width:1180px;margin:0 auto;padding:0 28px}}
+  nav.top{{display:flex;align-items:center;justify-content:space-between;padding:22px 28px;
+    max-width:1180px;margin:0 auto}}
+  .brand{{font-size:20px;font-weight:800;letter-spacing:.06em;color:var(--navy);text-decoration:none}}
+  .navcta{{background:var(--navy);color:#fff;text-decoration:none;font-weight:600;font-size:14px;
+    padding:11px 20px;border-radius:20px}}
+  .navcta:hover{{opacity:.9}}
+  .hero{{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center;padding:20px 28px 56px;
+    max-width:1180px;margin:0 auto}}
+  .eyebrow{{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--navy);
+    opacity:.75;margin-bottom:10px}}
+  h1{{font-size:clamp(30px,3.4vw,44px);line-height:1.15;margin:0 0 18px;color:var(--navy);text-wrap:balance}}
+  .subhead{{font-size:16.5px;line-height:1.6;color:var(--muted);max-width:52ch;margin:0 0 26px}}
+  .hero-ctas{{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:30px}}
+  .cta-primary{{background:var(--navy);color:#fff;text-decoration:none;font-weight:700;font-size:15px;
+    padding:15px 24px;border-radius:12px;display:inline-block}}
+  .cta-primary:hover{{opacity:.92}}
+  .cta-secondary{{background:#fff;color:var(--navy);text-decoration:none;font-weight:700;font-size:15px;
+    padding:15px 24px;border-radius:12px;border:1px solid var(--line);display:inline-flex;align-items:center;gap:8px}}
+  .mini-features{{display:flex;flex-wrap:wrap;gap:22px}}
+  .feat{{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted);max-width:170px}}
+  .feat .ico{{flex:none;width:26px;height:26px;color:var(--navy)}}
+  .feat .ico svg{{width:100%;height:100%}}
+  .hero-image{{position:relative}}
+  .hero-image img{{width:100%;border-radius:var(--radius);display:block;box-shadow:0 12px 40px rgba(13,27,58,.14)}}
+  .hero-note{{position:absolute;top:-6px;right:-14px;font-style:italic;font-weight:600;font-size:15px;
+    color:var(--navy);line-height:1.5;transform:rotate(2deg);max-width:150px;display:none}}
+  @media(min-width:860px){{.hero-note{{display:block}}}}
+  .grid-section{{padding:8px 28px 8px;max-width:1180px;margin:0 auto}}
+  .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:26px}}
+  .pair{{margin:0}}
+  .slide{{position:relative;aspect-ratio:4/5;overflow:hidden;border-radius:20px;background:#111}}
+  .slide img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}}
+  .handle{{position:absolute;top:0;bottom:0;width:2px;background:rgba(255,255,255,.9);pointer-events:none}}
+  .tag{{position:absolute;top:12px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:#fff;background:rgba(0,0,0,.5);padding:4px 10px;border-radius:20px}}
+  .tag-l{{left:12px}} .tag-r{{right:12px}}
+  .viewdetail{{position:absolute;right:12px;bottom:14px;font-size:12px;font-weight:600;color:#fff;
+    background:rgba(0,0,0,.55);padding:7px 13px;border-radius:20px;text-decoration:none}}
+  .viewdetail:hover{{background:rgba(0,0,0,.75)}}
+  input.cmpr-overlay{{position:absolute;left:8px;right:8px;bottom:-2px;width:calc(100% - 16px);opacity:0;
+    height:34px;cursor:ew-resize}}
+  figcaption{{padding-top:14px;font-size:14px}}
+  figcaption b{{display:block;color:var(--navy);font-weight:700;margin-bottom:5px;letter-spacing:.02em}}
+  figcaption .tags{{display:block;color:var(--muted);font-size:12px;letter-spacing:.02em;line-height:1.6}}
+  .detail-section{{display:grid;grid-template-columns:1.1fr 1fr;gap:0;align-items:stretch;margin:64px 0 8px;
+    background:var(--soft);border-radius:var(--radius);overflow:hidden}}
+  .detail-crop{{position:relative;min-height:340px;overflow:hidden}}
+  .detail-crop img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 22%;
+    transform:scale(1.7)}}
+  .detail-arrow{{position:absolute;left:16px;top:16px;font-style:italic;font-weight:600;font-size:14px;
+    color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.5);line-height:1.5;max-width:130px}}
+  .detail-text{{padding:44px 44px}}
+  .detail-text h2{{font-size:clamp(22px,2.4vw,30px);color:var(--navy);line-height:1.25;margin:0 0 14px}}
+  .detail-text p{{color:var(--muted);font-size:15px;line-height:1.6;margin:0 0 24px;max-width:46ch}}
+  @media(max-width:820px){{.detail-section{{grid-template-columns:1fr}} .detail-crop{{min-height:260px}}}}
+  .stages{{padding:56px 28px 12px;max-width:1180px;margin:0 auto}}
+  .stages-eyebrow{{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--navy);opacity:.75;margin-bottom:22px}}
+  .stages-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:22px}}
+  .stage{{display:flex;flex-direction:column;align-items:flex-start;gap:10px;font-size:13.5px;font-weight:600;
+    color:var(--ink)}}
+  .stage .ico{{width:44px;height:44px;border-radius:50%;background:var(--soft);color:var(--navy);
+    display:flex;align-items:center;justify-content:center}}
+  .stage .ico svg{{width:22px;height:22px}}
+  .closing{{margin:56px 0 0;background:var(--navy);border-radius:var(--radius);padding:52px 44px;color:#fff}}
+  .closing h2{{font-size:clamp(22px,2.6vw,30px);margin:0 0 10px;max-width:20ch}}
+  .closing p{{color:#c9d0de;font-size:15.5px;margin:0 0 24px}}
+  .closing .cta-primary{{background:#fff;color:var(--navy)}}
+  .more{{margin:36px 28px 0;max-width:1180px;margin-left:auto;margin-right:auto;font-size:14px;
+    display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline}}
+  .more b{{color:var(--ink);font-weight:700}}
+  .more a{{color:var(--navy);text-decoration:none}}
+  .more a:hover{{text-decoration:underline}}
+  .faq{{max-width:1180px;margin:44px auto 80px;padding:32px 28px 0;border-top:1px solid var(--line)}}
+  .qa{{margin:0 0 20px}}
+  .qa h3{{font-size:16px;margin:0 0 4px;color:var(--navy)}}
+  .qa p{{margin:0;color:var(--muted)}}
+</style>
+</head><body>
+<nav class="top"><a class="brand" href="/">TYPORTRAIT</a><a class="navcta" href="/">Create Your Portrait</a></nav>
+
+<section class="hero">
+  <div class="hero-text">
+    <div class="eyebrow">{_h.escape(cat['eyebrow'])}</div>
+    <h1>{cat['h1']}</h1>
+    <p class="subhead">{_h.escape(cat.get('subhead', ''))}</p>
+    <div class="hero-ctas">
+      <a class="cta-primary" href="/">Create Their Typortrait &rarr;</a>
+      <a class="cta-secondary" href="#examples">See examples below</a>
+    </div>
+    <div class="mini-features">{features_html}</div>
+  </div>
+  <div class="hero-image">
+    {f'<img src="{hero_after}" alt="{_h.escape(hero.get("label",""))}">' if hero_after else ''}
+    <div class="hero-note">{cat.get('hero_note', '')}</div>
+  </div>
+</section>
+
+<section class="grid-section" id="examples">
+  <div class="grid">{cards}</div>
+</section>
+
+{f'''<section class="detail-section">
+  <div class="detail-crop"><img src="{detail_after}" alt="{_h.escape(detail.get("label","")) if detail else ""}">
+    <div class="detail-arrow">Look closer. Every detail is made from words.</div>
+  </div>
+  <div class="detail-text">
+    <h2>{cat.get('detail_head','')}</h2>
+    <p>{_h.escape(cat.get('detail_sub',''))}</p>
+    <a class="cta-primary" href="/">Create Their Typortrait &rarr;</a>
+  </div>
+</section>''' if detail_after else ''}
+
+<section class="stages">
+  <div class="stages-eyebrow">Perfect for every stage</div>
+  <div class="stages-grid">{stages_html}</div>
+</section>
+
+<section class="closing">
+  <h2>{_h.escape(cat.get('closing_head',''))}</h2>
+  <p>{_h.escape(cat.get('closing_sub',''))}</p>
+  <a class="cta-primary" href="/">Create Their Typortrait &rarr;</a>
+</section>
+
+{more_html}
+<div class="faq">{faq_html}</div>
+</body></html>"""
+
+
 @app.api_route("/examples/{slug}", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def examples_page(slug: str, request: Request) -> HTMLResponse:
     """SEO showcase page: a category of real before/after pairs (source photo ->
@@ -3674,6 +3941,9 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
         if not hero_img:
             hero_img = f"{base}/static/examples/{slug}/{iid}-after.png"
         list_items.append({"@type": "ListItem", "position": len(pairs), "name": img["label"]})
+
+    if cat.get("template") == "rich":
+        return HTMLResponse(_rich_examples_html(cat, pairs, site, page_url, hero_img, slug, base, host))
 
     cards = ""
     for img in pairs:
@@ -3721,7 +3991,7 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
                      for img in ocat["images"])
         if not oready:
             continue
-        more_links += f'<a href="/examples/{_h.escape(oslug)}{_qs}">{_h.escape(ocat["h1"])}</a>'
+        more_links += f'<a href="/examples/{_h.escape(oslug)}{_qs}">{_h.escape(ocat.get("nav_label", ocat["h1"]))}</a>'
     more_html = (f'<nav class="more"><b>More examples:</b>{more_links}</nav>'
                 if more_links else "")
 

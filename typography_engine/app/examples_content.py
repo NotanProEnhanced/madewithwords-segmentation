@@ -126,8 +126,32 @@ EXAMPLES = {
     },
     "kids-baby-portraits": {
         "brand": "typortrait",
-        "eyebrow": "Nursery & Keepsake",
-        "h1": "Kids & Baby Portraits",
+        "template": "rich",   # editorial layout (2026-09-04) -- see _rich_examples_html().
+        "eyebrow": "Kids & Baby Typortraits",
+        "h1": "A portrait of who they are, in the words that make them who they are.",
+        "nav_label": "Kids & Baby Portraits",   # short label for cross-link nav text; h1 here is a full sentence
+        "subhead": ("They change faster than you think. Capture who they are right now "
+                    "in a portrait created entirely from words — their name, the things "
+                    "they love, the people they love, and the little details you'll "
+                    "always remember."),
+        "hero_note": "Their smile. Their spirit.<br>Their story.<br>All in words.",
+        "hero_id": "H06",
+        "detail_id": "H23",
+        "detail_head": "From across the room,<br>it's their portrait.<br>Up close, it's their story.",
+        "detail_sub": ("Every smile, every curl, every detail is created from the words "
+                       "you choose. Personal, meaningful, and unlike anything else."),
+        "closing_head": "They're only this little once.",
+        "closing_sub": "Make a portrait from the words you'll always remember.",
+        "features": [
+            ("gift", "A meaningful gift for any occasion"),
+            ("heart", "Beautiful at any size"),
+            ("shield", "Your photos stay yours"),
+        ],
+        "stages": [
+            ("baby", "New Baby"), ("crib", "Nursery"), ("cake", "Birthdays"),
+            ("siblings", "Siblings"), ("heart", "Grandparents"),
+            ("gift", "Mother's & Father's Day"), ("grad", "And Beyond"),
+        ],
         "title": "Kids & Baby Portraits for the Nursery — Typortrait",
         "meta": ("A baby or child's portrait built from your own photo and their "
                  "name — nursery art or a keepsake that grows with them."),
@@ -151,13 +175,13 @@ EXAMPLES = {
              "specifics."),
         ],
         "images": [
-            {"id": "H06", "label": "Child portrait, laughing, word art",
+            {"id": "H06", "label": "Child portrait, laughing, word art", "caption": "Annie, Age 5",
              "words": "ANNIE, JOY, WONDER, BRIGHT, GIGGLE, FREE, LIGHT, PLAY"},
-            {"id": "H23", "label": "Baby portrait, nursery word art",
+            {"id": "H23", "label": "Baby portrait, nursery word art", "caption": "Noah, Age 1",
              "words": "NOAH, WONDER, PRECIOUS, NEW, JOY, PURE, BEGIN, LOVE"},
-            {"id": "H24", "label": "Siblings portrait, word art",
+            {"id": "H24", "label": "Siblings portrait, word art", "caption": "Siblings, Ages 4 & 7",
              "words": "SIBLINGS, JOY, TOGETHER, GIGGLE, PLAY, FOREVER, BOND, LIGHT"},
-            {"id": "H25", "label": "Toddler portrait, word art",
+            {"id": "H25", "label": "Toddler portrait, word art", "caption": "Noah, Age 3",
              "words": "NOAH, JOY, WONDER, BRIGHT, GIGGLE, PURE, LIGHT, PLAY"},
         ],
     },
