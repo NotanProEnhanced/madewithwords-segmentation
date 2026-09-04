@@ -3679,6 +3679,8 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
     for img in pairs:
         iid = _h.escape(img["id"])
         label = _h.escape(img["label"])
+        words_disp = " &middot; ".join(
+            _h.escape(w.strip()) for w in img.get("words", "").split(",") if w.strip())
         cards += (
             f'<figure class="pair">'
             f'<div class="slide">'
@@ -3692,7 +3694,9 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
             f'<input type="range" class="cmpr" min="0" max="100" value="50" aria-label="Drag to compare {label}" '
             f'oninput="document.getElementById(\'b-{iid}\').style.clipPath=\'inset(0 \'+(100-this.value)+\'% 0 0)\';'
             f'document.getElementById(\'h-{iid}\').style.left=this.value+\'%\'">'
-            f'<figcaption>{label}</figcaption>'
+            f'<figcaption>{label}'
+            + (f'<span class="words">Words: {words_disp}</span>' if words_disp else '')
+            + '</figcaption>'
             f'</figure>'
         )
 
@@ -3750,6 +3754,8 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
   .viewlg:hover,.viewlg:focus-visible{{background:rgba(0,0,0,.75)}}
   input.cmpr{{width:100%;margin:10px 0 4px;accent-color:var(--accent)}}
   figcaption{{font-size:13px;color:var(--sub)}}
+  figcaption .words{{display:block;margin-top:3px;font-size:11.5px;letter-spacing:.02em;
+    color:var(--sub);opacity:.8}}
   .faq{{margin-top:48px;border-top:1px solid var(--line);padding-top:28px}}
   .qa{{margin:0 0 20px}}
   .qa h3{{font-size:16px;margin:0 0 4px}}
