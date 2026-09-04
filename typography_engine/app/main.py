@@ -3656,6 +3656,14 @@ _RICH_ICONS = {
     "siblings": '<circle cx="8.5" cy="7" r="2.5"/><path d="M3.5 20v-2a5 5 0 0 1 10 0v2"/>'
                 '<circle cx="17" cy="9" r="2"/><path d="M13.5 20v-1.5a4 4 0 0 1 7 0V20"/>',
     "grad": '<path d="M2 9l10-4 10 4-10 4-10-4Z"/><path d="M6 11v4c0 1.5 2.7 3 6 3s6-1.5 6-3v-4"/><path d="M20 9v6"/>',
+    "star": '<path d="M12 3l2.6 5.9 6.4.6-4.8 4.3 1.4 6.2L12 16.9 6.4 20l1.4-6.2-4.8-4.3 6.4-.6L12 3Z"/>',
+    "sun": '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v3M12 18.5v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1'
+           'M2.5 12h3M18.5 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+    "ring": '<circle cx="9" cy="14" r="4.3"/><circle cx="15" cy="14" r="4.3"/><path d="M10 9.5l2-5 2 5"/>',
+    "home": '<path d="M4 11l8-7 8 7"/><path d="M6 10v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-9"/><path d="M10 20v-6h4v6"/>',
+    "paw": '<circle cx="7" cy="9" r="1.8"/><circle cx="12" cy="6.5" r="1.8"/><circle cx="17" cy="9" r="1.8"/>'
+           '<path d="M12 12c-3.2 0-5.5 2.1-5.5 4.6 0 1.9 1.6 2.9 3.3 2.4.9-.3 1.5-.8 2.2-.8s1.3.5 2.2.8'
+           'c1.7.5 3.3-.5 3.3-2.4 0-2.5-2.3-4.6-5.5-4.6Z"/>',
 }
 
 
@@ -3887,10 +3895,10 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
   </div>
 </section>''' if detail_after else ''}
 
-<section class="stages">
-  <div class="stages-eyebrow">Perfect for every stage</div>
+{f'''<section class="stages">
+  <div class="stages-eyebrow">{_h.escape(cat.get('stages_label', 'Perfect for every occasion'))}</div>
   <div class="stages-grid">{stages_html}</div>
-</section>
+</section>''' if stages_html else ''}
 
 <section class="closing">
   <h2>{_h.escape(cat.get('closing_head',''))}</h2>

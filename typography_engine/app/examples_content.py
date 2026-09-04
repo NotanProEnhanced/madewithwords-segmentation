@@ -15,8 +15,31 @@ every photo exists, and fills in as files are added with no code change.
 EXAMPLES = {
     "portraits-for-parents-grandparents": {
         "brand": "typortrait",
-        "eyebrow": "Gift Guide",
-        "h1": "Portrait Gifts for Parents & Grandparents",
+        "template": "rich",
+        "eyebrow": "Gifts for Parents & Grandparents",
+        "h1": "A portrait of the people who raised you, made from the words that describe them.",
+        "nav_label": "Gifts for Parents & Grandparents",
+        "subhead": ("Some gifts get used once and forgotten. This one goes on the wall — a "
+                    "portrait built from a photo you already love and the words that have "
+                    "always described them: their name, their grandchildren's names, the "
+                    "qualities everyone already knows are true."),
+        "hero_note": "Their wisdom.<br>Their warmth.<br>Their whole story.<br>In words.",
+        "hero_id": "H04", "detail_id": "H05",
+        "detail_head": "From across the room,<br>it's their portrait.<br>Up close, it's everything<br>you love about them.",
+        "detail_sub": ("Every line, every feature, every detail is built from words you "
+                       "choose — a gift that means more than another card ever could."),
+        "closing_head": "Give them something that lasts.",
+        "closing_sub": "A portrait made from the words that have always described them.",
+        "features": [
+            ("gift", "A meaningful gift for any occasion"),
+            ("heart", "Beautiful at any size"),
+            ("shield", "Your photos stay yours"),
+        ],
+        "stages_label": "A gift for every occasion",
+        "stages": [
+            ("gift", "Mother's Day"), ("gift", "Father's Day"), ("cake", "Milestone Birthdays"),
+            ("heart", "Grandparents Day"), ("star", "Retirement"), ("sun", "Just Because"),
+        ],
         "title": "Portrait Gifts for Parents & Grandparents — Typortrait",
         "meta": ("A meaningful gift for Mom, Dad, or grandparents: a portrait built "
                  "from their photo and the words that describe them — more lasting "
@@ -43,20 +66,43 @@ EXAMPLES = {
              "buy. Prints ship separately once you order."),
         ],
         "images": [
-            {"id": "H04", "label": "Grandmother portrait, word art gift",
+            {"id": "H04", "label": "Grandmother portrait, word art gift", "caption": "Eleanor, Grandmother",
              "words": "ELEANOR, WISDOM, GRACE, GENTLE, TIMELESS, LOVE, PEACE, HOME"},
-            {"id": "H05", "label": "Grandfather portrait, golden-hour word art",
+            {"id": "H05", "label": "Grandfather portrait, golden-hour word art", "caption": "William, Grandfather",
              "words": "WILLIAM, LEGACY, STRENGTH, WISDOM, STEADY, HONOR, TIME, GRACE"},
-            {"id": "H15", "label": "Mother portrait, word art keepsake",
+            {"id": "H15", "label": "Mother portrait, word art keepsake", "caption": "Ruth, Mom",
              "words": "RUTH, GRACE, WISDOM, WARM, GENTLE, HONOR, TIMELESS, LOVE"},
-            {"id": "H16", "label": "Father portrait, word art gift",
+            {"id": "H16", "label": "Father portrait, word art gift", "caption": "Robert, Dad",
              "words": "ROBERT, STEADY, DEPTH, WISE, CALM, ANCHOR, STRONG, TRUE"},
         ],
     },
     "couple-anniversary-portraits": {
         "brand": "typortrait",
-        "eyebrow": "Gift Guide",
-        "h1": "Couple & Anniversary Portraits",
+        "template": "rich",
+        "eyebrow": "Couple & Anniversary Typortraits",
+        "h1": "A portrait of the two of you, made from the words that are actually yours.",
+        "nav_label": "Couple & Anniversary Portraits",
+        "subhead": ("An anniversary, an engagement, a wedding gift for someone else's — the "
+                    "occasion changes, the idea doesn't: a portrait built from your own photo "
+                    "and the words that are yours alone. Your names, your date, the line from "
+                    "your vows that mattered."),
+        "hero_note": "Your story.<br>Your words.<br>Just the two of you.",
+        "hero_id": "H10", "detail_id": "H19",
+        "detail_head": "From across the room,<br>it's your portrait.<br>Up close, it's your<br>whole story together.",
+        "detail_sub": ("Every detail is built from the words you choose — your names, your "
+                       "date, whatever's actually yours."),
+        "closing_head": "Some stories deserve more than a photo.",
+        "closing_sub": "Make a portrait from the words that are yours.",
+        "features": [
+            ("gift", "A meaningful gift for any occasion"),
+            ("heart", "Beautiful at any size"),
+            ("shield", "Your photos stay yours"),
+        ],
+        "stages_label": "A gift for every chapter",
+        "stages": [
+            ("ring", "Engagement"), ("ring", "Wedding Gift"), ("heart", "First Anniversary"),
+            ("star", "Milestone Anniversary"), ("sun", "Just Because"),
+        ],
         "title": "Couple & Anniversary Portraits — Typortrait",
         "meta": ("An anniversary or wedding gift that's actually about the two of "
                  "you: a portrait built from your own photo and the words of your "
@@ -81,18 +127,41 @@ EXAMPLES = {
              "prints ship separately."),
         ],
         "images": [
-            {"id": "H10", "label": "Couple portrait, word art gift",
+            {"id": "H10", "label": "Couple portrait, word art gift", "caption": "Together",
              "words": "TOGETHER, LOVE, US, FOREVER, HOME, JOURNEY, TRUST, GROW"},
-            {"id": "H19", "label": "Couple portrait at golden hour, word art",
+            {"id": "H19", "label": "Couple portrait at golden hour, word art", "caption": "Golden Hour",
              "words": "TOGETHER, FOREVER, US, JOURNEY, LOVE, HOME, GROW, ALWAYS"},
-            {"id": "H20", "label": "Senior couple anniversary portrait, word art",
+            {"id": "H20", "label": "Senior couple anniversary portrait, word art", "caption": "Anniversary",
              "words": "ANNIVERSARY, TIMELESS, US, FOREVER, GRACE, JOURNEY, LOVE, HOME"},
         ],
     },
     "family-portraits": {
         "brand": "typortrait",
-        "eyebrow": "Gift Guide",
-        "h1": "Family Portraits",
+        "template": "rich",
+        "eyebrow": "Family Typortraits",
+        "h1": "A family portrait made from the words that are actually yours.",
+        "nav_label": "Family Portraits",
+        "subhead": ("Most family photos end up on a phone and nowhere else. This turns one "
+                    "into something meant to be looked at — a portrait built from your "
+                    "family's own names, a shared nickname, the words that describe your "
+                    "household."),
+        "hero_note": "Your family.<br>Your words.<br>All in one frame.",
+        "hero_id": "H11", "detail_id": "H21",
+        "detail_head": "From across the room,<br>it's your family.<br>Up close, it's every<br>name that belongs to it.",
+        "detail_sub": ("Every detail is built from your own words — last names, nicknames, "
+                       "whatever your family actually calls itself."),
+        "closing_head": "Your family, in your own words.",
+        "closing_sub": "A portrait built from your photo and the words that describe your household.",
+        "features": [
+            ("gift", "A meaningful gift for any occasion"),
+            ("heart", "Beautiful at any size"),
+            ("shield", "Your photos stay yours"),
+        ],
+        "stages_label": "For every family",
+        "stages": [
+            ("home", "New House"), ("siblings", "Reunions"), ("cake", "Milestone Birthdays"),
+            ("gift", "Holiday Gifts"), ("sun", "Just Because"),
+        ],
         "title": "Family Portraits, Woven From Your Own Words — Typortrait",
         "meta": ("A family portrait built from your own photo and the names and "
                  "words that belong to your family — for the wall, not the drawer."),
@@ -114,13 +183,13 @@ EXAMPLES = {
              "few words that describe them — but it's entirely your choice."),
         ],
         "images": [
-            {"id": "H11", "label": "Family portrait, word art",
+            {"id": "H11", "label": "Family portrait, word art", "caption": "Family",
              "words": "FAMILY, TOGETHER, HOME, LOVE, JOY, GROW, ALWAYS, US"},
-            {"id": "H18", "label": "Friends group portrait, word art",
+            {"id": "H18", "label": "Friends group portrait, word art", "caption": "Friends",
              "words": "FRIENDS, TOGETHER, JOY, US, ALWAYS, HOME, LAUGH, TRUE"},
-            {"id": "H21", "label": "Family of four portrait, word art",
+            {"id": "H21", "label": "Family of four portrait, word art", "caption": "Family of Four",
              "words": "FAMILY, TOGETHER, HOME, GROW, LOVE, ALWAYS, US, ROOTS"},
-            {"id": "H22", "label": "Three-generation family portrait, word art",
+            {"id": "H22", "label": "Three-generation family portrait, word art", "caption": "Three Generations",
              "words": "LEGACY, FAMILY, ROOTS, LOVE, GENERATIONS, HOME, ALWAYS, GRACE"},
         ],
     },
@@ -187,8 +256,30 @@ EXAMPLES = {
     },
     "dog-portraits": {
         "brand": "pawsinwords",
-        "eyebrow": "Gift Guide",
-        "h1": "Dog Portraits, Made From Their Photo",
+        "template": "rich",
+        "eyebrow": "Dog Typortraits",
+        "h1": "A portrait of your dog, made from the words that are actually theirs.",
+        "nav_label": "Dog Portraits",
+        "subhead": ("Anyone can print a photo of their dog. This builds a portrait out of "
+                    "one instead — their name, the nicknames, the words every dog owner "
+                    "already uses, woven into a likeness that's unmistakably yours."),
+        "hero_note": "Their name.<br>Their spirit.<br>Their whole personality.<br>In words.",
+        "hero_id": "P01", "detail_id": "P02",
+        "detail_head": "From across the room,<br>it's their portrait.<br>Up close, it's every detail<br>that makes them them.",
+        "detail_sub": ("Every strand, every expression is built from the words you choose — "
+                       "their name, their nicknames, whatever's actually theirs."),
+        "closing_head": "They're part of the family too.",
+        "closing_sub": "Make a portrait from the words that are actually theirs.",
+        "features": [
+            ("gift", "A meaningful gift for any dog lover"),
+            ("heart", "Beautiful at any size"),
+            ("shield", "Your photos stay yours"),
+        ],
+        "stages_label": "For every dog",
+        "stages": [
+            ("paw", "New Puppy"), ("sun", "Gotcha Day"), ("cake", "Birthdays"),
+            ("gift", "Holiday Gifts"), ("heart", "Just Because"),
+        ],
         "title": "Custom Dog Portraits, Word Art — Paws in Words",
         "meta": ("A custom dog portrait built from your own photo and the words "
                  "that describe them — their name, their quirks, their whole "
@@ -212,26 +303,49 @@ EXAMPLES = {
              "describe them."),
         ],
         "images": [
-            {"id": "P01", "label": "Golden Retriever word art portrait",
+            {"id": "P01", "label": "Golden Retriever word art portrait", "caption": "Buddy, Golden Retriever",
              "words": "BUDDY, LOYAL, JOY, GOLDEN, FAITHFUL, FRIEND, HAPPY, HOME"},
-            {"id": "P02", "label": "Black Labrador word art portrait",
+            {"id": "P02", "label": "Black Labrador word art portrait", "caption": "Shadow, Black Labrador",
              "words": "SHADOW, LOYAL, STRONG, STEADY, TRUE, GUARD, FAITHFUL, BOLD"},
-            {"id": "P03", "label": "Poodle word art portrait",
+            {"id": "P03", "label": "Poodle word art portrait", "caption": "Coco, Poodle",
              "words": "COCO, SWEET, CURLY, GENTLE, JOY, PRECIOUS, CHARM, LOVE"},
-            {"id": "P04", "label": "Border Collie word art portrait",
+            {"id": "P04", "label": "Border Collie word art portrait", "caption": "Scout, Border Collie",
              "words": "SCOUT, ALERT, SWIFT, LOYAL, SMART, ENERGY, FOCUS, RUN"},
-            {"id": "P08", "label": "Fluffy white dog word art portrait",
+            {"id": "P08", "label": "Fluffy white dog word art portrait", "caption": "Snowy, Samoyed",
              "words": "SNOWY, JOY, BRIGHT, FLUFFY, HAPPY, LIGHT, PLAYFUL, PURE"},
-            {"id": "P11", "label": "Corgi word art portrait",
+            {"id": "P11", "label": "Corgi word art portrait", "caption": "Biscuit, Corgi",
              "words": "BISCUIT, CHEERFUL, GOLDEN, PLAYFUL, JOY, SPUNKY, WARM, FUN"},
-            {"id": "P13", "label": "German Shepherd word art portrait",
+            {"id": "P13", "label": "German Shepherd word art portrait", "caption": "Titan, German Shepherd",
              "words": "TITAN, LOYAL, STRONG, GUARD, NOBLE, STEADY, BRAVE, TRUE"},
         ],
     },
     "cat-portraits": {
         "brand": "pawsinwords",
-        "eyebrow": "Gift Guide",
-        "h1": "Cat Portraits, Made From Their Photo",
+        "template": "rich",
+        "eyebrow": "Cat Typortraits",
+        "h1": "A portrait of your cat, made from the words that are actually theirs.",
+        "nav_label": "Cat Portraits",
+        "subhead": ("Cats don't sit still for much, but a photo is all this needs. The "
+                    "portrait is built from that photo and the words that are actually "
+                    "theirs — a name, a personality trait, whatever your household already "
+                    "calls them."),
+        "hero_note": "Their name.<br>Their attitude.<br>Their whole personality.<br>In words.",
+        "hero_id": "P05", "detail_id": "P06",
+        "detail_head": "From across the room,<br>it's their portrait.<br>Up close, it's every detail<br>that makes them them.",
+        "detail_sub": ("Even on a black coat, the eyes stay bright and real — every detail "
+                       "built from the words you choose."),
+        "closing_head": "They're part of the family too.",
+        "closing_sub": "Make a portrait from the words that are actually theirs.",
+        "features": [
+            ("gift", "A meaningful gift for any cat lover"),
+            ("heart", "Beautiful at any size"),
+            ("shield", "Your photos stay yours"),
+        ],
+        "stages_label": "For every cat",
+        "stages": [
+            ("paw", "New Kitten"), ("sun", "Gotcha Day"), ("cake", "Birthdays"),
+            ("gift", "Holiday Gifts"), ("heart", "Just Because"),
+        ],
         "title": "Custom Cat Portraits, Word Art — Paws in Words",
         "meta": ("A custom cat portrait built from your own photo and the words "
                  "that describe them — a likeness that's unmistakably your cat."),
@@ -255,20 +369,39 @@ EXAMPLES = {
              "Yes — any words you choose, most often a name plus a trait or two."),
         ],
         "images": [
-            {"id": "P05", "label": "Orange tabby cat word art portrait",
+            {"id": "P05", "label": "Orange tabby cat word art portrait", "caption": "Tiger, Orange Tabby",
              "words": "TIGER, CURIOUS, WARM, PLAYFUL, SUNNY, GENTLE, CHARM, HOME"},
-            {"id": "P06", "label": "Black cat word art portrait",
+            {"id": "P06", "label": "Black cat word art portrait", "caption": "Midnight, Black Cat",
              "words": "MIDNIGHT, MYSTERY, SLEEK, CALM, BOLD, QUIET, GRACE, WISE"},
-            {"id": "P07", "label": "Gray cat word art portrait",
+            {"id": "P07", "label": "Gray cat word art portrait", "caption": "Smokey, Gray Cat",
              "words": "SMOKEY, SERENE, GENTLE, ELEGANT, CALM, GRACE, SOFT, TRUE"},
-            {"id": "P12", "label": "Calico cat word art portrait",
+            {"id": "P12", "label": "Calico cat word art portrait", "caption": "Patches, Calico Cat",
              "words": "PATCHES, UNIQUE, SWEET, GENTLE, CHARM, BRIGHT, PLAYFUL, JOY"},
         ],
     },
     "pet-memorial-portraits": {
         "brand": "pawsinwords",
+        "template": "rich",
         "eyebrow": "In Loving Memory",
-        "h1": "Pet Memorial Portraits",
+        "h1": "A gentle way to remember them, made from the words that will always be theirs.",
+        "nav_label": "Pet Memorial Portraits",
+        "subhead": ("Losing a pet doesn't come with the same rituals people get, but the "
+                    "loss is no smaller. This is a quiet way to keep them close — a portrait "
+                    "built from a favorite photo and the words that will always be theirs."),
+        "hero_note": "Their name.<br>Their years.<br>Always loved.",
+        "hero_id": "P09", "detail_id": "P15",
+        "detail_head": "From across the room,<br>it's their portrait.<br>Up close, it's everything<br>you'll always remember.",
+        "detail_sub": ("Every detail is built from the words that will always be theirs — "
+                       "their name, the years, whatever you'll always remember."),
+        "closing_head": "Take your time.",
+        "closing_sub": "There's no rush — the preview is free to see, whenever you're ready.",
+        "features": [
+            ("gift", "A gentle way to remember them"),
+            ("heart", "Beautiful at any size"),
+            ("shield", "Your photos stay yours"),
+        ],
+        # No "stages"/occasions row here on purpose -- an occasions list doesn't fit a
+        # memorial context the way it does for a birthday-gift page.
         "title": "Pet Memorial Portraits, Made From Their Photo — Paws in Words",
         "meta": ("A gentle way to remember a pet: a portrait built from a favorite "
                  "photo and the words that will always describe them."),
@@ -292,13 +425,13 @@ EXAMPLES = {
              "you choose to order."),
         ],
         "images": [
-            {"id": "P09", "label": "Senior dog memorial word art portrait",
+            {"id": "P09", "label": "Senior dog memorial word art portrait", "caption": "Duke",
              "words": "DUKE, GENTLE, FAITHFUL, STEADY, FOREVER, LOYAL, WARM, TRUE"},
-            {"id": "P15", "label": "Senior cat memorial word art portrait",
+            {"id": "P15", "label": "Senior cat memorial word art portrait", "caption": "Whiskers",
              "words": "WHISKERS, GENTLE, FAITHFUL, FOREVER, WARM, LOYAL, PEACE, TRUE"},
-            {"id": "P16", "label": "Dog memorial word art portrait, golden light",
+            {"id": "P16", "label": "Dog memorial word art portrait, golden light", "caption": "Bear",
              "words": "BEAR, GENTLE, FAITHFUL, PEACE, FOREVER, LOYAL, WARM, REST"},
-            {"id": "P17", "label": "Cat memorial word art portrait, resting",
+            {"id": "P17", "label": "Cat memorial word art portrait, resting", "caption": "Sunny",
              "words": "SUNNY, PEACE, GENTLE, WARM, FOREVER, SOFT, LOYAL, TRUE"},
         ],
     },
