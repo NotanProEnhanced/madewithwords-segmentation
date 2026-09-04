@@ -3781,6 +3781,7 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
 
     return f"""<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+{_fav_links(site["fav"])}
 <title>{_h.escape(cat['title'])}</title>
 <meta name="description" content="{_h.escape(cat['meta'])}">
 <link rel="canonical" href="{_h.escape(page_url)}">
@@ -4114,6 +4115,7 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
 
     html = f"""<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+{_fav_links(site["fav"])}
 <title>{_h.escape(cat['title'])}</title>
 <meta name="description" content="{_h.escape(cat['meta'])}">
 <link rel="canonical" href="{_h.escape(page_url)}">
@@ -5385,8 +5387,13 @@ def _notify_sale(sess: dict, order: Optional[dict]) -> None:
 
 def _fav_links(brand: str = "typortrait") -> str:
     """Favicon <link> tags for a server-rendered page. `brand` maps to the studio
-    favicon set at /static/favicons/{brand}/; an unknown brand -> generic typortrait."""
-    b = brand if brand in ("typortrait", "lovedinwords", "everloved", "faithinwords") else "typortrait"
+    favicon set at /static/favicons/{brand}/; an unknown brand -> generic typortrait.
+    "pawsinwords" was missing from this allow-list (2026-09-04) despite a real, complete
+    favicon set already existing on disk at static/favicons/pawsinwords/ -- every
+    existing caller that passes a _site_brand()/_trust_brand() "fav" value through here
+    was silently falling back to the generic Typortrait icon on PawsInWords.com, not
+    just the new /examples pages this fix was made for."""
+    b = brand if brand in ("typortrait", "lovedinwords", "everloved", "faithinwords", "pawsinwords") else "typortrait"
     p = f"/static/favicons/{b}"
     return (f"<link rel='icon' type='image/svg+xml' href='{p}/favicon.svg'>"
             f"<link rel='icon' type='image/png' sizes='32x32' href='{p}/favicon-32.png'>"

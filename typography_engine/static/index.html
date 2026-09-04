@@ -850,7 +850,7 @@
       </div>
     </div>
   </div>
-  <footer><span id="footBrand">Typortrait · typortrait.com</span><br><a href="/terms" target="_blank" rel="noopener">Terms of Use</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> · <a href="/refunds" target="_blank" rel="noopener">Refund Policy</a> · <a href="/biometric-policy" target="_blank" rel="noopener">Biometric Data Policy</a> · <a href="/data-request" target="_blank" rel="noopener">Manage my data</a></footer>
+  <footer><span id="footBrand">Typortrait · typortrait.com</span><br><span id="footExamples"></span><a href="/terms" target="_blank" rel="noopener">Terms of Use</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> · <a href="/refunds" target="_blank" rel="noopener">Refund Policy</a> · <a href="/biometric-policy" target="_blank" rel="noopener">Biometric Data Policy</a> · <a href="/data-request" target="_blank" rel="noopener">Manage my data</a></footer>
 </div>
 
 <div id="zoomView" class="zoomview">
@@ -1246,6 +1246,28 @@ if(BRAND){
     if(_isMemorialBrand) _memorialSetup();
   }catch(e){}
 }
+// Footer links into the /examples showcase pages (2026-09-04) -- server-rendered,
+// brand-gated pages that only exist for Typortrait.com (BRAND_ID "", the generic
+// studio) and PawsInWords.com; every other brand has none yet. Runs unconditionally
+// (not inside `if(BRAND)` above), since the default Typortrait case has BRAND===null
+// and would otherwise never get its own links.
+(function(){
+  try{
+    var byBrand={
+      "":[["portraits-for-parents-grandparents","Gifts for Parents & Grandparents"],
+          ["couple-anniversary-portraits","Couple & Anniversary Portraits"],
+          ["family-portraits","Family Portraits"],
+          ["kids-baby-portraits","Kids & Baby Portraits"]],
+      "pawsinwords":[["dog-portraits","Dog Portraits"],["cat-portraits","Cat Portraits"],
+          ["pet-memorial-portraits","Pet Memorial Portraits"]]
+    };
+    var items=byBrand[BRAND_ID||""];
+    var el=document.getElementById("footExamples");
+    if(el && items && items.length){
+      el.innerHTML=items.map(function(it){ return '<a href="/examples/'+it[0]+'">'+it[1]+'</a>'; }).join(" &middot; ")+'<br>';
+    }
+  }catch(e){}
+})();
 // Memorial-clean studio: on a grief keepsake the Type color axis is friction -- the
 // portrait uses the rich Lifelike ink and families don't want to fuss with word color.
 // Hide it so the Background section rises directly under the style/word steps. Gated on
