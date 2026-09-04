@@ -3808,7 +3808,10 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
   .wrap{{max-width:1180px;margin:0 auto;padding:0 28px}}
   nav.top{{display:flex;align-items:center;justify-content:space-between;padding:22px 28px;
     max-width:1180px;margin:0 auto}}
-  .brand{{font-size:20px;font-weight:800;letter-spacing:.06em;color:var(--navy);text-decoration:none}}
+  .brand{{font-size:20px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--navy);
+    text-decoration:none;display:flex;align-items:center;gap:8px}}
+  .brand-ico{{width:20px;height:20px;color:var(--navy);flex:none}}
+  .brand-ico svg{{width:100%;height:100%}}
   .navcta{{background:var(--navy);color:#fff;text-decoration:none;font-weight:600;font-size:14px;
     padding:11px 20px;border-radius:20px}}
   .navcta:hover{{opacity:.9}}
@@ -3907,7 +3910,7 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
   }}
 </style>
 </head><body>
-<nav class="top"><a class="brand" href="/">TYPORTRAIT</a><a class="navcta" href="/">Create Your Portrait</a></nav>
+<nav class="top"><a class="brand" href="/"><span class="brand-ico">{_rich_icon('paw' if cat['brand'] == 'pawsinwords' else 'heart')}</span>{_h.escape(site['name'])}</a><a class="navcta" href="/">Create Your Portrait</a></nav>
 
 <section class="hero">
   <div class="hero-text">
