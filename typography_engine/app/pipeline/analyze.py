@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from ..config import RenderConfig
 from .edges import EdgeResult, detect_edges
-from .landmarks import FaceLandmarks, detect_faces, haar_face_bbox
+from .landmarks import FaceLandmarks, detect_faces, eyes_closed, haar_face_bbox
 from .preprocess import LoadedImage, load_and_normalize
 from .regions import RegionSet, build_regions
 from .silhouette import Silhouette, extract_silhouette, silhouette_from_mask
@@ -30,6 +30,14 @@ def analyze_image(img_bytes: bytes, cfg: RenderConfig, warns: WarningCollector,
     img = load_and_normalize(img_bytes, cfg.work_max_dim, warns)
 
     faces = detect_faces(img, warns)
+    # Tell the customer before they buy, not after: a closed eye has nothing bright
+    # to paint over the naturally shadowed socket, so it renders as a flat dark disc
+    # rather than an eye (see landmarks.eyes_closed). Non-fatal -- they can still
+    # proceed if they choose to.
+    if any(eyes_closed(f) for f in faces):
+        warns.warn("input", "eyes_closed",
+                   "One or more people in this photo have their eyes closed. "
+                   "For the best result, choose a photo with eyes open.")
     landmarks = faces[0] if faces else None
     if landmarks is not None:
         face_bbox = landmarks.bbox

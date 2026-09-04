@@ -7,6 +7,7 @@ heuristics. We never pretend landmarks exist when they don't.
 """
 from __future__ import annotations
 
+import os
 import urllib.request
 from dataclasses import dataclass, field
 from threading import Lock
@@ -30,6 +31,41 @@ class FaceLandmarks:
     image_w: int
     image_h: int
     bbox: tuple                     # (x, y, w, h) in working coords
+
+
+# Closed-eye check. A closed eye has nothing bright (iris/pupil/catchlight) to paint
+# over the naturally shadowed eye socket, so the render engine's own gate for this
+# (displacement.py) quietly falls back to plain words there -- fine for the type, but
+# the socket's floor-brightness ink alone reads as a flat dark disc, not an eye. That
+# is a photo-suitability problem no render-side patch fixes (tried: a brightness lift
+# on the socket, 2026-09-03 -- moved the numbers but the disc was still plainly visible
+# side-by-side). The fix is to tell the customer before they buy: same eye-aspect-ratio
+# formula and default threshold as the render engine's gate (indices + 0.09 + the
+# TYPO_EYE_OPEN_EAR override), duplicated rather than imported so this warning can never
+# silently drift out of sync with a change made only on the render side, or vice versa.
+_EYE_OPEN_EAR = 0.09
+
+
+def _ear(pts, p1, p2, p3, p4, p5, p6):
+    horiz = float(np.hypot(pts[p1][0] - pts[p4][0], pts[p1][1] - pts[p4][1]))
+    if horiz < 1e-3:
+        return 0.0
+    v = (float(np.hypot(pts[p2][0] - pts[p6][0], pts[p2][1] - pts[p6][1]))
+         + float(np.hypot(pts[p3][0] - pts[p5][0], pts[p3][1] - pts[p5][1])))
+    return v / (2.0 * horiz)
+
+
+def eyes_closed(face: FaceLandmarks) -> bool:
+    """True when this face's eyes read shut. Mirrors the render engine's own gate
+    exactly, so a customer-facing warning and the render's silent fallback to plain
+    words always agree on which faces are affected."""
+    pts = face.points
+    if len(pts) < 478:
+        return False
+    ear_l = _ear(pts, 33, 160, 158, 133, 153, 144)
+    ear_r = _ear(pts, 362, 385, 387, 263, 373, 380)
+    thresh = float(os.environ.get("TYPO_EYE_OPEN_EAR", "") or _EYE_OPEN_EAR)
+    return min(ear_l, ear_r) < thresh
 
 
 def ensure_model(warns: WarningCollector, allow_download: bool = True) -> bool:

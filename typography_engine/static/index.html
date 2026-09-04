@@ -2731,7 +2731,7 @@ function stopComposeStatus(){
 // soft. Technical warnings (rasterizer, enhancement) are filtered out.
 function showRenderNote(warnings){
   const el=document.getElementById("renderNote"); if(!el) return;
-  const ws=(warnings||[]).filter(w=>w && w.severity==="warn" && w.stage==="input");
+  const ws=(warnings||[]).filter(w=>w && w.severity==="warning" && w.stage==="input");
   if(!ws.length){ el.style.display="none"; el.innerHTML=""; return; }
   el.innerHTML=ws.map(w=>`<div><span class="rn-ic" aria-hidden="true">&#9432;</span>${w.message}</div>`).join("");
   el.style.display="block";

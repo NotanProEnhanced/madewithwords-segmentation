@@ -1757,53 +1757,6 @@ def render_displacement_portrait(
             # reads as true black -- not the mid navy -- giving the piece a black to lean into.
             _bg_local = np.array(g["bg"], np.float32) * np.clip(_pol_f + (1.0 - _pol_f) * _tone, 0.0, 1.0)
             out = _bg_local * (1 - _cov[..., None]) + np.clip(_ink, 0, 255) * _cov[..., None]
-
-            # Closed-eye socket lift (2026-09-03, ops/TESTSET.md). The comment above already
-            # explains why the eye socket is the hardest case for this formula: the deepest
-            # shadow on an otherwise fair face, and _pol_i=40 was raised from 3 for exactly
-            # this reason -- "near-black letters ... read as a hole rather than an eye". That
-            # fix was validated on an OPEN eye in shadow (08-white-hair). It is not enough for
-            # a CLOSED one: an open eye gets a bright iris/pupil/catchlight painted over this
-            # same dark base (values up to 246), which is what actually makes the socket read
-            # as an eye instead of a hole. A closed eye gets none of that painting --
-            # correctly, there is no eye to draw -- so the bare _pol_i=40 base stands alone.
-            # Marker-verified at the true eye_centers location: BGR~(74,77,91), ~36%
-            # brightness -- real, non-zero color that reads as a flat dark disc simply
-            # because it is that dark.
-            #
-            # Recompute the SAME formula with a higher, eye-specific floor and blend it in
-            # only within the closed eyelid hull -- not an ad-hoc brightness hack, the same
-            # hue-preserving mechanism that already renders the rest of the face, tuned for a
-            # feature that should read as skin, not deep shadow. Gated on NO real iris, so an
-            # open eye (already correct) is untouched by construction; excludes sunglasses
-            # (the dark lens there is intentional) and misfit faces (geometry distrusted).
-            # TYPO_EYE_SOCKET_FLOOR=115 is a starting value from the formula's own math, not
-            # measured against a rendered eye -- judge it visually against 18/19 first.
-            if not irises and eye_centers:
-                _no_lift_ids = ({id(_fp) for _fp in _dark_lens_face_pts}
-                                | {id(_fp) for _fp in _misfit_face_pts})
-                _open_ids = {id(_fp) for _fp in _eye_face_pts}
-                _lift_faces = [_fp for _fp in all_pts
-                              if id(_fp) not in _no_lift_ids and id(_fp) not in _open_ids]
-                if _lift_faces:
-                    _lift_mask = np.zeros((H, W), np.float32)
-                    for _fp_lift in _lift_faces:
-                        for _k in ("Leye", "Reye"):
-                            _p = np.array([_fp_lift[i] for i in _GROUPS[_k] if i < len(_fp_lift)],
-                                          np.int32)
-                            if len(_p) >= 3:
-                                cv2.fillConvexPoly(_lift_mask, cv2.convexHull(_p), 1.0)
-                    if float(_lift_mask.max()) > 0.0:
-                        _lift_mask = cv2.dilate(_lift_mask, np.ones((5, 5), np.uint8), 1)
-                        _lift_mask = np.clip(cv2.GaussianBlur(_lift_mask, (0, 0),
-                                             sigmaX=max(1.0, W * 0.008)), 0, 1)
-                        _eye_floor = float(os.environ.get("TYPO_EYE_SOCKET_FLOOR", "115") or 115.0)
-                        _eye_ink = _pc / _pl * (_eye_floor + (253.0 - _eye_floor) * _tone)
-                        _eye_ink = np.minimum(_eye_ink, np.float32([255, 255, 255]))
-                        _eye_out = (_bg_local * (1 - _cov[..., None])
-                                   + np.clip(_eye_ink, 0, 255) * _cov[..., None])
-                        out = out * (1.0 - _lift_mask[..., None]) + _eye_out * _lift_mask[..., None]
-                        _t("A1-eye-socket-lift")
     elif ink in _SCULPT_INK:
         word = np.array(_SCULPT_INK[ink], np.float32)
         out = np.array(g["bg"], np.float32) * (1 - al) + word * al
