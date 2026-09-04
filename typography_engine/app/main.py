@@ -3686,6 +3686,8 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
             f'<img class="before" id="b-{iid}" src="/static/examples/{slug}/{iid}-before.jpg" alt="Original source photo for {label}" loading="lazy" decoding="async" style="clip-path:inset(0 50% 0 0)">'
             f'<div class="handle" id="h-{iid}" style="left:50%"></div>'
             f'<span class="tag tag-l">Photo</span><span class="tag tag-r">{_h.escape(site["name"])}</span>'
+            f'<a class="viewlg" href="/static/examples/{slug}/{iid}-after.png" target="_blank" rel="noopener" '
+            f'aria-label="View full-size image of {label}">&#128269; View large</a>'
             f'</div>'
             f'<input type="range" class="cmpr" min="0" max="100" value="50" aria-label="Drag to compare {label}" '
             f'oninput="document.getElementById(\'b-{iid}\').style.clipPath=\'inset(0 \'+(100-this.value)+\'% 0 0)\';'
@@ -3742,6 +3744,10 @@ def examples_page(slug: str, request: Request) -> HTMLResponse:
   .tag{{position:absolute;top:10px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
     color:#fff;background:rgba(0,0,0,.45);padding:3px 8px;border-radius:20px}}
   .tag-l{{left:10px}} .tag-r{{right:10px}}
+  .viewlg{{position:absolute;left:10px;bottom:10px;font-size:12px;font-weight:600;color:#fff;
+    background:rgba(0,0,0,.55);padding:6px 12px;border-radius:20px;text-decoration:none;
+    backdrop-filter:blur(2px)}}
+  .viewlg:hover,.viewlg:focus-visible{{background:rgba(0,0,0,.75)}}
   input.cmpr{{width:100%;margin:10px 0 4px;accent-color:var(--accent)}}
   figcaption{{font-size:13px;color:var(--sub)}}
   .faq{{margin-top:48px;border-top:1px solid var(--line);padding-top:28px}}
