@@ -30,6 +30,7 @@ from . import suggest
 from . import printful, products
 from . import gallery_catalog
 from . import content as gallery_content
+from . import examples_content
 from .config import (
     BIOMETRIC_CONSENT_VERSION,
     BLOCKED_REGIONS,
@@ -2111,6 +2112,17 @@ def _sitemap_paths(host: str) -> list:
     its allowed collections so the sitemap can never surface a piece that brand hides."""
     paths = ["/"]
     paths += [f"/{s}" for s in _TRUST_SLUGS]     # About / FAQ / Refunds / Terms / Privacy
+    # /examples/<slug> showcase pages -- only the slugs that belong to THIS brand host,
+    # and only once at least one image pair for them is actually on disk (an empty
+    # showcase page isn't worth a crawler's time).
+    fav = _site_brand(host=host)["fav"]
+    for slug, cat in examples_content.EXAMPLES.items():
+        if cat["brand"] != fav:
+            continue
+        ex_dir = STATIC_DIR / "examples" / slug
+        if any((ex_dir / f"{img['id']}-before.jpg").exists() and (ex_dir / f"{img['id']}-after.png").exists()
+               for img in cat["images"]):
+            paths.append(f"/examples/{slug}")
     if not GALLERY_ENABLED:
         return paths
     paths.append("/gallery")
@@ -3618,6 +3630,138 @@ def guide_page(slug: str, request: Request) -> HTMLResponse:
             .replace("[[H1]]", _h.escape(g["h1"]))
             .replace("[[LD]]", ld)
             .replace("[[BRAND]]", _h.escape(brand)))
+    return HTMLResponse(html)
+
+
+@app.api_route("/examples/{slug}", methods=["GET", "HEAD"], response_class=HTMLResponse)
+def examples_page(slug: str, request: Request) -> HTMLResponse:
+    """SEO showcase page: a category of real before/after pairs (source photo ->
+    typography portrait) with real on-page copy and an FAQ, distinct from the
+    buyable /gallery catalog above -- nothing here is for sale, it exists to rank
+    and to prove quality before a visitor starts their own portrait. Scoped to
+    Typortrait.com and PawsInWords.com only (see examples_content.EXAMPLES); any
+    other brand host 404s. Renders with whichever image pairs are actually on
+    disk under static/examples/<slug>/ -- ships before every photo exists and
+    fills in as files are added, no redeploy needed."""
+    import html as _h
+    import json as _j
+
+    cat = examples_content.EXAMPLES.get(slug)
+    if not cat:
+        raise HTTPException(status_code=404, detail="not_found")
+    host = request.headers.get("host", "") or ""
+    site = _site_brand(host=host)
+    if site["fav"] != cat["brand"]:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    base = _req_base(request)
+    page_url = f"{base}/examples/{slug}"
+    ex_dir = STATIC_DIR / "examples" / slug
+    pairs, list_items, hero_img = [], [], ""
+    for img in cat["images"]:
+        iid = img["id"]
+        before = ex_dir / f"{iid}-before.jpg"
+        after = ex_dir / f"{iid}-after.png"
+        if not (before.exists() and after.exists()):
+            continue
+        pairs.append(img)
+        if not hero_img:
+            hero_img = f"{base}/static/examples/{slug}/{iid}-after.png"
+        list_items.append({"@type": "ListItem", "position": len(pairs), "name": img["label"]})
+
+    cards = ""
+    for img in pairs:
+        iid = _h.escape(img["id"])
+        label = _h.escape(img["label"])
+        cards += (
+            f'<figure class="pair">'
+            f'<div class="slide">'
+            f'<img class="after" src="/static/examples/{slug}/{iid}-after.png" alt="{label}" loading="lazy" decoding="async">'
+            f'<img class="before" id="b-{iid}" src="/static/examples/{slug}/{iid}-before.jpg" alt="Original source photo for {label}" loading="lazy" decoding="async" style="clip-path:inset(0 50% 0 0)">'
+            f'<div class="handle" id="h-{iid}" style="left:50%"></div>'
+            f'<span class="tag tag-l">Photo</span><span class="tag tag-r">{_h.escape(site["name"])}</span>'
+            f'</div>'
+            f'<input type="range" class="cmpr" min="0" max="100" value="50" aria-label="Drag to compare {label}" '
+            f'oninput="document.getElementById(\'b-{iid}\').style.clipPath=\'inset(0 \'+(100-this.value)+\'% 0 0)\';'
+            f'document.getElementById(\'h-{iid}\').style.left=this.value+\'%\'">'
+            f'<figcaption>{label}</figcaption>'
+            f'</figure>'
+        )
+
+    faq_html = "".join(
+        f'<div class="qa"><h3>{_h.escape(q)}</h3><p>{_h.escape(a)}</p></div>'
+        for q, a in cat.get("faq", []))
+    faq_ld = [{"@type": "Question", "name": q,
+               "acceptedAnswer": {"@type": "Answer", "text": a}}
+              for q, a in cat.get("faq", [])]
+
+    ld = _j.dumps({
+        "@context": "https://schema.org",
+        "@graph": [
+            {"@type": "CollectionPage", "name": cat["h1"], "description": cat["meta"],
+             "url": page_url, "isPartOf": {"@type": "WebSite", "name": site["name"], "url": base + "/"},
+             "mainEntity": {"@type": "ItemList", "numberOfItems": len(pairs), "itemListElement": list_items}},
+            {"@type": "FAQPage", "mainEntity": faq_ld},
+        ],
+    })
+
+    note = ("" if pairs else
+            '<p class="soon">More examples for this category are on the way.</p>')
+
+    html = f"""<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_h.escape(cat['title'])}</title>
+<meta name="description" content="{_h.escape(cat['meta'])}">
+<link rel="canonical" href="{_h.escape(page_url)}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{_h.escape(cat['h1'])}">
+<meta property="og:description" content="{_h.escape(cat['meta'])}">
+<meta property="og:url" content="{_h.escape(page_url)}">
+{f'<meta property="og:image" content="{_h.escape(hero_img)}">' if hero_img else ''}
+<script type="application/ld+json">{ld}</script>
+<style>
+  :root{{color-scheme:light dark;--ink:#1c2430;--sub:#5a6472;--bg:#faf8f4;--card:#fff;--line:#e7e2d8;--accent:#1c3a5e}}
+  *{{box-sizing:border-box}}
+  body{{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
+  .wrap{{max-width:920px;margin:0 auto;padding:40px 20px 80px}}
+  .eyebrow{{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}}
+  h1{{font-size:clamp(28px,4vw,40px);line-height:1.15;margin:8px 0 20px;text-wrap:balance}}
+  .intro{{color:var(--sub);font-size:17px;max-width:65ch}}
+  .intro p{{margin:0 0 14px}}
+  .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:28px;margin:36px 0}}
+  .pair{{margin:0}}
+  .slide{{position:relative;aspect-ratio:4/5;overflow:hidden;border-radius:12px;background:#111;box-shadow:0 1px 3px rgba(0,0,0,.15)}}
+  .slide img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}}
+  .handle{{position:absolute;top:0;bottom:0;width:2px;background:rgba(255,255,255,.9);transform:translateX(-1px);pointer-events:none}}
+  .tag{{position:absolute;top:10px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:#fff;background:rgba(0,0,0,.45);padding:3px 8px;border-radius:20px}}
+  .tag-l{{left:10px}} .tag-r{{right:10px}}
+  input.cmpr{{width:100%;margin:10px 0 4px;accent-color:var(--accent)}}
+  figcaption{{font-size:13px;color:var(--sub)}}
+  .faq{{margin-top:48px;border-top:1px solid var(--line);padding-top:28px}}
+  .qa{{margin:0 0 20px}}
+  .qa h3{{font-size:16px;margin:0 0 4px}}
+  .qa p{{margin:0;color:var(--sub)}}
+  .soon{{color:var(--sub);font-style:italic}}
+  .cta{{display:inline-block;margin-top:32px;background:var(--accent);color:#fff;text-decoration:none;
+    font-weight:600;padding:14px 26px;border-radius:8px}}
+  .cta:hover{{opacity:.92}}
+  @media (prefers-color-scheme:dark){{
+    :root:not([data-theme="light"]){{--ink:#eee;--sub:#a7aeb8;--bg:#14171c;--card:#1c2027;--line:#2a2f38}}
+  }}
+  :root[data-theme="dark"]{{--ink:#eee;--sub:#a7aeb8;--bg:#14171c;--card:#1c2027;--line:#2a2f38}}
+</style>
+</head><body>
+<div class="wrap">
+  <div class="eyebrow">{_h.escape(cat['eyebrow'])}</div>
+  <h1>{_h.escape(cat['h1'])}</h1>
+  <div class="intro">{cat['intro_html']}</div>
+  {note}
+  <div class="grid">{cards}</div>
+  <a class="cta" href="/">Start your own portrait &rarr;</a>
+  <div class="faq">{faq_html}</div>
+</div>
+</body></html>"""
     return HTMLResponse(html)
 
 
