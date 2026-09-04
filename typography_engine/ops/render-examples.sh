@@ -64,26 +64,45 @@ PY
 
 copied=0; missing=0; skipped=0
 TODO="[]"
+# Source photos can be .png, .jpg, or .jpeg -- whatever ChatGPT (or anything else) actually
+# saved them as. The destination is always <ID>-before.jpg (what the /examples route and its
+# template expect), so a PNG source is genuinely re-encoded to JPEG here, not just renamed --
+# renaming PNG bytes to a .jpg extension would serve broken image data.
 TODO="$(python3 - "$WORKLIST" "$SRC" "$TREE" "$FORCE" <<'PY'
 import json, os, shutil, sys
+import cv2
+
 items = json.loads(sys.argv[1])
 src_dir, tree, force = sys.argv[2], sys.argv[3], sys.argv[4]
 todo = []
 copied = missing = skipped = 0
 for it in items:
     slug, iid = it["slug"], it["id"]
-    src = os.path.join(src_dir, f"{iid}.jpg")
+    src = None
+    for ext in (".png", ".jpg", ".jpeg", ".PNG", ".JPG", ".JPEG"):
+        cand = os.path.join(src_dir, f"{iid}{ext}")
+        if os.path.exists(cand):
+            src = cand
+            break
     dest_dir = os.path.join(tree, "static", "examples", slug)
     before = os.path.join(dest_dir, f"{iid}-before.jpg")
     after = os.path.join(dest_dir, f"{iid}-after.png")
-    if not os.path.exists(src):
+    if src is None:
         missing += 1
         continue
     if os.path.exists(after) and force != "1":
         skipped += 1
         continue
     os.makedirs(dest_dir, exist_ok=True)
-    shutil.copy2(src, before)
+    if src.lower().endswith((".jpg", ".jpeg")):
+        shutil.copy2(src, before)
+    else:
+        img = cv2.imread(src)
+        if img is None:
+            print(f"could not read {src}, skipping {iid}", file=sys.stderr)
+            missing += 1
+            continue
+        cv2.imwrite(before, img, [cv2.IMWRITE_JPEG_QUALITY, 92])
     copied += 1
     todo.append(it)
 print(f"copied {copied} before-photos, {missing} not found in {src_dir}, "
