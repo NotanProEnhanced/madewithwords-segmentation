@@ -3836,7 +3836,8 @@ def _rich_examples_html(cat: dict, pairs: list, site: dict, page_url: str,
   .hero-image{{position:relative}}
   .hero-image img{{width:100%;border-radius:var(--radius);display:block;box-shadow:0 12px 40px rgba(13,27,58,.14)}}
   .hero-note{{position:absolute;top:-6px;right:-14px;font-style:italic;font-weight:600;font-size:15px;
-    color:var(--navy);line-height:1.5;transform:rotate(2deg);max-width:150px;display:none}}
+    color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.55);line-height:1.5;transform:rotate(2deg);
+    max-width:150px;display:none}}
   @media(min-width:860px){{.hero-note{{display:block}}}}
   .grid-section{{padding:8px 28px 8px;max-width:1180px;margin:0 auto}}
   .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:26px}}
