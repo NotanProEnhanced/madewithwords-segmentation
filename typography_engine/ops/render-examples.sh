@@ -152,9 +152,14 @@ for it in todo:
             warns = WarningCollector()
             an = analyze_image(photo_bytes, RenderConfig(), warns)
             words_list = [w.strip() for w in img["words"].split(",") if w.strip()]
+            # backdrop="studio" matches the live product's own default (static/index.html's
+            # state.backdrop:"studio" -> BACKDROPS["studio"]=(230,230,230), a light neutral
+            # gray). Omitting it (as an earlier version of this script did) renders the raw
+            # navy ground with no backdrop recolor at all -- not what a real customer's
+            # default render actually looks like.
             png = render_displacement_portrait(an, words_list, ground="navy",
                                                out_width=1600, supersample=2,
-                                               ink="photo", print_aspect=0.8)
+                                               ink="photo", print_aspect=0.8, backdrop="studio")
         out_path.write_bytes(png)
         print(f"OK    {slug}/{iid}  ({len(png)} bytes)")
         ok += 1
