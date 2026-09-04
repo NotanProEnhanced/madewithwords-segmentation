@@ -258,7 +258,7 @@ EXAMPLES = {
         "brand": "pawsinwords",
         "template": "rich",
         "eyebrow": "Dog Typortraits",
-        "h1": "A portrait of your dog, made from the words that are actually theirs.",
+        "h1": "A portrait of your dog, made from the words that describe them.",
         "nav_label": "Dog Portraits",
         "subhead": ("Anyone can print a photo of their dog. This builds a portrait out of "
                     "one instead — their name, the nicknames, the words every dog owner "
@@ -267,9 +267,9 @@ EXAMPLES = {
         "hero_id": "P01", "detail_id": "P02",
         "detail_head": "From across the room,<br>it's their portrait.<br>Up close, it's every detail<br>that makes them them.",
         "detail_sub": ("Every strand, every expression is built from the words you choose — "
-                       "their name, their nicknames, whatever's actually theirs."),
+                       "their name, their nicknames, whatever describes them best."),
         "closing_head": "They're part of the family too.",
-        "closing_sub": "Make a portrait from the words that are actually theirs.",
+        "closing_sub": "Make a portrait from the words that describe them.",
         "features": [
             ("gift", "A meaningful gift for any dog lover"),
             ("heart", "Beautiful at any size"),
@@ -323,11 +323,11 @@ EXAMPLES = {
         "brand": "pawsinwords",
         "template": "rich",
         "eyebrow": "Cat Typortraits",
-        "h1": "A portrait of your cat, made from the words that are actually theirs.",
+        "h1": "A portrait of your cat, made from the words that describe them.",
         "nav_label": "Cat Portraits",
         "subhead": ("Cats don't sit still for much, but a photo is all this needs. The "
-                    "portrait is built from that photo and the words that are actually "
-                    "theirs — a name, a personality trait, whatever your household already "
+                    "portrait is built from that photo and the words that describe "
+                    "them — a name, a personality trait, whatever your household already "
                     "calls them."),
         "hero_note": "Their name.<br>Their attitude.<br>Their whole personality.<br>In words.",
         "hero_id": "P05", "detail_id": "P06",
@@ -335,7 +335,7 @@ EXAMPLES = {
         "detail_sub": ("Even on a black coat, the eyes stay bright and real — every detail "
                        "built from the words you choose."),
         "closing_head": "They're part of the family too.",
-        "closing_sub": "Make a portrait from the words that are actually theirs.",
+        "closing_sub": "Make a portrait from the words that describe them.",
         "features": [
             ("gift", "A meaningful gift for any cat lover"),
             ("heart", "Beautiful at any size"),
@@ -351,8 +351,8 @@ EXAMPLES = {
                  "that describe them — a likeness that's unmistakably your cat."),
         "intro_html": (
             "<p>Cats don't sit still for much, but a photo is all this needs. "
-            "The portrait is built from that photo and the words that are "
-            "actually theirs — a name, a personality trait, whatever their "
+            "The portrait is built from that photo and the words that "
+            "describe them — a name, a personality trait, whatever their "
             "household already calls them.</p>"
             "<p>Works for any coat color, including solid black and dark fur — "
             "the engine is built to keep a real, visible eye rather than a flat "
@@ -383,15 +383,15 @@ EXAMPLES = {
         "brand": "pawsinwords",
         "template": "rich",
         "eyebrow": "In Loving Memory",
-        "h1": "A gentle way to remember them, made from the words that will always be theirs.",
+        "h1": "A gentle way to remember them, made from the words that will always describe them.",
         "nav_label": "Pet Memorial Portraits",
         "subhead": ("Losing a pet doesn't come with the same rituals people get, but the "
                     "loss is no smaller. This is a quiet way to keep them close — a portrait "
-                    "built from a favorite photo and the words that will always be theirs."),
+                    "built from a favorite photo and the words that will always describe them."),
         "hero_note": "Their name.<br>Their years.<br>Always loved.",
         "hero_id": "P09", "detail_id": "P15",
         "detail_head": "From across the room,<br>it's their portrait.<br>Up close, it's everything<br>you'll always remember.",
-        "detail_sub": ("Every detail is built from the words that will always be theirs — "
+        "detail_sub": ("Every detail is built from the words that will always describe them — "
                        "their name, the years, whatever you'll always remember."),
         "closing_head": "Take your time.",
         "closing_sub": "There's no rush — the preview is free to see, whenever you're ready.",
@@ -409,7 +409,7 @@ EXAMPLES = {
             "<p>Losing a pet doesn't come with the same rituals people get, but "
             "the loss is no smaller. This is a quiet way to keep them close — a "
             "portrait built from a favorite photo and the words that will "
-            "always be theirs: their name, the years, the qualities you'll "
+            "always describe them: their name, the years, the qualities you'll "
             "always remember.</p>"
             "<p>Take your time choosing the photo. There's no rush, and the "
             "preview is free to look at before you decide on anything.</p>"),
