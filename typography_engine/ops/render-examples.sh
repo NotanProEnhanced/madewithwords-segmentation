@@ -214,8 +214,13 @@ for it in todo:
     try:
         photo_bytes = before.read_bytes()
         if brand == "pawsinwords":
+            # type_scale=0.56 is the real "Large" preset a customer can already pick
+            # (_PET_TYPE_SCALES in app/main.py: small=0.30, medium=0.42, large=0.56).
+            # Left unset before (falls back to "small"/0.30), the typography read as
+            # too fine/hard to read on a small on-page card -- not an arbitrary bump,
+            # the same size option the product itself already offers.
             png = render_pet_portrait(photo_bytes, img["words"], ground="dark",
-                                      height=1600, print_aspect=0.8)
+                                      height=1600, print_aspect=0.8, type_scale=0.56)
         else:
             warns = WarningCollector()
             an = analyze_image(photo_bytes, RenderConfig(), warns)
@@ -225,9 +230,16 @@ for it in todo:
             # gray). Omitting it (as an earlier version of this script did) renders the raw
             # navy ground with no backdrop recolor at all -- not what a real customer's
             # default render actually looks like.
+            #
+            # word_scale=120/57 is the real "Large" preset (WORD_SIZES in static/index.html:
+            # Small=27, Medium=57, Large=120 -- word_scale is that value divided by the 57
+            # Medium baseline). Left at the default 1.0 (Medium) before, the typography read
+            # too small/hard to read on the on-page card -- same size option a customer can
+            # already choose, not a made-up number.
             png = render_displacement_portrait(an, words_list, ground="navy",
-                                               out_width=1600, supersample=2,
-                                               ink="photo", print_aspect=0.8, backdrop="studio")
+                                               out_width=1600, supersample=2, ink="photo",
+                                               print_aspect=0.8, backdrop="studio",
+                                               word_scale=120.0 / 57.0)
         out_path.write_bytes(png)
         write_card(png, card_path)
         print(f"OK    {slug}/{iid}  ({len(png)} bytes)")
