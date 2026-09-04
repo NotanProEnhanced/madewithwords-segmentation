@@ -121,7 +121,7 @@ A 5-year-old child with light skin and light brown curly hair, outdoors in
 bright even natural daylight, mid-laugh with a big open smile, eyes open and
 bright (not squeezed shut), plain soft green blurred background.
 ```
-Words: `LUCAS, JOY, WONDER, BRIGHT, GIGGLE, FREE, LIGHT, PLAY`
+Words: `ANNIE, JOY, WONDER, BRIGHT, GIGGLE, FREE, LIGHT, PLAY`
 
 ### H07 — middle-aged man, dark skin, glasses, professional headshot
 ```
@@ -283,7 +283,7 @@ A 3-year-old child with medium skin tone and short curly hair, outdoors
 in soft natural daylight, big genuine open-mouthed grin, plain blurred
 neutral outdoor background, eyes clearly open and bright.
 ```
-Words: `SOPHIE, JOY, WONDER, BRIGHT, GIGGLE, PURE, LIGHT, PLAY`
+Words: `NOAH, JOY, WONDER, BRIGHT, GIGGLE, PURE, LIGHT, PLAY`
 
 ---
 

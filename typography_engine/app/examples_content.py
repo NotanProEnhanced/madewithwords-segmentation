@@ -152,13 +152,13 @@ EXAMPLES = {
         ],
         "images": [
             {"id": "H06", "label": "Child portrait, laughing, word art",
-             "words": "LUCAS, JOY, WONDER, BRIGHT, GIGGLE, FREE, LIGHT, PLAY"},
+             "words": "ANNIE, JOY, WONDER, BRIGHT, GIGGLE, FREE, LIGHT, PLAY"},
             {"id": "H23", "label": "Baby portrait, nursery word art",
              "words": "NOAH, WONDER, PRECIOUS, NEW, JOY, PURE, BEGIN, LOVE"},
             {"id": "H24", "label": "Siblings portrait, word art",
              "words": "SIBLINGS, JOY, TOGETHER, GIGGLE, PLAY, FOREVER, BOND, LIGHT"},
             {"id": "H25", "label": "Toddler portrait, word art",
-             "words": "SOPHIE, JOY, WONDER, BRIGHT, GIGGLE, PURE, LIGHT, PLAY"},
+             "words": "NOAH, JOY, WONDER, BRIGHT, GIGGLE, PURE, LIGHT, PLAY"},
         ],
     },
     "dog-portraits": {
