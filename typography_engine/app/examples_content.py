@@ -3,10 +3,13 @@ PawsInWords.com only (see ops/GALLERY-SOURCES.md for the source-photo prompts
 and the category -> image-id assignments this content is built against).
 
 Each entry's `images` list gives the id (matching a file pair under
-static/examples/<slug>/<id>-before.jpg + <id>-after.png) and a short label
-used for that pair's alt text and caption. A category renders with whichever
-images are actually present on disk -- so this can ship before every photo
-exists, and fills in as files are added with no code change.
+static/examples/<slug>/<id>-before.jpg + <id>-after.png), a short `label` used
+for that pair's alt text and caption, and the `words` string to render onto
+it -- the same word list in ops/GALLERY-SOURCES.md, duplicated here so
+ops/render-examples.sh has one authoritative source to render from without
+scraping markdown. Keep the two in sync if either changes. A category renders
+with whichever images are actually present on disk -- so this can ship before
+every photo exists, and fills in as files are added with no code change.
 """
 
 EXAMPLES = {
@@ -40,10 +43,14 @@ EXAMPLES = {
              "buy. Prints ship separately once you order."),
         ],
         "images": [
-            {"id": "H04", "label": "Grandmother portrait, word art gift"},
-            {"id": "H05", "label": "Grandfather portrait, golden-hour word art"},
-            {"id": "H15", "label": "Mother portrait, word art keepsake"},
-            {"id": "H16", "label": "Father portrait, word art gift"},
+            {"id": "H04", "label": "Grandmother portrait, word art gift",
+             "words": "ELEANOR, WISDOM, GRACE, GENTLE, TIMELESS, LOVE, PEACE, HOME"},
+            {"id": "H05", "label": "Grandfather portrait, golden-hour word art",
+             "words": "WILLIAM, LEGACY, STRENGTH, WISDOM, STEADY, HONOR, TIME, GRACE"},
+            {"id": "H15", "label": "Mother portrait, word art keepsake",
+             "words": "RUTH, GRACE, WISDOM, WARM, GENTLE, HONOR, TIMELESS, LOVE"},
+            {"id": "H16", "label": "Father portrait, word art gift",
+             "words": "ROBERT, STEADY, DEPTH, WISE, CALM, ANCHOR, STRONG, TRUE"},
         ],
     },
     "couple-anniversary-portraits": {
@@ -74,9 +81,12 @@ EXAMPLES = {
              "prints ship separately."),
         ],
         "images": [
-            {"id": "H10", "label": "Couple portrait, word art gift"},
-            {"id": "H19", "label": "Couple portrait at golden hour, word art"},
-            {"id": "H20", "label": "Senior couple anniversary portrait, word art"},
+            {"id": "H10", "label": "Couple portrait, word art gift",
+             "words": "TOGETHER, LOVE, US, FOREVER, HOME, JOURNEY, TRUST, GROW"},
+            {"id": "H19", "label": "Couple portrait at golden hour, word art",
+             "words": "TOGETHER, FOREVER, US, JOURNEY, LOVE, HOME, GROW, ALWAYS"},
+            {"id": "H20", "label": "Senior couple anniversary portrait, word art",
+             "words": "ANNIVERSARY, TIMELESS, US, FOREVER, GRACE, JOURNEY, LOVE, HOME"},
         ],
     },
     "family-portraits": {
@@ -104,10 +114,14 @@ EXAMPLES = {
              "few words that describe them — but it's entirely your choice."),
         ],
         "images": [
-            {"id": "H11", "label": "Family portrait, word art"},
-            {"id": "H18", "label": "Friends group portrait, word art"},
-            {"id": "H21", "label": "Family of four portrait, word art"},
-            {"id": "H22", "label": "Three-generation family portrait, word art"},
+            {"id": "H11", "label": "Family portrait, word art",
+             "words": "FAMILY, TOGETHER, HOME, LOVE, JOY, GROW, ALWAYS, US"},
+            {"id": "H18", "label": "Friends group portrait, word art",
+             "words": "FRIENDS, TOGETHER, JOY, US, ALWAYS, HOME, LAUGH, TRUE"},
+            {"id": "H21", "label": "Family of four portrait, word art",
+             "words": "FAMILY, TOGETHER, HOME, GROW, LOVE, ALWAYS, US, ROOTS"},
+            {"id": "H22", "label": "Three-generation family portrait, word art",
+             "words": "LEGACY, FAMILY, ROOTS, LOVE, GENERATIONS, HOME, ALWAYS, GRACE"},
         ],
     },
     "kids-baby-portraits": {
@@ -137,10 +151,14 @@ EXAMPLES = {
              "specifics."),
         ],
         "images": [
-            {"id": "H06", "label": "Child portrait, laughing, word art"},
-            {"id": "H23", "label": "Baby portrait, nursery word art"},
-            {"id": "H24", "label": "Siblings portrait, word art"},
-            {"id": "H25", "label": "Toddler portrait, word art"},
+            {"id": "H06", "label": "Child portrait, laughing, word art",
+             "words": "LUCAS, JOY, WONDER, BRIGHT, GIGGLE, FREE, LIGHT, PLAY"},
+            {"id": "H23", "label": "Baby portrait, nursery word art",
+             "words": "NOAH, WONDER, PRECIOUS, NEW, JOY, PURE, BEGIN, LOVE"},
+            {"id": "H24", "label": "Siblings portrait, word art",
+             "words": "SIBLINGS, JOY, TOGETHER, GIGGLE, PLAY, FOREVER, BOND, LIGHT"},
+            {"id": "H25", "label": "Toddler portrait, word art",
+             "words": "SOPHIE, JOY, WONDER, BRIGHT, GIGGLE, PURE, LIGHT, PLAY"},
         ],
     },
     "dog-portraits": {
@@ -170,13 +188,20 @@ EXAMPLES = {
              "describe them."),
         ],
         "images": [
-            {"id": "P01", "label": "Golden Retriever word art portrait"},
-            {"id": "P02", "label": "Black Labrador word art portrait"},
-            {"id": "P03", "label": "Poodle word art portrait"},
-            {"id": "P04", "label": "Border Collie word art portrait"},
-            {"id": "P08", "label": "Fluffy white dog word art portrait"},
-            {"id": "P11", "label": "Corgi word art portrait"},
-            {"id": "P13", "label": "German Shepherd word art portrait"},
+            {"id": "P01", "label": "Golden Retriever word art portrait",
+             "words": "BUDDY, LOYAL, JOY, GOLDEN, FAITHFUL, FRIEND, HAPPY, HOME"},
+            {"id": "P02", "label": "Black Labrador word art portrait",
+             "words": "SHADOW, LOYAL, STRONG, STEADY, TRUE, GUARD, FAITHFUL, BOLD"},
+            {"id": "P03", "label": "Poodle word art portrait",
+             "words": "COCO, SWEET, CURLY, GENTLE, JOY, PRECIOUS, CHARM, LOVE"},
+            {"id": "P04", "label": "Border Collie word art portrait",
+             "words": "SCOUT, ALERT, SWIFT, LOYAL, SMART, ENERGY, FOCUS, RUN"},
+            {"id": "P08", "label": "Fluffy white dog word art portrait",
+             "words": "SNOWY, JOY, BRIGHT, FLUFFY, HAPPY, LIGHT, PLAYFUL, PURE"},
+            {"id": "P11", "label": "Corgi word art portrait",
+             "words": "BISCUIT, CHEERFUL, GOLDEN, PLAYFUL, JOY, SPUNKY, WARM, FUN"},
+            {"id": "P13", "label": "German Shepherd word art portrait",
+             "words": "TITAN, LOYAL, STRONG, GUARD, NOBLE, STEADY, BRAVE, TRUE"},
         ],
     },
     "cat-portraits": {
@@ -206,10 +231,14 @@ EXAMPLES = {
              "Yes — any words you choose, most often a name plus a trait or two."),
         ],
         "images": [
-            {"id": "P05", "label": "Orange tabby cat word art portrait"},
-            {"id": "P06", "label": "Black cat word art portrait"},
-            {"id": "P07", "label": "Gray cat word art portrait"},
-            {"id": "P12", "label": "Calico cat word art portrait"},
+            {"id": "P05", "label": "Orange tabby cat word art portrait",
+             "words": "TIGER, CURIOUS, WARM, PLAYFUL, SUNNY, GENTLE, CHARM, HOME"},
+            {"id": "P06", "label": "Black cat word art portrait",
+             "words": "MIDNIGHT, MYSTERY, SLEEK, CALM, BOLD, QUIET, GRACE, WISE"},
+            {"id": "P07", "label": "Gray cat word art portrait",
+             "words": "SMOKEY, SERENE, GENTLE, ELEGANT, CALM, GRACE, SOFT, TRUE"},
+            {"id": "P12", "label": "Calico cat word art portrait",
+             "words": "PATCHES, UNIQUE, SWEET, GENTLE, CHARM, BRIGHT, PLAYFUL, JOY"},
         ],
     },
     "pet-memorial-portraits": {
@@ -239,10 +268,14 @@ EXAMPLES = {
              "you choose to order."),
         ],
         "images": [
-            {"id": "P09", "label": "Senior dog memorial word art portrait"},
-            {"id": "P15", "label": "Senior cat memorial word art portrait"},
-            {"id": "P16", "label": "Dog memorial word art portrait, golden light"},
-            {"id": "P17", "label": "Cat memorial word art portrait, resting"},
+            {"id": "P09", "label": "Senior dog memorial word art portrait",
+             "words": "DUKE, GENTLE, FAITHFUL, STEADY, FOREVER, LOYAL, WARM, TRUE"},
+            {"id": "P15", "label": "Senior cat memorial word art portrait",
+             "words": "WHISKERS, GENTLE, FAITHFUL, FOREVER, WARM, LOYAL, PEACE, TRUE"},
+            {"id": "P16", "label": "Dog memorial word art portrait, golden light",
+             "words": "BEAR, GENTLE, FAITHFUL, PEACE, FOREVER, LOYAL, WARM, REST"},
+            {"id": "P17", "label": "Cat memorial word art portrait, resting",
+             "words": "SUNNY, PEACE, GENTLE, WARM, FOREVER, SOFT, LOYAL, TRUE"},
         ],
     },
 }
