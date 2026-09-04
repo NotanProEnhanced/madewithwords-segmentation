@@ -2106,16 +2106,18 @@ def _brand_collections(host: str) -> Optional[set]:
     return None
 
 
-def _sitemap_paths(host: str) -> list:
+def _sitemap_paths(host: str, brand_q: str = "") -> list:
     """URL paths for the sitemap: gallery index + each collection landing page + every
     crawlable per-item page. A brand with its own domain (faithinwords) is limited to
-    its allowed collections so the sitemap can never surface a piece that brand hides."""
+    its allowed collections so the sitemap can never surface a piece that brand hides.
+    `brand_q` is the same ?brand= override /examples/<slug> supports -- staging has one
+    hostname, so it's the only way to check a non-default brand's sitemap there."""
     paths = ["/"]
     paths += [f"/{s}" for s in _TRUST_SLUGS]     # About / FAQ / Refunds / Terms / Privacy
     # /examples/<slug> showcase pages -- only the slugs that belong to THIS brand host,
     # and only once at least one image pair for them is actually on disk (an empty
     # showcase page isn't worth a crawler's time).
-    fav = _site_brand(host=host)["fav"]
+    fav = _site_brand(brand_id=brand_q, host=host)["fav"]
     for slug, cat in examples_content.EXAMPLES.items():
         if cat["brand"] != fav:
             continue
@@ -2153,9 +2155,10 @@ def sitemap_xml(request: Request) -> Response:
     itself is JS-rendered, so bots can't find the links otherwise)."""
     base = _req_base(request)
     host = (request.headers.get("host", "") or "").split(":")[0].replace("www.", "").lower()
+    brand_q = (request.query_params.get("brand", "") or "").lower()
     body = ('<?xml version="1.0" encoding="UTF-8"?>\n'
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-            + "".join(f"  <url><loc>{base}{p}</loc></url>\n" for p in _sitemap_paths(host))
+            + "".join(f"  <url><loc>{base}{p}</loc></url>\n" for p in _sitemap_paths(host, brand_q))
             + "</urlset>\n")
     return Response(content=body, media_type="application/xml")
 
