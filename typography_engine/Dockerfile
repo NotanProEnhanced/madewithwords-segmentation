@@ -14,11 +14,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libgl1 libgles2 libegl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
       fonts-dejavu-core fonts-liberation \
       ffmpeg \
-      curl ca-certificates \
+      curl ca-certificates unzip \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# rtmlib (optional pet face-anchoring, app/pet_landmarks.py) is installed SEPARATELY with
+# --no-deps: its own METADATA unconditionally requires "opencv-python" *and*
+# "opencv-contrib-python", and installing both packages side by side -- confirmed while
+# building this -- silently swaps out which OpenCV build satisfies every `import cv2` in the
+# app, changing PNG-encoding output for renders that have nothing to do with pets. rtmlib's
+# only OTHER runtime need (besides cv2, already pinned above) is onnxruntime + tqdm, both
+# harmless additions -- tqdm is in requirements.txt, onnxruntime is already required.
+RUN pip install --no-cache-dir --no-deps rtmlib
 
 # Pre-fetch the MediaPipe models so there is no first-request download.
 RUN mkdir -p models \
@@ -33,6 +41,23 @@ RUN mkdir -p models \
 RUN curl -fsSL -o models/rvm_mobilenetv3_fp32.onnx \
       "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx" \
     || echo "matting model prefetch skipped (optional; fetched at runtime)"
+
+# Optional pet face-anchoring models (app/pet_landmarks.py, PET_LANDMARKS=1). NON-FATAL, same
+# reasoning as the matting model above: this is opt-in and pet_landmarks.py has no runtime
+# download fallback at all -- a missing file here just means the feature stays off, exactly
+# like a missing RVM model falls back to the guided-filter matte.
+#   detector: YOLOX-m (COCO, ~97MB) -- finds the dog/cat bounding box.
+#   pose:     RTMPose-m trained on AP-10K (~14MB) -- 17 animal keypoints inside that box; only
+#             eyes/nose/neck are actually read (see pet_landmarks.py's docstring for why).
+RUN curl -fsSL -o models/yolox_m.onnx \
+      "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_m.onnx" \
+    || echo "pet detector prefetch skipped (PET_LANDMARKS will stay inactive)"
+RUN curl -fsSL -o /tmp/rtmpose_ap10k.zip \
+      "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/rtmpose-m_simcc-ap10k_pt-aic-coco_210e-256x256-7a041aa1_20230206.zip" \
+    && unzip -o -j /tmp/rtmpose_ap10k.zip "*/end2end.onnx" -d models \
+    && mv models/end2end.onnx models/rtmpose_ap10k_m.onnx \
+    && rm -f /tmp/rtmpose_ap10k.zip \
+    || echo "pet pose-model prefetch skipped (PET_LANDMARKS will stay inactive)"
 
 COPY app ./app
 COPY static ./static

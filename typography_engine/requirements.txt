@@ -23,3 +23,8 @@ reportlab>=4.0
 # (BSD-3-Clause / Apache-2.0) and ships a self-contained wheel -- replaced PyMuPDF,
 # which is AGPL-3.0/commercial, to keep the dependency tree free of copyleft.
 pypdfium2>=4.0
+# tqdm: rtmlib's one remaining runtime need once installed with --no-deps (see the Dockerfile
+# for why). rtmlib itself is deliberately NOT listed here -- a plain `pip install rtmlib` pulls
+# in its own "opencv-python", conflicting with the opencv-contrib-python pinned above and
+# silently changing PNG-encoding output for every render, not just pet ones.
+tqdm

@@ -28,6 +28,8 @@ import numpy as np
 import cv2
 from PIL import Image, ImageDraw, ImageFont
 
+from . import pet_landmarks
+
 _FONT = next((p for p in (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
@@ -375,6 +377,15 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     H, W = bgr.shape[:2]
     gbgr = GROUNDS.get(ground, GROUNDS["dark"])
     fade = ground in _FADE_GROUNDS
+    # PET_LANDMARKS: real face anchoring (eyes/nose/neck) from an anatomical keypoint model,
+    # in place of the photometric `feat` guess below and the mask-centroid PET_HERO_CENTRE
+    # heuristic. Off by default -- see app/pet_landmarks.py's module docstring for what this
+    # does and does not cover (face only; body/limb anchoring was tested and deliberately left
+    # out). Run on the PRISTINE input, before any of the tonal preprocessing below, since that
+    # is the same kind of photo the model was validated against; the coordinates stay valid
+    # after preprocessing because it never changes bgr's shape, only its tone.
+    _lm_on = (os.environ.get("PET_LANDMARKS", "0").strip().lower() not in ("0", "false", "off", ""))
+    lm = pet_landmarks.face_landmarks(bgr, mask) if _lm_on else None
     # --- Preprocess the PHOTO first, so the portrait is built from WORDS, not a photo with type
     #     laid over it: the coat should read as type; only the eyes/nose stay photographic. ---
     bgr = _enhance_contrast(bgr, mask)                       # punch up the tonal range first
@@ -421,6 +432,23 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
             _b = np.clip(_b + (_p[1:-1, 1:-1] == 0).astype(np.uint8), 0, 1)
             feat = np.maximum(feat, cv2.GaussianBlur(_b.astype(np.float32), (0, 0),
                                                      sigmaX=max(1.0, W * 0.006)))
+
+    # PET_LANDMARKS: union real face-point bumps into the feature field, so the fine tier
+    # anchors on the ACTUAL eyes/nose/neck instead of only wherever the photometric comparison
+    # above happens to fire (that comparison can miss, e.g. two dark eyes with no lighter rim
+    # to key off). Additive: never removes anything the photometric field already found.
+    if lm is not None:
+        _lm_canvas = np.zeros((H, W), np.float32)
+        _lm_r = max(2, int(round(W * 0.018)))
+        for _k in ("eye_l", "eye_r", "nose"):
+            _lx, _ly = lm[_k]
+            cv2.circle(_lm_canvas, (int(round(_lx)), int(round(_ly))), _lm_r, 1.0, -1)
+        if "neck" in lm:
+            _lx, _ly = lm["neck"]
+            cv2.circle(_lm_canvas, (int(round(_lx)), int(round(_ly))),
+                      max(2, int(round(W * 0.012))), 0.6, -1)
+        feat = np.maximum(feat, np.clip(
+            cv2.GaussianBlur(_lm_canvas, (0, 0), sigmaX=max(1.0, W * 0.010)) * 1.6, 0, 1))
 
     # DE-WHISKER: thin bright strokes (whiskers, the diagonal lines inside ears) read as real fur,
     # not type, and overpower the words. A white top-hat isolates bright structures THINNER than the
@@ -541,7 +569,14 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     if _hc > 0.0:
         _ys, _xs = np.nonzero(mask > 0.5)
         if _ys.size > 32:
-            _cy, _cx = float(_ys.mean()), float(_xs.mean())
+            # PET_LANDMARKS: center on the REAL head (mean of eyes+nose) instead of the mask's
+            # own centroid -- the centroid is the whole silhouette's center of mass, which sits
+            # over the torso on a full-body photo, not the head. Falls back to the centroid,
+            # unchanged, whenever landmarks are off or unavailable for this photo.
+            if lm is not None:
+                _cx, _cy = lm["head_center"]
+            else:
+                _cy, _cx = float(_ys.mean()), float(_xs.mean())
             _ry = max(1.0, (float(_ys.max()) - float(_ys.min())) * 0.5)
             _rx = max(1.0, (float(_xs.max()) - float(_xs.min())) * 0.5)
             _rr = np.sqrt(((xx - _cx) / _rx) ** 2 + ((yy - _cy) / _ry) ** 2)
