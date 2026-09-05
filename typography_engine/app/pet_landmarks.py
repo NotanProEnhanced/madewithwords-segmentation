@@ -41,12 +41,20 @@ except Exception:  # noqa: BLE001 -- optional dependency; must never crash the a
 _COCO_CAT = 15
 _COCO_DOG = 16
 
-_DET_MODEL_PATH = os.environ.get("PET_LM_DET_MODEL", "models/yolox_m.onnx")
+_DEFAULT_DET_PATH = "models/yolox_m.onnx"
+_DEFAULT_POSE_PATH = "models/rtmpose_ap10k_m.onnx"
+# `or default`, not just a get()-default: docker-compose.yml passes these through as
+# `${PET_LM_DET_MODEL:-}`, which always DEFINES the var in the container -- as an empty
+# string when a tree's .env doesn't set it. get()'s own default only applies when the key is
+# ABSENT, so an empty string silently wins over it. Confirmed live: without `or default` here,
+# every render read PET_LM_DET_MODEL="" and PET_LM_POSE_MODEL="", os.path.exists("") is always
+# False, and the feature was unreachable regardless of whether the real files were on disk.
+_DET_MODEL_PATH = os.environ.get("PET_LM_DET_MODEL", _DEFAULT_DET_PATH) or _DEFAULT_DET_PATH
 _DET_MODEL_URL = os.environ.get(
     "PET_LM_DET_URL",
     "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_m.onnx",
 )
-_POSE_MODEL_PATH = os.environ.get("PET_LM_POSE_MODEL", "models/rtmpose_ap10k_m.onnx")
+_POSE_MODEL_PATH = os.environ.get("PET_LM_POSE_MODEL", _DEFAULT_POSE_PATH) or _DEFAULT_POSE_PATH
 # No fetch URL for the pose model: OpenMMLab distributes it as a .zip bundling config/pipeline
 # JSON alongside the .onnx, not a bare file suitable for a direct download-in-place. Prefetched
 # and unzipped once at image build time (see Dockerfile); this module never fetches it itself --
@@ -57,7 +65,12 @@ _POSE_MODEL_PATH = os.environ.get("PET_LM_POSE_MODEL", "models/rtmpose_ap10k_m.o
 # still well above noise-level scores. (Body points are NOT gated by this alone -- see the module
 # docstring for why they are not used here at all.)
 _MIN_SCORE = float(os.environ.get("PET_LM_MIN_SCORE", "0.7") or 0.7)
-_USE_NECK = (os.environ.get("PET_LM_USE_NECK", "1").strip().lower() not in ("0", "false", "off", "no"))
+# Empty string (compose's `${PET_LM_USE_NECK:-}` default) happens to fall through to "on" here
+# too, since "" isn't in the off-list below -- but explicit is better than relying on that,
+# given the _DET_MODEL_PATH/_POSE_MODEL_PATH bug this exact "empty string from compose" shape
+# just caused elsewhere in this file.
+_USE_NECK = ((os.environ.get("PET_LM_USE_NECK", "1").strip().lower() or "1")
+             not in ("0", "false", "off", "no"))
 
 _DET_INPUT = (640, 640)
 _POSE_INPUT = (256, 256)
