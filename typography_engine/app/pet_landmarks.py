@@ -71,6 +71,17 @@ _STATE = {"det": None, "pose": None, "ready": None}   # ready: None=untried, Tru
 _FAILED_AT = 0.0
 _RETRY_AFTER = float(os.environ.get("PET_LM_RETRY_AFTER", "300") or 300.0)
 
+# PET_LM_DEBUG=1: print exactly what happened and why, at every decision point. Every failure
+# path below is a silent `return None` by design (a bad detection must never crash or visibly
+# alter a paying customer's render) -- which also means, without this, there is NO way to tell
+# "no pet detected" apart from "a real bug swallowed by the safety net" from outside the process.
+_DEBUG = os.environ.get("PET_LM_DEBUG", "").strip().lower() not in ("", "0", "false", "off")
+
+
+def _dbg(msg):
+    if _DEBUG:
+        print("[pet_landmarks] %s" % msg, flush=True)
+
 
 def _load_models():
     """Return (det, pose) sessions, or (None, None) if unavailable. Cached; a failure backs off
@@ -80,12 +91,17 @@ def _load_models():
         if _STATE["ready"] is True:
             return _STATE["det"], _STATE["pose"]
         if _STATE["ready"] is False and (time.monotonic() - _FAILED_AT) < _RETRY_AFTER:
+            _dbg("skipped: a previous load failed within the last %.0fs" % _RETRY_AFTER)
             return None, None
         if not _IMPORT_OK:
+            _dbg("unavailable: rtmlib/cv2 import failed at module load time")
             _STATE["ready"] = False
             _FAILED_AT = time.monotonic()
             return None, None
-        if not (os.path.exists(_DET_MODEL_PATH) and os.path.exists(_POSE_MODEL_PATH)):
+        _det_ok, _pose_ok = os.path.exists(_DET_MODEL_PATH), os.path.exists(_POSE_MODEL_PATH)
+        if not (_det_ok and _pose_ok):
+            _dbg("unavailable: model file(s) missing -- det(%s)=%s pose(%s)=%s"
+                 % (_DET_MODEL_PATH, _det_ok, _POSE_MODEL_PATH, _pose_ok))
             _STATE["ready"] = False
             _FAILED_AT = time.monotonic()
             return None, None
@@ -93,8 +109,10 @@ def _load_models():
             det = YOLOX(_DET_MODEL_PATH, det_mode="multiclass", model_input_size=_DET_INPUT)
             pose = RTMPose(_POSE_MODEL_PATH, model_input_size=_POSE_INPUT)
             _STATE["det"], _STATE["pose"], _STATE["ready"] = det, pose, True
+            _dbg("models loaded OK")
             return det, pose
-        except Exception:  # noqa: BLE001 -- any failure -> feature silently unavailable
+        except Exception as e:  # noqa: BLE001 -- any failure -> feature silently unavailable
+            _dbg("model load FAILED: %r" % (e,))
             _STATE["ready"] = False
             _FAILED_AT = time.monotonic()
             return None, None
@@ -121,6 +139,7 @@ def face_landmarks(bgr, mask=None):
         bboxes, classes = det(bgr)
         pet_boxes = [b for b, c in zip(bboxes, classes) if c in (_COCO_CAT, _COCO_DOG)]
         if not pet_boxes:
+            _dbg("no dog/cat detected (detector found %d box(es) total, none cat/dog)" % len(bboxes))
             return None
         # Largest by area = the primary subject.
         areas = [(b[2] - b[0]) * (b[3] - b[1]) for b in pet_boxes]
@@ -128,19 +147,26 @@ def face_landmarks(bgr, mask=None):
         keypoints, scores = pose(bgr, bboxes=[box])
         kpts, scs = keypoints[0], scores[0]
 
-        def pt(i):
+        def pt(i, name):
             if scs[i] < _MIN_SCORE:
+                _dbg("%s below confidence floor: %.3f < %.2f" % (name, scs[i], _MIN_SCORE))
                 return None
             x, y = float(kpts[i][0]), float(kpts[i][1])
             if mask is not None:
                 h, w = mask.shape[:2]
                 xi, yi = int(round(x)), int(round(y))
                 if not (0 <= xi < w and 0 <= yi < h) or mask[yi, xi] < 0.3:
+                    _dbg("%s landed off-subject at (%d,%d), score %.3f -- discarded" % (name, xi, yi, scs[i]))
                     return None  # off-subject entirely -- discard rather than trust a stray point
             return (x, y)
 
-        eye_l, eye_r, nose, neck = pt(_L_EYE), pt(_R_EYE), pt(_NOSE), pt(_NECK)
+        eye_l = pt(_L_EYE, "L_Eye")
+        eye_r = pt(_R_EYE, "R_Eye")
+        nose = pt(_NOSE, "Nose")
+        neck = pt(_NECK, "Neck")
         if eye_l is None or eye_r is None or nose is None:
+            _dbg("declining: need eyes+nose all confident, got eye_l=%s eye_r=%s nose=%s"
+                 % (eye_l is not None, eye_r is not None, nose is not None))
             return None  # the one combination this module is confident in; anything less, decline
         out = {
             "eye_l": eye_l,
@@ -153,6 +179,9 @@ def face_landmarks(bgr, mask=None):
         }
         if _USE_NECK and neck is not None:
             out["neck"] = neck
+        _dbg("OK: found %s at head_center=(%.0f,%.0f)"
+             % (sorted(out.keys()), out["head_center"][0], out["head_center"][1]))
         return out
-    except Exception:  # noqa: BLE001 -- a bad frame must degrade to "no landmarks", never crash a render
+    except Exception as e:  # noqa: BLE001 -- a bad frame must degrade to "no landmarks", never crash a render
+        _dbg("render-time FAILED: %r" % (e,))
         return None
