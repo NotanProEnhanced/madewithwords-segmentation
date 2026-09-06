@@ -1451,6 +1451,33 @@ _DISP_SCULPT_INKS = frozenset({
     "photo", "mono", "navy", "sepia", "burgundy", "forest", "gold_noir", "custom",
 })
 
+# Pet typography size. Was three fixed buttons (small/medium/large); the render engine itself
+# has always taken a plain float, so the buttons were a frontend restriction, not a backend
+# one -- replaced with a continuous slider sending that float directly. The three labels are
+# kept resolvable here for backward compatibility: an OLD stored order recipe (see the
+# /render and download handlers below) may still carry a bare "small"/"medium"/"large" string
+# from before the slider existed, and that must keep resolving to the exact same number it
+# always did, indefinitely.
+_PET_TYPE_SCALES = {"small": 0.30, "medium": 0.42, "large": 0.56}
+_PET_TYPE_SCALE_MIN, _PET_TYPE_SCALE_MAX = 0.20, 0.65   # generous clamp beyond the slider's own
+                                                          # 0.30-0.56 UI range, so a stray value
+                                                          # (a hand-crafted request, a future UI
+                                                          # bug) can never reach the render engine
+                                                          # un-clamped.
+
+
+def _resolve_pet_type_scale(raw):
+    """A legacy label (small/medium/large) or a numeric string (the slider) -> a safely
+    clamped float. Never raises -- an unparseable value quietly resolves to "small" rather
+    than 500ing a render or a download."""
+    s = (str(raw) if raw is not None else "small").strip().lower()
+    if s in _PET_TYPE_SCALES:
+        return _PET_TYPE_SCALES[s]
+    try:
+        return min(_PET_TYPE_SCALE_MAX, max(_PET_TYPE_SCALE_MIN, float(s)))
+    except ValueError:
+        return _PET_TYPE_SCALES["small"]
+
 
 @app.post("/render")
 async def render(
@@ -1522,12 +1549,10 @@ async def render(
     if pet_ground_sel not in _PET_GROUNDS:
         pet_ground_sel = "dark"
     # PET typography size -> tier scale (<1 = finer type). Small adds fine detail; Large
-    # reads bold and graphic. Stored in the recipe so the paid download matches the preview.
-    _PET_TYPE_SCALES = {"small": 0.30, "medium": 0.42, "large": 0.56}
-    pet_type_sel = (pet_type or "small").strip().lower()
-    if pet_type_sel not in _PET_TYPE_SCALES:
-        pet_type_sel = "small"
-    pet_type_scale = _PET_TYPE_SCALES[pet_type_sel]
+    # reads bold and graphic. A continuous slider now (see _resolve_pet_type_scale); the raw
+    # value is stored in the recipe as pet_type_scale so the paid download matches the preview
+    # exactly, rather than snapping to whichever of 3 labels it's nearest to.
+    pet_type_scale = _resolve_pet_type_scale(pet_type)
     ref_clean = re.sub(r"[^A-Za-z0-9_-]", "", ref or "")[:40]     # referral/source tag (persists)
     brand_clean = re.sub(r"[^A-Za-z0-9_-]", "", brand or "")[:40]  # ACTIVE brand skin (gates brand UX)
     img_bytes = await image.read()
@@ -1887,7 +1912,8 @@ async def render(
             "sunglass_faces": sunglass_faces_sel,   # per-subject lens selection -> paid recompose must match
             "pet": bool(pet_on),   # Paws in Words -> paid recompose renders via the pet engine
             "pet_ground": pet_ground_sel if pet_on else None,
-            "pet_type": pet_type_sel if pet_on else None,   # typography size (small/medium/large)
+            "pet_type": (pet_type or "small") if pet_on else None,   # raw slider value, kept for reference
+            "pet_type_scale": pet_type_scale if pet_on else None,   # authoritative: what actually rendered
             # Stored so a real distribution accumulates from actual customer uploads.
             # The touch-up editor should appear only when the cutout is uncertain, and
             # the threshold for that cannot be chosen from test images: measured across
@@ -4496,9 +4522,15 @@ def _compose_clean_png(job, aspect, path, recipe_path, src_path):
             # Paws in Words: paid file via the pet engine, on a 4:5 gallery print canvas at
             # download resolution. Skips the face pipeline entirely.
             from .pet_proto import render_pet_portrait
-            # "small" to match the preview's default (see _PET_TYPE_SCALES above); this
-            # said "medium", so an untouched control previewed small and downloaded medium.
-            _dl_pt = {"small": 0.30, "medium": 0.42, "large": 0.56}.get(r.get("pet_type") or "small")
+            # pet_type_scale is the authoritative, exact value the preview actually rendered
+            # at (added alongside the continuous slider). Only an OLDER recipe, saved before
+            # the slider existed, lacks that field -- those still carry the legacy label
+            # (small/medium/large) under pet_type, resolved the same way _resolve_pet_type_scale
+            # always has. A recipe with neither (should not happen) falls back to "small",
+            # matching the previous behavior for that same edge case.
+            _dl_pt = r.get("pet_type_scale")
+            if _dl_pt is None:
+                _dl_pt = _resolve_pet_type_scale(r.get("pet_type"))
             png_bytes = render_pet_portrait(
                 src_path.read_bytes(), (r.get("text", "") or ""),
                 ground=(r.get("pet_ground") or "dark"),

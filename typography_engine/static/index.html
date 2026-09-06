@@ -310,6 +310,9 @@
   .seg{display:flex;gap:4px;background:#f1efe9;border-radius:999px;padding:4px;margin:8px auto 0;width:100%}
   .seg button{flex:1 1 0;min-width:0;border:none;background:none;border-radius:999px;padding:9px 6px;font-size:13.5px;font-weight:600;color:var(--muted);font-family:var(--sans);cursor:pointer;white-space:nowrap;letter-spacing:-.01em;transition:background .18s ease,color .18s ease}
   .seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  /* Pet lettering-size slider: native control (matches #bgBrush elsewhere in this file, which
+     is also left unstyled) -- just sized and spaced to sit in a .ctl the same way .seg does. */
+  .pet-type-slider{display:block;width:100%;margin:10px 0 2px;accent-color:var(--navy)}
   /* "Best for this photo" recommendation badge (set by the likeness scorer). */
   .seg button.best::after{content:"\2726";margin-left:5px;color:#c9a227;font-size:11px;vertical-align:1px}
   /* Visual style picker: each choice is a sample thumbnail + label, so the user
@@ -1044,7 +1047,7 @@ const _isPet=!!(BRAND && BRAND.pet);   // pet STUDIO: the Paws in Words interfac
 // that is what keeps Passage working (main.py only reads `message` when style=="message").
 const _petEngine=!!(BRAND && (BRAND.pet || BRAND.petEngine));
 if(_petEngine && !state.petGround) state.petGround="dark";   // gallery-dark hero by default
-if(_petEngine && !state.petType) state.petType="small";     // typography size: small | medium | large
+if(_petEngine && (state.petType===undefined || state.petType===null)) state.petType=0.30;   // typography size, continuous 0.30 (fine) - 0.56 (bold)
 // Pet-clean studio: hide the human-only controls, repurpose the Background axis as the pet
 // "Look", add word chips + composition guidance. Gated on _isPet -> other brands untouched.
 // A brand on the pet ENGINE but wearing its own studio (memorial, faith). The engine
@@ -1064,19 +1067,25 @@ function _petEngineSetup(){
     if(_bg && !document.getElementById("petTypeCtl")){
       var tc=document.createElement("div"); tc.className="ctl"; tc.id="petTypeCtl";
       tc.innerHTML='<div class="ctl-lbl">Lettering Size</div>'
-        +'<div class="seg" id="petTypeSeg" aria-label="Lettering size">'
-        +'<button type="button" data-pt="small" class="on">Small</button>'
-        +'<button type="button" data-pt="medium">Medium</button>'
-        +'<button type="button" data-pt="large">Large</button></div>'
+        +'<input type="range" id="petTypeSlider" class="pet-type-slider" min="0.30" max="0.56" step="0.01" '
+        +'value="'+(state.petType||0.30)+'" aria-label="Lettering size">'
         +'<div class="ctl-hint">Small adds fine detail; Large reads bold and graphic.</div>';
       _bg.parentNode.insertBefore(tc, _bg.nextSibling);
-      tc.querySelectorAll("#petTypeSeg button").forEach(function(b){
-        b.addEventListener("click",function(){
-          var v=b.getAttribute("data-pt"); if((state.petType||"small")===v) return;
-          userTouched=true; state.petType=v;
-          tc.querySelectorAll("#petTypeSeg button").forEach(function(x){ x.classList.toggle("on", x===b); });
-          invalidate(); render(state.ink,{animate:false});
-        });
+      // Continuous slider replaced the old 3-button (small/medium/large) picker -- the render
+      // engine always took a plain float, so this is a frontend-only change (see main.py's
+      // _resolve_pet_type_scale for the backward-compatible backend side). Re-rendering on
+      // every "input" tick during a drag would flood the server with a request per pixel of
+      // drag; debounce so only a brief pause (or drag release, via "change") actually renders.
+      var _ptTimer=null;
+      var _ptSlider=tc.querySelector("#petTypeSlider");
+      _ptSlider.addEventListener("input",function(){
+        var v=Number(_ptSlider.value); if(state.petType===v) return;
+        userTouched=true; state.petType=v;
+        clearTimeout(_ptTimer);
+        _ptTimer=setTimeout(function(){ invalidate(); render(state.ink,{animate:false}); },350);
+      });
+      _ptSlider.addEventListener("change",function(){
+        clearTimeout(_ptTimer); invalidate(); render(state.ink,{animate:false});
       });
     }
   }catch(e){}
@@ -1094,19 +1103,23 @@ function _petSetup(){
     if(_bg && !document.getElementById("petTypeCtl")){
       var tc=document.createElement("div"); tc.className="ctl"; tc.id="petTypeCtl";
       tc.innerHTML='<div class="ctl-lbl">Lettering Size</div>'
-        +'<div class="seg" id="petTypeSeg" aria-label="Lettering size">'
-        +'<button type="button" data-pt="small" class="on">Small</button>'
-        +'<button type="button" data-pt="medium">Medium</button>'
-        +'<button type="button" data-pt="large">Large</button></div>'
+        +'<input type="range" id="petTypeSlider" class="pet-type-slider" min="0.30" max="0.56" step="0.01" '
+        +'value="'+(state.petType||0.30)+'" aria-label="Lettering size">'
         +'<div class="ctl-hint">Small adds fine detail; Large reads bold and graphic.</div>';
       _bg.parentNode.insertBefore(tc, _bg.nextSibling);
-      tc.querySelectorAll("#petTypeSeg button").forEach(function(b){
-        b.addEventListener("click",function(){
-          var v=b.getAttribute("data-pt"); if((state.petType||"small")===v) return;
-          userTouched=true; state.petType=v;
-          tc.querySelectorAll("#petTypeSeg button").forEach(function(x){ x.classList.toggle("on", x===b); });
-          invalidate(); render(state.ink,{animate:false});   // re-render preview at the new size
-        });
+      // Continuous slider replaced the old 3-button (small/medium/large) picker -- see the
+      // matching comment in _petEngineSetup above for why (a frontend-only change) and the
+      // debounce reasoning.
+      var _ptTimer=null;
+      var _ptSlider=tc.querySelector("#petTypeSlider");
+      _ptSlider.addEventListener("input",function(){
+        var v=Number(_ptSlider.value); if(state.petType===v) return;
+        userTouched=true; state.petType=v;
+        clearTimeout(_ptTimer);
+        _ptTimer=setTimeout(function(){ invalidate(); render(state.ink,{animate:false}); },350);
+      });
+      _ptSlider.addEventListener("change",function(){
+        clearTimeout(_ptTimer); invalidate(); render(state.ink,{animate:false});   // re-render preview at the new size
       });
     }
     // Structured personal input (v1): guided fields -> a rich, weighted word stream, so every
@@ -1335,7 +1348,7 @@ function variantPost(id){
   // so the server streams the passage in written order. The flow flag is sent in render().
   // Paws in Words: the pet engine uses its own grounds (dark/mid/paper…), driven off the pet
   // flag on the server. Send the chosen pet ground; backdrop/ink don't apply.
-  if(_petEngine) return {ink:"photo", style:"pet", ground:(state.petGround||"dark"), petType:(state.petType||"small")};
+  if(_petEngine) return {ink:"photo", style:"pet", ground:(state.petGround||"dark"), petType:(state.petType||0.30)};
   const base = (state.style==="displacement" || state.style==="letter")
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
     : {ink:(id||"photo"), style:state.style, ground:"navy"};
@@ -2167,7 +2180,7 @@ async function renderSizeThumb(mf){
   const myGen=gen;
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
-  const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_petEngine){ fd.append("pet","1"); fd.append("pet_type", state.petType||"small"); } fd.append("message",words.value.trim());
+  const vp=variantPost(state.ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_petEngine){ fd.append("pet","1"); fd.append("pet_type", state.petType||0.30); } fd.append("message",words.value.trim());
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(mf));
   fd.append("png_width","380"); fd.append("render_w","760");   // coarse, fast chip
@@ -2804,7 +2817,7 @@ async function render(ink,{animate=false,background=false,thumb=false,hires=fals
   if(!background && !thumb && !hires) showBusy(animate);
   const fd=new FormData();
   fd.append("image",state.file); if(state.crop) fd.append("crop",state.crop); fd.append("aspect", String(CROP_AR)); fd.append("words",words.value.trim());
-  const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_petEngine){ fd.append("pet","1"); fd.append("pet_type", state.petType||"small"); } fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
+  const vp=variantPost(ink); fd.append("ink",vp.ink); if(vp.ink==="custom") fd.append("ink_hex",state.inkHex||""); fd.append("style",vp.style); fd.append("ground",vp.ground); if(vp.backdrop) fd.append("backdrop",vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_petEngine){ fd.append("pet","1"); fd.append("pet_type", state.petType||0.30); } fd.append("message",words.value.trim()); fd.append("flow", state.style==="letter"?"true":"");   // Letter -> displacement message-flow
   fd.append("remove_bg", state.removeBg?"true":"false"); fd.append("uppercase", state.uppercase?"true":"false"); if(REF) fd.append("ref", REF); if(BRAND_ID) fd.append("brand", BRAND_ID); fd.append("biometric_consent", bioOK()?"on":""); if(state.maskData) fd.append("mask", state.maskData);   // brand = ACTIVE skin (no localStorage), gates the memorial experience
   fd.append("min_font_px", String(state.minFont||57));   // was ||20 -- a different default from the
                                                           // other two call sites, and now a visible one
@@ -3506,7 +3519,7 @@ function fetchWithTimeout(url, opts, ms){
       if(state.crop) fd.append("crop", state.crop);
       fd.append("title", $g("gatherName").value.trim()||"In their words");
       fd.append("words", words.value.trim());
-      fd.append("style", vp.style); fd.append("ink", vp.ink); fd.append("ground", vp.ground); if(vp.backdrop) fd.append("backdrop", vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_petEngine){ fd.append("pet","1"); fd.append("pet_type", state.petType||"small"); }
+      fd.append("style", vp.style); fd.append("ink", vp.ink); fd.append("ground", vp.ground); if(vp.backdrop) fd.append("backdrop", vp.backdrop); { const _sf=state.sunglassFaces||[]; if(_sf.length) fd.append("sunglass_faces",_sf.join(",")); } if(_petEngine){ fd.append("pet","1"); fd.append("pet_type", state.petType||0.30); }
       fd.append("min_font", String(state.minFont||20));
       const r=await fetch("/api/gather/create",{method:"POST",body:fd});
       const d=await r.json();
