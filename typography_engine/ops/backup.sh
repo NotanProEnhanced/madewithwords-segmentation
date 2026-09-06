@@ -30,7 +30,7 @@ APP_DIRS=(
 STAGING="/root/.typortrait-backup-staging"     # transient consistent DB snapshots
 ENVFILE="/root/.typortrait-backup.env"         # restic + provider creds (chmod 600)
 LOG="/var/log/typortrait-backup.log"
-HEALTHCHECK_URL=""                             # optional healthchecks.io ping URL
+HEALTHCHECK_URL="https://hc-ping.com/692a664c-1ee1-45bd-8144-1a7524aba3d6"
 # ---------------------------------------------------------------------------
 
 exec >>"$LOG" 2>&1
