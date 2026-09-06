@@ -313,6 +313,10 @@
   /* Pet lettering-size slider: native control (matches #bgBrush elsewhere in this file, which
      is also left unstyled) -- just sized and spaced to sit in a .ctl the same way .seg does. */
   .pet-type-slider{display:block;width:100%;margin:10px 0 2px;accent-color:var(--navy)}
+  /* Live Small/Medium/Large descriptor under a size slider (pet lettering size, and the
+     human "Mosaic" word-size control) -- centered, quiet, but a touch more prominent than
+     .ctl-hint since it's the ANSWER ("Medium"), not a hint about what the control does. */
+  .size-slider-label{text-align:center;font-size:14px;font-weight:700;color:var(--navy);margin-top:2px;font-family:var(--sans)}
   /* "Best for this photo" recommendation badge (set by the likeness scorer). */
   .seg button.best::after{content:"\2726";margin-left:5px;color:#c9a227;font-size:11px;vertical-align:1px}
   /* Visual style picker: each choice is a sample thumbnail + label, so the user
@@ -750,8 +754,8 @@
     </div>
     <div id="thumbStatus" class="thumb-status" aria-live="polite"></div>
     <div class="sizefilm" id="sizeFilm">
-      <div class="film-lbl">Word size — tap to resize the type</div>
-      <div id="sizeStrip" class="swatches sizestrip"></div>
+      <div class="film-lbl">Word size</div>
+      <div id="sizeStrip" class="sizestrip"></div>
     </div>
     <div class="ctl" id="caseCtl" style="margin-top:16px">
       <div class="ctl-lbl">Letter case</div>
@@ -1048,6 +1052,16 @@ const _isPet=!!(BRAND && BRAND.pet);   // pet STUDIO: the Paws in Words interfac
 const _petEngine=!!(BRAND && (BRAND.pet || BRAND.petEngine));
 if(_petEngine && !state.petGround) state.petGround="dark";   // gallery-dark hero by default
 if(_petEngine && (state.petType===undefined || state.petType===null)) state.petType=0.30;   // typography size, continuous 0.30 (fine) - 0.56 (bold)
+// Named breakpoints for the pet slider's live descriptor -- same three values
+// _PET_TYPE_SCALES resolves server-side, so the label always matches what the render
+// endpoint actually used. Nearest-value match, not a range lookup, so every point on the
+// slider (not just the three original values) shows a sensible label.
+const PET_TYPE_SIZES=[[0.30,"Small"],[0.42,"Medium"],[0.56,"Large"]];
+function petSizeLabel(v){
+  v=Number(v); let best=PET_TYPE_SIZES[0], bestDist=Infinity;
+  PET_TYPE_SIZES.forEach(function(o){ var d=Math.abs(o[0]-v); if(d<bestDist){ bestDist=d; best=o; } });
+  return best[1];
+}
 // Pet-clean studio: hide the human-only controls, repurpose the Background axis as the pet
 // "Look", add word chips + composition guidance. Gated on _isPet -> other brands untouched.
 // A brand on the pet ENGINE but wearing its own studio (memorial, faith). The engine
@@ -1069,6 +1083,7 @@ function _petEngineSetup(){
       tc.innerHTML='<div class="ctl-lbl">Lettering Size</div>'
         +'<input type="range" id="petTypeSlider" class="pet-type-slider" min="0.30" max="0.56" step="0.01" '
         +'value="'+(state.petType||0.30)+'" aria-label="Lettering size">'
+        +'<div class="size-slider-label" id="petTypeSizeLabel">'+petSizeLabel(state.petType||0.30)+'</div>'
         +'<div class="ctl-hint">Small adds fine detail; Large reads bold and graphic.</div>';
       _bg.parentNode.insertBefore(tc, _bg.nextSibling);
       // Continuous slider replaced the old 3-button (small/medium/large) picker -- the render
@@ -1076,10 +1091,15 @@ function _petEngineSetup(){
       // _resolve_pet_type_scale for the backward-compatible backend side). Re-rendering on
       // every "input" tick during a drag would flood the server with a request per pixel of
       // drag; debounce so only a brief pause (or drag release, via "change") actually renders.
+      // The Small/Medium/Large descriptor updates on every tick, live -- it's free (no render
+      // needed), unlike the render itself.
       var _ptTimer=null;
       var _ptSlider=tc.querySelector("#petTypeSlider");
+      var _ptLabel=tc.querySelector("#petTypeSizeLabel");
       _ptSlider.addEventListener("input",function(){
-        var v=Number(_ptSlider.value); if(state.petType===v) return;
+        var v=Number(_ptSlider.value);
+        if(_ptLabel) _ptLabel.textContent=petSizeLabel(v);
+        if(state.petType===v) return;
         userTouched=true; state.petType=v;
         clearTimeout(_ptTimer);
         _ptTimer=setTimeout(function(){ invalidate(); render(state.ink,{animate:false}); },350);
@@ -1105,15 +1125,19 @@ function _petSetup(){
       tc.innerHTML='<div class="ctl-lbl">Lettering Size</div>'
         +'<input type="range" id="petTypeSlider" class="pet-type-slider" min="0.30" max="0.56" step="0.01" '
         +'value="'+(state.petType||0.30)+'" aria-label="Lettering size">'
+        +'<div class="size-slider-label" id="petTypeSizeLabel">'+petSizeLabel(state.petType||0.30)+'</div>'
         +'<div class="ctl-hint">Small adds fine detail; Large reads bold and graphic.</div>';
       _bg.parentNode.insertBefore(tc, _bg.nextSibling);
       // Continuous slider replaced the old 3-button (small/medium/large) picker -- see the
       // matching comment in _petEngineSetup above for why (a frontend-only change) and the
-      // debounce reasoning.
+      // debounce reasoning. The Small/Medium/Large descriptor updates live on every tick.
       var _ptTimer=null;
       var _ptSlider=tc.querySelector("#petTypeSlider");
+      var _ptLabel=tc.querySelector("#petTypeSizeLabel");
       _ptSlider.addEventListener("input",function(){
-        var v=Number(_ptSlider.value); if(state.petType===v) return;
+        var v=Number(_ptSlider.value);
+        if(_ptLabel) _ptLabel.textContent=petSizeLabel(v);
+        if(state.petType===v) return;
         userTouched=true; state.petType=v;
         clearTimeout(_ptTimer);
         _ptTimer=setTimeout(function(){ invalidate(); render(state.ink,{animate:false}); },350);
@@ -2135,44 +2159,67 @@ function sizesForStyle(){ return state.style==="message" ? LETTER_SIZES : WORD_S
 const sizeStripEl=$("#sizeStrip"), sizeFilmEl=$("#sizeFilm");
 let allowedMf=[120,57];
 let sizeThumbCache={};                 // coarse renders of the CURRENT ink, keyed by size
+// Nearest-value match (not a range lookup), so every point on the continuous slider --
+// not just the 3 original button values -- shows a sensible Small/Medium/Large label.
+function nearestSizeLabel(mf){
+  const opts=sizesForStyle(); let best=opts[0], bestDist=Infinity;
+  opts.forEach(o=>{ const d=Math.abs(Number(o[0])-mf); if(d<bestDist){ bestDist=d; best=o; } });
+  return best[1];
+}
+let _sizeSliderTimer=null;
 function buildSizeStrip(){
   if(!sizeStripEl) return;
-  // Pet brand has its OWN typography control (state.petType, the Small/Medium/Large seg in
-  // _petSetup). The legacy Word-size filmstrip drives min_font, which the pet engine ignores
-  // -> it's a dead, duplicate control here. Keep it hidden so pets see ONE size control.
+  // Pet brand has its OWN typography control (state.petType, the slider in _petSetup). The
+  // legacy Word-size control drives min_font, which the pet engine ignores -> it's a dead,
+  // duplicate control here. Keep it hidden so pets see ONE size control.
   if(_petEngine){ if(sizeFilmEl) sizeFilmEl.style.display="none"; return; }
   // Sculpted is auto-scaled; Message auto-sizes from text length (build_poster
   // repeats to fill, so the type size is the renderer's call, not the user's).
   if(state.style==="displacement" || state.style==="letter" || state.style==="message"){ if(sizeFilmEl) sizeFilmEl.style.display="none"; return; }  // no size control (Letter = displacement: auto-scaled, ignores min_font)
-  sizeStripEl.innerHTML="";
   const set=new Set(allowedMf.map(Number));
-  sizesForStyle().forEach(([mf,label])=>{
-    if(!set.has(Number(mf))) return;
-    const el=document.createElement("button"); el.type="button";
-    el.className="thumb"+(Number(mf)===Number(state.minFont)?" sel":""); el.dataset.mf=mf;
-    const pic=document.createElement("div"); pic.className="pic"; pic.dataset.mf=mf;
-    pic.style.backgroundColor="#ece9e2";
-    const nm=document.createElement("div"); nm.className="nm"; nm.textContent=label;
-    el.append(pic,nm); el.addEventListener("click",()=>selectSize(mf)); sizeStripEl.append(el);
-  });
+  const usable=sizesForStyle().filter(([mf])=>set.has(Number(mf)));
+  // Fewer than 2 usable values -> nothing to choose between for this photo's framing
+  // (the /measure legibility gate), same as the old strip hiding itself in that case.
+  if(usable.length<2){ if(sizeFilmEl) sizeFilmEl.style.display="none"; return; }
+  const vals=usable.map(o=>Number(o[0]));
+  const lo=Math.min(...vals), hi=Math.max(...vals);
+  // Continuous BETWEEN the server-validated points, not just AT them: if the smallest
+  // validated size is legible, everything larger only reads clearer, never worse -- so any
+  // value in [lo, hi] is safe, not just the 3 original discrete points.
+  if(!sizeStripEl.querySelector("#sizeSlider")){
+    sizeStripEl.innerHTML='<input type="range" id="sizeSlider" class="pet-type-slider" step="1" aria-label="Word size">'
+      +'<div class="size-slider-label" id="sizeSliderLabel"></div>';
+    const sl=sizeStripEl.querySelector("#sizeSlider");
+    // Debounced render on drag, same reasoning as the pet slider: an "input" event fires per
+    // pixel of drag and would flood the server. The label is free (no render) and updates
+    // live on every tick regardless; "change" (drag release) flushes immediately.
+    sl.addEventListener("input",function(){
+      const v=Number(sl.value);
+      const lblEl=document.getElementById("sizeSliderLabel"); if(lblEl) lblEl.textContent=nearestSizeLabel(v);
+      clearTimeout(_sizeSliderTimer);
+      _sizeSliderTimer=setTimeout(()=>selectSize(v),350);
+    });
+    sl.addEventListener("change",function(){ clearTimeout(_sizeSliderTimer); selectSize(Number(sl.value)); });
+  }
+  const sl=sizeStripEl.querySelector("#sizeSlider");
+  sl.min=lo; sl.max=hi;
+  if(document.activeElement!==sl) sl.value=state.minFont;   // don't yank the thumb mid-drag on an external refresh
+  const lblEl=document.getElementById("sizeSliderLabel");
+  if(lblEl) lblEl.textContent=nearestSizeLabel(Number(state.minFont));
   const lbl=sizeFilmEl && sizeFilmEl.querySelector(".film-lbl");
-  if(lbl) lbl.textContent=(state.style==="message"?"Text size":"Word size")+" — tap to resize the type";
-  // Nothing to choose between -> hide the strip (one usable size for this photo).
-  if(sizeFilmEl) sizeFilmEl.style.display=(sizeStripEl.children.length>1)?"":"none";
+  if(lbl) lbl.textContent=(state.style==="message"?"Text size":"Word size");
+  if(sizeFilmEl) sizeFilmEl.style.display="";
 }
 function markSizeSel(){
   if(!sizeStripEl) return;
-  [...sizeStripEl.children].forEach(c=>c.classList.toggle("sel",Number(c.dataset.mf)===Number(state.minFont)));
+  const sl=sizeStripEl.querySelector("#sizeSlider"); if(!sl) return;
+  if(document.activeElement!==sl) sl.value=state.minFont;
+  const lblEl=document.getElementById("sizeSliderLabel"); if(lblEl) lblEl.textContent=nearestSizeLabel(Number(state.minFont));
 }
-function updateSizeThumb(mf){
-  if(!sizeStripEl) return;
-  const pic=sizeStripEl.querySelector(`.pic[data-mf="${mf}"]`); if(!pic) return;
-  // The selected size IS the main view -> reuse its full preview (no extra render).
-  let src=sizeThumbCache[mf];
-  if(Number(mf)===Number(state.minFont)) src=(cache[state.ink]&&cache[state.ink].preview)||src;
-  if(src){ pic.style.backgroundImage=`url(${src})`; pic.style.backgroundSize="cover"; pic.style.backgroundPosition="center"; pic.classList.remove("loading"); }
-}
-function refreshSizeStrip(){ if(_petEngine) return; markSizeSel(); allowedMf.forEach(mf=>updateSizeThumb(mf)); }
+// Thumbnails removed in favor of the slider + live label above; kept as a no-op (rather than
+// removed outright) so any caller elsewhere in this file keeps working unchanged.
+function updateSizeThumb(mf){}
+function refreshSizeStrip(){ if(_petEngine) return; markSizeSel(); }
 function resetSizeThumbs(){ if(sizeStripEl) sizeStripEl.querySelectorAll(".pic").forEach(p=>{ p.style.backgroundImage=""; p.classList.remove("loading"); }); }
 async function renderSizeThumb(mf){
   if(!state.file) return;
