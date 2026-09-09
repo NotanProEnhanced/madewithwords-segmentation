@@ -58,6 +58,13 @@ services:
       - PET_SUBJECT_BASE=${PET_SUBJECT_BASE:-0}
       - PET_SUBJECT_DIM=${PET_SUBJECT_DIM:-0.45}
       - PET_TEST=${PET_TEST:-}
+      # v2 pet engine (app/pet_v2): PET_ENGINE=v2 routes the pet branch of /render and
+      # /download to it; unset = the existing engine, byte-identical. PET_V2_VERBOSE=1 logs the
+      # per-render claim metrics (exposed space, collisions, type-only likeness) to the service
+      # log. PET_V2_MAX_RENDER_PX caps the working resolution for the paid file (default 2400).
+      - PET_ENGINE=${PET_ENGINE:-}
+      - PET_V2_VERBOSE=${PET_V2_VERBOSE:-}
+      - PET_V2_MAX_RENDER_PX=${PET_V2_MAX_RENDER_PX:-}
       - PET_TIER_COARSE=${PET_TIER_COARSE:-}
       - PET_TIER_GAMMA=${PET_TIER_GAMMA:-}
       - PET_TONAL=${PET_TONAL:-}
