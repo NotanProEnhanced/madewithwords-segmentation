@@ -2003,6 +2003,25 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
           f"structural: {struct_px_area/total_tiered:.1%}  hero: {hero_px_area/total_tiered:.1%}  "
           f"(targets: 20-30% / 60-70% / 3-7%)")
 
+    # ---- Opacity carries tone, over ALL placed type ---------------------------------------
+    # Measured on the black Lab: in the body zone (47% of the likeness weight) the typography
+    # panel's tone had r = -0.02 with the photo -- the lanes are sparse there on purpose (dark
+    # fur wants little ink) but the residual/channel fills then closed every gap at near-full
+    # alpha, leaving uniform texture with no value structure. Scale the finished canvas's alpha
+    # by the local photo value (blurred past letter scale) so density AND opacity follow tone.
+    # Applied once, after the density loop, which keeps its own error signal unchanged; the
+    # composite reads letter presence separately (see ink_soft), so legibility is unaffected.
+    tone_blur = _gblur(gray.astype(np.float32) / 255.0, (0, 0), sigmaX=max(2.0, base * 0.15))
+    tone_gain = (0.35 + 0.65 * np.clip(tone_blur, 0, 1)).astype(np.float32)
+    _r, _g, _b, _a = canvas.split()
+    # Letter PRESENCE, captured before the tone modulation: every measurement that means "is
+    # there a letter here" (coverage, exposed space, letters-vs-gaps) reads this, not the dimmed
+    # alpha -- otherwise a dark-fur letter at 35% opacity counts as empty space (measured: the
+    # exposed-space figure jumped to 15.8% on the black Lab the moment tone modulation landed).
+    ink_raw = np.asarray(_a, np.float32) / 255.0
+    _a = Image.fromarray(np.clip(np.asarray(_a, np.float32) * tone_gain, 0, 255).astype(np.uint8))
+    canvas = Image.merge("RGBA", (_r, _g, _b, _a))
+
     if debug_dir:
         out = Image.alpha_composite(Image.new("RGBA", (W, H), (255, 255, 255, 255)), canvas).convert("RGB")
         out.save(out_path, quality=92)
@@ -2454,8 +2473,11 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # right for reveal but wrong for "is this pixel a letter" -- measured: with the dilated
     # mask the letter/gap delta read +1 while an external check with the typography panel
     # read +28. Use the canvas's own alpha for anything that means "letter vs gap."
-    ink_raw = np.asarray(canvas.split()[3], np.float32) / 255.0
-    ink_soft = np.clip(ink_raw * 1.6, 0, 1)             # letter interiors 1, antialiased edges soft
+    # ink_raw (pre-modulation presence) was captured above, before the tone gain was applied.
+    # Presence, not opacity: any letter with alpha >= ~64 counts fully as a letter here, so the
+    # tone modulation applied to the canvas above (dim type where the photo is dark) can't
+    # weaken the letter/gap separation in the composite. Antialiased edges stay soft.
+    ink_soft = np.clip(ink_raw / 0.25, 0, 1)
     letters_in = m_in & (ink_raw > 0.5)
     # Design parameter, explicit: gaps sit at this fraction of the letter tone at the same
     # spot. Letters are matched to the SOURCE (they carry its exact tonal range and color);
