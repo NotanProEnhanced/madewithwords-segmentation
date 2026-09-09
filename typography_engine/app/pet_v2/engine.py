@@ -1536,8 +1536,30 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # (not grouped by length) so curvature_adaptive has real material in every bucket everywhere,
     # not just wherever the "short" words happen to sit in the list.
     full_words = words if (words and words.strip()) else DEFAULT_WORDS
-    stream = _weighted_stream(full_words)
-    hero_words = (_phrases(full_words) or stream)[:1]
+    # Two vocabularies from the customer's text. _phrases splits on COMMAS, so a customer's
+    # sentence ("MAGGIE LOSES HER MIND WHEN I COME IN THE DOOR") arrived as ONE 44-character
+    # rigid token and was the only thing the engine had to place -- seen on staging: every
+    # placement a banner, nothing short enough to follow a curl, fill a gap or build an eye.
+    # The full phrases stay for the hero lines (a sentence across the brow reads well); the
+    # streamline and fill passes get the individual WORDS, order preserved (name first keeps
+    # its top weight in _weighted_stream), deduplicated, two-letter filler dropped.
+    phrases = _phrases(full_words)
+    seen, word_list = set(), []
+    for ph in phrases:
+        for w in ph.split():
+            if len(w) >= 3 and w not in seen:
+                seen.add(w); word_list.append(w)
+    if len(word_list) < 4:                     # a bare name or a two-word message: pad, name first
+        for w in _phrases(DEFAULT_WORDS):
+            for ww in w.split():
+                if ww not in seen:
+                    seen.add(ww); word_list.append(ww)
+    stream = _weighted_stream(", ".join(word_list))
+    hero_words = (phrases or stream)[:1]
+    # Short tokens for the residual fill and initials for the channel fill come from the
+    # customer's own words too, so the fine texture is theirs (the pet's name most of all).
+    short_tokens = tuple(w for w in word_list if len(w) <= 5) or ("SOUL", "KIND", "HOME", "JOY")
+    letter_tokens = tuple(dict.fromkeys(w[0] for w in word_list))
 
     # Baseline spacing tied to the SMALLER end of the size range that will be assigned
     # afterward, so fine/mid text fits the tiling without excessive overlap. Tightened from
@@ -1964,8 +1986,9 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # winning iteration first so the claim metrics describe exactly this canvas.
     _PLACEMENTS[:] = best_placements
     _STATS.update(best_stats)
-    micro_px_area += render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng)
-    ch_n, ch_px = render_channel_fill(canvas, occupancy, theta_s, mask, get_font,
+    micro_px_area += render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
+                                          tokens=short_tokens)
+    ch_n, ch_px = render_channel_fill(canvas, occupancy, theta_s, mask, get_font, letters=letter_tokens,
                                       tone=gray.astype(np.float32) / 255.0)
     micro_px_area += ch_px
     _log(f"final fills: channel fill placed {ch_n} letters ({ch_px}px)")
@@ -2449,6 +2472,13 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # ~1 for the doodle (~185). Either way the letter/gap separation is guaranteed.
     src_mean_L = float(src_L_in.mean())
     light_mix = float(np.clip((src_mean_L - 145.0) / 30.0, 0.0, 1.0))
+    # Dark coats (chocolate/black; mean L under ~95): the mirror of the light-coat rule. Seen on
+    # staging with a chocolate Lab: letters at the coat's own dark tone with gaps pushed darker
+    # still is a dark photo with slightly-less-dark text on it. The honest typographic read on a
+    # dark coat is LIGHT words on the true dark fur -- gaps carry the source, letters are lifted.
+    # Ramp 120 -> 90: the staging chocolate Lab measured mean L 98 (dark_mix 0.73 here), the
+    # black Lab test photo 45 (1.0); the tan dog (147) and tabby (141) stay out of it (0.0).
+    dark_mix = float(np.clip((120.0 - src_mean_L) / 30.0, 0.0, 1.0))
     gaps_in = m_in & (ink_raw < 0.1)
     # Solve the two layer scales from two stated targets instead of fixed constants:
     #   fidelity  -- composite mean L inside the mask = TONE_FIDELITY x source mean L
@@ -2475,12 +2505,20 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     l_light = float(np.clip(min(l_light, (m_g - MIN_DELTA_L) / max(1.0, m_l)), LETTER_TONE, 1.0))
     gap_scale = (1.0 - light_mix) * g_dark + light_mix * 1.0
     letter_scale = (1.0 - light_mix) * 1.0 + light_mix * l_light
+    # Dark-coat blend: gaps -> source tone, letters lifted to clear the floor (capped so a
+    # near-black coat can't turn its words white).
+    if dark_mix > 0:
+        l_dark = float(np.clip((m_g + MIN_DELTA_L) / max(1.0, m_l), 1.0, 2.2))
+        gap_scale = (1.0 - dark_mix) * gap_scale + dark_mix * 1.0
+        letter_scale = (1.0 - dark_mix) * letter_scale + dark_mix * l_dark
     # Enforce the legibility floor on the BLENDED scales (blending the two modes pulls the
     # layers back toward each other -- measured delta 31 against a 40 floor). Push the offset
     # layer of whichever mode dominates until the predicted delta meets the floor.
     pred_delta = m_l * letter_scale - m_g * gap_scale
     if abs(pred_delta) < MIN_DELTA_L:
-        if light_mix < 0.5:
+        if dark_mix >= 0.5:
+            letter_scale = min(2.2, (m_g * gap_scale + MIN_DELTA_L) / max(1.0, m_l))
+        elif light_mix < 0.5:
             gap_scale = max(GAP_TONE, (m_l * letter_scale - MIN_DELTA_L) / max(1.0, m_g))
         else:
             letter_scale = max(LETTER_TONE, (m_g * gap_scale - MIN_DELTA_L) / max(1.0, m_l))
@@ -2505,7 +2543,14 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         # (measured: whole-mask delta 37 -> 57, gaps L 98 -> 81), not just in shadow.
         LOCAL_FLOOR = 24.0
         _sig = max(2.0, base * 0.25)
-        if light_mix < 0.5:
+        if dark_mix >= 0.5:
+            # Dark coat: gaps hold the source; the floor lifts letters above the NEARBY gap tone.
+            _gw = 1.0 - ink_soft
+            _num = cv2.GaussianBlur(Lm_gaps * _gw, (0, 0), sigmaX=_sig)
+            _den = cv2.GaussianBlur(_gw, (0, 0), sigmaX=_sig)
+            local_gap_L = np.divide(_num, _den, out=Lm_gaps.copy(), where=_den > 1e-3)
+            Lm_letters = np.maximum(Lm_letters, np.clip(local_gap_L + LOCAL_FLOOR, 0, 255))
+        elif light_mix < 0.5:
             _num = _gblur(Lm_letters * ink_soft, (0, 0), sigmaX=_sig)
             _den = _gblur(ink_soft, (0, 0), sigmaX=_sig)
             local_letter_L = np.divide(_num, _den, out=Lm_letters.copy(), where=_den > 1e-3)
