@@ -42,6 +42,7 @@ Usage:
     python3 glyphs_on_path_v2.py <image_path> [output_path]
 """
 import os
+import threading
 import sys
 import math
 import random
@@ -61,7 +62,53 @@ DEFAULT_WORDS = ("LOYAL, GENTLE, SOUL, PLAYFUL, SWEET, KIND, HOME, JOY, WARM, CU
                  "FAITHFUL, BRAVE, WISE, FUNNY, CUDDLY, DEVOTED, PRECIOUS, BELOVED, "
                  "COMPANION, ADVENTUROUS, MISCHIEF, TENDER, SPIRITED, TRUE FRIEND, "
                  "FAMILY, GOOFY, SNUGGLES, BEST FRIEND, TREASURE, HAPPY")
-_VERBOSE = False
+
+
+class _RenderState(threading.local):
+    """Per-render, per-THREAD state. This used to be a set of module globals (placements,
+    stats, nose hint, ...). The service renders concurrently (RENDER_CONCURRENCY > 1): a
+    print-quality pass still running while a preview re-render started for a background-color
+    change had both threads appending to one placement log, and placement_report read the
+    list twice, 6 words apart -- "boolean index did not match indexed array ... 8767 vs
+    8761", surfaced to the customer as an alert. Every field here is now private to the
+    thread doing the render; nothing about a render is shared except the bitmap cache."""
+
+    def __init__(self):
+        self.verbose = False
+        # Every word actually placed this run: (x, y, font_px, chars, angle, bmp_w, bmp_h).
+        # Reset per iteration; reported per anatomical zone at the end so "is this area
+        # rendered with typography" is a count and a size, not an impression.
+        self.placements = []
+        # Parallel to placements: which pass placed each word ("feature", "struct", "hero",
+        # "fill", "residual", "channel"). Lets the size hierarchy be measured per pass -- the
+        # fills outnumber the structural words several to one, so a count-median hides what
+        # the structural pass did.
+        self.pass_tags = []
+        self.pass_name = "feature"
+        self.stats = {"glyph_px": 0, "overlap_px": 0, "core_px": 0, "core_overlap_px": 0}
+        # Default 0.08: every claim metric was measured at this cap (letter-body collisions
+        # ~1%). The first staging run shipped with 1.0 (no cap) and reported 6.71% -- the
+        # callers' own tolerances (up to 0.24 in gap-fill) are placement heuristics, not a
+        # collision policy.
+        self.max_overlap_cap = float(os.environ.get("GOP_MAX_OVERLAP", "0.08") or 0.08)
+        # Set from landmarks/GOP_LANDMARKS in render_v2; a real nose detection beats the scan.
+        self.nose_hint = None
+        self.fields = {}   # last render's size-rule fields (PET_V2_KEEP_FIELDS=1), measurement only
+
+
+_TL = _RenderState()
+
+
+def __getattr__(name):
+    # Measurement scripts read the placement log / fields after a render under the old global
+    # names; keep them working, resolved against the calling thread's state.
+    _alias = {"_PLACEMENTS": "placements", "_PLACEMENT_PASS": "pass_tags", "_FIELDS": "fields",
+              "_STATS": "stats", "_MAX_OVERLAP_CAP": "max_overlap_cap", "_NOSE_HINT": "nose_hint",
+              "_VERBOSE": "verbose"}
+    if name in _alias:
+        return getattr(_TL, _alias[name])
+    raise AttributeError(name)
+
 
 
 def _gblur(src, ksize, sigmaX=0, **kwargs):
@@ -82,7 +129,7 @@ def _gblur(src, ksize, sigmaX=0, **kwargs):
 
 
 def _log(*args, **kwargs):
-    if _VERBOSE:
+    if _TL.verbose:
         print(*args, **kwargs)
 
 
@@ -175,7 +222,7 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
     placed_count = 0
     # Global collision ceiling (GOP_MAX_OVERLAP): every caller's tolerance is clamped to it, so
     # "no two words collide" is a property of the whole render that one number can attest to.
-    max_overlap = min(max_overlap, _MAX_OVERLAP_CAP)
+    max_overlap = min(max_overlap, _TL.max_overlap_cap)
     while d < total:
         if max_instances is not None and placed_count >= max_instances:
             break
@@ -232,32 +279,19 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
         occupancy[y0:y1, x0:x1] = np.maximum(occ_roi, sub_alpha)
         placed_px += int(glyph_mask.sum())
         placed_count += 1
-        _PLACEMENTS.append((x, y, float(getattr(font, "size", 0)), len(word), angle, bmp_w, bmp_h))
-        _PLACEMENT_PASS.append(_PASS[0])
-        _STATS["glyph_px"] += int(glyph_mask.sum())
-        _STATS["overlap_px"] += overlap_px     # this word's stroke pixels landing on prior ink
-        _STATS["core_px"] += int(core.sum())
-        _STATS["core_overlap_px"] += core_overlap
+        _TL.placements.append((x, y, float(getattr(font, "size", 0)), len(word), angle, bmp_w, bmp_h))
+        _TL.pass_tags.append(_TL.pass_name)
+        _TL.stats["glyph_px"] += int(glyph_mask.sum())
+        _TL.stats["overlap_px"] += overlap_px     # this word's stroke pixels landing on prior ink
+        _TL.stats["core_px"] += int(core.sum())
+        _TL.stats["core_overlap_px"] += core_overlap
     return placed_px
 
 
-# Every word actually placed this run: (x, y, font_px, chars). Reset per iteration by main();
-# reported per anatomical zone at the end so "is this area rendered with typography" is a count
-# and a size, not an impression.
-_PLACEMENTS = []
-# Parallel to _PLACEMENTS: which pass placed each word ("feature", "struct", "hero", "fill",
-# "residual", "channel"). Lets the size hierarchy be measured per pass -- the fills outnumber
-# the structural words several to one, so a count-median hides what the structural pass did.
-_PLACEMENT_PASS = []
-_PASS = ["feature"]
-_FIELDS = {}   # last render's size-rule fields, for measurement scripts only (PET_V2_KEEP_FIELDS=1)
 _KEEP_FIELDS = os.environ.get("PET_V2_KEEP_FIELDS", "").strip().lower() not in ("", "0", "false", "off")
-_STATS = {"glyph_px": 0, "overlap_px": 0, "core_px": 0, "core_overlap_px": 0}
-_BITMAP_CACHE = {}   # (word, font px, alpha, angle deg) -> (w, h, rotated RGBA, its alpha array)
-# Default 0.08: every claim metric was measured at this cap (letter-body collisions ~1%). The
-# first staging run shipped with 1.0 (no cap) and reported 6.71% -- the callers' own
-# tolerances (up to 0.24 in gap-fill) are placement heuristics, not a collision policy.
-_MAX_OVERLAP_CAP = float(os.environ.get("GOP_MAX_OVERLAP", "0.08") or 0.08)
+# (word, font px, alpha, angle deg) -> (w, h, rotated RGBA, its alpha array). Shared across
+# threads on purpose: entries are immutable once built, and dict get/set are atomic in CPython.
+_BITMAP_CACHE = {}
 
 
 def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
@@ -297,7 +331,7 @@ def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
         ang = float(theta_s[y, x])
         dx, dy = math.cos(ang), math.sin(ang)
         path = [(x - dx * half, y - dy * half, ang), (x + dx * half, y + dy * half, ang)]
-        n0 = len(_PLACEMENTS)
+        n0 = len(_TL.placements)
         # Tone-carrying alpha: a flat 205 filled every corridor with equally dark letters and
         # erased the density modeling of the typography-only panel (type-only likeness 0.43 ->
         # 0.35 measured). Same convention as the rest of the engine: more ink where the photo is
@@ -305,7 +339,7 @@ def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
         alpha = 205 if tone is None else int(70 + 185 * float(np.clip(tone[y, x], 0, 1)))
         placed_px += place_words_collision_aware(canvas, occupancy, path, [letters[k % len(letters)]], font,
                                                  gap_px=1.0, alpha=alpha, max_overlap=max_overlap, max_instances=1)
-        placed_n += len(_PLACEMENTS) - n0
+        placed_n += len(_TL.placements) - n0
     return placed_n, placed_px
 
 
@@ -358,7 +392,7 @@ def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, ge
         # the local fur direction (then the perpendicular if nothing fits); the collision check
         # decides whether a token actually fits.
         placed = 0
-        n_before = len(_PLACEMENTS)
+        n_before = len(_TL.placements)
         font = get_font(min_px)
         for i in big_ids:
             w_, h_ = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
@@ -402,7 +436,7 @@ def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, ge
             placed += got
         total_placed += placed
         _log(f"    residual fill round {_round}: free area {free_area}px in {len(big_ids)} fillable regions, "
-              f"{len(_PLACEMENTS) - n_before} tokens placed ({placed}px)")
+              f"{len(_TL.placements) - n_before} tokens placed ({placed}px)")
         if placed < min_px * min_px * 3 and _round < 3:
             tokens = letter_tokens      # words no longer fit anywhere -- go straight to letters
     return total_placed
@@ -422,13 +456,13 @@ def footprint_coverage(placements, mask):
 
 
 def placement_report(region_map, mask, extra_zones=None):
-    if not _PLACEMENTS:
+    if not _TL.placements:
         return {}
     H, W = region_map.shape
-    pts = np.array([(p[0], p[1]) for p in _PLACEMENTS])
+    pts = np.array([(p[0], p[1]) for p in _TL.placements])
     xs = np.clip(pts[:, 0].astype(int), 0, W - 1)
     ys = np.clip(pts[:, 1].astype(int), 0, H - 1)
-    sizes = np.array([p[2] for p in _PLACEMENTS])
+    sizes = np.array([p[2] for p in _TL.placements])
     zone_of = region_map[ys, xs]
     zones = {"eyes": (zone_of == 1) | (zone_of == 2), "muzzle": zone_of == 4, "rest": zone_of == 3}
     for name, z in (extra_zones or {}).items():
@@ -585,7 +619,6 @@ def render_eye_feature(canvas, occupancy, gray, mask, base, center, get_font, rn
     return True
 
 
-_NOSE_HINT = None   # set from GOP_LANDMARKS in main(); a real nose detection beats the scan below
 
 
 def locate_nose(gray, mask, eye_pts):
@@ -604,9 +637,9 @@ def locate_nose(gray, mask, eye_pts):
     (x1, y1), (x2, y2) = eye_pts[0], eye_pts[1]
     mx, my = (x1 + x2) / 2.0, (y1 + y2) / 2.0
     eye_sep = max(1.0, math.hypot(x2 - x1, y2 - y1))
-    if _NOSE_HINT is not None:
+    if _TL.nose_hint is not None:
         # A supplied nose landmark: fit the leather's real shape right there instead of scanning.
-        hinted = fit_dark_blob_ellipse(gray, mask, _NOSE_HINT[0], _NOSE_HINT[1], eye_sep * 0.35, min_area_px=15)
+        hinted = fit_dark_blob_ellipse(gray, mask, _TL.nose_hint[0], _TL.nose_hint[1], eye_sep * 0.35, min_area_px=15)
         if hinted is not None:
             return hinted
     best, best_score = None, -1e9
@@ -1451,11 +1484,10 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     collision cap (None -> GOP_MAX_OVERLAP env). `landmarks`: "x1,y1;x2,y2[;nx,ny]" eyes(+nose)
     from the production landmark model (None -> GOP_LANDMARKS env -> heuristic detector).
     `debug_dir`: when set, writes the A/B/C/D QA panels there as <out_stem>_*.jpg."""
-    global _NOSE_HINT, _MAX_OVERLAP_CAP, _VERBOSE
-    _VERBOSE = bool(verbose)
-    _NOSE_HINT = None
-    if max_overlap is not None:
-        _MAX_OVERLAP_CAP = float(max_overlap)
+    _TL.verbose = bool(verbose)
+    _TL.nose_hint = None
+    _TL.max_overlap_cap = float(max_overlap) if max_overlap is not None else \
+        float(os.environ.get("GOP_MAX_OVERLAP", "0.08") or 0.08)
     out_path = os.path.join(debug_dir, out_stem + ".jpg") if debug_dir else None
     if render_scale is None:
         render_scale = float(os.environ.get("GOP_SCALE", "1") or 1)
@@ -1557,7 +1589,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         if len(_pts) >= 2:
             attractor_pts = [_pts[0], _pts[1]]
         if len(_pts) >= 3:
-            _NOSE_HINT = _pts[2]
+            _TL.nose_hint = _pts[2]
         _log(f"landmarks injected from GOP_LANDMARKS: eyes={attractor_pts} nose={_pts[2] if len(_pts) >= 3 else None}")
     _log(f"anatomical attractors found (used for hero placement + size gradation only): "
           f"{len(attractor_pts)}  {attractor_pts}")
@@ -1790,7 +1822,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     face_dist_field = np.clip(_dist / _denom, 0, 1) ** 0.8
     size_field = np.clip(0.60 * face_dist_field + 0.40 * (1.0 - detail_field), 0, 1).astype(np.float32)
     if _KEEP_FIELDS:   # ~100 MB of float32 planes at print size, so never retained in production
-        _FIELDS.update(size_field=size_field, face_dist_field=face_dist_field, detail_field=detail_field,
+        _TL.fields.update(size_field=size_field, face_dist_field=face_dist_field, detail_field=detail_field,
                        importance_norm=importance_norm, micro_px=MICRO_PX, struct_px=STRUCT_PX, es=_es,
                        denom=_denom, max_in_mask=_max_in_mask)
 
@@ -1836,7 +1868,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     _raw_px = MICRO_PX + (STRUCT_PX - MICRO_PX) * np.clip(0.65 * size_field + 0.20, 0, 1)
     size_px_field = np.where(_raw_px > _cap, _cap + (_raw_px - _cap) * fine_blend, _raw_px).astype(np.float32)
     if _KEEP_FIELDS:
-        _FIELDS.update(fine_blend=fine_blend, size_px_field=size_px_field)
+        _TL.fields.update(fine_blend=fine_blend, size_px_field=size_px_field)
 
     # ---- The iterative loop: regrow geometry, rasterize, compare, correct DENSITY, regrow -----
     # This is the follow-up to the fixed-geometry version (which corrected only word size/alpha
@@ -1849,7 +1881,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     best_score, best_canvas, best_tier_stats = -1.0, None, None
     best_placements = []
     best_pass = []
-    best_stats = dict(_STATS)
+    best_stats = dict(_TL.stats)
     down_streak = 0
     for iteration in range(N_ITERS):
         sep_field = np.clip(sep_field_base * sep_correction, sep_px * 0.30, sep_px * 1.8).astype(np.float32)
@@ -1954,11 +1986,11 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
 
         canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         occupancy = np.zeros((H, W), np.float32)   # shared collision map for this iteration
-        _PLACEMENTS.clear()                        # per-iteration word placement log
-        _PLACEMENT_PASS.clear()
-        _PASS[0] = "feature"
-        for _k in _STATS:
-            _STATS[_k] = 0
+        _TL.placements.clear()                        # per-iteration word placement log
+        _TL.pass_tags.clear()
+        _TL.pass_name = "feature"
+        for _k in _TL.stats:
+            _TL.stats[_k] = 0
         micro_px_area, struct_px_area, hero_px_area, fill_px_area = 0, 0, 0, 0
         MICRO_STRUCT_SPLIT = 0.5   # size_t below this counts toward micro, above -> structural
 
@@ -1975,9 +2007,9 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             render_muzzle_topology(canvas, occupancy, gray, mask, base, nose_fit, attractor_pts, stream, get_font, rng)
 
 
-        _PASS[0] = "fringe"
+        _TL.pass_name = "fringe"
         render_silhouette_fringe(canvas, occupancy, mask, theta_s, base, fringe_points, stream, get_font, rng)
-        _PASS[0] = "struct"
+        _TL.pass_name = "struct"
 
         # ---- Structural/micro pass -- everything EXCEPT hero lines (recommendation #6) -----
         # Size/alpha formula is back to plain (no correction multiplier) -- sep_field above is
@@ -2036,7 +2068,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                 struct_px_area += placed
 
         # ---- Hero pass -- the final composition layer, not a density decision -------------
-        _PASS[0] = "hero"
+        _TL.pass_name = "hero"
         for length, coh, dist, line in scored:
             if id(line) not in hero_lines:
                 continue
@@ -2061,7 +2093,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         # ---- Gap-fill pass -- closes bare patches the collision budget above left behind ---
         pre_fill_coverage = float((occupancy[mask > 0.5] > 40).mean())
         prev_coverage = pre_fill_coverage
-        _PASS[0] = "fill"
+        _TL.pass_name = "fill"
         for round_px, round_overlap, gap_frac in fill_rounds:
             for line in non_hero_lines:
                 # Fill words follow the same size field as the structural pass (0.7x .. 2.2x the
@@ -2098,7 +2130,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         # ---- Feature-zone micro-fill: fine, graduated type inside eyes/muzzle -----------------
         ink_pre = np.asarray(canvas.split()[3], np.float32) / 255.0
         cov_pre = region_coverage(ink_pre, mask, region_map)
-        _PASS[0] = "microfill"
+        _TL.pass_name = "microfill"
         micro_px_area += render_feature_microfill(canvas, occupancy, theta_s, coherence_s, mask, region_map,
                                                   importance_norm, base, stream, get_font, rng)
         ink_post = np.asarray(canvas.split()[3], np.float32) / 255.0
@@ -2128,9 +2160,9 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             best_score = score
             best_canvas = canvas.copy()
             best_occupancy = occupancy.copy()
-            best_placements = list(_PLACEMENTS)
-            best_pass = list(_PLACEMENT_PASS)
-            best_stats = dict(_STATS)
+            best_placements = list(_TL.placements)
+            best_pass = list(_TL.pass_tags)
+            best_stats = dict(_TL.stats)
             best_tier_stats = (micro_px_area, struct_px_area, hero_px_area, fill_px_area)
         elif iteration >= 1 and score < best_score - 0.005:
             # The score has turned down. One dip is not a verdict -- measured: a single-decrease
@@ -2159,20 +2191,20 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # Residual (short tokens in every free region a word fits) then channel (single letters
     # along the medial axis of the leading corridors). Placement log/stats are rewound to the
     # winning iteration first so the claim metrics describe exactly this canvas.
-    _PLACEMENTS[:] = best_placements
-    _PLACEMENT_PASS[:] = best_pass
-    _STATS.update(best_stats)
-    _PASS[0] = "residual"
+    _TL.placements[:] = best_placements
+    _TL.pass_tags[:] = best_pass
+    _TL.stats.update(best_stats)
+    _TL.pass_name = "residual"
     micro_px_area += render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
                                           tokens=short_tokens, size_field_px=size_px_field)
-    _PASS[0] = "channel"
+    _TL.pass_name = "channel"
     ch_n, ch_px = render_channel_fill(canvas, occupancy, theta_s, mask, get_font, letters=letter_tokens,
                                       tone=gray.astype(np.float32) / 255.0, size_cap=size_px_field)
     micro_px_area += ch_px
     _log(f"final fills: channel fill placed {ch_n} letters ({ch_px}px)")
-    best_placements = list(_PLACEMENTS)
-    best_pass = list(_PLACEMENT_PASS)
-    best_stats = dict(_STATS)
+    best_placements = list(_TL.placements)
+    best_pass = list(_TL.pass_tags)
+    best_stats = dict(_TL.stats)
 
     # Gap-fill text is fine detail closing bare patches -- counts toward the micro share, same
     # spirit as the micro tier itself ("texture, fine tonal modeling, transitions").
@@ -2834,8 +2866,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         if _l.sum() > 50 and _g.sum() > 50:
             _parts.append(f"{_zn} {L_after[_l].mean() - L_after[_g].mean():+.0f}")
     _log("letter/gap delta by zone: " + "  ".join(_parts))
-    _PLACEMENTS[:] = best_placements
-    _PLACEMENT_PASS[:] = best_pass
+    _TL.placements[:] = best_placements
+    _TL.pass_tags[:] = best_pass
     rep = placement_report(region_map, mask, _extra)
     _log("words placed by zone (count / median px / 10th-pct px): "
           + "  ".join(f"{k} {v[0]} / {v[1]:.0f} / {v[2]:.0f}" for k, v in rep.items()))
