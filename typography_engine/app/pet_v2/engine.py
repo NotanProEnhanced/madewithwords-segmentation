@@ -203,7 +203,10 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
 # and a size, not an impression.
 _PLACEMENTS = []
 _STATS = {"glyph_px": 0, "overlap_px": 0, "core_px": 0, "core_overlap_px": 0}
-_MAX_OVERLAP_CAP = float(os.environ.get("GOP_MAX_OVERLAP", "1.0") or 1.0)
+# Default 0.08: every claim metric was measured at this cap (letter-body collisions ~1%). The
+# first staging run shipped with 1.0 (no cap) and reported 6.71% -- the callers' own
+# tolerances (up to 0.24 in gap-fill) are placement heuristics, not a collision policy.
+_MAX_OVERLAP_CAP = float(os.environ.get("GOP_MAX_OVERLAP", "0.08") or 0.08)
 
 
 def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
