@@ -1706,7 +1706,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # discrete steps. Tone is still primarily density (sep_field above), not size -- the low end
     # was also lowered (0.17x -> 0.10x base) per "smallest text should be finer."
     MICRO_PX = base * 0.10
-    STRUCT_PX = base * 0.40
+    STRUCT_PX = base * 0.52   # widened from 0.40 so the far body genuinely reads larger (size_field)
     # Widened from 1.3x -- measured the ACTUAL micro/structural/hero split (recommendation #6's
     # target: 20-30% / 60-70% / 3-7% of ink area) and found micro was only 11-15%: at 1.3x, only
     # a small ring right around the eyes graded toward the fine end, so nearly the whole rest of
@@ -1720,6 +1720,32 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         return min(math.hypot(lx - ax, ly - ay) for ax, ay in attractor_pts)
 
     FILL_PX = MICRO_PX * 0.85
+
+    # ---- Size rule for everything outside the features (a continuous field, one rule for every
+    # photo) -----------------------------------------------------------------------------------
+    # At preview size every zone measured a 6px median: outside the eyes/nose the whole animal
+    # sat at one size and there was no hierarchy to read. Three signals, combined per pixel:
+    #   * distance from the face -- fine near it, opening up down the neck and chest; hero words
+    #     only far from it (see hero selection);
+    #   * texture energy -- fine wherever the photo has fine detail (fur strands, folds), larger
+    #     where the coat is smooth, so size follows what the fur needs to be described;
+    #   * flow coherence -- a minor opener where the fur runs calm and straight (added per line).
+    _gx = cv2.Sobel(gray.astype(np.float32), cv2.CV_32F, 1, 0, ksize=3)
+    _gy = cv2.Sobel(gray.astype(np.float32), cv2.CV_32F, 0, 1, ksize=3)
+    _energy = _gblur(np.hypot(_gx, _gy), (0, 0), sigmaX=max(2.0, base * 0.6))
+    _p95 = float(np.percentile(_energy[mask > 0.5], 95)) if (mask > 0.5).any() else 1.0
+    detail_field = np.clip(_energy / max(1e-6, _p95), 0, 1)
+    if len(attractor_pts) >= 2:
+        _es = max(1.0, math.hypot(attractor_pts[0][0] - attractor_pts[1][0], attractor_pts[0][1] - attractor_pts[1][1]))
+    else:
+        _es = base * 4.0
+    _fd = np.hypot(xx - head_center[0], yy - head_center[1]) / (_es * 2.4)
+    face_dist_field = np.clip(_fd, 0, 1) ** 0.8
+    size_field = np.clip(0.60 * face_dist_field + 0.40 * (1.0 - detail_field), 0, 1).astype(np.float32)
+
+    def line_size_t(line):
+        vals = [size_field[int(np.clip(y, 0, H - 1)), int(np.clip(x, 0, W - 1))] for x, y, _ in line[::4]]
+        return float(np.mean(vals)) if vals else 0.0
 
     # ---- The iterative loop: regrow geometry, rasterize, compare, correct DENSITY, regrow -----
     # This is the follow-up to the fixed-geometry version (which corrected only word size/alpha
@@ -1859,7 +1885,9 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             t = np.clip(line_feat_dist(line) / feat_close_radius, 0, 1)
             smooth = t * t * (3 - 2 * t)                    # smoothstep: eases in/out, no kink
             t_coh = np.clip(coh / 0.5, 0, 1)
-            size_t = np.clip(0.85 * smooth + 0.15 * t_coh, 0, 1)   # coherence as a minor modifier
+            # Size rule (see size_field): distance-from-face and texture energy carry it,
+            # feature proximity and flow coherence are minor terms.
+            size_t = np.clip(0.65 * line_size_t(line) + 0.15 * smooth + 0.20 * t_coh, 0, 1)
             cls_px = MICRO_PX + (STRUCT_PX - MICRO_PX) * size_t
             font_px = cls_px * (0.92 + 0.16 * rng.random())   # tiny jitter for organic texture
             font = get_font(font_px)
@@ -1905,7 +1933,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             # Was base*(0.95-1.20) -- 2.5-3x the structural max, a jump the user flagged as too
             # great. Scaled RELATIVE to STRUCT_PX instead, and NOT run through the error
             # correction -- hero is a deliberate compositional decision, not a tonal-fit one.
-            font_px = STRUCT_PX * (1.5 + 0.3 * rng.random())
+            font_px = STRUCT_PX * (1.25 + 0.25 * rng.random())   # STRUCT_PX widened; keep hero ~0.7x base
             font = get_font(font_px)
             # max_instances=1: hero lines are picked for being LONG, so without this the same
             # word repeats every gap_px along the whole line -- a cluster of large "LOYAL"s
@@ -1925,7 +1953,15 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         prev_coverage = pre_fill_coverage
         for round_px, round_overlap, gap_frac in fill_rounds:
             for line in non_hero_lines:
-                font_px = round_px * (0.90 + 0.20 * rng.random())
+                # Fill words follow the same size field as the structural pass (0.7x .. 2.2x the
+                # round size): measured with a fixed size, the fills outnumbered the structural
+                # words 2:1 and dragged every band's median to the floor, hiding the hierarchy.
+                # Relative to the LOCAL structural size (55% of it on round 0, stepping down by
+                # round): near the face that's the floor; on the far body it's a real medium
+                # word. Measured at 2400px with an absolute fill size, fills sat at 7-9px in
+                # every band and buried a 38-44px far-body hierarchy in count.
+                local_struct = MICRO_PX + (STRUCT_PX - MICRO_PX) * line_size_t(line)
+                font_px = local_struct * (round_px / FILL_PX) * 0.55 * (0.90 + 0.20 * rng.random())
                 font = get_font(font_px)
                 t_coh = np.clip(line_coh[id(line)] / 0.5, 0, 1)
                 importance = line_importance(line)
