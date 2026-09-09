@@ -1626,10 +1626,15 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         for w in ph.split():
             if len(w) >= 3 and w not in seen:
                 seen.add(w); word_list.append(w)
-    if len(word_list) < 4:                     # a bare name or a two-word message: pad, name first
+    # Under ten distinct words -- a bare name, or a six-word sentence like "SHADOW SITS ON THE
+    # WARM LAUNDRY" -- the same word repeats across every inch of the crown (seen on staging).
+    # Pad with the brand vocabulary. The customer's words stay first, so _weighted_stream still
+    # gives the name the top weight and the padding the least; the fills and the initials
+    # (short_tokens, letter_tokens below) keep drawing on the customer's own words first.
+    if len(word_list) < 10:
         for w in _phrases(DEFAULT_WORDS):
             for ww in w.split():
-                if ww not in seen:
+                if ww not in seen and len(word_list) < 14:
                     seen.add(ww); word_list.append(ww)
     stream = _weighted_stream(", ".join(word_list))
     hero_words = (phrases or stream)[:1]
@@ -1814,43 +1819,30 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         _es = max(1.0, math.hypot(attractor_pts[0][0] - attractor_pts[1][0], attractor_pts[0][1] - attractor_pts[1][1]))
     else:
         _es = base * 4.0
-    # Normalize by what is IN THE FRAME, not by eye separation alone: on a tight head-and-
-    # shoulders close-up (a common upload -- seen on staging) nothing is 2.4 eye-separations
-    # from the face, so the whole animal landed in the fine end and no hierarchy appeared. The
-    # farthest visible part of the animal (chest bottom, or ear tips on a close-up) gets the
-    # largest type either way.
-    _dist = np.hypot(xx - head_center[0], yy - head_center[1])
-    _max_in_mask = float(np.percentile(_dist[mask > 0.5], 97)) if (mask > 0.5).any() else _es * 2.4
-    _denom = max(_es * 0.9, min(_es * 2.4, _max_in_mask * 0.85))
-    face_dist_field = np.clip(_dist / _denom, 0, 1) ** 0.8
-    size_field = np.clip(0.60 * face_dist_field + 0.40 * (1.0 - detail_field), 0, 1).astype(np.float32)
-    if _KEEP_FIELDS:   # ~100 MB of float32 planes at print size, so never retained in production
-        _TL.fields.update(size_field=size_field, face_dist_field=face_dist_field, detail_field=detail_field,
-                       importance_norm=importance_norm, micro_px=MICRO_PX, struct_px=STRUCT_PX, es=_es,
-                       denom=_denom, max_in_mask=_max_in_mask)
 
-    def line_size_t(line):
-        vals = [size_field[int(np.clip(y, 0, H - 1)), int(np.clip(x, 0, W - 1))] for x, y, _ in line[::4]]
-        return float(np.mean(vals)) if vals else 0.0
+    # ---- The features: both eyes and the nose, as points and as a fine zone ------------------
+    # locate_nose reads only the photo, so this is computed once here rather than per iteration.
+    _nf = locate_nose(gray, mask, attractor_pts) if len(attractor_pts) >= 2 else None
+    feature_pts = list(attractor_pts[:2])
+    if _nf is not None:
+        feature_pts.append((float(_nf[0][0]), float(_nf[0][1])))
+    elif len(attractor_pts) >= 2:
+        feature_pts.append((float(np.mean([p[0] for p in attractor_pts[:2]])),
+                            float(np.mean([p[1] for p in attractor_pts[:2]])) + _es * 0.75))
 
-    # ---- Where type must stay fine: the eyes, nose and mouth THEMSELVES, graduating out ------
-    # The cap used to key on the likeness weight map (importance_norm > 0.45), whose "face-
-    # center" ellipse is 1.8 eye-separations wide and 2.2 tall -- a scoring choice, not an
-    # anatomical one. On a tight head-and-shoulders crop that ellipse covered half the animal
-    # and 80% of the structural words (measured), so everything was pinned to the micro size
-    # and no hierarchy appeared. Now: the eye discs (0.14 eye-sep: the eye with its lids --
-    # measured ~0.15 eye-sep across on the test dog), the nose leather locate_nose fits, and a
-    # mouth band below it are the fine zone; the cap eases off over 0.18 eye-separations
-    # outside it. A wider ramp (0.35) was tried first and turned the whole forehead and cheeks
-    # of a close-up uniformly fine, losing the medium type they had. Fine ON the features, growing
-    # steadily away from them, the size field taking over beyond the ramp. locate_nose reads
-    # only the photo, so this is computed once here rather than per iteration.
+    # Where type must stay fine: the eyes, nose and mouth THEMSELVES, graduating out. The cap
+    # used to key on the likeness weight map (importance_norm > 0.45), whose "face-center"
+    # ellipse is 1.8 eye-separations wide and 2.2 tall -- a scoring choice, not an anatomical
+    # one; on a tight crop it covered half the animal and 80% of the structural words, and
+    # everything was pinned to the micro size. Now: the eye discs (0.20 eye-sep: the eye, its
+    # lids and the socket -- "the typography around and in the eyes should be fine"), the nose
+    # leather locate_nose fits, and a mouth band below it are the fine zone; the cap eases off
+    # over 0.20 eye-separations outside it. Fine ON the features, growing steadily away.
     fine_blend = np.ones((H, W), np.float32)
     if len(attractor_pts) >= 2:
         fine = np.zeros((H, W), np.uint8)
         for (ax, ay) in attractor_pts[:2]:
-            cv2.circle(fine, (int(ax), int(ay)), int(round(_es * 0.14)), 1, -1)
-        _nf = locate_nose(gray, mask, attractor_pts)
+            cv2.circle(fine, (int(ax), int(ay)), int(round(_es * 0.20)), 1, -1)
         if _nf is not None:
             (ncx, ncy), (na, nb), nang = _nf
             cv2.ellipse(fine, (int(ncx), int(ncy)), (int(na * 1.0) + 1, int(nb * 1.0) + 1),
@@ -1859,19 +1851,57 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             cv2.ellipse(fine, (int(ncx), int(ncy + nr * 1.3)), (int(_es * 0.35), int(nr * 0.9) + 1),
                         0, 0, 360, 1, -1)
         else:
-            mx = float(np.mean([p[0] for p in attractor_pts[:2]]))
-            my = float(np.mean([p[1] for p in attractor_pts[:2]]))
-            cv2.ellipse(fine, (int(mx), int(my + _es * 0.75)), (int(_es * 0.30), int(_es * 0.45)),
-                        0, 0, 360, 1, -1)
+            mx, my = feature_pts[2]
+            cv2.ellipse(fine, (int(mx), int(my)), (int(_es * 0.30), int(_es * 0.45)), 0, 0, 360, 1, -1)
         _out = cv2.distanceTransform((1 - fine).astype(np.uint8), cv2.DIST_L2, 5)
-        fine_blend = np.clip(_out / max(1.0, _es * 0.18), 0, 1).astype(np.float32)
+        fine_blend = np.clip(_out / max(1.0, _es * 0.20), 0, 1).astype(np.float32)
+
+    # "Distance from the face" is the distance to the NEAREST feature -- eye, eye or nose --
+    # not to the midpoint between the eyes. On a close-up the nose sits a full eye-separation
+    # below that midpoint, so the old rule read the nose and muzzle as far from the face and
+    # put the largest words in the frame on them (seen on staging, twice). Normalized by what
+    # is in the frame: the farthest visible part of the animal gets the largest type whether
+    # that is the chest bottom or, on a tight crop, the ear tips.
+    if feature_pts:
+        _dist = np.full((H, W), 1e9, np.float32)
+        for (fx, fy) in feature_pts:
+            _dist = np.minimum(_dist, np.hypot(xx - fx, yy - fy))
+    else:
+        _dist = np.hypot(xx - head_center[0], yy - head_center[1])
+    _max_in_mask = float(np.percentile(_dist[mask > 0.5], 97)) if (mask > 0.5).any() else _es * 2.4
+    # Two parts. NEAR is anatomical, in eye-separations: 0 at a feature, full at 1.2 eye-
+    # separations (the ear tips), the same on every framing -- so a tight crop, where the
+    # whole frame is close to the face, cannot stretch the fine region into medium type on
+    # the muzzle bridge (a single frame-relative normalization did exactly that on staging).
+    # FAR is frame-relative: whatever lies beyond 1.2 eye-separations grades up to the largest
+    # type at the farthest visible part of the animal, chest bottom or ear tips alike.
+    _d_es = _dist / _es
+    _near = np.clip(_d_es / 1.2, 0, 1) ** 0.8
+    _far_span = max(_es * 0.3, _max_in_mask - _es * 1.2)
+    _far = np.clip((_dist - _es * 1.2) / _far_span, 0, 1)
+    face_dist_field = (0.55 * _near + 0.45 * _far).astype(np.float32)
+    _denom = _es * 1.2
+    # Smoothness may only ENLARGE type away from the features. A whitened senior muzzle is
+    # the smoothest, brightest patch on the head, and the ungated term opened type up right
+    # there. It fades in between 0.45 and 0.85 eye-separations from the nearest feature, so
+    # on the face itself size is distance alone.
+    _smooth_gate = np.clip((_d_es - 0.45) / 0.40, 0, 1)
+    size_field = np.clip(0.60 * face_dist_field + 0.40 * (1.0 - detail_field) * _smooth_gate, 0, 1).astype(np.float32)
+
+    def line_size_t(line):
+        vals = [size_field[int(np.clip(y, 0, H - 1)), int(np.clip(x, 0, W - 1))] for x, y, _ in line[::4]]
+        return float(np.mean(vals)) if vals else 0.0
+
     # The structural size every pixel would get (before per-line coherence/jitter): what the
     # lane spacing, the channel fill and the residual fill size themselves against.
     _cap = MICRO_PX * 1.05
     _raw_px = MICRO_PX + (STRUCT_PX - MICRO_PX) * np.clip(0.65 * size_field + 0.20, 0, 1)
     size_px_field = np.where(_raw_px > _cap, _cap + (_raw_px - _cap) * fine_blend, _raw_px).astype(np.float32)
-    if _KEEP_FIELDS:
-        _TL.fields.update(fine_blend=fine_blend, size_px_field=size_px_field)
+    if _KEEP_FIELDS:   # ~100 MB of float32 planes at print size, so never retained in production
+        _TL.fields.update(size_field=size_field, face_dist_field=face_dist_field, detail_field=detail_field,
+                          importance_norm=importance_norm, micro_px=MICRO_PX, struct_px=STRUCT_PX, es=_es,
+                          denom=_denom, max_in_mask=_max_in_mask, fine_blend=fine_blend,
+                          size_px_field=size_px_field, feature_pts=feature_pts)
 
     # ---- The iterative loop: regrow geometry, rasterize, compare, correct DENSITY, regrow -----
     # This is the follow-up to the fixed-geometry version (which corrected only word size/alpha
@@ -2624,7 +2654,19 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # a hair drawn past the animal's own edge, so this gives it a color of its own instead.
     whisker_ink_alpha = ink_alpha * whisker_outside
     whisker_color = np.array([222.0, 218.0, 205.0], np.float32)
-    composited = composited * (1.0 - whisker_ink_alpha[..., None]) + whisker_color * whisker_ink_alpha[..., None]
+    # Silhouette fringe hairs used the same fixed pale as the whiskers. Against a dark
+    # backdrop that reads as hair catching light; against Gallery Gray it read as a pale
+    # outline traced around the animal. The fringe now takes the coat's own color at the
+    # edge -- the masked-average fur color extrapolated past the silhouette, lifted 10% the
+    # way lit flyaway hair is -- so a brown dog sheds brown hairs on any backdrop. Real
+    # whiskers (whisker_zone, cats) stay pale: they are.
+    _fur_w = _gblur(mask.astype(np.float32), (0, 0), sigmaX=max(4.0, base * 0.6))[..., None]
+    _fur_c = _gblur(photo_rgb * mask[..., None], (0, 0), sigmaX=max(4.0, base * 0.6))
+    fur_edge_rgb = np.divide(_fur_c, _fur_w, out=np.full_like(_fur_c, 160.0), where=_fur_w > 1e-4)
+    fur_edge_rgb = np.clip(fur_edge_rgb * 0.90 + 255.0 * 0.10, 0, 255)
+    _wz = np.clip(whisker_zone, 0, 1)[..., None]
+    hair_color = whisker_color * _wz + fur_edge_rgb * (1.0 - _wz)
+    composited = composited * (1.0 - whisker_ink_alpha[..., None]) + hair_color * whisker_ink_alpha[..., None]
 
     # edge_ink used to add a dark stroke at every strong internal edge -- a reasonable idea for a
     # moody, dark-ground piece, but against a brightened subject it was one more thing pulling
