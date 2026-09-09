@@ -64,6 +64,23 @@ DEFAULT_WORDS = ("LOYAL, GENTLE, SOUL, PLAYFUL, SWEET, KIND, HOME, JOY, WARM, CU
 _VERBOSE = False
 
 
+def _gblur(src, ksize, sigmaX=0, **kwargs):
+    """cv2.GaussianBlur with the same call shape, but large sigmas run on a downsampled copy.
+    Profiled at the 1600px preview: 84 blur calls = 26 s of 88, dominated by the wide-field
+    ones (sigma up to W*0.25 ~ 300px -> a 1800-tap kernel per axis). A Gaussian that wide
+    is a low-pass; computing it at 1/f scale with sigma/f and resampling back is the same
+    field to well below the quantization of anything that consumes it."""
+    if not sigmaX or sigmaX < 12:
+        return cv2.GaussianBlur(src, ksize, sigmaX=sigmaX, **kwargs)
+    f = max(2, int(sigmaX / 6.0))
+    H, W = src.shape[:2]
+    sw, sh = max(4, W // f), max(4, H // f)
+    small = cv2.resize(src, (sw, sh), interpolation=cv2.INTER_AREA)
+    small = cv2.GaussianBlur(small, (0, 0), sigmaX=sigmaX / f, **kwargs)
+    out = cv2.resize(small, (W, H), interpolation=cv2.INTER_LINEAR)
+    return out.reshape(src.shape) if out.shape != src.shape else out
+
+
 def _log(*args, **kwargs):
     if _VERBOSE:
         print(*args, **kwargs)
@@ -158,20 +175,35 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
             break
         word = words[wi % len(words)]
         wi += 1
-        bmp = render_word_bitmap(word, font, alpha=alpha)
         samp = sample_path_at(pts, d)
         if samp is None:
             break
         x, y, angle = samp
         angle = upright_angle(angle)
-        d += bmp.width + gap_px
-        rot = bmp.rotate(-math.degrees(angle), expand=True, resample=Image.BICUBIC)
+        # Rasterize + rotate once per (word, size, alpha, angle bin) and reuse. Profiled: 91,733
+        # render/measure/rotate calls to place ~20,000 words -- 30 s of a 100 s render -- for a
+        # vocabulary of 30 words at a few dozen sizes. 1-degree angle bins are invisible at
+        # these sizes; the collision test still runs on the real footprint every time.
+        # Quantized key: alpha is a continuous per-line value and sizes are jittered, so exact
+        # keys never repeated (profiled: 93,696 renders with the cache in place). 16 alpha
+        # levels and 3-degree bins are below what's visible at these sizes.
+        key = (word, int(round(getattr(font, "size", 0))), (int(alpha) // 16) * 16,
+               int(round(math.degrees(angle) / 3.0)) * 3)
+        hit = _BITMAP_CACHE.get(key)
+        if hit is None:
+            bmp = render_word_bitmap(word, font, alpha=alpha)
+            rot = bmp.rotate(-math.degrees(angle), expand=True, resample=Image.BICUBIC)
+            hit = (bmp.width, bmp.height, rot, np.asarray(rot.split()[3], np.float32))
+            if len(_BITMAP_CACHE) > 20000:
+                _BITMAP_CACHE.clear()
+            _BITMAP_CACHE[key] = hit
+        bmp_w, bmp_h, rot, rot_alpha = hit
+        d += bmp_w + gap_px
         px, py = int(round(x - rot.width / 2)), int(round(y - rot.height / 2))
         x0, y0 = max(0, px), max(0, py)
         x1, y1 = min(W, px + rot.width), min(H, py + rot.height)
         if x1 <= x0 or y1 <= y0:
             continue
-        rot_alpha = np.asarray(rot.split()[3], np.float32)
         sub_alpha = rot_alpha[y0 - py:y1 - py, x0 - px:x1 - px]
         occ_roi = occupancy[y0:y1, x0:x1]
         glyph_mask = sub_alpha > 40
@@ -190,7 +222,7 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
         occupancy[y0:y1, x0:x1] = np.maximum(occ_roi, sub_alpha)
         placed_px += int(glyph_mask.sum())
         placed_count += 1
-        _PLACEMENTS.append((x, y, float(getattr(font, "size", 0)), len(word), angle, bmp.width, bmp.height))
+        _PLACEMENTS.append((x, y, float(getattr(font, "size", 0)), len(word), angle, bmp_w, bmp_h))
         _STATS["glyph_px"] += int(glyph_mask.sum())
         _STATS["overlap_px"] += overlap_px     # this word's stroke pixels landing on prior ink
         _STATS["core_px"] += int(core.sum())
@@ -203,6 +235,7 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
 # and a size, not an impression.
 _PLACEMENTS = []
 _STATS = {"glyph_px": 0, "overlap_px": 0, "core_px": 0, "core_overlap_px": 0}
+_BITMAP_CACHE = {}   # (word, font px, alpha, angle deg) -> (w, h, rotated RGBA, its alpha array)
 # Default 0.08: every claim metric was measured at this cap (letter-body collisions ~1%). The
 # first staging run shipped with 1.0 (no cap) and reported 6.71% -- the callers' own
 # tolerances (up to 0.24 in gap-fill) are placement heuristics, not a collision policy.
@@ -920,7 +953,7 @@ def multi_scale_orientation(gray, W):
         # straight columns where the real fur direction is a gentle sweep. A genuine confident
         # curl agrees with its own neighbors and survives this smoothing; an isolated noise spike
         # doesn't. theta itself is left unsmoothed here -- only its vote's STRENGTH is.
-        coh_w = cv2.GaussianBlur(coh_i, (0, 0), sigmaX=sigma)
+        coh_w = _gblur(coh_i, (0, 0), sigmaX=sigma)
         w = coh_w * coh_w
         cos2 += np.cos(2 * theta_i) * w
         sin2 += np.sin(2 * theta_i) * w
@@ -937,7 +970,7 @@ def ssim_map(img1, img2, sigma=7.0):
     img1 = img1.astype(np.float64)
     img2 = img2.astype(np.float64)
     c1, c2 = (0.01 * 255) ** 2, (0.03 * 255) ** 2
-    blur = lambda x: cv2.GaussianBlur(x, (0, 0), sigmaX=sigma)
+    blur = lambda x: _gblur(x, (0, 0), sigmaX=sigma)
     mu1, mu2 = blur(img1), blur(img2)
     mu1_sq, mu2_sq, mu1_mu2 = mu1 * mu1, mu2 * mu2, mu1 * mu2
     sigma1_sq = blur(img1 * img1) - mu1_sq
@@ -1029,8 +1062,8 @@ def type_only_likeness(canvas, mask, bgr_source, attractor_pts, base, blur_sigma
     type_only_gray = ink_alpha                               # more ink -> brighter, matches
                                                               # a bright source pixel now
     source_gray = cv2.cvtColor(bgr_source, cv2.COLOR_BGR2GRAY).astype(np.float32)
-    a = cv2.GaussianBlur(type_only_gray, (0, 0), sigmaX=blur_sigma)
-    b = cv2.GaussianBlur(source_gray, (0, 0), sigmaX=blur_sigma)
+    a = _gblur(type_only_gray, (0, 0), sigmaX=blur_sigma)
+    b = _gblur(source_gray, (0, 0), sigmaX=blur_sigma)
     smap = ssim_map(a, b, sigma=blur_sigma)
     weights = build_likeness_weight_map(mask, attractor_pts, base)
     m = mask > 0.5
@@ -1399,8 +1432,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # Multi-scale (recommendation #11) replaces the old single-sigma tensor -- see
     # multi_scale_orientation's docstring for why (the doodle's vertical-striping complaint).
     theta, coherence = multi_scale_orientation(gray, W)
-    theta_s = cv2.GaussianBlur(theta, (0, 0), sigmaX=max(1.0, W * 0.006))
-    coherence_s = cv2.GaussianBlur(coherence, (0, 0), sigmaX=max(1.0, W * 0.006))
+    theta_s = _gblur(theta, (0, 0), sigmaX=max(1.0, W * 0.006))
+    coherence_s = _gblur(coherence, (0, 0), sigmaX=max(1.0, W * 0.006))
 
     base = max(16, int(round(W * 0.048)))
 
@@ -1414,7 +1447,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # radial guess, and it only dominates in a narrow band right at the edge. Mod-pi angles
     # again require the double-angle trick to blend correctly (see blend_attractor_field).
     dist_to_edge = cv2.distanceTransform((mask > 0.5).astype(np.uint8), cv2.DIST_L2, 5)
-    dist_blur = cv2.GaussianBlur(dist_to_edge, (0, 0), sigmaX=max(1.5, W * 0.006))
+    dist_blur = _gblur(dist_to_edge, (0, 0), sigmaX=max(1.5, W * 0.006))
     gy, gx = np.gradient(dist_blur)
     boundary_theta = np.arctan2(gy, gx) + math.pi / 2.0   # tangent = inward normal rotated 90 deg
     boundary_w = np.clip(1.0 - dist_to_edge / (base * 1.3), 0, 1) ** 1.5   # 1 at the edge, 0 inland
@@ -1426,13 +1459,13 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # Feature field (eyes/nose proxy -- see find_attractor_points' docstring for why this
     # stands in for real pet_landmarks.py detections in this sandbox). Computed once, reused
     # for BOTH the attractor field below and the eyes/nose ink-protection at composite time.
-    broad = cv2.GaussianBlur(gray.astype(np.float32), (0, 0), sigmaX=max(1.0, W * 0.06))
+    broad = _gblur(gray.astype(np.float32), (0, 0), sigmaX=max(1.0, W * 0.06))
     localdark = np.clip((broad - gray.astype(np.float32)) / 55.0, 0, 1)
     locallight = np.clip((gray.astype(np.float32) - broad) / 70.0, 0, 1)
     feat_raw = np.maximum(localdark, locallight) * (mask > 0.5)
     ok = int(max(3, round(W * 0.011))) | 1
     feat_raw = cv2.morphologyEx(feat_raw, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ok, ok)))
-    feat = np.clip(cv2.GaussianBlur(feat_raw, (0, 0), sigmaX=max(1.0, W * 0.012)) * 1.6, 0, 1)
+    feat = np.clip(_gblur(feat_raw, (0, 0), sigmaX=max(1.0, W * 0.012)) * 1.6, 0, 1)
 
     # Silhouette fringe points (recommendation: "edges are irregular, furry and directional" in
     # the source vs. "generally smooth/masked" in the render) -- picked once, from the mask's own
@@ -1449,7 +1482,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # should never have been eligible.
     feat_dark_raw = cv2.morphologyEx(localdark * (mask > 0.5), cv2.MORPH_OPEN,
                                      cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ok, ok)))
-    feat_dark = np.clip(cv2.GaussianBlur(feat_dark_raw, (0, 0), sigmaX=max(1.0, W * 0.012)) * 1.6, 0, 1)
+    feat_dark = np.clip(_gblur(feat_dark_raw, (0, 0), sigmaX=max(1.0, W * 0.012)) * 1.6, 0, 1)
     attractor_pts = find_attractor_points(feat_dark, mask)
     # Validate the dark-only pair by depth inside the silhouette, with the original detector as
     # fallback. Measured on the three test photos (edge distance as a fraction of head width):
@@ -1611,7 +1644,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                                                      # a pure-black or pure-white target would
                                                      # erase texture at the tonal extremes
     corr_sigma = max(10.0, W * 0.02)
-    target_density_blur = cv2.GaussianBlur(target_density, (0, 0), sigmaX=corr_sigma)
+    target_density_blur = _gblur(target_density, (0, 0), sigmaX=corr_sigma)
     # Correct harder where likeness actually depends on it (eyes, muzzle/nose) than on generic
     # body texture -- reuses the SAME weighting the automated likeness test itself scores by.
     likeness_weights = build_likeness_weight_map(mask, attractor_pts, base)
@@ -1629,7 +1662,10 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # Regrowing the streamline geometry every round (real Jobard-Lefer growth, not just a
     # placement re-run) is genuinely more expensive -- fewer rounds than the fixed-geometry
     # version, which could afford 4-7.
-    N_ITERS = 5
+    # Was a fixed 5. Measured across the test photos, the best-scoring round was the 2nd-4th;
+    # rounds after the score turns down were pure cost (each is a full grow + place). Cap at 4
+    # (PET_V2_ITERS to override) and stop early on the first clear decrease -- see the loop tail.
+    N_ITERS = int(os.environ.get("PET_V2_ITERS", "4") or 4)
 
     def line_mean_xy(line):
         pts = np.array([(x, y) for x, y, _ in line[::4]])
@@ -1672,6 +1708,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     best_score, best_canvas, best_tier_stats = -1.0, None, None
     best_placements = []
     best_stats = dict(_STATS)
+    down_streak = 0
     for iteration in range(N_ITERS):
         sep_field = np.clip(sep_field_base * sep_correction, sep_px * 0.30, sep_px * 1.8).astype(np.float32)
         _log(f"iteration {iteration}: growing streamlines (sep {float(sep_field.min()):.1f}-"
@@ -1873,17 +1910,14 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         _log(f"iteration {iteration}: zone coverage before->after micro-fill: "
               + "  ".join(f"{k} {cov_pre[k][0]:.0%}->{cov_post[k][0]:.0%}" for k in ("eyes", "muzzle", "rest")))
 
-        # ---- Residual fill: every remaining free region larger than a glyph gets a token ----
-        micro_px_area += render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng)
-        # ---- Channel fill: letters along the medial axis of the remaining leading corridors ----
-        ch_n, ch_px = render_channel_fill(canvas, occupancy, theta_s, mask, get_font,
-                                          tone=gray.astype(np.float32) / 255.0)
-        micro_px_area += ch_px
-        _log(f"iteration {iteration}: channel fill placed {ch_n} letters ({ch_px}px)")
+        # Residual + channel fill used to run here, every iteration -- 45 s of an 88 s 1600px
+        # render, for canvases that were then discarded by keep-best. They now run ONCE, after
+        # the loop, on the winning canvas (see below). The density loop's error signal is
+        # measured on lanes + gap-fill, which is what it was tuned on before those fills existed.
 
         # ---- Measure the actual residual error and update the DENSITY field ---------------
         ink_now = np.asarray(canvas.split()[3], np.float32) / 255.0
-        current_blur = cv2.GaussianBlur(ink_now, (0, 0), sigmaX=corr_sigma)
+        current_blur = _gblur(ink_now, (0, 0), sigmaX=corr_sigma)
         error = (target_density_blur - current_blur) * (mask > 0.5)   # + means still too light
         mean_abs_err = float(np.abs(error[mask > 0.5]).mean())
         score, _, _ = type_only_likeness(canvas, mask, bgr_source, attractor_pts, base, corr_sigma)
@@ -1897,19 +1931,46 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         if score > best_score:
             best_score = score
             best_canvas = canvas.copy()
+            best_occupancy = occupancy.copy()
             best_placements = list(_PLACEMENTS)
             best_stats = dict(_STATS)
             best_tier_stats = (micro_px_area, struct_px_area, hero_px_area, fill_px_area)
+        elif iteration >= 1 and score < best_score - 0.005:
+            # The score has turned down. One dip is not a verdict -- measured: a single-decrease
+            # stop quit the 1050px dog at round 2 on a dip earlier runs recovered from, costing
+            # 0.03 of likeness. Two consecutive decreases is: the density field has passed its
+            # best fit, and the remaining rounds only cost time. Keep-best holds the winner.
+            down_streak += 1
+            if down_streak >= 2:
+                _log(f"iteration {iteration}: likeness below best twice running ({score:.4f} < {best_score:.4f}); stopping early")
+                break
+        if score > best_score - 0.005:
+            down_streak = 0
 
         if iteration < N_ITERS - 1:
             # error > 0 (still too light) -> shrink sep_correction -> denser lanes next round.
             # error < 0 (too dark already) -> grow sep_correction -> sparser lanes next round.
             sep_correction = np.clip(sep_correction * (1.0 - lr_map * error * 1.1), 0.35, 2.6)
-            sep_correction = cv2.GaussianBlur(sep_correction, (0, 0), sigmaX=max(4.0, base * 0.2))
+            sep_correction = _gblur(sep_correction, (0, 0), sigmaX=max(4.0, base * 0.2))
 
     canvas = best_canvas
+    occupancy = best_occupancy
     micro_px_area, struct_px_area, hero_px_area, fill_px_area = best_tier_stats
     _log(f"using iteration with best likeness ({best_score:.4f})")
+
+    # ---- Final fills, once, on the winning canvas -------------------------------------------
+    # Residual (short tokens in every free region a word fits) then channel (single letters
+    # along the medial axis of the leading corridors). Placement log/stats are rewound to the
+    # winning iteration first so the claim metrics describe exactly this canvas.
+    _PLACEMENTS[:] = best_placements
+    _STATS.update(best_stats)
+    micro_px_area += render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng)
+    ch_n, ch_px = render_channel_fill(canvas, occupancy, theta_s, mask, get_font,
+                                      tone=gray.astype(np.float32) / 255.0)
+    micro_px_area += ch_px
+    _log(f"final fills: channel fill placed {ch_n} letters ({ch_px}px)")
+    best_placements = list(_PLACEMENTS)
+    best_stats = dict(_STATS)
 
     # Gap-fill text is fine detail closing bare patches -- counts toward the micro share, same
     # spirit as the micro tier itself ("texture, fine tonal modeling, transitions").
@@ -1928,7 +1989,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     _log(f"ink coverage inside mask: {coverage:.1%}")
 
     dark_gate = np.clip((0.55 - np.clip(gray.astype(np.float32) / 255.0, 0, 1)) / 0.55, 0, 1)
-    dark_gate = cv2.GaussianBlur(dark_gate, (0, 0), sigmaX=max(1.0, W * 0.01))
+    dark_gate = _gblur(dark_gate, (0, 0), sigmaX=max(1.0, W * 0.01))
     dk = max(3, int(round(W * 0.006))) | 1
     ink_dilated = cv2.dilate(ink_alpha, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dk, dk)))
     ink_alpha = ink_alpha * (1.0 - dark_gate) + np.maximum(ink_alpha, ink_dilated) * dark_gate
@@ -1972,11 +2033,11 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         if px1 <= px0 or py1 <= py0:
             continue
         patch = gray[py0:py1, px0:px1].astype(np.float32)
-        patch_blur = cv2.GaussianBlur(patch, (0, 0), sigmaX=max(1.0, base * 0.03))
+        patch_blur = _gblur(patch, (0, 0), sigmaX=max(1.0, base * 0.03))
         by, bx = np.unravel_index(int(np.argmin(patch_blur)), patch_blur.shape)
         rad = max(3, int(round(base * 0.22)))
         cv2.circle(eye_reveal, (px0 + bx, py0 + by), rad, 1.0, -1)
-    eye_reveal = cv2.GaussianBlur(eye_reveal, (0, 0), sigmaX=max(1.0, base * 0.06))
+    eye_reveal = _gblur(eye_reveal, (0, 0), sigmaX=max(1.0, base * 0.06))
 
     # ---- Real nose reveal -- same idea as eye_reveal, a real gap in the render's fidelity ----
     # The dedicated nose renderer above only claims the outline/groove/nostrils in `occupancy`;
@@ -1992,7 +2053,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         cv2.ellipse(nose_reveal, (int(round(fncx)), int(round(fncy))),
                    (max(1, int(round(fna * 0.95))), max(1, int(round(fnb * 0.95)))),
                    fnangle, 0, 360, 1.0, -1)
-    nose_reveal = cv2.GaussianBlur(nose_reveal, (0, 0), sigmaX=max(1.0, base * 0.06))
+    nose_reveal = _gblur(nose_reveal, (0, 0), sigmaX=max(1.0, base * 0.06))
 
     # ---- Whisker zone -- makes the typographic whiskers from render_muzzle_topology actually
     # visible in the FINAL composite, not just the typography-only panel ------------------------
@@ -2051,7 +2112,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         eye_line_y = 0.5 * (ey1 + ey2)
         eye_sep_w = max(1.0, math.hypot(ex2 - ex1, ey2 - ey1))
         whisker_region_inside *= (yy > eye_line_y + 0.18 * eye_sep_w).astype(np.float32)
-    whisker_region_inside = cv2.GaussianBlur(whisker_region_inside, (0, 0), sigmaX=max(1.0, base * 0.1)) * mask
+    whisker_region_inside = _gblur(whisker_region_inside, (0, 0), sigmaX=max(1.0, base * 0.1)) * mask
 
     # ---- Saturation-anomaly dampening (the open-mouth/tongue fix) --------------------------
     # A real defect found on the Border Collie render: a hero word happened to land right over
@@ -2079,11 +2140,11 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     sat = hsv[..., 1] / 255.0
     mf = (mask > 0.5).astype(np.float32)
     sigma = max(1.0, W * 0.10)
-    num = cv2.GaussianBlur(sat * mf, (0, 0), sigmaX=sigma)
-    den = cv2.GaussianBlur(mf, (0, 0), sigmaX=sigma)
+    num = _gblur(sat * mf, (0, 0), sigmaX=sigma)
+    den = _gblur(mf, (0, 0), sigmaX=sigma)
     broad_sat = np.divide(num, den, out=np.zeros_like(num), where=den > 1e-6)
     sat_anomaly = np.clip((sat - broad_sat - 0.05) / 0.10, 0, 1) * mf
-    sat_anomaly = cv2.GaussianBlur(sat_anomaly, (0, 0), sigmaX=max(1.0, base * 0.05))
+    sat_anomaly = _gblur(sat_anomaly, (0, 0), sigmaX=max(1.0, base * 0.05))
 
     # `feat` was already computed once, up front, and reused for the attractor field above --
     # no need to recompute it here.
@@ -2165,8 +2226,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # weight map and re-add the channel axis explicitly rather than relying on it surviving.
     bg_weight2d = (mask <= 0.5).astype(np.float32)
     bg_sigma = max(20.0, W * 0.25)
-    bg_num = cv2.GaussianBlur(bgr_source.astype(np.float32) * bg_weight2d[..., None], (0, 0), sigmaX=bg_sigma)
-    bg_den = cv2.GaussianBlur(bg_weight2d, (0, 0), sigmaX=bg_sigma)[..., None]
+    bg_num = _gblur(bgr_source.astype(np.float32) * bg_weight2d[..., None], (0, 0), sigmaX=bg_sigma)
+    bg_den = _gblur(bg_weight2d, (0, 0), sigmaX=bg_sigma)[..., None]
     ground_bgr = np.divide(bg_num, bg_den, out=np.full_like(bg_num, 30.0), where=bg_den > 1e-6)
     ground_hsv = cv2.cvtColor(np.clip(ground_bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
     # Pushed much further -- the user supplied the actual source photos side by side with our
@@ -2223,8 +2284,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # structure in both layers. Lightly blurred only (letter-scale noise), not averaged away.
     fur_weight2d = (mask > 0.5).astype(np.float32)
     fur_sigma = max(2.0, W * 0.006)
-    fur_num = cv2.GaussianBlur(bgr_source.astype(np.float32) * fur_weight2d[..., None], (0, 0), sigmaX=fur_sigma)
-    fur_den = cv2.GaussianBlur(fur_weight2d, (0, 0), sigmaX=fur_sigma)[..., None]
+    fur_num = _gblur(bgr_source.astype(np.float32) * fur_weight2d[..., None], (0, 0), sigmaX=fur_sigma)
+    fur_den = _gblur(fur_weight2d, (0, 0), sigmaX=fur_sigma)[..., None]
     fur_bgr = np.divide(fur_num, fur_den, out=np.full_like(fur_num, 120.0), where=fur_den > 1e-6)
     fur_hsv = cv2.cvtColor(np.clip(fur_bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
     # Measured (dog, inside mask, LAB L percentiles): source 5th pct = 30, render = 56; source
@@ -2445,14 +2506,14 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         LOCAL_FLOOR = 24.0
         _sig = max(2.0, base * 0.25)
         if light_mix < 0.5:
-            _num = cv2.GaussianBlur(Lm_letters * ink_soft, (0, 0), sigmaX=_sig)
-            _den = cv2.GaussianBlur(ink_soft, (0, 0), sigmaX=_sig)
+            _num = _gblur(Lm_letters * ink_soft, (0, 0), sigmaX=_sig)
+            _den = _gblur(ink_soft, (0, 0), sigmaX=_sig)
             local_letter_L = np.divide(_num, _den, out=Lm_letters.copy(), where=_den > 1e-3)
             Lm_gaps = np.minimum(Lm_gaps, np.clip(local_letter_L - LOCAL_FLOOR, 0, 255))
         else:
             _gw = 1.0 - ink_soft
-            _num = cv2.GaussianBlur(Lm_gaps * _gw, (0, 0), sigmaX=_sig)
-            _den = cv2.GaussianBlur(_gw, (0, 0), sigmaX=_sig)
+            _num = _gblur(Lm_gaps * _gw, (0, 0), sigmaX=_sig)
+            _den = _gblur(_gw, (0, 0), sigmaX=_sig)
             local_gap_L = np.divide(_num, _den, out=Lm_gaps.copy(), where=_den > 1e-3)
             Lm_letters = np.minimum(Lm_letters, np.clip(local_gap_L - LOCAL_FLOOR, 0, 255))
         Lm = ink_soft * Lm_letters + (1.0 - ink_soft) * Lm_gaps
