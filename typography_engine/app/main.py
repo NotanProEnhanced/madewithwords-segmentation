@@ -1737,7 +1737,7 @@ async def render(
         if pet_on:
             # PET engine: landmark-free (U2-Net matte + saliency drape + photographic eyes).
             # Skips the whole face pipeline; `an` above is unused for pets.
-            from .pet_proto import render_pet_portrait
+            from .pet_proto import render_pet_portrait_dispatch as render_pet_portrait
             # First preview renders sharper (higher floor) so the initial view isn't soft --
             # the loupe/paid pass still goes higher. Floor 1050 (was 700), cap 1600 (was 1500).
             # print_aspect MUST match the paid render (see /download, which passes
@@ -2598,7 +2598,7 @@ async def pet_test_render(request: Request, image: UploadFile = File(...),
         data = await image.read()
         if not data:
             raise ValueError("empty upload")
-        from .pet_proto import render_pet_portrait
+        from .pet_proto import render_pet_portrait_dispatch as render_pet_portrait
         png = await _bounded_to_thread(render_pet_portrait, data, words, ground)
         b64 = base64.b64encode(png).decode("ascii")
         result = f'<img src="data:image/png;base64,{b64}" alt="pet word-portrait">'
@@ -4521,7 +4521,7 @@ def _compose_clean_png(job, aspect, path, recipe_path, src_path):
         if r.get("pet"):
             # Paws in Words: paid file via the pet engine, on a 4:5 gallery print canvas at
             # download resolution. Skips the face pipeline entirely.
-            from .pet_proto import render_pet_portrait
+            from .pet_proto import render_pet_portrait_dispatch as render_pet_portrait
             # pet_type_scale is the authoritative, exact value the preview actually rendered
             # at (added alongside the continuous slider). Only an OLDER recipe, saved before
             # the slider existed, lacks that field -- those still carry the legacy label

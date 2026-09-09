@@ -803,3 +803,14 @@ def render_pet_portrait(image_bytes: bytes, words: str, ground: str = "dark", he
     if not ok:
         raise ValueError("encode failed")
     return buf.tobytes()
+
+
+def render_pet_portrait_dispatch(*args, **kwargs):
+    """Engine selector for the pet branch of /render and /download. PET_ENGINE=v2 routes to
+    app.pet_v2 (streamline typography + tonal match, same signature, PNG bytes); anything else
+    is the existing landmark-free engine above, unchanged. One env var flips staging per
+    deploy, and back."""
+    if (os.environ.get("PET_ENGINE", "") or "").strip().lower() == "v2":
+        from .pet_v2.engine import render_pet_portrait_v2
+        return render_pet_portrait_v2(*args, **kwargs)
+    return render_pet_portrait(*args, **kwargs)
