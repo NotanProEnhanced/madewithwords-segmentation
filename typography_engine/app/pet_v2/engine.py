@@ -1475,7 +1475,7 @@ def evenly_spaced_streamlines(theta, coherence, mask, sep_px, step=4.0, max_step
 
 
 def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None,
-              landmarks=None, debug_dir=None, out_stem="render", verbose=False):
+              landmarks=None, debug_dir=None, out_stem="render", verbose=False, backdrop_rgb=None):
     """Render a typographic portrait of the pet in `bgr` (BGR uint8, already at the working
     resolution). Returns (rgb_uint8, metrics). `words`: the customer's comma-separated name +
     descriptors (the first entries weight highest; see _weighted_stream); None -> DEFAULT_WORDS.
@@ -1483,7 +1483,10 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     upsample factor applied here (None -> GOP_SCALE env, default 1). `max_overlap`: global
     collision cap (None -> GOP_MAX_OVERLAP env). `landmarks`: "x1,y1;x2,y2[;nx,ny]" eyes(+nose)
     from the production landmark model (None -> GOP_LANDMARKS env -> heuristic detector).
-    `debug_dir`: when set, writes the A/B/C/D QA panels there as <out_stem>_*.jpg."""
+    `debug_dir`: when set, writes the A/B/C/D QA panels there as <out_stem>_*.jpg. `backdrop_rgb`:
+    an (r, g, b) tuple for everything OUTSIDE the animal (the site's Gallery Dark / Gallery
+    Gray choice); None keeps the photo-derived backdrop. The gap color between letters ON the
+    animal is always derived from the coat -- it carries tone -- and is not affected."""
     _TL.verbose = bool(verbose)
     _TL.nose_hint = None
     _TL.max_overlap_cap = float(max_overlap) if max_overlap is not None else \
@@ -2494,6 +2497,12 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     ground_hsv[..., 2] = np.clip(ground_hsv[..., 2] * 1.05, 0, 255)
     ground_bgr = cv2.cvtColor(np.clip(ground_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR)
     outer_ground_rgb = cv2.cvtColor(ground_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
+    if backdrop_rgb is not None:
+        # The customer chose a backdrop on the site. Honoring it here (and not in the gaps
+        # between letters, which stay coat-derived) is what makes the choice do anything on
+        # this engine: previously it was accepted and ignored, so switching to Gallery Gray
+        # re-rendered 40 s of identical pixels.
+        outer_ground_rgb = np.full((H, W, 3), np.asarray(backdrop_rgb, np.float32), np.float32)
     # SEGMENTATION FIX (still applies): one ground field can't serve both "outside the animal"
     # and "the gap between two letters ON the animal" -- they need different colors. But the
     # INNER one was set to a near-black tone for contrast, and with collision tolerances now
@@ -2914,39 +2923,129 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         "elements": len(best_placements), "collision_body": coll_core, "collision_any": coll,
         "type_only_likeness": score, "zone_coverage": {k: v[0] for k, v in cov_final.items()},
         "words_by_zone": rep, "attractor_pts": attractor_pts, "size": (W, H),
+        # How much of each final pixel is the OUTER ground (outside the animal, under no
+        # fringe hair): lets a later request swap the backdrop color by arithmetic instead of
+        # a re-render. Stored as uint8 to keep the render cache small.
+        "outside_w": np.clip((1.0 - mask) * (1.0 - whisker_ink_alpha) * 255.0, 0, 255).astype(np.uint8),
+        "backdrop_rgb": tuple(float(v) for v in backdrop_rgb) if backdrop_rgb is not None else None,
     }
     return composited_u8, metrics
+
+
+# ---- Render cache for the site's entry point --------------------------------------------
+# One photo produces three requests in normal use: the preview, the "view up close" loupe a
+# moment later, and a re-render for every backdrop toggle. Each took a full 25-60 s render and
+# they overlapped on the render threads, so the third routinely exceeded the browser's 120 s
+# limit ("taking longer than usual"). The engine is deterministic, so the typography for a
+# (photo, words, aspect) is rendered ONCE at the loupe resolution and everything else is
+# derived: the preview is a resize, the backdrop swap is arithmetic on the outer-ground weight.
+# A request already rendering for the same key is waited on, not duplicated.
+_RENDER_CACHE = {}            # key -> (work_h, rgb_u8, outside_w_u8, ground_rgb)
+_RENDER_CACHE_ORDER = []      # LRU, oldest first
+_RENDER_CACHE_MAX = int(os.environ.get("PET_V2_CACHE_ENTRIES", "4") or 4)
+_RENDER_INFLIGHT = {}         # key -> threading.Event
+_RENDER_CACHE_LOCK = threading.Lock()
+_PREVIEW_UNIFY_MAX = 1600     # preview and loupe both come from one render at this height
+
+
+def _cache_put(key, value):
+    with _RENDER_CACHE_LOCK:
+        _RENDER_CACHE[key] = value
+        if key in _RENDER_CACHE_ORDER:
+            _RENDER_CACHE_ORDER.remove(key)
+        _RENDER_CACHE_ORDER.append(key)
+        while len(_RENDER_CACHE_ORDER) > _RENDER_CACHE_MAX:
+            _RENDER_CACHE.pop(_RENDER_CACHE_ORDER.pop(0), None)
+
+
+def _cache_get(key):
+    with _RENDER_CACHE_LOCK:
+        v = _RENDER_CACHE.get(key)
+        if v is not None and key in _RENDER_CACHE_ORDER:
+            _RENDER_CACHE_ORDER.remove(key)
+            _RENDER_CACHE_ORDER.append(key)
+        return v
+
+
+def _with_backdrop(rgb_u8, outside_w_u8, old_rgb, new_rgb):
+    """Swap the outer ground color of a finished render: exact where the pixel is pure
+    backdrop, proportionate under the soft matte edge and the fringe hairs."""
+    if old_rgb is None or tuple(old_rgb) == tuple(new_rgb):
+        return rgb_u8
+    w = outside_w_u8.astype(np.float32)[..., None] / 255.0
+    delta = np.asarray(new_rgb, np.float32) - np.asarray(old_rgb, np.float32)
+    return np.clip(rgb_u8.astype(np.float32) + delta * w, 0, 255).astype(np.uint8)
 
 
 def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
                            print_aspect=None, type_scale=None):
     """Drop-in for pet_proto.render_pet_portrait (same signature, PNG bytes out). `height` is
     the working resolution and therefore the typography fineness: previews ~1050-1600, print
-    at the PET_V2_MAX_RENDER_PX cap (default 2400) then upscaled. `ground` and `type_scale`
-    are accepted for interface parity and currently ignored: v2 derives its ground from the
-    photo and sizes type from the render resolution (TODO: map type_scale to MICRO/STRUCT)."""
-    from ..pet_proto import _fit_print_aspect
-    arr = np.frombuffer(image_bytes, np.uint8)
-    bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    if bgr is None:
-        raise ValueError("could not decode image")
+    at the PET_V2_MAX_RENDER_PX cap (default 2400) then upscaled. `ground` is the site's
+    backdrop choice (pet_proto.GROUNDS) and colors everything outside the animal; `type_scale`
+    is accepted for interface parity and currently ignored (TODO: map to MICRO/STRUCT)."""
+    import hashlib
+    from ..pet_proto import _fit_print_aspect, GROUNDS
+    gb, gg, gr = GROUNDS.get((ground or "dark").strip().lower(), GROUNDS["dark"])
+    ground_rgb = (float(gr), float(gg), float(gb))
     cap = int(os.environ.get("PET_V2_MAX_RENDER_PX", "2400") or 2400)
-    work_h = min(height, cap) if height and height > 0 else bgr.shape[0]
-    if bgr.shape[0] != work_h:
-        bgr = cv2.resize(bgr, (max(1, int(bgr.shape[1] * work_h / bgr.shape[0])), work_h),
-                         interpolation=cv2.INTER_AREA if work_h < bgr.shape[0] else cv2.INTER_CUBIC)
-    mask = _foreground_mask(bgr)
-    if print_aspect:
-        bgr, mask = _fit_print_aspect(bgr, mask, float(print_aspect))
-    rgb, _metrics = render_v2(bgr, words, mask=mask, render_scale=1.0,
-                              verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"))
-    if work_h < height:
-        out_w = int(round(rgb.shape[1] * height / rgb.shape[0]))
-        rgb = cv2.resize(rgb, (out_w, int(height)), interpolation=cv2.INTER_CUBIC)
-    ok, png = cv2.imencode(".png", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
-    if not ok:
-        raise RuntimeError("PNG encode failed")
-    return png.tobytes()
+    want_h = min(int(height), cap) if height and height > 0 else 0
+    # Preview-class requests (1050-1600) all render at 1600 so the loupe is a resize of the
+    # preview's own render rather than a second one -- and preview and loupe then agree.
+    work_h = _PREVIEW_UNIFY_MAX if 1050 <= want_h <= _PREVIEW_UNIFY_MAX else want_h
+    key = (hashlib.sha1(image_bytes).hexdigest(), str(words or ""), float(print_aspect or 0.0))
+
+    def _finish(entry):
+        cached_h, rgb, outside_w, old_ground = entry
+        rgb = _with_backdrop(rgb, outside_w, old_ground, ground_rgb)
+        if height and height > 0 and rgb.shape[0] != int(height):
+            out_w = int(round(rgb.shape[1] * height / rgb.shape[0]))
+            rgb = cv2.resize(rgb, (out_w, int(height)),
+                             interpolation=cv2.INTER_AREA if int(height) < rgb.shape[0] else cv2.INTER_CUBIC)
+        ok, png = cv2.imencode(".png", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+        if not ok:
+            raise RuntimeError("PNG encode failed")
+        return png.tobytes()
+
+    while True:
+        entry = _cache_get(key)
+        if entry is not None and entry[0] >= work_h:
+            return _finish(entry)
+        with _RENDER_CACHE_LOCK:
+            ev = _RENDER_INFLIGHT.get(key)
+            if ev is None:
+                ev = threading.Event()
+                _RENDER_INFLIGHT[key] = ev
+                mine = True
+            else:
+                mine = False
+        if not mine:
+            ev.wait()          # someone is rendering this photo; take their result
+            continue
+        break
+
+    try:
+        arr = np.frombuffer(image_bytes, np.uint8)
+        bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if bgr is None:
+            raise ValueError("could not decode image")
+        if not work_h:
+            work_h = bgr.shape[0]
+        if bgr.shape[0] != work_h:
+            bgr = cv2.resize(bgr, (max(1, int(bgr.shape[1] * work_h / bgr.shape[0])), work_h),
+                             interpolation=cv2.INTER_AREA if work_h < bgr.shape[0] else cv2.INTER_CUBIC)
+        mask = _foreground_mask(bgr)
+        if print_aspect:
+            bgr, mask = _fit_print_aspect(bgr, mask, float(print_aspect))
+        rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=1.0, backdrop_rgb=ground_rgb,
+                                 verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"))
+        entry = (work_h, rgb, metrics["outside_w"], ground_rgb)
+        _cache_put(key, entry)
+    finally:
+        with _RENDER_CACHE_LOCK:
+            _RENDER_INFLIGHT.pop(key, None)
+        ev.set()
+    return _finish(entry)
 
 
 def main():
