@@ -512,14 +512,16 @@ def render_eye_feature(canvas, occupancy, gray, mask, base, center, get_font, rn
         return False
 
     # Eyelid: one fine contour line right at the eye's own boundary.
+    # Sizes cut (lid 0.085 -> 0.05, iris 0.055 -> 0.04 of base): the eye is where likeness needs
+    # the finest, quietest type -- large words across a lid read as a label, not an eye.
     lid_path = ellipse_path((ecx, ecy), (a_ax * 1.08, b_ax * 1.08), angle, n=70)
-    place_words_collision_aware(canvas, occupancy, lid_path, ["LOYAL"], get_font(base * 0.085),
-                                gap_px=base * 0.02, alpha=220, max_overlap=0.25)
+    place_words_collision_aware(canvas, occupancy, lid_path, ["LOYAL"], get_font(base * 0.05),
+                                gap_px=base * 0.015, alpha=200, max_overlap=0.25)
     # Iris: 2 concentric rings of small text between the pupil and the lid.
     for frac in (0.55, 0.82):
         ring = ellipse_path((ecx, ecy), (a_ax * frac, b_ax * frac), angle, n=56)
         place_words_collision_aware(canvas, occupancy, ring, ["LOYAL", "GENTLE", "SOUL"],
-                                    get_font(base * 0.055), gap_px=base * 0.015, alpha=190, max_overlap=0.3)
+                                    get_font(base * 0.04), gap_px=base * 0.012, alpha=170, max_overlap=0.3)
     # Pupil: fit the pupil's OWN dark blob within the eye rather than assuming it's round --
     # a cat's pupil in bright light is a narrow vertical slit, not a circle, and that shape is
     # genuinely present in the photo's own pixels (the pupil is reliably the darkest thing inside
@@ -602,8 +604,8 @@ def render_nose_feature(canvas, occupancy, gray, mask, base, eye_pts, get_font, 
     (ncx, ncy), (a_ax, b_ax), angle = fit
 
     outline = ellipse_path((ncx, ncy), (a_ax * 1.08, b_ax * 1.08), angle, n=64)
-    place_words_collision_aware(canvas, occupancy, outline, ["LOYAL"], get_font(base * 0.08),
-                                gap_px=base * 0.02, alpha=220, max_overlap=0.25)
+    place_words_collision_aware(canvas, occupancy, outline, ["LOYAL"], get_font(base * 0.05),
+                                gap_px=base * 0.015, alpha=200, max_overlap=0.25)
 
     # Philtrum: a straight seam down the nose's own long axis, from just below the bridge to
     # just past the leather's lower edge -- every reference photo shows this groove clearly.
@@ -619,8 +621,8 @@ def render_nose_feature(canvas, occupancy, gray, mask, base, eye_pts, get_font, 
         gx = ncx + groove_dir[0] * t
         gy = ncy + groove_dir[1] * t
         groove_pts.append((gx, gy, math.atan2(groove_dir[1], groove_dir[0])))
-    place_words_collision_aware(canvas, occupancy, groove_pts, ["LOYAL"], get_font(base * 0.05),
-                                gap_px=base * 0.015, alpha=210, max_overlap=0.3)
+    place_words_collision_aware(canvas, occupancy, groove_pts, ["LOYAL"], get_font(base * 0.035),
+                                gap_px=base * 0.012, alpha=190, max_overlap=0.3)
 
     # Nostrils: fit each side's own dark blob (comma/W-shaped, not a generic circle) within a
     # tight local search window either side of the groove.
@@ -693,9 +695,9 @@ def render_mouth_feature(canvas, occupancy, gray, mask, base, nose_fit, get_font
         path.append((x_, y_, math.atan2(yn - y_, xn - x_)))
     path.append((pts[-1][0], pts[-1][1], path[-1][2] if path else 0.0))
 
-    font_px = max(4, base * 0.045)
+    font_px = max(4, base * 0.035)
     place_words_collision_aware(canvas, occupancy, path, ["LOYAL"], get_font(font_px),
-                                gap_px=font_px * 0.2, alpha=int(120 + min(80, contrast * 3)),
+                                gap_px=font_px * 0.2, alpha=int(110 + min(70, contrast * 3)),
                                 max_overlap=0.3)
     return True
 
@@ -738,9 +740,9 @@ def render_muzzle_topology(canvas, occupancy, gray, mask, base, nose_fit, eye_pt
         path = [(x, y, a) for (x, y, a) in path if 0 <= x < W and 0 <= y < H and mask[int(y), int(x)] > 0.5]
         if len(path) < 4:
             continue
-        font_px = max(5, base * 0.06)
+        font_px = max(5, base * 0.04)
         place_words_collision_aware(canvas, occupancy, path, stream, get_font(font_px),
-                                    gap_px=font_px * 0.3, alpha=200, max_overlap=0.3)
+                                    gap_px=font_px * 0.3, alpha=180, max_overlap=0.3)
 
     # ---- Whisker-pad spokes: fine, short, dense fan standing in for real whiskers -----------
     # LENGTH is traced per-spoke from real evidence, not a fixed guess. First version used a
@@ -910,8 +912,8 @@ def render_feature_microfill(canvas, occupancy, theta_s, coherence_s, mask, regi
         for line in lines:
             imp = float(np.mean([importance_norm[int(np.clip(y, 0, H - 1)), int(np.clip(x, 0, W - 1))]
                                  for x, y, _ in line[::3]])) if line else 0.0
-            font_px = base * (0.075 + 0.045 * (1.0 - imp))      # ~0.075*base at peak importance
-            alpha = int(200 + 55 * imp)
+            font_px = base * (0.055 + 0.040 * (1.0 - imp))      # finest at peak importance
+            alpha = 205                                          # fine, not faint (see structural pass)
             placed_total += place_words_collision_aware(canvas, occupancy, line, stream, get_font(font_px),
                                                         gap_px=font_px * 0.2, alpha=alpha, max_overlap=0.22)
     return placed_total
@@ -1799,9 +1801,15 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         scored = [(path_length(l), mean_coherence(l), min_dist_to_attractor(l), l) for l in lines]
         # Hero candidates are picked by PROXIMITY TO A REAL FEATURE first, length second -- "the
         # name reads near the eyes" rather than whichever streamline happens to be longest.
+        # Hero lines go on the BODY, away from the features. They used to be chosen by proximity
+        # to the eyes ("the name reads near the eyes"), which put the largest type across the
+        # muzzle and eye sockets -- exactly where likeness needs the finest, quietest type.
+        # Now: long, coherent lines that sit well outside the feature radius and in the
+        # lowest-importance territory, longest first.
         hero_candidates = sorted(
-            (s for s in scored if s[1] > 0.30 and s[0] > base * 2.0 and s[2] < attractor_radius * 1.4),
-            key=lambda s: s[2])
+            (s for s in scored if s[1] > 0.30 and s[0] > base * 2.0
+             and s[2] > attractor_radius * 1.6 and line_importance(s[3]) < 0.35),
+            key=lambda s: -s[0])
         hero_lines = set(id(s[3]) for s in hero_candidates[:5])
         scored.sort(key=lambda s: -s[0])
         non_hero_lines = [line for _l, _coh, _d, line in scored if id(line) not in hero_lines]
@@ -1864,7 +1872,17 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             # face," not treat every square inch as equally important. Uses the SAME weight map
             # the likeness score already judges against, so rendering and evaluation agree.
             importance = line_importance(line)
-            alpha = int(min(255, (195 + 55 * t_coh) * (1.0 + 0.22 * importance)))
+            # Features get FINER and QUIETER type, not bolder. The earlier +22% alpha boost near
+            # the eyes/nose and the size gradient's floor both made the features the loudest
+            # part of the portrait; likeness lives in fine, subtle type there. Hard cap the size
+            # inside feature territory to the micro range and ease alpha down instead of up.
+            if importance > 0.45:
+                font_px = min(font_px, MICRO_PX * 1.05)
+                font = get_font(font_px)
+            # Opacity stays neutral in feature territory: a -18% ease-off there dropped the
+            # muzzle's tonal mass (the brightest region on both test dogs, where tone wants the
+            # MOST ink) -- muzzle SSIM 0.856 -> 0.746 measured. Fineness comes from size alone.
+            alpha = int(min(255, 195 + 55 * t_coh))
             # words_for_curvature (line-mean-coherence bucketing) is defined above but NOT used
             # here -- tried it, and it made things worse, not better. See its docstring: this
             # pipeline's coherence field reads high almost everywhere on the doodle (a side effect
@@ -1911,7 +1929,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                 font = get_font(font_px)
                 t_coh = np.clip(line_coh[id(line)] / 0.5, 0, 1)
                 importance = line_importance(line)
-                alpha = int(min(255, (165 + 65 * t_coh) * (1.0 + 0.22 * importance)))
+                alpha = int(min(255, 165 + 65 * t_coh))
                 fill_px_area += place_words_collision_aware(canvas, occupancy, line, stream, font,
                                                              gap_px=font_px * gap_frac, alpha=alpha,
                                                              max_overlap=round_overlap)
