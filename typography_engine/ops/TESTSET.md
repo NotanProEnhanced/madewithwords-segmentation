@@ -241,3 +241,41 @@ for the unrelated "breathe" shadow-protection pass) tuned for a closed eye speci
 a soft, deliberately-anatomical closed-eyelid render in place of raw shadow. Not attempted
 tonight -- worth its own session, with 18/19 as the test cases and TYPO_DUMP_FIELDS'
 eye-region readout + the MARKED dump as the tools to judge it by.
+
+## The pet set
+
+    sources   /root/typortrait-testset/pets/src/NN-name.jpg
+    words     /root/typortrait-testset/pets/words.txt            default for every photo
+              /root/typortrait-testset/pets/src/NN-name.words    per-photo override
+    results   /root/typortrait-testset/pets/out/<commit>/
+
+    ./ops/render-petset.sh              render every pet photo through the container
+    ./ops/render-petset.sh 02 04        just those
+    ./ops/pet-gate.sh <A> <B>           what moved between two runs, and whether the
+                                        numbers got worse (non-zero exit if they did)
+
+Same rules as the human set: deterministic engine, fixed photos and words, outputs filed
+by commit, never edit or replace a photo. Two differences. Each render also stores the
+engine's own report card beside the image (`NN-name.metrics`: likeness, collisions, exposed
+space, footprint, word count), read from the container log, which needs `PET_V2_VERBOSE=1`
+in the tree's `.env`. And the gate has thresholds, because these numbers are the claim the
+product makes: likeness may not fall by more than 0.010 on any image, letter-body collisions
+may not exceed 1.20% or rise by more than 0.25, exposed space may not exceed 3.0% or rise by
+more than 0.50. Bytes moving is reported, not failed -- most engine changes move every image
+-- so "this only touched the eyes" is checked rather than asserted.
+
+Choose photos that vary the FRAMING as much as the subject: the size rule is normalized by
+what is in the frame, and the defects found on staging were all on tight head-and-shoulders
+crops that the full-body development photos never showed. A good starting set:
+
+| # | exercises |
+|---|-----------|
+| 01 | full body, light coat, busy background |
+| 02 | black coat (the dark-coat tonal mode) |
+| 03 | curly light coat where the nose finder has the least contrast |
+| 04 | cat: whiskers, slit pupils |
+| 05 | tight head-and-shoulders close-up, senior muzzle |
+| 06 | extreme close-up where one eye is near the frame edge |
+
+To add a photo: copy it to `pets/src/` with the next number, optionally drop a `.words`
+file beside it, render once at the current commit so the baseline exists.
