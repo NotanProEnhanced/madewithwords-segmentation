@@ -2304,6 +2304,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # alpha -- otherwise a dark-fur letter at 35% opacity counts as empty space (measured: the
     # exposed-space figure jumped to 15.8% on the black Lab the moment tone modulation landed).
     ink_raw = np.asarray(_a, np.float32) / 255.0
+    if _KEEP_FIELDS:
+        _TL.fields["ink_raw"] = ink_raw
     _a = Image.fromarray(np.clip(np.asarray(_a, np.float32) * tone_gain, 0, 255).astype(np.uint8))
     canvas = Image.merge("RGBA", (_r, _g, _b, _a))
 
@@ -2862,6 +2864,21 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # ~1 for the doodle (~185). Either way the letter/gap separation is guaranteed.
     src_mean_L = float(src_L_in.mean())
     light_mix = float(np.clip((src_mean_L - 145.0) / 30.0, 0.0, 1.0))
+    # ---- LOCAL coat mode. One mode per photo fails any two-tone or shadowed coat: on the
+    # border collie (staging baseline) the photo's mean landed in the middle, so the black
+    # half got the mid-coat treatment -- letters at the fur's own near-black tone, gaps pushed
+    # darker still -- and read as empty. The coat luminance is read per pixel (masked blur,
+    # 1.5 base, so a word-sized patch decides, not a hair), and the same ramps that pick the
+    # photo's mode pick each region's. The scalar solves below still set the layer scales
+    # from the photo's measured means; the per-pixel mixes only choose which layer carries
+    # the source tone at each spot.
+    _cw = (mask > 0.5).astype(np.float32)
+    _csig = max(4.0, base * 1.5)
+    _cnum = _gblur(src_lab[..., 0] * _cw, (0, 0), sigmaX=_csig)
+    _cden = _gblur(_cw, (0, 0), sigmaX=_csig)
+    coat_L = np.divide(_cnum, _cden, out=np.full_like(_cnum, src_mean_L), where=_cden > 1e-3)
+    light_f = np.clip((coat_L - 145.0) / 30.0, 0.0, 1.0).astype(np.float32)
+    dark_f = np.clip((120.0 - coat_L) / 30.0, 0.0, 1.0).astype(np.float32)
     # Dark coats (chocolate/black; mean L under ~95): the mirror of the light-coat rule. Seen on
     # staging with a chocolate Lab: letters at the coat's own dark tone with gaps pushed darker
     # still is a dark photo with slightly-less-dark text on it. The honest typographic read on a
@@ -2893,25 +2910,28 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # light mode: gaps at 1.0, letters scaled
     l_light = (target_mean - (1.0 - c_eff) * m_g) / max(1e-6, c_eff * m_l)
     l_light = float(np.clip(min(l_light, (m_g - MIN_DELTA_L) / max(1.0, m_l)), LETTER_TONE, 1.0))
-    gap_scale = (1.0 - light_mix) * g_dark + light_mix * 1.0
-    letter_scale = (1.0 - light_mix) * 1.0 + light_mix * l_light
+    gap_scale = (1.0 - light_f) * g_dark + light_f * 1.0
+    letter_scale = (1.0 - light_f) * 1.0 + light_f * l_light
     # Dark-coat blend: gaps -> source tone, letters lifted to clear the floor (capped so a
     # near-black coat can't turn its words white).
-    if dark_mix > 0:
-        l_dark = float(np.clip((m_g + MIN_DELTA_L) / max(1.0, m_l), 1.0, 2.2))
-        gap_scale = (1.0 - dark_mix) * gap_scale + dark_mix * 1.0
-        letter_scale = (1.0 - dark_mix) * letter_scale + dark_mix * l_dark
+    l_dark = float(np.clip((m_g + MIN_DELTA_L) / max(1.0, m_l), 1.0, 2.2))
+    gap_scale = (1.0 - dark_f) * gap_scale + dark_f * 1.0
+    letter_scale = (1.0 - dark_f) * letter_scale + dark_f * l_dark
     # Enforce the legibility floor on the BLENDED scales (blending the two modes pulls the
     # layers back toward each other -- measured delta 31 against a 40 floor). Push the offset
-    # layer of whichever mode dominates until the predicted delta meets the floor.
+    # layer of whichever mode dominates until the predicted delta meets the floor, per pixel.
     pred_delta = m_l * letter_scale - m_g * gap_scale
-    if abs(pred_delta) < MIN_DELTA_L:
-        if dark_mix >= 0.5:
-            letter_scale = min(2.2, (m_g * gap_scale + MIN_DELTA_L) / max(1.0, m_l))
-        elif light_mix < 0.5:
-            gap_scale = max(GAP_TONE, (m_l * letter_scale - MIN_DELTA_L) / max(1.0, m_g))
-        else:
-            letter_scale = max(LETTER_TONE, (m_g * gap_scale - MIN_DELTA_L) / max(1.0, m_l))
+    _short = np.abs(pred_delta) < MIN_DELTA_L
+    _is_dark, _is_light = dark_f >= 0.5, light_f >= 0.5
+    letter_scale = np.where(_short & _is_dark, np.minimum(2.2, (m_g * gap_scale + MIN_DELTA_L) / max(1.0, m_l)), letter_scale)
+    gap_scale = np.where(_short & ~_is_dark & ~_is_light, np.maximum(GAP_TONE, (m_l * letter_scale - MIN_DELTA_L) / max(1.0, m_g)), gap_scale)
+    letter_scale = np.where(_short & ~_is_dark & _is_light, np.maximum(LETTER_TONE, (m_g * gap_scale - MIN_DELTA_L) / max(1.0, m_l)), letter_scale)
+    letter_scale = letter_scale.astype(np.float32); gap_scale = gap_scale.astype(np.float32)
+    # Soft per-pixel weights for the three local-floor rules below (a hard switch at 0.5 would
+    # draw a seam across a coat that grades from black to white).
+    w_dark = np.clip((dark_f - 0.25) / 0.5, 0, 1).astype(np.float32)
+    w_light = np.clip((light_f - 0.25) / 0.5, 0, 1).astype(np.float32)
+    w_mid = np.clip(1.0 - w_dark - w_light, 0, 1).astype(np.float32)
 
     def _chain(kk):
         Lw = (L_cur + kk * (L_clahe - L_cur)) * mask + L_cur * (1.0 - mask)
@@ -2933,24 +2953,21 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         # (measured: whole-mask delta 37 -> 57, gaps L 98 -> 81), not just in shadow.
         LOCAL_FLOOR = 24.0
         _sig = max(2.0, base * 0.25)
-        if dark_mix >= 0.5:
-            # Dark coat: gaps hold the source; the floor lifts letters above the NEARBY gap tone.
-            _gw = 1.0 - ink_soft
-            _num = cv2.GaussianBlur(Lm_gaps * _gw, (0, 0), sigmaX=_sig)
-            _den = cv2.GaussianBlur(_gw, (0, 0), sigmaX=_sig)
-            local_gap_L = np.divide(_num, _den, out=Lm_gaps.copy(), where=_den > 1e-3)
-            Lm_letters = np.maximum(Lm_letters, np.clip(local_gap_L + LOCAL_FLOOR, 0, 255))
-        elif light_mix < 0.5:
-            _num = _gblur(Lm_letters * ink_soft, (0, 0), sigmaX=_sig)
-            _den = _gblur(ink_soft, (0, 0), sigmaX=_sig)
-            local_letter_L = np.divide(_num, _den, out=Lm_letters.copy(), where=_den > 1e-3)
-            Lm_gaps = np.minimum(Lm_gaps, np.clip(local_letter_L - LOCAL_FLOOR, 0, 255))
-        else:
-            _gw = 1.0 - ink_soft
-            _num = _gblur(Lm_gaps * _gw, (0, 0), sigmaX=_sig)
-            _den = _gblur(_gw, (0, 0), sigmaX=_sig)
-            local_gap_L = np.divide(_num, _den, out=Lm_gaps.copy(), where=_den > 1e-3)
-            Lm_letters = np.minimum(Lm_letters, np.clip(local_gap_L - LOCAL_FLOOR, 0, 255))
+        _gw = 1.0 - ink_soft
+        _num = _gblur(Lm_gaps * _gw, (0, 0), sigmaX=_sig)
+        _den = _gblur(_gw, (0, 0), sigmaX=_sig)
+        local_gap_L = np.divide(_num, _den, out=Lm_gaps.copy(), where=_den > 1e-3)
+        _num = _gblur(Lm_letters * ink_soft, (0, 0), sigmaX=_sig)
+        _den = _gblur(ink_soft, (0, 0), sigmaX=_sig)
+        local_letter_L = np.divide(_num, _den, out=Lm_letters.copy(), where=_den > 1e-3)
+        # Dark coat: gaps hold the source; the floor lifts letters above the NEARBY gap tone.
+        letters_dark = np.maximum(Lm_letters, np.clip(local_gap_L + LOCAL_FLOOR, 0, 255))
+        # Mid coat: letters hold the source; gaps are held below the nearby letters.
+        gaps_mid = np.minimum(Lm_gaps, np.clip(local_letter_L - LOCAL_FLOOR, 0, 255))
+        # Light coat: gaps hold the source; letters are held below the nearby gaps.
+        letters_light = np.minimum(Lm_letters, np.clip(local_gap_L - LOCAL_FLOOR, 0, 255))
+        Lm_letters = w_dark * letters_dark + w_light * letters_light + w_mid * Lm_letters
+        Lm_gaps = w_mid * gaps_mid + (1.0 - w_mid) * Lm_gaps
         Lm = ink_soft * Lm_letters + (1.0 - ink_soft) * Lm_gaps
         Lm = Lm * mask + Lw * (1.0 - mask)
         return Lw, Lm
@@ -3001,8 +3018,9 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         _log(f"letters-only L pct {pcts}: source={np.percentile(src_L_in, pcts).round(0)} "
               f"letters={np.percentile(L_after[letters_in], pcts).round(0)}")
         _log(f"letter/gap luminance: letters L={L_after[letters_in].mean():.0f}  gaps L={L_after[gap_px].mean():.0f}  "
-              f"(delta {L_after[letters_in].mean() - L_after[gap_px].mean():+.0f}; light_mix={light_mix:.2f} "
-              f"gap_scale={gap_scale:.2f} letter_scale={letter_scale:.2f}; letters cover {letters_in.sum() / m_in.sum():.0%})")
+              f"(delta {L_after[letters_in].mean() - L_after[gap_px].mean():+.0f}; photo light_mix={light_mix:.2f} dark_mix={dark_mix:.2f}; "
+              f"local dark-mode share {float((dark_f[m_in] >= 0.5).mean()):.0%} light-mode share {float((light_f[m_in] >= 0.5).mean()):.0%}; "
+              f"gap_scale={float(gap_scale[m_in].mean()):.2f} letter_scale={float(letter_scale[m_in].mean()):.2f}; letters cover {letters_in.sum() / m_in.sum():.0%})")
         _log(f"overall tone: composite mean L inside mask={L_after[m_in].mean():.0f} vs source {src_mean_L:.0f}")
     # Final typography coverage by anatomical zone (the "areas not rendered with typography" number).
     _extra = {}
