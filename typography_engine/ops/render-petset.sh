@@ -46,7 +46,7 @@ LOG_CMD="${LOG_CMD:-}"
 [ -s "$SET/words.txt" ] || { echo "no default words at $SET/words.txt"; exit 1; }
 DEF_WORDS="$(tr -d '\r\n' < "$SET/words.txt")"
 COMMIT="$(git -C "$TREE" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-DIRTY="$(git -C "$TREE" status --porcelain 2>/dev/null | wc -l)"
+DIRTY="$(git -C "$TREE" status --porcelain --untracked-files=no 2>/dev/null | wc -l)"   # tracked edits only: a tree's .env and gallery images are not code
 
 SIG=""
 [ "$PNG_W"    = "$DEF_PNG_W" ]  || SIG="$SIG-png$PNG_W"

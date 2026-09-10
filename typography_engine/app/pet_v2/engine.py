@@ -852,12 +852,17 @@ def render_muzzle_topology(canvas, occupancy, gray, mask, base, nose_fit, eye_pt
                 sx, sy = int(round(pad_x + dx * t)), int(round(pad_y + dy * t))
                 if not (0 <= sx < W and 0 <= sy < H):
                     break
-                if residual_map[sy, sx] > 14.0:
+                # Outside the outline the threshold rises and no gap is forgiven: grass and
+                # bokeh texture scored above 14 as readily as a whisker, so spokes on the tan
+                # dog and the senior ran past the cheek as pale dashes in the backdrop. A real
+                # whisker past the silhouette is one continuous bright line; texture is not.
+                _outside = mask[sy, sx] < 0.3
+                if residual_map[sy, sx] > (24.0 if _outside else 14.0):
                     reach = t
                     miss_run = 0
                 else:
                     miss_run += 1
-                    if miss_run > 5:   # the line has genuinely ended -- stop extending
+                    if miss_run > (1 if _outside else 5):   # the line has genuinely ended
                         break
                 t += step
             path = spoke_path(pad_x, pad_y, angle_deg, reach, n=max(6, int(reach / step)))
@@ -871,7 +876,7 @@ def render_muzzle_topology(canvas, occupancy, gray, mask, base, nose_fit, eye_pt
     return placed_any
 
 
-def find_fringe_points(mask, n_points, seed=11):
+def find_fringe_points(mask, n_points, seed=11, gray=None, theta_s=None, base=None):
     """Locate candidate silhouette-fringe hairs from real evidence, not a guess: a segmentation
     mask's edge is antialiased, so pixels with PARTIAL coverage (neither solidly in nor solidly
     out) right at the boundary are the soft ghost of individual fur strands the segmenter could
@@ -886,9 +891,35 @@ def find_fringe_points(mask, n_points, seed=11):
     if len(xs) == 0:
         return []
     local_rng = random.Random(seed)
-    n = min(n_points, len(xs))
-    idx = local_rng.sample(range(len(xs)), n)
-    return [(float(xs[i]), float(ys[i])) for i in idx]
+    if gray is None or theta_s is None or base is None:
+        n = min(n_points, len(xs))
+        idx = local_rng.sample(range(len(xs)), n)
+        return [(float(xs[i]), float(ys[i])) for i in idx]
+    # Evidence gate. The partial-coverage band exists on EVERY matte edge, smooth-coated or
+    # not, so sampling it alone drew hairs off a short-haired dog's cheek as pale dashes in
+    # the backdrop (staging, tan dog and senior). A hair that really leaves the outline is a
+    # thin bright-or-dark line continuing outward from the point: walk the outward ray
+    # 0.2 base past the edge and keep the point only if the thin-line residual (photo minus
+    # its median) persists along it. Four times the candidates are drawn so a fluffy edge
+    # still fills its quota; a smooth edge simply yields fewer hairs.
+    H, W = mask.shape
+    residual = np.abs(gray.astype(np.float32) - cv2.medianBlur(gray, 5).astype(np.float32))
+    n_try = min(n_points * 4, len(xs))
+    idx = local_rng.sample(range(len(xs)), n_try)
+    out = []
+    for i in idx:
+        px, py = float(xs[i]), float(ys[i])
+        dx, dy, _ = fringe_outward_dir(mask, theta_s, px, py)
+        vals = []
+        for t in np.linspace(2.0, base * 0.2, 6):
+            sx, sy = int(round(px + dx * t)), int(round(py + dy * t))
+            if 0 <= sx < W and 0 <= sy < H and mask[sy, sx] < 0.5:
+                vals.append(residual[sy, sx])
+        if len(vals) >= 3 and float(np.mean(vals)) > 9.0 and float(np.min(vals)) > 3.0:
+            out.append((px, py))
+            if len(out) >= n_points:
+                break
+    return out
 
 
 def fringe_outward_dir(mask, theta_s, px, py):
@@ -1554,7 +1585,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # antialiased edge, so they're a stable feature of this animal's silhouette rather than
     # reshuffling per iteration. See find_fringe_points' docstring for why this counts as real
     # evidence rather than a fabricated guess.
-    fringe_points = find_fringe_points(mask, n_points=max(40, int(W * 0.05)))
+    fringe_points = find_fringe_points(mask, n_points=max(40, int(W * 0.05)), gray=gray, theta_s=theta_s, base=base)
+    _log(f"fringe: {len(fringe_points)} hairs with evidence of leaving the outline")
 
     attractor_radius = base * 2.2
     # Eye candidates come from the DARK half of the feature field only. `feat` (used below for
@@ -2584,8 +2616,72 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # surroundings and the image is legibly built of words while still carrying the photo's
     # structure in both layers. Lightly blurred only (letter-scale noise), not averaged away.
     fur_weight2d = (mask > 0.5).astype(np.float32)
+    # ---- Edge decontamination: take the background back out of the silhouette band --------
+    # A matte is never exact. Along the outline the photo's pixels are part fur, part whatever
+    # was behind it: grass, sky, a sunlit rim. Revealed through the letters, and averaged into
+    # the gap colour, that band rendered as a glow traced round the whole animal, green on the
+    # collie, white-gold on the backlit shepherd (staging baseline dc242ea). Measured on a
+    # loosened matte of the tan dog: the inner ring's chroma sat 9.2 units off the deep fur,
+    # 40% of the way to the grass. Each pixel within 0.35 base of the edge is projected onto
+    # the line from the local deep-fur colour F to the local background colour B, and the
+    # background component is removed in proportion to how close to the edge it sits.
+    _hard = (mask > 0.5).astype(np.float32)
+    _d_in = cv2.distanceTransform(_hard.astype(np.uint8), cv2.DIST_L2, 5)
+    # "Deep" fur starts a full base inside the outline when the subject is large enough to
+    # allow it, half a base otherwise: the reference colour must not itself be contaminated.
+    _mask_deep = (_d_in > base * 1.0).astype(np.float32)
+    if float(_mask_deep.sum()) < 0.05 * float(_hard.sum()):
+        _mask_deep = (_d_in > base * 0.5).astype(np.float32)
+    if float(_mask_deep.sum()) < 100:          # a tiny subject: nothing deep enough to erode to
+        _mask_deep = _hard
+    _dec_sigma = max(4.0, base * 1.0)
+    _src_f = bgr_source.astype(np.float32)
+    _F = np.divide(_gblur(_src_f * _mask_deep[..., None], (0, 0), sigmaX=_dec_sigma),
+                   _gblur(_mask_deep, (0, 0), sigmaX=_dec_sigma)[..., None] + 1e-4)
+    _bgw = (mask <= 0.5).astype(np.float32)
+    _B = np.divide(_gblur(_src_f * _bgw[..., None], (0, 0), sigmaX=_dec_sigma),
+                   _gblur(_bgw, (0, 0), sigmaX=_dec_sigma)[..., None] + 1e-4)
+    _BF = _B - _F
+    # The background fraction is judged in a chroma-weighted LAB (L at 0.3): a plain RGB
+    # projection read every LIGHTER patch of fur -- the white chin, the lit chest -- as
+    # background, because backgrounds are usually brighter than deep fur (measured: 0.73
+    # "background" in the cat's outer band with a tight matte). Grass against tan, sky
+    # against white, are chroma differences; light fur against dark fur is not.
+    def _lab_w(a):
+        lab = cv2.cvtColor(np.clip(a, 0, 255).astype(np.uint8), cv2.COLOR_BGR2LAB).astype(np.float32)
+        lab[..., 0] *= 0.3
+        return lab
+    _Pw, _Fw, _Bw = _lab_w(_src_f), _lab_w(_F), _lab_w(_B)
+    _BFw = _Bw - _Fw
+    _BF2 = np.maximum((_BFw * _BFw).sum(-1), 1e-6)
+    _t = np.clip(((_Pw - _Fw) * _BFw).sum(-1) / _BF2, 0, 1)
+    _t = np.where(np.sqrt(_BF2) < 6.0, 0.0, _t)       # background and fur alike here: nothing to remove
+    # How deep does the contamination reach? Walk inward in 2px shells until the mean
+    # background fraction falls under 0.12, then fade the correction out over that depth
+    # (never less than 0.35 base, never more than 1.2). A fixed 0.35 base left a loosened
+    # matte at 5.3 chroma units of drift; a matte twice as loose at 9.6 -- the band has to
+    # be as wide as the matte is wrong, which only the photo can say.
+    _depth = base * 0.35
+    _dmax = base * 1.2
+    _dd = 0.0
+    while _dd < _dmax:
+        _shell = (_d_in > _dd) & (_d_in <= _dd + 2.0)
+        if _shell.sum() < 50 or float(_t[_shell].mean()) < 0.12:
+            break
+        _dd += 2.0
+    _depth = float(np.clip(_dd + base * 0.15, base * 0.35, _dmax))
+    # Full strength through the measured depth, then a short fade: a fade across the whole
+    # band left the middle of it half-corrected (loose matte: 4.3 chroma units of drift).
+    _band = np.clip(1.0 - (_d_in - _dd) / max(1.0, base * 0.2), 0, 1) * _hard
+    _log(f"edge decontamination: background reaches {_dd:.0f}px in; band {_depth:.0f}px "
+         f"(mean bg fraction in outer 0.2 base: {float(_t[(_d_in > 0) & (_d_in <= base * 0.2)].mean()):.2f})")
+    # bgr_clean feeds the gap colour and the revealed photo. bgr_source stays the untouched
+    # photo for the likeness score, so the score keeps one reference across builds.
+    bgr_clean = np.clip(_src_f - (_band * _t)[..., None] * _BF, 0, 255).astype(np.uint8)
+    deep_fur_rgb = _F[..., ::-1].astype(np.float32)   # RGB, for the fringe hairs below
+
     fur_sigma = max(2.0, W * 0.006)
-    fur_num = _gblur(bgr_source.astype(np.float32) * fur_weight2d[..., None], (0, 0), sigmaX=fur_sigma)
+    fur_num = _gblur(bgr_clean.astype(np.float32) * fur_weight2d[..., None], (0, 0), sigmaX=fur_sigma)
     fur_den = _gblur(fur_weight2d, (0, 0), sigmaX=fur_sigma)[..., None]
     fur_bgr = np.divide(fur_num, fur_den, out=np.full_like(fur_num, 120.0), where=fur_den > 1e-6)
     fur_hsv = cv2.cvtColor(np.clip(fur_bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
@@ -2632,7 +2728,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # amber iris is exactly that. With the end-of-composite distribution match now forcing the
     # output's luminance and saturation range onto the source's, there is no reason left to
     # pre-distort the colors at all: use the real photo, and let the match enforce the range.
-    photo_rgb = cv2.cvtColor(bgr_source, cv2.COLOR_BGR2RGB).astype(np.float32)
+    photo_rgb = cv2.cvtColor(bgr_clean, cv2.COLOR_BGR2RGB).astype(np.float32)
     composited = ground_rgb * (1.0 - a) + photo_rgb * a
 
     # Per-pixel stage probe: GOP_DEBUG_PT="x,y" prints each compositing stage's value at that
@@ -2665,14 +2761,12 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     whisker_color = np.array([222.0, 218.0, 205.0], np.float32)
     # Silhouette fringe hairs used the same fixed pale as the whiskers. Against a dark
     # backdrop that reads as hair catching light; against Gallery Gray it read as a pale
-    # outline traced around the animal. The fringe now takes the coat's own color at the
-    # edge -- the masked-average fur color extrapolated past the silhouette, lifted 10% the
-    # way lit flyaway hair is -- so a brown dog sheds brown hairs on any backdrop. Real
-    # whiskers (whisker_zone, cats) stay pale: they are.
-    _fur_w = _gblur(mask.astype(np.float32), (0, 0), sigmaX=max(4.0, base * 0.6))[..., None]
-    _fur_c = _gblur(photo_rgb * mask[..., None], (0, 0), sigmaX=max(4.0, base * 0.6))
-    fur_edge_rgb = np.divide(_fur_c, _fur_w, out=np.full_like(_fur_c, 160.0), where=_fur_w > 1e-4)
-    fur_edge_rgb = np.clip(fur_edge_rgb * 0.90 + 255.0 * 0.10, 0, 255)
+    # outline traced around the animal. The fringe takes the coat's own colour so a brown dog
+    # sheds brown hairs on any backdrop. Real whiskers (whisker_zone, cats) stay pale: they are.
+    # The colour comes from DEEP fur (the matte eroded by half a base), not the edge band:
+    # the edge average carried the background in, and the 10% lift on top of that made the
+    # hairs a glow on every dark backdrop. Hair is the coat's own colour, no brighter.
+    fur_edge_rgb = deep_fur_rgb
     _wz = np.clip(whisker_zone, 0, 1)[..., None]
     hair_color = whisker_color * _wz + fur_edge_rgb * (1.0 - _wz)
     composited = composited * (1.0 - whisker_ink_alpha[..., None]) + hair_color * whisker_ink_alpha[..., None]
