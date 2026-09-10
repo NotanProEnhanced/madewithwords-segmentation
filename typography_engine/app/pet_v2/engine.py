@@ -1271,7 +1271,16 @@ def find_attractor_points(feat, mask, top_k=2):
                 if y_align <= 0:
                     continue
                 size_ratio = min(a1, a2) / max(a1, a2)
-                score = size_ratio * y_align * math.sqrt(min(a1, a2))
+                # Eyes sit 0.25-0.50 head-widths apart on every test photo (tan 0.38, cat 0.46,
+                # doodle 0.29, senior 0.45); ear tips sit 0.6-0.9 apart. On a small face the
+                # ear tips are the LARGER dark blobs and won on sqrt(area) alone (measured on
+                # the tan dog set at 45% in its frame: pair found 0.64 head-widths apart, on
+                # the ears). A separation prior, and blob size credited only up to an eye's
+                # plausible size, so a bigger blob is no longer a better eye.
+                sep = abs(x1 - x2) / band_width
+                sep_prior = math.exp(-((sep - 0.36) / 0.15) ** 2)
+                a_cap = (band_width * 0.09) ** 2
+                score = size_ratio * y_align * math.sqrt(min(a1, a2, a_cap)) * sep_prior
                 if score > best_score:
                     best_score, best = score, (i, j)
         return best
@@ -1507,7 +1516,7 @@ def evenly_spaced_streamlines(theta, coherence, mask, sep_px, step=4.0, max_step
 
 def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None,
               landmarks=None, debug_dir=None, out_stem="render", verbose=False, backdrop_rgb=None,
-              type_scale=None):
+              type_scale=None, auto_res=True):
     """Render a typographic portrait of the pet in `bgr` (BGR uint8, already at the working
     resolution). Returns (rgb_uint8, metrics). `words`: the customer's comma-separated name +
     descriptors (the first entries weight highest; see _weighted_stream); None -> DEFAULT_WORDS.
@@ -1522,7 +1531,9 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     `type_scale`: the site's Small/Medium/Large slider (0.30 fine .. 0.56 bold, pet_proto's
     scale). It multiplies the micro and structural sizes TOGETHER, so the hierarchy between
     the fine face and the far body is the same at every setting; 0.30, the slider's default
-    and what every staging judgment was made at, is 1.0x."""
+    and what every staging judgment was made at, is 1.0x. `auto_res`: when the detected eyes
+    are close together (a full-body photo), re-render at a working resolution that gives the
+    face enough pixels, up to PET_V2_MAX_RENDER_PX; the caller receives the larger image."""
     _TL.verbose = bool(verbose)
     _TL.nose_hint = None
     _TL.max_overlap_cap = float(max_overlap) if max_overlap is not None else \
@@ -1538,6 +1549,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     H, W = bgr.shape[:2]
     if mask is None:
         mask = _foreground_mask(bgr)
+    _bgr_in, _mask_in = bgr, mask   # untouched, in case the face turns out to need more pixels
     bgr_source = bgr.copy()   # kept for the type-only likeness test -- compare against the
                               # REAL photo, not our own contrast-enhanced version of it
     bgr = _enhance_contrast(bgr, mask)
@@ -1572,13 +1584,25 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # Feature field (eyes/nose proxy -- see find_attractor_points' docstring for why this
     # stands in for real pet_landmarks.py detections in this sandbox). Computed once, reused
     # for BOTH the attractor field below and the eyes/nose ink-protection at composite time.
-    broad = _gblur(gray.astype(np.float32), (0, 0), sigmaX=max(1.0, W * 0.06))
+    # The detector's scales follow the SUBJECT, not the frame: the head band's width (the
+    # upper 65% of the mask, the same measure the pair scorer uses) stands in for W when it
+    # is narrower than the ~0.6 W a head-and-shoulders crop gives. On a full-body photo the
+    # eyes are a fraction of that, and frame-sized blur and opening erased them.
+    _ys_m, _xs_m = np.nonzero(mask > 0.5)
+    if len(_ys_m):
+        _cut = _ys_m.min() + (_ys_m.max() - _ys_m.min()) * 0.65
+        _bxs = _xs_m[_ys_m <= _cut]
+        _head_w = float(_bxs.max() - _bxs.min()) if len(_bxs) else float(W)
+    else:
+        _head_w = float(W)
+    W_det = float(min(W, max(_head_w / 0.6, W * 0.25)))
+    broad = _gblur(gray.astype(np.float32), (0, 0), sigmaX=max(1.0, W_det * 0.06))
     localdark = np.clip((broad - gray.astype(np.float32)) / 55.0, 0, 1)
     locallight = np.clip((gray.astype(np.float32) - broad) / 70.0, 0, 1)
     feat_raw = np.maximum(localdark, locallight) * (mask > 0.5)
-    ok = int(max(3, round(W * 0.011))) | 1
+    ok = int(max(3, round(W_det * 0.011))) | 1
     feat_raw = cv2.morphologyEx(feat_raw, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ok, ok)))
-    feat = np.clip(_gblur(feat_raw, (0, 0), sigmaX=max(1.0, W * 0.012)) * 1.6, 0, 1)
+    feat = np.clip(_gblur(feat_raw, (0, 0), sigmaX=max(1.0, W_det * 0.012)) * 1.6, 0, 1)
 
     # Silhouette fringe points (recommendation: "edges are irregular, furry and directional" in
     # the source vs. "generally smooth/masked" in the render) -- picked once, from the mask's own
@@ -1596,7 +1620,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # should never have been eligible.
     feat_dark_raw = cv2.morphologyEx(localdark * (mask > 0.5), cv2.MORPH_OPEN,
                                      cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ok, ok)))
-    feat_dark = np.clip(_gblur(feat_dark_raw, (0, 0), sigmaX=max(1.0, W * 0.012)) * 1.6, 0, 1)
+    feat_dark = np.clip(_gblur(feat_dark_raw, (0, 0), sigmaX=max(1.0, W_det * 0.012)) * 1.6, 0, 1)
     attractor_pts = find_attractor_points(feat_dark, mask)
     # Validate the dark-only pair by depth inside the silhouette, with the original detector as
     # fallback. Measured on the three test photos (edge distance as a fraction of head width):
@@ -1633,6 +1657,27 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         _log(f"landmarks injected from GOP_LANDMARKS: eyes={attractor_pts} nose={_pts[2] if len(_pts) >= 3 else None}")
     _log(f"anatomical attractors found (used for hero placement + size gradation only): "
           f"{len(attractor_pts)}  {attractor_pts}")
+    # ---- Resolution follows face size ------------------------------------------------------
+    # Every feature pass and the fine zone are sized by eye separation, but the font floor is
+    # 6px whatever the photo. On a full-body photo the eyes are 50-80px apart at preview size,
+    # the eye itself ~20px across, and the eye, nose and mouth passes all land at the floor:
+    # the shepherd and collie faces on staging were two dots and a smudge. The head-and-
+    # shoulders photos that render well have the eyes 230-400px apart. If the eyes are closer
+    # than TARGET_ES here, render the whole photo larger, up to the print cap, so the face
+    # gets the pixels the passes need. The caller gets the larger image back; the site's
+    # entry point resizes for delivery and caches the larger render for the print file.
+    TARGET_ES = 170.0
+    if auto_res and render_scale == 1.0 and len(attractor_pts) >= 2:
+        _es0 = math.hypot(attractor_pts[0][0] - attractor_pts[1][0], attractor_pts[0][1] - attractor_pts[1][1])
+        _cap_h = int(os.environ.get("PET_V2_MAX_RENDER_PX", "2400") or 2400)
+        _factor = min(TARGET_ES / max(1.0, _es0), _cap_h / float(H))
+        if _factor >= 1.15:
+            _log(f"eyes {_es0:.0f}px apart at {W}x{H}: re-rendering at {_factor:.2f}x for the face "
+                 f"(target {TARGET_ES:.0f}px, cap {_cap_h}px tall)")
+            _lm = ";".join(f"{x * _factor:.1f},{y * _factor:.1f}" for (x, y) in attractor_pts) if _lm_env else None
+            return render_v2(_bgr_in, words, mask=_mask_in, render_scale=_factor, max_overlap=max_overlap,
+                             landmarks=_lm, debug_dir=debug_dir, out_stem=out_stem, verbose=verbose,
+                             backdrop_rgb=backdrop_rgb, type_scale=type_scale, auto_res=False)
     # NOT blending these into theta/coherence anymore: two corrected attempts both made the
     # flow visibly more chaotic than the plain texture field, which already curves around the
     # eyes on its own (confirmed by comparing real renders side by side, not assumed) -- the
@@ -3207,7 +3252,7 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=1.0, backdrop_rgb=ground_rgb,
                                  type_scale=_ts,
                                  verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"))
-        entry = (work_h, rgb, metrics["outside_w"], ground_rgb)
+        entry = (int(rgb.shape[0]), rgb, metrics["outside_w"], ground_rgb)   # the height actually rendered
         _cache_put(key, entry)
     finally:
         with _RENDER_CACHE_LOCK:
