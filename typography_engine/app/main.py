@@ -4641,6 +4641,57 @@ def _bundle_readme(label: str) -> str:
     )
 
 
+# ---- The print file as a background job ---------------------------------------------------
+# A paying DIGITAL customer used to wait on one browser-blocking GET while the print master
+# was composed (30-45 s for the human engine; 64 s at 2400px for the v2 pet engine, more on
+# a slow box or with a second buyer), with nginx cutting the request at 120 s. The physical
+# path never had this problem: the webhook hands the compose to a thread. Digital now does
+# the same. The webhook (and /success, in case the webhook lags or was missed) starts the
+# warm; the success page polls /download/status and only fetches once the file exists.
+_WARMING: set = set()
+_WARMING_GUARD = _threading.Lock()
+
+
+def _digital_files_ready(job: str) -> bool:
+    return (PRIVATE_DIR / f"{job}.bundle.zip").exists()
+
+
+def _warm_digital_files(job: str) -> None:
+    """Compose the print master and the wallpaper bundle for `job` on a daemon thread, once.
+    Idempotent: a job already warming, or already on disk, is left alone. Never raises --
+    a failure here just means /download composes inline as it always did."""
+    if _digital_files_ready(job):
+        return
+    with _WARMING_GUARD:
+        if job in _WARMING:
+            return
+        _WARMING.add(job)
+
+    def _run():
+        try:
+            _ensure_wallpaper_bundle(job)
+        except Exception as e:  # noqa: BLE001
+            print(f"[warm] {job}: {e!r}", flush=True)
+        finally:
+            with _WARMING_GUARD:
+                _WARMING.discard(job)
+
+    _threading.Thread(target=_run, name=f"warm-{job}", daemon=True).start()
+
+
+@app.get("/download/status")
+def download_status(job: str):
+    """Is the paid file for `job` composed yet? Polled by the success page every few seconds
+    so the browser never sits on a long request. Reveals only a boolean about a random job
+    id; the file itself still needs the paid session on /download."""
+    job = re.sub(r"[^A-Za-z0-9_-]", "", job or "")[:40]
+    if not job or not (PRIVATE_DIR / f"{job}.json").exists():
+        return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    with _WARMING_GUARD:
+        warming = job in _WARMING
+    return JSONResponse({"ok": True, "ready": _digital_files_ready(job), "warming": warming})
+
+
 def _ensure_wallpaper_bundle(job: str) -> Optional[Path]:
     """Build (once) the 'digital everywhere' ZIP for a job: the print master plus
     phone / desktop / square wallpapers and a short read-me. Cached on disk next to
@@ -5624,6 +5675,12 @@ async def webhook_stripe(request: Request, stripe_signature: Optional[str] = Hea
         # blow Stripe's ~10s webhook timeout. The webhook returns immediately.
         threading.Thread(target=_fulfill_with_printful,
                          args=(transitioned["id"], recipient), daemon=True).start()
+    else:
+        # Digital purchase: start composing the print file now, so by the time the buyer's
+        # browser reaches /success it is finished or nearly so (see _warm_digital_files).
+        _wjob = re.sub(r"[^A-Za-z0-9_-]", "", str((sess.get("metadata") or {}).get("job") or ""))[:40]
+        if _wjob and not str(_wjob).startswith(("gallery", "bundle")) and (PRIVATE_DIR / f"{_wjob}.json").exists():
+            _warm_digital_files(_wjob)
 
     # Reliable, ad-blocker-proof conversion event to Umami. Deduped against the
     # synchronous /order and /success paths so the sale is counted exactly once.
@@ -6116,6 +6173,8 @@ def success(job: str, session_id: str):
     import html, json as _json
     from urllib.parse import quote
     paid = _session_paid(session_id, job) and (PRIVATE_DIR / f"{job}.json").exists()
+    if paid:
+        _warm_digital_files(job)   # no-op if the webhook already started it or it is on disk
     fav_brand = "typortrait"   # favicon brand; set to the job's brand below (memorial skins)
     jq, sq = quote(job, safe=""), quote(session_id, safe="")
     png_url = f"/download?job={jq}&fmt=png&session_id={sq}"
@@ -6274,11 +6333,20 @@ def success(job: str, session_id: str):
             + _CAPTION_COPY_JS +
             'function save(b){var a=document.createElement("a");a.href=URL.createObjectURL(b);'
             'a.download=' + _json.dumps(dl_fname) + ';document.body.appendChild(a);a.click();a.remove();}'
-            'fetch(url).then(function(r){if(!r.ok)throw 0;return r.blob();}).then(function(b){'
+            # Poll until the background compose has the file on disk, THEN fetch it (an instant
+            # cache hit). Polling stops after ~6 min and falls back to the direct fetch, which
+            # composes inline as before -- so a warm that never started still delivers.
+            'var stUrl="/download/status?job="+encodeURIComponent(job),polls=0;'
+            'function grab(){fetch(url).then(function(r){if(!r.ok)throw 0;return r.blob();}).then(function(b){'
             'btn.disabled=false;btn.innerHTML=' + _json.dumps(dl_btn) + ';btn.onclick=function(){save(b);};'
             'sub.textContent="Done! Tap below to save it.";}).catch(function(){'
             'btn.disabled=false;btn.innerHTML=' + _json.dumps(dl_btn) + ';btn.onclick=function(){location.href=url;};'
-            'sub.textContent="Tap the button to download your file.";});'
+            'sub.textContent="Tap the button to download your file.";});}'
+            'function poll(){polls++;fetch(stUrl).then(function(r){return r.json();}).then(function(d){'
+            'if(d&&d.ready){grab();}else if(polls>=120){grab();}else{'
+            'if(polls===10)sub.textContent="Still preparing your high-resolution file — about a minute more…";'
+            'setTimeout(poll,3000);}}).catch(function(){if(polls>=120){grab();}else{setTimeout(poll,3000);}});}'
+            'poll();'
             'sh.onclick=function(){var t=' + _json.dumps(f"Made from the words that describe them — with {_brand_name}.") + ';'
             'var mob=(window.matchMedia&&matchMedia("(pointer:coarse)").matches)||/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");'
             '(mob&&navigator.canShare?fetch(prevUrl).then(function(r){return r.blob();}).then(function(bl){'
