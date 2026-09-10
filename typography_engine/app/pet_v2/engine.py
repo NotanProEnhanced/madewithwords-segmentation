@@ -1475,7 +1475,8 @@ def evenly_spaced_streamlines(theta, coherence, mask, sep_px, step=4.0, max_step
 
 
 def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None,
-              landmarks=None, debug_dir=None, out_stem="render", verbose=False, backdrop_rgb=None):
+              landmarks=None, debug_dir=None, out_stem="render", verbose=False, backdrop_rgb=None,
+              type_scale=None):
     """Render a typographic portrait of the pet in `bgr` (BGR uint8, already at the working
     resolution). Returns (rgb_uint8, metrics). `words`: the customer's comma-separated name +
     descriptors (the first entries weight highest; see _weighted_stream); None -> DEFAULT_WORDS.
@@ -1486,7 +1487,11 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     `debug_dir`: when set, writes the A/B/C/D QA panels there as <out_stem>_*.jpg. `backdrop_rgb`:
     an (r, g, b) tuple for everything OUTSIDE the animal (the site's Gallery Dark / Gallery
     Gray choice); None keeps the photo-derived backdrop. The gap color between letters ON the
-    animal is always derived from the coat -- it carries tone -- and is not affected."""
+    animal is always derived from the coat -- it carries tone -- and is not affected.
+    `type_scale`: the site's Small/Medium/Large slider (0.30 fine .. 0.56 bold, pet_proto's
+    scale). It multiplies the micro and structural sizes TOGETHER, so the hierarchy between
+    the fine face and the far body is the same at every setting; 0.30, the slider's default
+    and what every staging judgment was made at, is 1.0x."""
     _TL.verbose = bool(verbose)
     _TL.nose_hint = None
     _TL.max_overlap_cap = float(max_overlap) if max_overlap is not None else \
@@ -1785,8 +1790,12 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # near the eyes/nose out to the (still modest, non-hero) structural size, rather than three
     # discrete steps. Tone is still primarily density (sep_field above), not size -- the low end
     # was also lowered (0.17x -> 0.10x base) per "smallest text should be finer."
-    MICRO_PX = base * 0.10
-    STRUCT_PX = base * 0.52   # widened from 0.40 so the far body genuinely reads larger (size_field)
+    # Slider: Small 0.30 -> 1.00x (the tuned look), Medium 0.42 -> 1.29x, Large 0.56 -> 1.60x.
+    # A 0.75 power so Large is bold and graphic without the far body outgrowing the frame.
+    _tsk = (float(type_scale) / 0.30) ** 0.75 if type_scale else 1.0
+    _tsk = min(2.0, max(0.7, _tsk))
+    MICRO_PX = base * 0.10 * _tsk
+    STRUCT_PX = base * 0.52 * _tsk   # widened from 0.40 so the far body genuinely reads larger (size_field)
     # Widened from 1.3x -- measured the ACTUAL micro/structural/hero split (recommendation #6's
     # target: 20-30% / 60-70% / 3-7% of ink area) and found micro was only 11-15%: at 1.3x, only
     # a small ring right around the eyes graded toward the fine end, so nearly the whole rest of
@@ -3025,7 +3034,7 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
     the working resolution and therefore the typography fineness: previews ~1050-1600, print
     at the PET_V2_MAX_RENDER_PX cap (default 2400) then upscaled. `ground` is the site's
     backdrop choice (pet_proto.GROUNDS) and colors everything outside the animal; `type_scale`
-    is accepted for interface parity and currently ignored (TODO: map to MICRO/STRUCT)."""
+    is the site's Small/Medium/Large slider (see render_v2)."""
     import hashlib
     from ..pet_proto import _fit_print_aspect, GROUNDS
     gb, gg, gr = GROUNDS.get((ground or "dark").strip().lower(), GROUNDS["dark"])
@@ -3035,7 +3044,8 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
     # Preview-class requests (1050-1600) all render at 1600 so the loupe is a resize of the
     # preview's own render rather than a second one -- and preview and loupe then agree.
     work_h = _PREVIEW_UNIFY_MAX if 1050 <= want_h <= _PREVIEW_UNIFY_MAX else want_h
-    key = (hashlib.sha1(image_bytes).hexdigest(), str(words or ""), float(print_aspect or 0.0))
+    _ts = round(float(type_scale), 3) if type_scale else 0.30
+    key = (hashlib.sha1(image_bytes).hexdigest(), str(words or ""), float(print_aspect or 0.0), _ts)
 
     def _finish(entry):
         cached_h, rgb, outside_w, old_ground = entry
@@ -3080,6 +3090,7 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         if print_aspect:
             bgr, mask = _fit_print_aspect(bgr, mask, float(print_aspect))
         rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=1.0, backdrop_rgb=ground_rgb,
+                                 type_scale=_ts,
                                  verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"))
         entry = (work_h, rgb, metrics["outside_w"], ground_rgb)
         _cache_put(key, entry)
