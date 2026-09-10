@@ -45,8 +45,22 @@ LOG_CMD="${LOG_CMD:-}"
 [ -d "$SET/src" ] || { echo "no sources at $SET/src"; exit 1; }
 [ -s "$SET/words.txt" ] || { echo "no default words at $SET/words.txt"; exit 1; }
 DEF_WORDS="$(tr -d '\r\n' < "$SET/words.txt")"
-COMMIT="$(git -C "$TREE" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+TREE_COMMIT="$(git -C "$TREE" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 DIRTY="$(git -C "$TREE" status --porcelain --untracked-files=no 2>/dev/null | wc -l)"   # tracked edits only: a tree's .env and gallery images are not code
+# The run is named after the image the container is ACTUALLY running, not the tree's HEAD.
+# A tree checked out at one commit with a container still on another produced a run filed
+# under the new name holding the old engine's renders, byte-identical to the baseline -- and
+# overwrote the genuine run of that name. The container is the source of truth here.
+IMAGE="$(docker inspect --format '{{.Config.Image}}' "$CONTAINER" 2>/dev/null || true)"
+COMMIT="${IMAGE##*:}"
+if [ -z "$COMMIT" ] || [ "$COMMIT" = "$IMAGE" ]; then
+    COMMIT="$TREE_COMMIT"
+elif [ "$COMMIT" != "$TREE_COMMIT" ]; then
+    echo "NOTE: the container runs $IMAGE but the tree is at $TREE_COMMIT."
+    echo "      Filing this run under $COMMIT, which is what rendered it. If you meant to test"
+    echo "      $TREE_COMMIT, build and promote it first (ops/build-image.sh, ops/promote.sh)."
+    echo
+fi
 
 SIG=""
 [ "$PNG_W"    = "$DEF_PNG_W" ]  || SIG="$SIG-png$PNG_W"
@@ -58,6 +72,11 @@ if [ -n "${NAME:-}" ]; then
 else
     OUT="$SET/out/$COMMIT$SIG"
     [ "$DIRTY" = "0" ] || OUT="$OUT-dirty"
+fi
+if [ -z "${NAME:-}" ] && [ -z "${FORCE:-}" ] && ls "$OUT"/*.png >/dev/null 2>&1; then
+    echo "a run already exists at $OUT -- the engine is deterministic, so rendering it again"
+    echo "can only reproduce or overwrite it. FORCE=1 to overwrite, NAME=<label> to file elsewhere."
+    exit 1
 fi
 mkdir -p "$OUT"
 
