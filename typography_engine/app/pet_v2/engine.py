@@ -2647,14 +2647,16 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # background, because backgrounds are usually brighter than deep fur (measured: 0.73
     # "background" in the cat's outer band with a tight matte). Grass against tan, sky
     # against white, are chroma differences; light fur against dark fur is not.
-    def _lab_w(a):
-        lab = cv2.cvtColor(np.clip(a, 0, 255).astype(np.uint8), cv2.COLOR_BGR2LAB).astype(np.float32)
-        lab[..., 0] *= 0.3
-        return lab
-    _Pw, _Fw, _Bw = _lab_w(_src_f), _lab_w(_F), _lab_w(_B)
-    _BFw = _Bw - _Fw
-    _BF2 = np.maximum((_BFw * _BFw).sum(-1), 1e-6)
-    _t = np.clip(((_Pw - _Fw) * _BFw).sum(-1) / _BF2, 0, 1)
+    # ... and the correction is applied to chroma ONLY. Subtracting the background vector in
+    # RGB turned the collie's white paws violet: grass is brighter than white fur in green
+    # alone, so "white minus (grass minus fur)" loses green and keeps magenta (staging,
+    # 0322f32). Brightness is left as the photo has it; a sunlit rim stays a sunlit rim.
+    def _lab(a):
+        return cv2.cvtColor(np.clip(a, 0, 255).astype(np.uint8), cv2.COLOR_BGR2LAB).astype(np.float32)
+    _Pl, _Fl, _Bl = _lab(_src_f), _lab(_F), _lab(_B)
+    _BFab = _Bl[..., 1:] - _Fl[..., 1:]
+    _BF2 = np.maximum((_BFab * _BFab).sum(-1), 1e-6)
+    _t = np.clip(((_Pl[..., 1:] - _Fl[..., 1:]) * _BFab).sum(-1) / _BF2, 0, 1)
     _t = np.where(np.sqrt(_BF2) < 6.0, 0.0, _t)       # background and fur alike here: nothing to remove
     # How deep does the contamination reach? Walk inward in 2px shells until the mean
     # background fraction falls under 0.12, then fade the correction out over that depth
@@ -2677,7 +2679,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
          f"(mean bg fraction in outer 0.2 base: {float(_t[(_d_in > 0) & (_d_in <= base * 0.2)].mean()):.2f})")
     # bgr_clean feeds the gap colour and the revealed photo. bgr_source stays the untouched
     # photo for the likeness score, so the score keeps one reference across builds.
-    bgr_clean = np.clip(_src_f - (_band * _t)[..., None] * _BF, 0, 255).astype(np.uint8)
+    _Pl[..., 1:] -= (_band * _t)[..., None] * _BFab
+    bgr_clean = cv2.cvtColor(np.clip(_Pl, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR)
     deep_fur_rgb = _F[..., ::-1].astype(np.float32)   # RGB, for the fringe hairs below
 
     fur_sigma = max(2.0, W * 0.006)
