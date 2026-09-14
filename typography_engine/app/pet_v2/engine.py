@@ -3249,8 +3249,29 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         mask = _foreground_mask(bgr)
         if print_aspect:
             bgr, mask = _fit_print_aspect(bgr, mask, float(print_aspect))
+        # Real face landmarks from the pose model (pet_landmarks.py: YOLOX + RTMPose AP-10K,
+        # verified on tight crops, full bodies and multi-pet photos alike). The photometric
+        # detector inside render_v2 has no notion of where the head is on a full-body photo:
+        # on the staging shepherd it paired two dark patches on the shoulder and chest as the
+        # eyes, so every face pass drew on the body and the face-size re-render never fired.
+        # The model's eyes and nose are handed to render_v2 as the landmark override; when the
+        # model is unavailable or not confident it returns None and the heuristic runs as
+        # before. PET_V2_LANDMARKS=0 turns this off.
+        _lm_str = None
+        if os.environ.get("PET_V2_LANDMARKS", "1").strip().lower() not in ("0", "false", "off"):
+            try:
+                from .. import pet_landmarks
+                _lm = pet_landmarks.face_landmarks(bgr, mask)
+            except Exception as _e:  # noqa: BLE001 -- the heuristic is the fallback, never a failed render
+                _lm = None
+                _log(f"landmark model failed: {_e!r}")
+            if _lm:
+                _lm_str = f"{_lm['eye_l'][0]:.1f},{_lm['eye_l'][1]:.1f};{_lm['eye_r'][0]:.1f},{_lm['eye_r'][1]:.1f};{_lm['nose'][0]:.1f},{_lm['nose'][1]:.1f}"
+                _log(f"landmark model: eyes {tuple(round(v) for v in _lm['eye_l'])} {tuple(round(v) for v in _lm['eye_r'])} nose {tuple(round(v) for v in _lm['nose'])}")
+            else:
+                _log("landmark model: no confident face; heuristic detector will run")
         rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=1.0, backdrop_rgb=ground_rgb,
-                                 type_scale=_ts,
+                                 type_scale=_ts, landmarks=_lm_str,
                                  verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"))
         entry = (int(rgb.shape[0]), rgb, metrics["outside_w"], ground_rgb)   # the height actually rendered
         _cache_put(key, entry)
