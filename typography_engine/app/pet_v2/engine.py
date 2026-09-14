@@ -3258,18 +3258,19 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         # model is unavailable or not confident it returns None and the heuristic runs as
         # before. PET_V2_LANDMARKS=0 turns this off.
         _lm_str = None
+        _say = print if os.environ.get("PET_V2_VERBOSE", "") not in ("", "0") else (lambda *a, **k: None)
         if os.environ.get("PET_V2_LANDMARKS", "1").strip().lower() not in ("0", "false", "off"):
             try:
                 from .. import pet_landmarks
                 _lm = pet_landmarks.face_landmarks(bgr, mask)
             except Exception as _e:  # noqa: BLE001 -- the heuristic is the fallback, never a failed render
                 _lm = None
-                _log(f"landmark model failed: {_e!r}")
+                _say(f"landmark model failed: {_e!r}", flush=True)
             if _lm:
                 _lm_str = f"{_lm['eye_l'][0]:.1f},{_lm['eye_l'][1]:.1f};{_lm['eye_r'][0]:.1f},{_lm['eye_r'][1]:.1f};{_lm['nose'][0]:.1f},{_lm['nose'][1]:.1f}"
-                _log(f"landmark model: eyes {tuple(round(v) for v in _lm['eye_l'])} {tuple(round(v) for v in _lm['eye_r'])} nose {tuple(round(v) for v in _lm['nose'])}")
+                _say(f"landmark model: eyes {tuple(round(v) for v in _lm['eye_l'])} {tuple(round(v) for v in _lm['eye_r'])} nose {tuple(round(v) for v in _lm['nose'])}", flush=True)
             else:
-                _log("landmark model: no confident face; heuristic detector will run")
+                _say("landmark model: no confident face; heuristic detector will run", flush=True)
         rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=1.0, backdrop_rgb=ground_rgb,
                                  type_scale=_ts, landmarks=_lm_str,
                                  verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"))
