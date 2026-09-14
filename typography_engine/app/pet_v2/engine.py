@@ -248,8 +248,16 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
                int(round(math.degrees(angle) / 3.0)) * 3)
         hit = _BITMAP_CACHE.get(key)
         if hit is None:
-            bmp = render_word_bitmap(word, font, alpha=alpha)
-            rot = bmp.rotate(-math.degrees(angle), expand=True, resample=Image.BICUBIC)
+            # Rendered FROM the key's quantized alpha and angle, not from this call's exact
+            # values: the cache is shared across renders, and a bitmap built from one call's
+            # exact angle was reused for every later call in the same bin. Two renders of the
+            # same photo then differed by whether another photo had warmed the cache first
+            # (measured: 2705 vs 2769 words, different bytes), which the gate's byte
+            # comparison cannot tolerate. A bitmap is now a pure function of its key.
+            _alpha_q = min(255, key[2] + 8)
+            _deg_q = float(key[3])
+            bmp = render_word_bitmap(word, font, alpha=_alpha_q)
+            rot = bmp.rotate(-_deg_q, expand=True, resample=Image.BICUBIC)
             hit = (bmp.width, bmp.height, rot, np.asarray(rot.split()[3], np.float32))
             if len(_BITMAP_CACHE) > 20000:
                 _BITMAP_CACHE.clear()
@@ -2082,9 +2090,17 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         # muzzle and eye sockets -- exactly where likeness needs the finest, quietest type.
         # Now: long, coherent lines that sit well outside the feature radius and in the
         # lowest-importance territory, longest first.
+        # ... and the whole line clear of the silhouette by a hero word's height: the lowest-
+        # importance territory on a tight crop is the outline itself, and the name landed
+        # across the paw into the backdrop on the staging senior. A line is eligible only if
+        # no point on it is closer to the edge than the hero type is tall.
+        def line_min_edge(line):
+            return float(min(dist_to_edge[int(np.clip(y, 0, H - 1)), int(np.clip(x, 0, W - 1))] for x, y, _ in line[::3]))
+        _hero_clear = STRUCT_PX * 1.5 * 0.8
         hero_candidates = sorted(
             (s for s in scored if s[1] > 0.30 and s[0] > base * 2.0
-             and s[2] > attractor_radius * 1.6 and line_importance(s[3]) < 0.35),
+             and s[2] > attractor_radius * 1.6 and line_importance(s[3]) < 0.35
+             and line_min_edge(s[3]) >= _hero_clear),
             key=lambda s: -s[0])
         hero_lines = set(id(s[3]) for s in hero_candidates[:5])
         scored.sort(key=lambda s: -s[0])
