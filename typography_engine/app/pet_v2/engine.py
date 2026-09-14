@@ -574,24 +574,51 @@ def render_dense_disk(canvas, occupancy, center, axes, angle_deg, get_font, base
                                     gap_px=font_px * 0.15, alpha=255, max_overlap=0.55)
 
 
-def render_eye_feature(canvas, occupancy, gray, mask, base, center, get_font, rng):
+def render_eye_feature(canvas, occupancy, gray, mask, base, center, get_font, rng, eye_sep=None, trusted=False):
     """Dedicated eye construction (recommendation #7): eyelid contour, iris rings, a dense
     pupil with a genuine negative-space catchlight -- built from the eye's OWN fitted shape,
     not a guessed circle. Returns True if a plausible eye was found and rendered, False if the
     fit looked unreliable (caller keeps the generic treatment there instead of drawing a
     fabricated feature over real fur)."""
     fit = fit_dark_blob_ellipse(gray, mask, center[0], center[1], base * 0.9)
-    if fit is None:
-        return False
-    (ecx, ecy), (a_ax, b_ax), angle = fit
-    if not (base * 0.12 < a_ax < base * 2.2 and base * 0.08 < b_ax < base * 2.2):
-        return False   # implausible size for an eye at this photo's scale -- don't trust the fit
-    # A real palpebral opening is never a thin sliver -- checked directly against a doodle render
-    # where this fit grabbed a long, thin dark eyebrow-shadow crease (aspect ratio ~4.5:1) instead
-    # of the actual eye, producing an oversized flattened "eye" that read as a black smudge, not
-    # a feature. Reject implausibly elongated fits here rather than draw a fabricated shape.
-    if max(a_ax, b_ax) / max(min(a_ax, b_ax), 1e-3) > 3.0:
-        return False
+    ok = fit is not None
+    if ok:
+        (ecx, ecy), (a_ax, b_ax), angle = fit
+        # implausible size for an eye at this photo's scale, or a thin sliver (a doodle render
+        # once grabbed a long eyebrow-shadow crease at ~4.5:1) -- don't trust the fit
+        ok = (base * 0.12 < a_ax < base * 2.2 and base * 0.08 < b_ax < base * 2.2
+              and max(a_ax, b_ax) / max(min(a_ax, b_ax), 1e-3) <= 3.0)
+        # With a trusted landmark the eye's size is known to within a factor of two (half-width
+        # 0.05-0.18 of the eye separation on every test photo): a fit that wandered away from
+        # the point, or a fit the size of a fur speck (on black fur the darkest-35% threshold
+        # returns noise blobs that pass the frame-relative size checks -- measured on a
+        # synthetic patch: a 5px "eye" on a 200px eye separation), was something else.
+        if ok and trusted and eye_sep:
+            if math.hypot(ecx - center[0], ecy - center[1]) > eye_sep * 0.25:
+                ok = False
+            elif not (eye_sep * 0.05 <= a_ax <= eye_sep * 0.18 and eye_sep * 0.035 <= b_ax <= eye_sep * 0.18):
+                ok = False
+            else:
+                # ... and it must differ in tone from the fur around it. A fur-noise blob can be
+                # eye-sized; a real eye, even in black fur, has an iris or a pupil that is not
+                # the fur's own tone (black lab: iris ~50 against fur ~25).
+                Hh, Ww = gray.shape
+                yy, xx = np.ogrid[0:Hh, 0:Ww]
+                _r2 = ((xx - ecx) / max(1.0, a_ax)) ** 2 + ((yy - ecy) / max(1.0, b_ax)) ** 2
+                _in, _ring = _r2 <= 1.0, (_r2 > 1.6) & (_r2 <= 2.6)
+                if _in.sum() > 10 and _ring.sum() > 10 and abs(float(gray[_in].mean()) - float(gray[_ring].mean())) < 6.0:
+                    ok = False
+    if not ok:
+        if not (trusted and eye_sep):
+            return False   # no evidence and no trusted point: keep the generic treatment
+        # A black eye in black fur (the collie's shadowed eye, the black lab): the darkest-35%
+        # threshold sees one dark blob, fur and eye together, and the fit is useless. The
+        # landmark model's point is trusted, and an eye's size is a stable fraction of the eye
+        # separation (measured 0.09-0.11 half-width on the test dogs), so the eye is built at
+        # the landmark from that prior instead of being left as a dark socket.
+        ecx, ecy = float(center[0]), float(center[1])
+        a_ax, b_ax, angle = eye_sep * 0.10, eye_sep * 0.075, 0.0
+        _log(f"eye at ({ecx:.0f},{ecy:.0f}): dark-blob fit unreliable, built from the landmark prior")
 
     # Eyelid: one fine contour line right at the eye's own boundary.
     # Sizes cut (lid 0.085 -> 0.05, iris 0.055 -> 0.04 of base): the eye is where likeness needs
@@ -1176,12 +1203,32 @@ def type_only_likeness(canvas, mask, bgr_source, attractor_pts, base, blur_sigma
     type_only_gray = ink_alpha                               # more ink -> brighter, matches
                                                               # a bright source pixel now
     source_gray = cv2.cvtColor(bgr_source, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    # One scale for every render. The blur and the SSIM window used to follow the render's
+    # own width, so a photo re-rendered at 1.3x for its face was judged at a coarser blur
+    # than its neighbours and the scores of two photos were not comparable (gate-safe, since
+    # a gate compares one photo with itself, but useless for ranking). Both panels, the mask
+    # and the anchors are brought to LIKENESS_REF_H tall before anything is measured.
+    LIKENESS_REF_H = 1000
+    H0, W0 = source_gray.shape
+    sc = LIKENESS_REF_H / float(H0)
+    if abs(sc - 1.0) > 1e-3:
+        sz = (max(1, int(round(W0 * sc))), LIKENESS_REF_H)
+        interp = cv2.INTER_AREA if sc < 1 else cv2.INTER_LINEAR
+        type_only_gray = cv2.resize(type_only_gray, sz, interpolation=interp)
+        source_gray = cv2.resize(source_gray, sz, interpolation=interp)
+        mask = cv2.resize(mask.astype(np.float32), sz, interpolation=interp)
+        attractor_pts = [(x * sc, y * sc) for (x, y) in attractor_pts]
+        base = base * sc
+        blur_sigma = blur_sigma * sc
     a = _gblur(type_only_gray, (0, 0), sigmaX=blur_sigma)
     b = _gblur(source_gray, (0, 0), sigmaX=blur_sigma)
     smap = ssim_map(a, b, sigma=blur_sigma)
     weights = build_likeness_weight_map(mask, attractor_pts, base)
     m = mask > 0.5
     score = float((smap[m] * weights[m]).sum() / max(1e-6, weights[m].sum()))
+    if abs(sc - 1.0) > 1e-3:   # the debug panels are saved at the render's own size
+        a = cv2.resize(a, (W0, H0), interpolation=cv2.INTER_LINEAR)
+        b = cv2.resize(b, (W0, H0), interpolation=cv2.INTER_LINEAR)
     return score, a, b
 
 
@@ -2136,7 +2183,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         # generic treatment (unchanged prior behavior for bcclean/blacklab).
         if len(attractor_pts) >= 2:
             for (ax, ay) in attractor_pts:
-                render_eye_feature(canvas, occupancy, gray, mask, base, (ax, ay), get_font, rng)
+                render_eye_feature(canvas, occupancy, gray, mask, base, (ax, ay), get_font, rng,
+                                   eye_sep=_es, trusted=bool(_lm_env))
             nose_fit = render_nose_feature(canvas, occupancy, gray, mask, base, attractor_pts, get_font, rng)
             render_mouth_feature(canvas, occupancy, gray, mask, base, nose_fit, get_font, rng)
             render_muzzle_topology(canvas, occupancy, gray, mask, base, nose_fit, attractor_pts, stream, get_font, rng)
@@ -3287,8 +3335,20 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
                 _say(f"landmark model: eyes {tuple(round(v) for v in _lm['eye_l'])} {tuple(round(v) for v in _lm['eye_r'])} nose {tuple(round(v) for v in _lm['nose'])}", flush=True)
             else:
                 _say("landmark model: no confident face; heuristic detector will run", flush=True)
-        rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=1.0, backdrop_rgb=ground_rgb,
-                                 type_scale=_ts, landmarks=_lm_str,
+        # With the model's eyes in hand the face-size decision is made HERE, before any of the
+        # engine's setup runs, instead of inside render_v2 after a pass that then gets thrown
+        # away (measured: the aborted first pass cost several seconds on a full-body photo).
+        _scale = 1.0
+        if _lm_str:
+            _es_lm = math.hypot(_lm["eye_l"][0] - _lm["eye_r"][0], _lm["eye_l"][1] - _lm["eye_r"][1])
+            _f = min(170.0 / max(1.0, _es_lm), cap / float(bgr.shape[0]))
+            if _f >= 1.15:
+                _scale = _f
+                _say(f"eyes {_es_lm:.0f}px apart: rendering at {_scale:.2f}x for the face", flush=True)
+                _lm_str = ";".join(f"{float(x) * _scale:.1f},{float(y) * _scale:.1f}" for x, y in
+                                   (_lm["eye_l"], _lm["eye_r"], _lm["nose"]))
+        rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=_scale, backdrop_rgb=ground_rgb,
+                                 type_scale=_ts, landmarks=_lm_str, auto_res=(_scale == 1.0),
                                  verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"))
         entry = (int(rgb.shape[0]), rgb, metrics["outside_w"], ground_rgb)   # the height actually rendered
         _cache_put(key, entry)
