@@ -3280,6 +3280,20 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
     # Preview-class requests (1050-1600) all render at 1600 so the loupe is a resize of the
     # preview's own render rather than a second one -- and preview and loupe then agree.
     work_h = _PREVIEW_UNIFY_MAX if 1050 <= want_h <= _PREVIEW_UNIFY_MAX else want_h
+    # A pixel budget as well as a height. Height alone let a wide upload run away: a
+    # 2400x700 panorama at a 1600 working height is 5,500px wide, and padded to the 4:5
+    # print it is a 5,500 x 6,900 canvas -- measured 146 s for the preview, past the browser's
+    # limit. The budget is the standard canvas at that height (4:5), so an ordinary portrait
+    # is untouched and a wide frame renders at the height that fits the same number of pixels.
+    _hdr = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_REDUCED_COLOR_8)
+    if _hdr is not None and work_h:
+        _src_ar = _hdr.shape[1] / float(_hdr.shape[0])
+        _ar = float(print_aspect) if print_aspect else _src_ar
+        _canvas_w = work_h * max(_src_ar, _ar)              # the fitted canvas is at least as wide as either
+        _canvas_h = _canvas_w / _ar if _src_ar > _ar else float(work_h)
+        _budget = float(work_h) * float(work_h) * 0.8       # a 4:5 canvas at this height
+        if _canvas_w * _canvas_h > _budget * 1.05:
+            work_h = max(600, int(round(work_h * math.sqrt(_budget / (_canvas_w * _canvas_h)))))
     _ts = round(float(type_scale), 3) if type_scale else 0.30
     key = (hashlib.sha1(image_bytes).hexdigest(), str(words or ""), float(print_aspect or 0.0), _ts)
 
@@ -3353,7 +3367,8 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         _scale = 1.0
         if _lm_str:
             _es_lm = math.hypot(_lm["eye_l"][0] - _lm["eye_r"][0], _lm["eye_l"][1] - _lm["eye_r"][1])
-            _f = min(170.0 / max(1.0, _es_lm), cap / float(bgr.shape[0]))
+            _f = min(170.0 / max(1.0, _es_lm), cap / float(bgr.shape[0]),
+                     math.sqrt(cap * cap * 0.8 / float(bgr.shape[0] * bgr.shape[1])))
             if _f >= 1.15:
                 _scale = _f
                 _say(f"eyes {_es_lm:.0f}px apart: rendering at {_scale:.2f}x for the face", flush=True)
