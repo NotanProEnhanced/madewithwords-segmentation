@@ -45,7 +45,17 @@ fi
 GROUNDS=(dark mid)
 
 _up() { curl -sf --max-time 5 -o /dev/null "$BASE/static/index.html" 2>/dev/null; }
-_up || { echo "nothing answering on $BASE"; exit 1; }
+# Wait for the container, as render-petset.sh does: promote returns when it has STARTED, and
+# uvicorn then spends fifteen to twenty seconds loading models before it answers anything.
+WAIT="${WAIT:-90}"
+if ! _up; then
+    printf 'waiting for %s ' "$BASE"; _t0=$(date +%s)
+    until _up; do
+        [ $(( $(date +%s) - _t0 )) -ge "$WAIT" ] && { echo; echo "nothing answering on $BASE after ${WAIT}s"; exit 1; }
+        printf '.'; sleep 3
+    done
+    echo " up"
+fi
 
 # One request. Prints a log line: status, seconds, size, and the engine's report card.
 _render() {   # $1 file  $2 words  $3 size  $4 ground  $5 aspect  $6 label
