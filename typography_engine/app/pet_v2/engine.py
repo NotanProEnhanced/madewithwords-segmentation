@@ -574,50 +574,49 @@ def render_dense_disk(canvas, occupancy, center, axes, angle_deg, get_font, base
                                     gap_px=font_px * 0.15, alpha=255, max_overlap=0.55)
 
 
-def render_eye_feature(canvas, occupancy, gray, mask, base, center, get_font, rng, eye_sep=None, trusted=False):
-    """Dedicated eye construction (recommendation #7): eyelid contour, iris rings, a dense
-    pupil with a genuine negative-space catchlight -- built from the eye's OWN fitted shape,
-    not a guessed circle. Returns True if a plausible eye was found and rendered, False if the
-    fit looked unreliable (caller keeps the generic treatment there instead of drawing a
-    fabricated feature over real fur)."""
+def eye_geometry(gray, mask, base, center, eye_sep=None, trusted=False):
+    """Where and how big an eye is: the fitted dark blob when it looks like an eye, the landmark
+    prior when it does not and the point is trusted, None otherwise. ONE decision shared by the
+    eye renderer and the eye reveal: when they decided separately, one eye could get the full
+    ellipse of photo revealed and the other only an 11px disk at its darkest point, and the two
+    eyes of the same dog came out one pale and glassy, the other dim (staging, black lab and
+    collie). Returns ((cx, cy), (a, b), angle_deg, "fit"|"prior") or None."""
     fit = fit_dark_blob_ellipse(gray, mask, center[0], center[1], base * 0.9)
     ok = fit is not None
     if ok:
         (ecx, ecy), (a_ax, b_ax), angle = fit
-        # implausible size for an eye at this photo's scale, or a thin sliver (a doodle render
-        # once grabbed a long eyebrow-shadow crease at ~4.5:1) -- don't trust the fit
         ok = (base * 0.12 < a_ax < base * 2.2 and base * 0.08 < b_ax < base * 2.2
               and max(a_ax, b_ax) / max(min(a_ax, b_ax), 1e-3) <= 3.0)
-        # With a trusted landmark the eye's size is known to within a factor of two (half-width
-        # 0.05-0.18 of the eye separation on every test photo): a fit that wandered away from
-        # the point, or a fit the size of a fur speck (on black fur the darkest-35% threshold
-        # returns noise blobs that pass the frame-relative size checks -- measured on a
-        # synthetic patch: a 5px "eye" on a 200px eye separation), was something else.
         if ok and trusted and eye_sep:
             if math.hypot(ecx - center[0], ecy - center[1]) > eye_sep * 0.25:
                 ok = False
             elif not (eye_sep * 0.05 <= a_ax <= eye_sep * 0.18 and eye_sep * 0.035 <= b_ax <= eye_sep * 0.18):
                 ok = False
             else:
-                # ... and it must differ in tone from the fur around it. A fur-noise blob can be
-                # eye-sized; a real eye, even in black fur, has an iris or a pupil that is not
-                # the fur's own tone (black lab: iris ~50 against fur ~25).
                 Hh, Ww = gray.shape
                 yy, xx = np.ogrid[0:Hh, 0:Ww]
                 _r2 = ((xx - ecx) / max(1.0, a_ax)) ** 2 + ((yy - ecy) / max(1.0, b_ax)) ** 2
                 _in, _ring = _r2 <= 1.0, (_r2 > 1.6) & (_r2 <= 2.6)
                 if _in.sum() > 10 and _ring.sum() > 10 and abs(float(gray[_in].mean()) - float(gray[_ring].mean())) < 6.0:
                     ok = False
-    if not ok:
-        if not (trusted and eye_sep):
-            return False   # no evidence and no trusted point: keep the generic treatment
-        # A black eye in black fur (the collie's shadowed eye, the black lab): the darkest-35%
-        # threshold sees one dark blob, fur and eye together, and the fit is useless. The
-        # landmark model's point is trusted, and an eye's size is a stable fraction of the eye
-        # separation (measured 0.09-0.11 half-width on the test dogs), so the eye is built at
-        # the landmark from that prior instead of being left as a dark socket.
-        ecx, ecy = float(center[0]), float(center[1])
-        a_ax, b_ax, angle = eye_sep * 0.10, eye_sep * 0.075, 0.0
+    if ok:
+        return (ecx, ecy), (a_ax, b_ax), angle, "fit"
+    if trusted and eye_sep:
+        return (float(center[0]), float(center[1])), (eye_sep * 0.10, eye_sep * 0.075), 0.0, "prior"
+    return None
+
+
+def render_eye_feature(canvas, occupancy, gray, mask, base, center, get_font, rng, eye_sep=None, trusted=False):
+    """Dedicated eye construction (recommendation #7): eyelid contour, iris rings, a dense
+    pupil with a genuine negative-space catchlight -- built from the eye's OWN fitted shape,
+    not a guessed circle. Returns True if a plausible eye was found and rendered, False if the
+    fit looked unreliable (caller keeps the generic treatment there instead of drawing a
+    fabricated feature over real fur)."""
+    geo = eye_geometry(gray, mask, base, center, eye_sep=eye_sep, trusted=trusted)
+    if geo is None:
+        return False   # no evidence and no trusted point: keep the generic treatment
+    (ecx, ecy), (a_ax, b_ax), angle, how = geo
+    if how == "prior":
         _log(f"eye at ({ecx:.0f},{ecy:.0f}): dark-blob fit unreliable, built from the landmark prior")
 
     # Eyelid: one fine contour line right at the eye's own boundary.
@@ -2455,12 +2454,9 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # plausible ellipse is found.
     eye_reveal = np.zeros((H, W), np.float32)
     for (ax, ay) in attractor_pts:
-        fit = fit_dark_blob_ellipse(gray, mask, ax, ay, base * 0.9)
-        ok_fit = (fit is not None
-                  and base * 0.12 < fit[1][0] < base * 2.2 and base * 0.08 < fit[1][1] < base * 2.2
-                  and max(fit[1]) / max(min(fit[1]), 1e-3) <= 3.0)
-        if ok_fit:
-            (ecx, ecy), (a_ax, b_ax), ang = fit
+        geo = eye_geometry(gray, mask, base, (ax, ay), eye_sep=_es, trusted=bool(_lm_env))
+        if geo is not None:
+            (ecx, ecy), (a_ax, b_ax), ang, _how = geo
             cv2.ellipse(eye_reveal, (int(round(ecx)), int(round(ecy))),
                        (max(2, int(round(a_ax * 1.05))), max(2, int(round(b_ax * 1.05)))),
                        ang, 0, 360, 1.0, -1)
@@ -2476,6 +2472,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         rad = max(3, int(round(base * 0.22)))
         cv2.circle(eye_reveal, (px0 + bx, py0 + by), rad, 1.0, -1)
     eye_reveal = _gblur(eye_reveal, (0, 0), sigmaX=max(1.0, base * 0.06))
+    if _KEEP_FIELDS:
+        _TL.fields["eye_reveal"] = eye_reveal
 
     # ---- Real nose reveal -- same idea as eye_reveal, a real gap in the render's fidelity ----
     # The dedicated nose renderer above only claims the outline/groove/nostrils in `occupancy`;
@@ -2981,7 +2979,11 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # photo's mode pick each region's. The scalar solves below still set the layer scales
     # from the photo's measured means; the per-pixel mixes only choose which layer carries
     # the source tone at each spot.
-    _cw = (mask > 0.5).astype(np.float32)
+    # The eyes and nose are left OUT of the coat reading: an eye's own iris and glint lifted
+    # the blurred luminance around one eye above the mid-coat threshold and not the other, so
+    # the two eyes of a black lab were restyled in different modes (measured: L 95 vs L 27 with
+    # the same reveal). The coat mode at a feature is now its surrounding fur's.
+    _cw = (mask > 0.5).astype(np.float32) * fine_blend
     _csig = max(4.0, base * 1.5)
     _cnum = _gblur(src_lab[..., 0] * _cw, (0, 0), sigmaX=_csig)
     _cden = _gblur(_cw, (0, 0), sigmaX=_csig)
@@ -3042,6 +3044,10 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     w_light = np.clip((light_f - 0.25) / 0.5, 0, 1).astype(np.float32)
     w_mid = np.clip(1.0 - w_dark - w_light, 0, 1).astype(np.float32)
 
+    # Half photo, half restyled inside the eye: the photo's tone keeps the two eyes honest to
+    # each other, the restyled half keeps the iris rings and pupil legible as typography.
+    _eye_keep = (np.clip(eye_reveal, 0, 1) * 0.5).astype(np.float32)
+
     def _chain(kk):
         Lw = (L_cur + kk * (L_clahe - L_cur)) * mask + L_cur * (1.0 - mask)
         # Each layer is matched to the source INDEPENDENTLY (a map built from gap pixels applied
@@ -3078,6 +3084,12 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         Lm_letters = w_dark * letters_dark + w_light * letters_light + w_mid * Lm_letters
         Lm_gaps = w_mid * gaps_mid + (1.0 - w_mid) * Lm_gaps
         Lm = ink_soft * Lm_letters + (1.0 - ink_soft) * Lm_gaps
+        # The revealed eye keeps the photo's own tone. The letter/gap restyling above chooses
+        # a coat mode from the blurred luminance around each pixel, and an eye's surroundings
+        # can put one eye in dark mode (letters lifted) and the other in mid mode (letters at
+        # their own dark tone): measured on the black lab, the two eyes came out at L 95 and
+        # L 27 with the same 0.96 reveal. Inside the eye reveal the composite's own L stands.
+        Lm = Lm * (1.0 - _eye_keep) + Lw * _eye_keep
         Lm = Lm * mask + Lw * (1.0 - mask)
         return Lw, Lm
 
