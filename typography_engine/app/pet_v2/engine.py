@@ -256,7 +256,15 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
             # comparison cannot tolerate. A bitmap is now a pure function of its key.
             _alpha_q = min(255, key[2] + 8)
             _deg_q = float(key[3])
-            bmp = render_word_bitmap(word, font, alpha=_alpha_q)
+            # The unrotated text is shared across the angle bins (profiled: 21,926 text
+            # renders for ~6,700 distinct word/size/alpha triples), rotation stays per key.
+            _tkey = (word, key[1], key[2])
+            bmp = _TEXT_CACHE.get(_tkey)
+            if bmp is None:
+                bmp = render_word_bitmap(word, font, alpha=_alpha_q)
+                if len(_TEXT_CACHE) > 8000:
+                    _TEXT_CACHE.clear()
+                _TEXT_CACHE[_tkey] = bmp
             rot = bmp.rotate(-_deg_q, expand=True, resample=Image.BICUBIC)
             hit = (bmp.width, bmp.height, rot, np.asarray(rot.split()[3], np.float32))
             if len(_BITMAP_CACHE) > 20000:
@@ -300,6 +308,7 @@ _KEEP_FIELDS = os.environ.get("PET_V2_KEEP_FIELDS", "").strip().lower() not in (
 # (word, font px, alpha, angle deg) -> (w, h, rotated RGBA, its alpha array). Shared across
 # threads on purpose: entries are immutable once built, and dict get/set are atomic in CPython.
 _BITMAP_CACHE = {}
+_TEXT_CACHE = {}     # (word, font px, alpha bin) -> unrotated RGBA text, shared across angle bins
 
 
 def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
@@ -333,7 +342,8 @@ def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
         # (size_cap): a fixed 6px letter in a 20px corridor on the far body was a speck of lace
         # where the hierarchy asked for a real mark, and it outnumbered the structural words.
         if size_cap is not None:
-            _px = float(np.clip(dist[y, x] * 2.0 / 1.3, min_px, max(min_px, float(size_cap[y, x]))))
+            _cap_px = max(min_px, float(size_cap[y, x]))
+            _px = min(_cap_px, max(float(min_px), float(dist[y, x]) * 2.0 / 1.3))
             font = get_font(_px)
             half = _px * 0.9
         ang = float(theta_s[y, x])
@@ -344,7 +354,7 @@ def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
         # erased the density modeling of the typography-only panel (type-only likeness 0.43 ->
         # 0.35 measured). Same convention as the rest of the engine: more ink where the photo is
         # brighter (target_density = gray/255), so these letters model value instead of masking it.
-        alpha = 205 if tone is None else int(70 + 185 * float(np.clip(tone[y, x], 0, 1)))
+        alpha = 205 if tone is None else int(70 + 185 * min(1.0, max(0.0, float(tone[y, x]))))
         placed_px += place_words_collision_aware(canvas, occupancy, path, [letters[k % len(letters)]], font,
                                                  gap_px=1.0, alpha=alpha, max_overlap=max_overlap, max_instances=1)
         placed_n += len(_TL.placements) - n0
@@ -376,7 +386,7 @@ def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, ge
     size_at = None
     if size_field_px is not None:
         def size_at(x, y):
-            xi, yi = int(np.clip(x, 0, W - 1)), int(np.clip(y, 0, H - 1))
+            xi, yi = min(W - 1, max(0, int(x))), min(H - 1, max(0, int(y)))
             return max(min_px, float(size_field_px[yi, xi]) * 0.55)
     for _round in range(4):
         if _round == 3:
@@ -431,7 +441,7 @@ def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, ge
                                                           size_at=_sz, get_font=get_font, gap_frac=0.25)
                 continue
             ext = float(math.hypot(w_, h_))
-            ang0 = float(theta_s[int(np.clip(cy, 0, H - 1)), int(np.clip(cx, 0, W - 1))])
+            ang0 = float(theta_s[min(H - 1, max(0, int(cy))), min(W - 1, max(0, int(cx)))])
             got = 0
             for ang in (ang0, ang0 + math.pi / 2):
                 dx, dy = math.cos(ang), math.sin(ang)
@@ -962,11 +972,11 @@ def fringe_outward_dir(mask, theta_s, px, py):
     arbitrary one -- shared by both the drawing pass and the compositing reveal so they always
     agree on which way each hair points."""
     H, W = mask.shape
-    pxi, pyi = int(np.clip(px, 0, W - 1)), int(np.clip(py, 0, H - 1))
+    pxi, pyi = min(W - 1, max(0, int(px))), min(H - 1, max(0, int(py)))
     angle = float(theta_s[pyi, pxi])
     dx, dy = math.cos(angle), math.sin(angle)
-    fwd = mask[int(np.clip(pyi + dy * 4, 0, H - 1)), int(np.clip(pxi + dx * 4, 0, W - 1))]
-    bwd = mask[int(np.clip(pyi - dy * 4, 0, H - 1)), int(np.clip(pxi - dx * 4, 0, W - 1))]
+    fwd = mask[min(H - 1, max(0, int(pyi + dy * 4))), min(W - 1, max(0, int(pxi + dx * 4)))]
+    bwd = mask[min(H - 1, max(0, int(pyi - dy * 4))), min(W - 1, max(0, int(pxi - dx * 4)))]
     if bwd < fwd:
         dx, dy = -dx, -dy
     return dx, dy, angle
@@ -1048,7 +1058,7 @@ def render_feature_microfill(canvas, occupancy, theta_s, coherence_s, mask, regi
                                           min_coherence=0.0, max_turn=0.12,
                                           max_lines=int(800 * max(1.0, (W / 1000.0) ** 2)))
         for line in lines:
-            imp = float(np.mean([importance_norm[int(np.clip(y, 0, H - 1)), int(np.clip(x, 0, W - 1))]
+            imp = float(np.mean([importance_norm[min(H - 1, max(0, int(y))), min(W - 1, max(0, int(x)))]
                                  for x, y, _ in line[::3]])) if line else 0.0
             font_px = base * (0.055 + 0.040 * (1.0 - imp))      # finest at peak importance
             alpha = 205                                          # fine, not faint (see structural pass)
@@ -1359,8 +1369,8 @@ def find_attractor_points(feat, mask, top_k=2):
         # area cap -- being re-verified against the rest of the test set now that it's raised.
         if cy > head_cutoff or frac < 0.00015 or frac > 0.12 or aspect > 2.2:
             continue
-        cxi = int(np.clip(round(cx), 0, W - 1))
-        cyi = int(np.clip(round(cy), 0, H - 1))
+        cxi = min(W - 1, max(0, int(round(cx))))
+        cyi = min(H - 1, max(0, int(round(cy))))
         if edge_dist[cyi, cxi] < band_width * 0.03:
             continue
         good.append((area, cx, cy, math.sqrt(area)))
@@ -1462,8 +1472,8 @@ def evenly_spaced_streamlines(theta, coherence, mask, sep_px, step=4.0, max_step
     def sep_at(x, y):
         if not is_field:
             return sep_px
-        xi = int(np.clip(round(x), 0, W - 1))
-        yi = int(np.clip(round(y), 0, H - 1))
+        xi = min(W - 1, max(0, int(round(x))))
+        yi = min(H - 1, max(0, int(round(y))))
         return float(sep_px[yi, xi])
 
     seed_covered = np.zeros((H, W), np.uint8)
@@ -1690,7 +1700,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         _bx = _xs[_ys <= _top + (_bot - _top) * 0.65]
         _band_w = max(1.0, float(_bx.max() - _bx.min())) if len(_bx) else 1.0
         _ed = cv2.distanceTransform(_m5.astype(np.uint8), cv2.DIST_L2, 5)
-        _depths = [float(_ed[int(np.clip(py, 0, H - 1)), int(np.clip(px, 0, W - 1))]) / _band_w
+        _depths = [float(_ed[min(H - 1, max(0, int(py))), min(W - 1, max(0, int(px)))]) / _band_w
                    for (px, py) in attractor_pts]
         if min(_depths) < 0.10:
             fallback = find_attractor_points(feat, mask)
@@ -1829,7 +1839,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     importance_norm = importance_map / max(1.0, float(importance_map.max()))
 
     def line_importance(line):
-        vals = [importance_norm[int(np.clip(y, 0, H - 1)), int(np.clip(x, 0, W - 1))] for x, y, _ in line[::4]]
+        vals = [importance_norm[min(H - 1, max(0, int(y))), min(W - 1, max(0, int(x)))] for x, y, _ in line[::4]]
         return float(np.mean(vals)) if vals else 0.0
 
     rng = random.Random(7)
@@ -1844,7 +1854,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         return f
 
     def mean_coherence(line):
-        vals = [coherence_s[int(np.clip(y, 0, H - 1)), int(np.clip(x, 0, W - 1))] for x, y, _ in line[::4]]
+        vals = [coherence_s[min(H - 1, max(0, int(y))), min(W - 1, max(0, int(x)))] for x, y, _ in line[::4]]
         return float(np.mean(vals)) if vals else 0.0
 
     def min_dist_to_attractor(line):
@@ -2029,7 +2039,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     size_field = np.clip(0.60 * face_dist_field + 0.40 * (1.0 - detail_field) * _smooth_gate, 0, 1).astype(np.float32)
 
     def line_size_t(line):
-        vals = [size_field[int(np.clip(y, 0, H - 1)), int(np.clip(x, 0, W - 1))] for x, y, _ in line[::4]]
+        vals = [size_field[min(H - 1, max(0, int(y))), min(W - 1, max(0, int(x)))] for x, y, _ in line[::4]]
         return float(np.mean(vals)) if vals else 0.0
 
     # The structural size every pixel would get (before per-line coherence/jitter): what the
@@ -2141,7 +2151,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         # across the paw into the backdrop on the staging senior. A line is eligible only if
         # no point on it is closer to the edge than the hero type is tall.
         def line_min_edge(line):
-            return float(min(dist_to_edge[int(np.clip(y, 0, H - 1)), int(np.clip(x, 0, W - 1))] for x, y, _ in line[::3]))
+            return float(min(dist_to_edge[min(H - 1, max(0, int(y))), min(W - 1, max(0, int(x)))] for x, y, _ in line[::3]))
         _hero_clear = STRUCT_PX * 1.5 * 0.8
         hero_candidates = sorted(
             (s for s in scored if s[1] > 0.30 and s[0] > base * 2.0
@@ -2216,7 +2226,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             # and every band measured the same 6px median. Each word reads the size field,
             # the importance cap and the jitter at its own position instead.
             def size_at(x, y, _smooth=smooth, _t_coh=t_coh):
-                xi, yi = int(np.clip(x, 0, W - 1)), int(np.clip(y, 0, H - 1))
+                xi, yi = min(W - 1, max(0, int(x))), min(H - 1, max(0, int(y)))
                 st = min(1.0, max(0.0, 0.65 * float(size_field[yi, xi]) + 0.15 * _smooth + 0.20 * _t_coh))
                 px = (MICRO_PX + (STRUCT_PX - MICRO_PX) * st) * (0.92 + 0.16 * rng.random())
                 cap = MICRO_PX * 1.05
@@ -2292,7 +2302,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                 alpha = int(min(255, 165 + 65 * t_coh))
 
                 def fill_size_at(x, y, _ratio=(round_px / FILL_PX) * 0.55):
-                    xi, yi = int(np.clip(x, 0, W - 1)), int(np.clip(y, 0, H - 1))
+                    xi, yi = min(W - 1, max(0, int(x))), min(H - 1, max(0, int(y)))
                     ls = MICRO_PX + (STRUCT_PX - MICRO_PX) * float(size_field[yi, xi])
                     px = ls * _ratio * (0.90 + 0.20 * rng.random())
                     cap = MICRO_PX * 1.05
@@ -2906,8 +2916,13 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # darker than its gap -- but true blacks, true highlights, and the real saturation range come
     # back by construction, and the result is verified by re-measuring, not by looking.
     def _quantile_match(vals, ref_vals, x, n=256):
+        # 256 quantiles of a 2-3 million pixel layer, taken 21 times per render inside the
+        # bisection, were 3.4 s of a 47 s preview (profiled). A fixed-stride subsample of
+        # ~300k pixels gives the same 256 quantiles to well under 1 L unit, and stays
+        # deterministic.
         q = np.linspace(0.0, 1.0, n)
-        return np.interp(x, np.quantile(vals, q), np.quantile(ref_vals, q))
+        sv = max(1, vals.size // 300000); sr = max(1, ref_vals.size // 300000)
+        return np.interp(x, np.quantile(vals[::sv], q), np.quantile(ref_vals[::sr], q))
 
     def _local_std(L, m, blk=32):
         Hh, Ww = L.shape
