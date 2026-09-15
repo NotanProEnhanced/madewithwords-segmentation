@@ -16,6 +16,17 @@ services:
     image: ${IMAGE_TAG}
     container_name: ${CONTAINER_NAME}
     restart: unless-stopped
+    # Memory cap, from the tree's .env (CONTAINER_MEM_LIMIT=3500m on the pet trees). A render
+    # that outgrows it kills this container's worker, which restarts in seconds; without a
+    # cap the kernel swapped the whole box to a standstill first (2026-09-15, a v2 pet
+    # render at 5-7 GB on an 8 GB box shared by five engines). Unset, the default is above
+    # the box's RAM, so a tree that has not opted in runs exactly as before. Declared in
+    # both forms because this Compose honored only the deploy one.
+    mem_limit: ${CONTAINER_MEM_LIMIT:-16g}
+    deploy:
+      resources:
+        limits:
+          memory: ${CONTAINER_MEM_LIMIT:-16g}
     ports:
       - "127.0.0.1:${HOST_PORT}:8077"
     env_file:
