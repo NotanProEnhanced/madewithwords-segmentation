@@ -691,15 +691,28 @@ def locate_nose(gray, mask, eye_pts):
         # A fit that drifts, or is a sliver, or is the wrong size for the face, is replaced
         # by a plain nose-sized ellipse at the landmark (the dog's fit here: drift 0.08,
         # aspect 1.1, kept unchanged).
+        # A first version judged the fit by its distance from the landmark, and the staging
+        # gate showed that wrong: on four of nine dogs the leather the fit found sits
+        # legitimately further from the nose-tip keypoint than the rule allowed (the keypoint
+        # is the tip; a big leather's centre is below it), and the plain ellipse that replaced
+        # it cost likeness (lab -0.011). A darkness test did not separate the cases either: a
+        # disk round the cat's nose takes in its dark stripes. What does separate them is
+        # DIRECTION. A real leather's centre lies at or below the tip along the line from
+        # between the eyes to the nose; the cat's bad fit lay 0.09 eye-separations ABOVE it,
+        # up the bridge toward the eyes, where no nose is. A fit above the landmark, or a
+        # sliver (more than three times longer than wide, a whisker crease), is replaced by a
+        # plain nose-sized ellipse at the landmark; every other fit stands, as before.
         hx, hy = float(_TL.nose_hint[0]), float(_TL.nose_hint[1])
         hinted = fit_dark_blob_ellipse(gray, mask, hx, hy, eye_sep * 0.35, min_area_px=15)
         if hinted is not None:
             (fcx, fcy), (fa, fb), _fang = hinted
-            drift = math.hypot(fcx - hx, fcy - hy) / eye_sep
+            _ux, _uy = hx - mx, hy - my                       # from between the eyes toward the nose
+            _un = max(1.0, math.hypot(_ux, _uy))
+            along = ((fcx - hx) * _ux + (fcy - hy) * _uy) / _un / eye_sep   # + = below the tip
             aspect = max(fa, fb) / max(1.0, min(fa, fb))
-            if drift <= 0.12 and aspect <= 2.0 and eye_sep * 0.06 <= max(fa, fb) <= eye_sep * 0.40:
+            if along >= -0.05 and aspect <= 3.0:
                 return hinted
-        return ((hx, hy), (eye_sep * 0.16, eye_sep * 0.12), 0.0)
+            return ((hx, hy), (eye_sep * 0.16, eye_sep * 0.12), 0.0)
     best, best_score = None, -1e9
     for ratio in np.linspace(0.12, 1.0, 15):
         cy = my + eye_sep * ratio
