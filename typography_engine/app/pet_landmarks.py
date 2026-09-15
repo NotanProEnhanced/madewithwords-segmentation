@@ -212,6 +212,45 @@ def all_face_landmarks(bgr, boxes, mask=None):
     return [face_in_box(bgr, b, mask) for b in (boxes or [])]
 
 
+def human_faces(bgr, exclude_boxes=None, min_eye_sep=40.0):
+    """People in the photo, largest first, from the MediaPipe face mesh the human brands use:
+    {"eye_l", "eye_r", "nose", "mouth", "eye_sep"} in pixels (iris centres, nose tip, the
+    lips' midpoint). MediaPipe will also call a dog's face a human face (measured: the golden
+    retriever, eyes 256 px apart), so any face whose eyes lie inside one of `exclude_boxes`
+    -- every cat or dog the detector found -- is dropped. Never raises; [] when the mesh is
+    unavailable (it needs the GL libraries the image carries)."""
+    try:
+        import cv2
+        from .pipeline.landmarks import detect_faces
+        from .pipeline.preprocess import LoadedImage
+        from .pipeline.warnings import WarningCollector
+        img = LoadedImage(bgr=bgr, gray=cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY),
+                          orig_w=bgr.shape[1], orig_h=bgr.shape[0], scale=1.0)
+        faces = detect_faces(img, WarningCollector())
+    except Exception as e:  # noqa: BLE001 -- a person is a bonus subject, never a failed render
+        _dbg("human face mesh unavailable: %r" % (e,))
+        return []
+    out = []
+    for f in faces:
+        p = f.points
+        if len(p) < 478:
+            continue
+        eye_l, eye_r = (float(p[468][0]), float(p[468][1])), (float(p[473][0]), float(p[473][1]))
+        sep = float(np.hypot(eye_l[0] - eye_r[0], eye_l[1] - eye_r[1]))
+        if sep < min_eye_sep:
+            continue
+        mx, my = 0.5 * (eye_l[0] + eye_r[0]), 0.5 * (eye_l[1] + eye_r[1])
+        if any(b[0] <= mx <= b[2] and b[1] <= my <= b[3] for b in (exclude_boxes or [])):
+            _dbg("human face at (%d,%d) lies inside a pet box -- an animal, not a person" % (mx, my))
+            continue
+        out.append({"eye_l": eye_l, "eye_r": eye_r,
+                    "nose": (float(p[1][0]), float(p[1][1])),
+                    "mouth": (float((p[13][0] + p[14][0]) / 2), float((p[13][1] + p[14][1]) / 2)),
+                    "eye_sep": sep})
+    out.sort(key=lambda d: d["eye_sep"], reverse=True)
+    return out
+
+
 def face_in_box(bgr, box, mask=None):
     """The face points of the animal inside `box` (see face_landmarks for the keys), or None."""
     _det, pose = _load_models()

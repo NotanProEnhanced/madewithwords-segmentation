@@ -1648,12 +1648,19 @@ def evenly_spaced_streamlines(theta, coherence, mask, sep_px, step=4.0, max_step
 
 
 def _landmark_string(faces, scale=1.0):
-    """The `landmarks` argument render_v2 reads, from [(eyes, nose_or_None), ...]: one face per
-    "|"-separated group, "x,y;x,y[;nx,ny]", every coordinate multiplied by `scale`."""
+    """The `landmarks` argument render_v2 reads: one face per "|"-separated group,
+    "x,y;x,y[;nx,ny]", every coordinate multiplied by `scale`. Each face is (eyes, nose) for
+    an animal, or (eyes, nose, "h", mouth) for a person, written "h:x,y;x,y;nx,ny;mx,my"."""
     groups = []
-    for eyes, nose in faces:
+    for face in faces:
+        eyes, nose = face[0], face[1]
+        kind = face[2] if len(face) > 2 else "p"
+        mouth = face[3] if len(face) > 3 else None
         pts = list(eyes[:2]) + ([nose] if nose is not None else [])
-        groups.append(";".join(f"{float(x) * scale:.1f},{float(y) * scale:.1f}" for (x, y) in pts))
+        if kind == "h" and nose is not None and mouth is not None:
+            pts.append(mouth)
+        g = ";".join(f"{float(x) * scale:.1f},{float(y) * scale:.1f}" for (x, y) in pts)
+        groups.append(("h:" + g) if kind == "h" else g)
     return "|".join(groups)
 
 
@@ -1799,18 +1806,29 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # the primary (hero words, head_center, the region map); these get the same feature passes,
     # the same fine zone and the same weight in the likeness score.
     extra_faces = []
+    # A face's kind: "p" for a cat or dog, "h" for a person (a group written "h:..." with a
+    # fourth point, the mouth). A person gets the eye reveal and the fine zone; the nose
+    # leather, the mouth crease and the whiskers are an animal's and are not drawn on one.
+    primary_kind, primary_mouth = "p", None
     if _lm_env:
-        _groups = [g for g in _lm_env.split("|") if g.strip()]
-        _parse = lambda g: [tuple(float(v) for v in p.split(",")) for p in g.split(";") if p.strip()]   # noqa: E731
-        _pts = _parse(_groups[0]) if _groups else []
+        _groups = [g.strip() for g in _lm_env.split("|") if g.strip()]
+
+        def _parse(g):
+            kind = "h" if g.startswith("h:") else "p"
+            body = g[2:] if kind == "h" else g
+            return kind, [tuple(float(v) for v in p.split(",")) for p in body.split(";") if p.strip()]
+        primary_kind, _pts = _parse(_groups[0]) if _groups else ("p", [])
         if len(_pts) >= 2:
             attractor_pts = [_pts[0], _pts[1]]
         if len(_pts) >= 3:
             _TL.nose_hint = _pts[2]
+        if primary_kind == "h" and len(_pts) >= 4:
+            primary_mouth = _pts[3]
         for _g in _groups[1:]:
-            _fp = _parse(_g)
+            _k, _fp = _parse(_g)
             if len(_fp) >= 2:
-                extra_faces.append({"eyes": [_fp[0], _fp[1]], "nose": _fp[2] if len(_fp) >= 3 else None})
+                extra_faces.append({"eyes": [_fp[0], _fp[1]], "nose": _fp[2] if len(_fp) >= 3 else None,
+                                    "kind": _k, "mouth": _fp[3] if (_k == "h" and len(_fp) >= 4) else None})
         _log(f"landmarks injected from GOP_LANDMARKS: eyes={attractor_pts} nose={_pts[2] if len(_pts) >= 3 else None}"
              + (f"; {len(extra_faces)} more face(s): {extra_faces}" if extra_faces else ""))
     _log(f"anatomical attractors found (used for hero placement + size gradation only): "
@@ -1834,7 +1852,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         if _factor >= 1.15:
             _log(f"eyes {_es0:.0f}px apart at {W}x{H}: re-rendering at {_factor:.2f}x for the face "
                  f"(target {TARGET_ES:.0f}px, cap {_cap_h}px tall)")
-            _lm = _landmark_string([(attractor_pts[:2], _TL.nose_hint)] + [(f["eyes"], f["nose"]) for f in extra_faces],
+            _lm = _landmark_string([(attractor_pts[:2], _TL.nose_hint, primary_kind, primary_mouth)]
+                                   + [(f["eyes"], f["nose"], f["kind"], f["mouth"]) for f in extra_faces],
                                    _factor) if _lm_env else None
             return render_v2(_bgr_in, words, mask=_mask_in, render_scale=_factor, max_overlap=max_overlap,
                              landmarks=_lm, debug_dir=debug_dir, out_stem=out_stem, verbose=verbose,
@@ -2073,7 +2092,12 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
 
     # ---- The features: both eyes and the nose, as points and as a fine zone ------------------
     # locate_nose reads only the photo, so this is computed once here rather than per iteration.
-    _nf = locate_nose(gray, mask, attractor_pts) if len(attractor_pts) >= 2 else None
+    if primary_kind == "h":
+        # A person's nose: no leather to fit, a nose-sized ellipse at the mesh's nose tip.
+        _nf = (((float(_TL.nose_hint[0]), float(_TL.nose_hint[1])), (_es * 0.14, _es * 0.10), 0.0)
+               if _TL.nose_hint is not None else None)
+    else:
+        _nf = locate_nose(gray, mask, attractor_pts) if len(attractor_pts) >= 2 else None
     feature_pts = list(attractor_pts[:2])
     if _nf is not None:
         feature_pts.append((float(_nf[0][0]), float(_nf[0][1])))
@@ -2094,10 +2118,16 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     for _f in extra_faces:
         _e1, _e2 = _f["eyes"]
         _f["es"] = max(1.0, math.hypot(_e1[0] - _e2[0], _e1[1] - _e2[1]))
-        _f["nose_fit"] = _with_nose_hint(_f["nose"], locate_nose, gray, mask, _f["eyes"])
-        _f["mouth"] = ((float(_f["nose_fit"][0][0]), float(_f["nose_fit"][0][1])) if _f["nose_fit"] is not None
-                       else (0.5 * (_e1[0] + _e2[0]), 0.5 * (_e1[1] + _e2[1]) + _f["es"] * 0.75))
-        feature_pts.extend([_e1, _e2, _f["mouth"]])
+        if _f["kind"] == "h":
+            _f["nose_fit"] = (((float(_f["nose"][0]), float(_f["nose"][1])), (_f["es"] * 0.14, _f["es"] * 0.10), 0.0)
+                              if _f["nose"] is not None else None)
+        else:
+            _f["nose_fit"] = _with_nose_hint(_f["nose"], locate_nose, gray, mask, _f["eyes"])
+        _f["mouth_pt"] = ((float(_f["nose_fit"][0][0]), float(_f["nose_fit"][0][1])) if _f["nose_fit"] is not None
+                          else (0.5 * (_e1[0] + _e2[0]), 0.5 * (_e1[1] + _e2[1]) + _f["es"] * 0.75))
+        feature_pts.extend([_e1, _e2, _f["mouth_pt"]])
+        if _f["mouth"] is not None:
+            feature_pts.append(_f["mouth"])   # a person's mouth is a feature of its own
 
     # Where type must stay fine: the eyes, nose and mouth THEMSELVES, graduating out. The cap
     # used to key on the likeness weight map (importance_norm > 0.45), whose "face-center"
@@ -2122,6 +2152,9 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         else:
             mx, my = feature_pts[2]
             cv2.ellipse(fine, (int(mx), int(my)), (int(_es * 0.30), int(_es * 0.45)), 0, 0, 360, 1, -1)
+        if primary_kind == "h" and primary_mouth is not None:
+            cv2.ellipse(fine, (int(primary_mouth[0]), int(primary_mouth[1])),
+                        (int(_es * 0.35), int(_es * 0.12)), 0, 0, 360, 1, -1)
         for _f in extra_faces:   # the same fine zone on every further face, at its own scale
             for (ax, ay) in _f["eyes"]:
                 cv2.circle(fine, (int(ax), int(ay)), int(round(_f["es"] * 0.20)), 1, -1)
@@ -2133,8 +2166,11 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                 cv2.ellipse(fine, (int(ncx), int(ncy + nr * 1.3)), (int(_f["es"] * 0.35), int(nr * 0.9) + 1),
                             0, 0, 360, 1, -1)
             else:
-                mx, my = _f["mouth"]
+                mx, my = _f["mouth_pt"]
                 cv2.ellipse(fine, (int(mx), int(my)), (int(_f["es"] * 0.30), int(_f["es"] * 0.45)), 0, 0, 360, 1, -1)
+            if _f["mouth"] is not None:   # a person's mouth, where the mesh says it is
+                cv2.ellipse(fine, (int(_f["mouth"][0]), int(_f["mouth"][1])),
+                            (int(_f["es"] * 0.35), int(_f["es"] * 0.12)), 0, 0, 360, 1, -1)
         _out = cv2.distanceTransform((1 - fine).astype(np.uint8), cv2.DIST_L2, 5)
         fine_blend = np.clip(_out / max(1.0, _es * 0.20), 0, 1).astype(np.float32)
         del _out
@@ -2338,13 +2374,16 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             for (ax, ay) in attractor_pts:
                 render_eye_feature(canvas, occupancy, gray, mask, base, (ax, ay), get_font, rng,
                                    eye_sep=_es, trusted=bool(_lm_env))
-            nose_fit = render_nose_feature(canvas, occupancy, gray, mask, base, attractor_pts, get_font, rng)
-            render_mouth_feature(canvas, occupancy, gray, mask, base, nose_fit, get_font, rng)
-            render_muzzle_topology(canvas, occupancy, gray, mask, base, nose_fit, attractor_pts, stream, get_font, rng)
+            if primary_kind != "h":   # a person has no leather, mouth crease or whiskers to draw
+                nose_fit = render_nose_feature(canvas, occupancy, gray, mask, base, attractor_pts, get_font, rng)
+                render_mouth_feature(canvas, occupancy, gray, mask, base, nose_fit, get_font, rng)
+                render_muzzle_topology(canvas, occupancy, gray, mask, base, nose_fit, attractor_pts, stream, get_font, rng)
         for _f in extra_faces:   # a second pet's face: the same passes at its own scale
             for (ax, ay) in _f["eyes"]:
                 render_eye_feature(canvas, occupancy, gray, mask, base, (ax, ay), get_font, rng,
                                    eye_sep=_f["es"], trusted=True)
+            if _f["kind"] == "h":
+                continue
             _nf2 = _with_nose_hint(_f["nose"], render_nose_feature,
                                    canvas, occupancy, gray, mask, base, _f["eyes"], get_font, rng)
             render_mouth_feature(canvas, occupancy, gray, mask, base, _nf2, get_font, rng)
@@ -2647,8 +2686,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # nothing was telling the compositor to reveal MORE photo there specifically. Fit the same
     # nose ellipse used by the dedicated renderer and reveal the real leather color within it.
     nose_reveal = np.zeros((H, W), np.float32)
-    nose_fit_final = locate_nose(gray, mask, attractor_pts)
-    for _nfit in [nose_fit_final] + [f["nose_fit"] for f in extra_faces]:
+    nose_fit_final = None if primary_kind == "h" else locate_nose(gray, mask, attractor_pts)
+    for _nfit in [nose_fit_final] + [f["nose_fit"] for f in extra_faces if f["kind"] != "h"]:
         if _nfit is None:
             continue
         (fncx, fncy), (fna, fnb), fnangle = _nfit
@@ -2670,7 +2709,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # actual photo pixels that don't meaningfully exist for a hair drawn past the animal's edge.
     whisker_zone = np.zeros((H, W), np.float32)
     whisker_region_inside = np.zeros((H, W), np.float32)
-    _whisker_faces = [(nose_fit_final, attractor_pts)] + [(f["nose_fit"], f["eyes"]) for f in extra_faces]
+    _whisker_faces = [(nose_fit_final, attractor_pts)] + [(f["nose_fit"], f["eyes"]) for f in extra_faces if f["kind"] != "h"]
     for _wfit, _weyes in _whisker_faces:
         if _wfit is None or len(_weyes) < 2:
             continue
@@ -3583,11 +3622,30 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
                 _say("landmark model: no confident face; heuristic detector will run", flush=True)
         elif _lm_on and boxes is not None:
             _say("detector: no cat or dog in the photo; heuristic detector will run", flush=True)
+        # People. The mesh the human brands use reads a person's eyes, nose and mouth. A face
+        # inside a pet's box is that pet (MediaPipe calls a golden retriever a face, measured)
+        # and is dropped. A person of comparable size to the largest pet, or anyone when there
+        # is no pet, becomes a subject too: eye reveal and fine type, no leather or whiskers.
+        humans = []
+        if _lm_on and boxes is not None:
+            try:
+                _pet_es = max([math.hypot(f["eye_l"][0] - f["eye_r"][0], f["eye_l"][1] - f["eye_r"][1]) for f in faces] or [0.0])
+                humans = [h for h in pet_landmarks.human_faces(bgr, exclude_boxes=boxes) if h["eye_sep"] >= 0.5 * _pet_es]
+            except Exception as _e:  # noqa: BLE001 -- a person is a bonus subject, never a failed render
+                humans = []
+                _say(f"human face mesh failed: {_e!r}", flush=True)
+            for _h in humans:
+                _say(f"human face: eyes {tuple(round(v) for v in _h['eye_l'])} {tuple(round(v) for v in _h['eye_r'])} "
+                     f"nose {tuple(round(v) for v in _h['nose'])} mouth {tuple(round(v) for v in _h['mouth'])}", flush=True)
         # What the customer should know. The detector's word, never a guess: nothing is said when
         # it could not run.
         _notes = []
         if _lm_on and boxes is not None:
-            if not boxes:
+            if not boxes and humans:
+                _notes.append({"code": "pet_not_found", "message":
+                               "We couldn't spot a cat or dog in this photo, so we built the portrait around "
+                               "the face we found."})
+            elif not boxes:
                 _notes.append({"code": "pet_not_found", "message":
                                "We couldn't spot a cat or dog in this photo, so the eyes and nose are our best "
                                "guess. A clear, front-on photo of your pet's face gives the finest portrait."})
@@ -3606,9 +3664,10 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         # With two pets the smaller face decides, so both get the pixels the passes need.
         _lm_str = None
         _scale = 1.0
-        if faces:
-            _face_pairs = [((f["eye_l"], f["eye_r"]), f["nose"]) for f in faces]
-            _es_lm = min(math.hypot(e[0][0] - e[1][0], e[0][1] - e[1][1]) for e, _n in _face_pairs)
+        if faces or humans:
+            _face_pairs = ([((f["eye_l"], f["eye_r"]), f["nose"]) for f in faces]
+                           + [((h["eye_l"], h["eye_r"]), h["nose"], "h", h["mouth"]) for h in humans])
+            _es_lm = min(math.hypot(p[0][0][0] - p[0][1][0], p[0][0][1] - p[0][1][1]) for p in _face_pairs)
             _f = min(170.0 / max(1.0, _es_lm), cap / float(bgr.shape[0]),
                      math.sqrt(cap * cap * 0.8 / float(bgr.shape[0] * bgr.shape[1])))
             if _f >= 1.15:
