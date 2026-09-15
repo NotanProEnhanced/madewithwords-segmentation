@@ -3618,6 +3618,12 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         # The photo's own ground was read at render time and travels with the cached render,
         # so a switch to "photo" on a cached portrait is the same arithmetic as any backdrop.
         want = (entry[5] if (_photo_ground and len(entry) > 5 and entry[5] is not None) else ground_rgb)
+        if _photo_ground and (len(entry) <= 5 or entry[5] is None) and notices is not None:
+            # A tight crop with no background to read: the gallery ground stands, and the
+            # customer is told rather than left to wonder why Photo looks like Gallery Dark.
+            notices.append({"code": "photo_ground_unavailable", "message":
+                            "This photo has almost no background around your pet, so there is no colour to "
+                            "borrow from it. The portrait is on Gallery Dark instead."})
         rgb = _with_backdrop(rgb, outside_w, old_ground, want)
         if height and height > 0 and rgb.shape[0] != int(height):
             out_w = int(round(rgb.shape[1] * height / rgb.shape[0]))
