@@ -683,9 +683,23 @@ def locate_nose(gray, mask, eye_pts):
     eye_sep = max(1.0, math.hypot(x2 - x1, y2 - y1))
     if _TL.nose_hint is not None:
         # A supplied nose landmark: fit the leather's real shape right there instead of scanning.
-        hinted = fit_dark_blob_ellipse(gray, mask, _TL.nose_hint[0], _TL.nose_hint[1], eye_sep * 0.35, min_area_px=15)
+        # The fit looks for a DARK blob, and a cat's nose is pink and lighter than the fur
+        # around it: on the cat-and-dog test photo the fit slid 0.14 eye-separations up the
+        # nose bridge onto a dark stripe, 2.4 times longer than wide, and the nose reveal put
+        # an orange patch on the fur while the real nose was rendered as plain text. The
+        # landmark is the model's word on where the nose is; the fit only refines its shape.
+        # A fit that drifts, or is a sliver, or is the wrong size for the face, is replaced
+        # by a plain nose-sized ellipse at the landmark (the dog's fit here: drift 0.08,
+        # aspect 1.1, kept unchanged).
+        hx, hy = float(_TL.nose_hint[0]), float(_TL.nose_hint[1])
+        hinted = fit_dark_blob_ellipse(gray, mask, hx, hy, eye_sep * 0.35, min_area_px=15)
         if hinted is not None:
-            return hinted
+            (fcx, fcy), (fa, fb), _fang = hinted
+            drift = math.hypot(fcx - hx, fcy - hy) / eye_sep
+            aspect = max(fa, fb) / max(1.0, min(fa, fb))
+            if drift <= 0.12 and aspect <= 2.0 and eye_sep * 0.06 <= max(fa, fb) <= eye_sep * 0.40:
+                return hinted
+        return ((hx, hy), (eye_sep * 0.16, eye_sep * 0.12), 0.0)
     best, best_score = None, -1e9
     for ratio in np.linspace(0.12, 1.0, 15):
         cy = my + eye_sep * ratio
