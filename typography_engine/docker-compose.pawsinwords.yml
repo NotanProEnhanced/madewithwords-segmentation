@@ -32,6 +32,11 @@ services:
     image: ${IMAGE_TAG}
     container_name: typortrait-pawsinwords
     restart: unless-stopped
+    # A render that outgrows this kills only this container's worker (restart brings it
+    # back in seconds); without it the kernel swaps the whole box to a standstill first --
+    # which is what happened on 2026-09-15. Sized for one v2 render (2 GB peak measured)
+    # plus the loaded models, on an 8 GB box shared with four other engines.
+    mem_limit: 3500m
     ports:
       - "127.0.0.1:8081:8077"
     environment:

@@ -126,6 +126,7 @@ _metrics() {   # $1 = ISO time the render started, $2 = output file
 }
 
 note=""; [ "$DIRTY" = "0" ] || note=" ($DIRTY uncommitted)"
+RESTARTS_BEFORE=$(docker inspect --format '{{.RestartCount}}' "$CONTAINER" 2>/dev/null || echo 0)
 echo "commit $COMMIT$note   brand $BRAND   slider $PET_TYPE   -> $OUT"
 echo
 
@@ -170,3 +171,10 @@ done
 echo
 echo "$ok rendered, $bad failed   ->  $OUT"
 [ "$DIRTY" = "0" ] || echo "NOTE: the tree has uncommitted changes, so this is not a reproducible point."
+# A worker killed for memory dies between requests and the container is back before the
+# next one, so "9 rendered, 0 failed" can hide it (it did: three kills during a clean soak).
+_ra=$(docker inspect --format '{{.RestartCount}}' "$CONTAINER" 2>/dev/null || echo 0)
+if [ "${_ra:-0}" != "${RESTARTS_BEFORE:-0}" ]; then
+    echo "WARNING: the container restarted $(( _ra - RESTARTS_BEFORE )) time(s) during this run -- the render worker died."
+    echo "         An out-of-memory kill until proven otherwise:  journalctl -k | grep -i 'out of memory'"
+fi

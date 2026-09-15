@@ -57,21 +57,37 @@ if ! _up; then
     echo " up"
 fi
 
+# Memory, sampled while a request runs. The first full soak reported 166 requests and no
+# failures while the kernel killed the render worker three times at 5-7 GB: each kill fell
+# between requests and the container was back before the next one. Time is not the only
+# thing a soak has to watch. Peak container memory goes on every line, and the container's
+# restart count is compared before and after, which catches a kill even if no request saw it.
+MEM_MAX="${MEM_MAX:-3000}"        # a request whose container peaks above this many MB is flagged
+_mem_mb() {   # docker's "1.23GiB" / "512MiB" -> MB
+    docker stats --no-stream --format '{{.MemUsage}}' "$CONTAINER" 2>/dev/null | awk '{
+        v=$1; if (v ~ /GiB/) { sub(/GiB/,"",v); printf "%d", v*1024 } else if (v ~ /MiB/) { sub(/MiB/,"",v); printf "%d", v } else print 0 }'
+}
+_restarts() { docker inspect --format '{{.RestartCount}}' "$CONTAINER" 2>/dev/null || echo 0; }
+
 # One request. Prints a log line: status, seconds, size, and the engine's report card.
 _render() {   # $1 file  $2 words  $3 size  $4 ground  $5 aspect  $6 label
     local f="$1" words="$2" size="$3" ground="$4" aspect="$5" label="$6"
-    local since t0 dt resp prev log claim like fp ex co lk status
+    local since t0 dt resp prev log claim like fp ex co lk status memf mem
     since=$(date -u +%Y-%m-%dT%H:%M:%S); t0=$(date +%s.%N)
+    memf=$(mktemp); ( mx=0; while :; do m=$(_mem_mb); [ "${m:-0}" -gt "$mx" ] && { mx=$m; echo "$mx" > "$memf"; }; sleep 2; done ) &
+    local sampler=$!
     resp=$(curl -s --max-time 600 -X POST "$BASE/render" \
         -F "image=@$f" -F "words=$words" -F "pet=1" -F "pet_type=$size" -F "ground=$ground" \
         -F "png_width=1400" -F "aspect=$aspect" -F "remove_bg=true" -F "uppercase=true" \
         -F "brand=$BRAND" -F "ref=$BRAND" -F "biometric_consent=on" 2>&1)
+    kill "$sampler" 2>/dev/null; wait "$sampler" 2>/dev/null
+    mem=$(cat "$memf" 2>/dev/null || echo 0); rm -f "$memf"
     dt=$(printf '%.1f' "$(echo "$(date +%s.%N) - $t0" | bc)")
     prev=$(printf '%s' "$resp" | sed -n 's/.*"preview"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
     if [ -z "$prev" ]; then
         err=$(printf '%s' "$resp" | sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
         status="FAIL ${err:-no preview}"
-        printf '%-46s %-6s %6ss\n' "$label" "$status" "$dt" | tee -a "$LOG"
+        printf '%-46s %-6s %6ss  mem=%sMB\n' "$label" "$status" "$dt" "${mem:-0}" | tee -a "$LOG"
         return
     fi
     log=$(docker logs --since "$since" "$CONTAINER" 2>&1)
@@ -83,9 +99,10 @@ _render() {   # $1 file  $2 words  $3 size  $4 ground  $5 aspect  $6 label
     lk=$(printf '%s' "$like"  | sed -n 's/.*: \([0-9.]*\)$/\1/p')
     status="ok"
     [ -z "$claim" ] && status="ok(cached)"   # the backdrop toggle and repeats reuse the render
-    printf '%-46s %-10s %6ss  footprint=%s exposed=%s collisions=%s likeness=%s\n' \
-        "$label" "$status" "$dt" "${fp:--}" "${ex:--}" "${co:--}" "${lk:--}" | tee -a "$LOG"
+    printf '%-46s %-10s %6ss  footprint=%s exposed=%s collisions=%s likeness=%s mem=%sMB\n' \
+        "$label" "$status" "$dt" "${fp:--}" "${ex:--}" "${co:--}" "${lk:--}" "${mem:-0}" | tee -a "$LOG"
 }
+RESTARTS_BEFORE=$(_restarts)
 
 want=("$@")
 echo "soak of $IMAGE -> $OUT"; echo
@@ -136,5 +153,17 @@ fi
     echo "render time, fresh renders only (s): min / median / max"
     grep ' ok ' "$LOG" | awk '{ for (i=1;i<=NF;i++) if ($i ~ /s$/) { sub(/s$/,"",$i); print $i+0; break } }' \
         | sort -n | awk '{ a[NR]=$1 } END { if (NR) printf "  %s / %s / %s\n", a[1], a[int((NR+1)/2)], a[NR] }'
+    echo "container memory, peak during a request (MB): min / median / max   (flag over ${MEM_MAX})"
+    grep -o 'mem=[0-9]*MB' "$LOG" | tr -dc '0-9\n' | sort -n \
+        | awk '{ a[NR]=$1 } END { if (NR) printf "  %s / %s / %s\n", a[1], a[int((NR+1)/2)], a[NR] }'
+    echo "memory over ${MEM_MAX}MB:"
+    grep -o '^.*mem=[0-9]*MB' "$LOG" | awk -v m="$MEM_MAX" -F'mem=' '$2+0 > m { print "  " $0 }'
+    _rb="$RESTARTS_BEFORE"; _ra=$(_restarts)
+    if [ "${_ra:-0}" != "${_rb:-0}" ]; then
+        echo "CONTAINER RESTARTED $(( _ra - _rb )) time(s) during the soak (restart count $_rb -> $_ra): the render worker died"
+        echo "  between requests -- an out-of-memory kill until proven otherwise. Check: journalctl -k | grep -i 'out of memory'"
+    else
+        echo "container restarts during the soak: 0"
+    fi
 } | tee "$OUT/summary.txt"
 echo; echo "log: $LOG"

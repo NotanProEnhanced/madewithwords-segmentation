@@ -33,6 +33,7 @@ services:
     image: ${IMAGE_TAG}
     container_name: typortrait-staging
     restart: unless-stopped
+    mem_limit: 3500m   # see docker-compose.pawsinwords.yml: the box, not the container, is what this protects
     ports:
       - "127.0.0.1:8078:8077"
     environment:

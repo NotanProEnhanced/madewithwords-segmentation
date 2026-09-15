@@ -3,6 +3,12 @@
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+# glibc's allocator grows its mmap threshold as large arrays come and go, after which the
+# engine's full-frame float arrays land on the heap and freed memory is never returned: a
+# render process was measured holding 2.1 GB after its render, and climbing with each one
+# until the kernel killed it. A fixed threshold keeps every array over 64 KB in its own
+# mapping, returned to the OS the moment it is freed. Measured: 2.1 GB held -> 1.1 GB.
+ENV MALLOC_MMAP_THRESHOLD_=65536 MALLOC_TRIM_THRESHOLD_=33554432 MALLOC_ARENA_MAX=2
 WORKDIR /app
 
 # Native libraries: CairoSVG (cairo/pango/gdk-pixbuf), OpenCV + MediaPipe

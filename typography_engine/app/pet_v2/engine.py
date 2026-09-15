@@ -2714,6 +2714,10 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     broad_sat = np.divide(num, den, out=np.zeros_like(num), where=den > 1e-6)
     sat_anomaly = np.clip((sat - broad_sat - 0.05) / 0.10, 0, 1) * mf
     sat_anomaly = _gblur(sat_anomaly, (0, 0), sigmaX=max(1.0, base * 0.05))
+    # Memory: this composite stage held two dozen full-frame colour arrays at once (1.2 GB at
+    # the 1600px preview, measured; the box ran out of memory and locked up). Every array is
+    # released the moment its last reader has run. None of these `del`s changes a value.
+    del hsv, sat, mf, num, den, broad_sat
 
     # `feat` was already computed once, up front, and reused for the attractor field above --
     # no need to recompute it here.
@@ -2766,6 +2770,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     brightness = np.clip(gray.astype(np.float32) / 255.0, 0, 1)
     wash = wash_strength * mask * brightness * (1.0 - 0.95 * sat_anomaly)
     a = np.clip(np.maximum(a, wash), 0, 1)
+    del brightness
 
     # ---- Suppress REAL photographic whiskers within the mask ------------------------------
     # "Whiskers should also be typography... a high-end portrait should eventually have no
@@ -2783,6 +2788,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     whisker_suppress = np.clip(whisker_signal / 18.0, 0, 1) * whisker_region_inside
     a = a * (1.0 - 0.92 * whisker_suppress)
     a = a[..., None]
+    del median_local, whisker_signal, whisker_suppress
     # ---- Ground color derived from the REAL photo background, not an arbitrary constant ----
     # This was a fixed navy-purple (26, 20, 40) regardless of what was actually behind the pet
     # -- grass, a wall, sky, whatever. "Truer colors" applies to the ground too: sample the
@@ -2816,6 +2822,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         # this engine: previously it was accepted and ignored, so switching to Gallery Gray
         # re-rendered 40 s of identical pixels.
         outer_ground_rgb = np.full((H, W, 3), np.asarray(backdrop_rgb, np.float32), np.float32)
+    del bg_weight2d, bg_num, bg_den, ground_bgr, ground_hsv
     # SEGMENTATION FIX (still applies): one ground field can't serve both "outside the animal"
     # and "the gap between two letters ON the animal" -- they need different colors. But the
     # INNER one was set to a near-black tone for contrast, and with collision tolerances now
@@ -2924,6 +2931,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     _Pl[..., 1:] -= (_band * _t)[..., None] * _BFab
     bgr_clean = cv2.cvtColor(np.clip(_Pl, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR)
     deep_fur_rgb = _F[..., ::-1].astype(np.float32)   # RGB, for the fringe hairs below
+    del _src_f, _F, _bgw, _B, _BF, _Pl, _Fl, _Bl, _BFab, _BF2, _t, _band, _mask_deep, _d_in, _hard
 
     fur_sigma = max(2.0, W * 0.006)
     fur_num = _gblur(bgr_clean.astype(np.float32) * fur_weight2d[..., None], (0, 0), sigmaX=fur_sigma)
@@ -2941,6 +2949,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     inner_ground_bgr = cv2.cvtColor(np.clip(fur_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR)
     inner_ground_rgb = cv2.cvtColor(inner_ground_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
     ground_rgb = inner_ground_rgb * mask[..., None] + outer_ground_rgb * (1.0 - mask[..., None])
+    del fur_weight2d, fur_num, fur_den, fur_bgr, fur_hsv, inner_ground_bgr, inner_ground_rgb, outer_ground_rgb
     # Vividness boost for the pet's own revealed colors -- flagged directly as "muted," and the
     # side-by-side reference photos confirmed it again at a brightness level, not just
     # saturation. Boost both explicitly, after all the tonal logic is settled, so this doesn't
@@ -2998,6 +3007,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         _dbg("photo_rgb (source)", photo_rgb)
         _dbg("ground_rgb", ground_rgb)
         _dbg("composited (pre-match)", composited)
+    del ground_rgb, photo_rgb, bgr_clean, a, wash, sat_anomaly
 
     # Reveal the whisker typography directly against a fixed pale "whisker" color rather than
     # through the mask-gated photo-reveal machinery -- there's no real photo pixel to reveal for
@@ -3015,12 +3025,14 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     _wz = np.clip(whisker_zone, 0, 1)[..., None]
     hair_color = whisker_color * _wz + fur_edge_rgb * (1.0 - _wz)
     composited = composited * (1.0 - whisker_ink_alpha[..., None]) + hair_color * whisker_ink_alpha[..., None]
+    del _wz, hair_color, fur_edge_rgb, deep_fur_rgb   # whisker_ink_alpha feeds outside_w at the end
 
     # edge_ink used to add a dark stroke at every strong internal edge -- a reasonable idea for a
     # moody, dark-ground piece, but against a brightened subject it was one more thing pulling
     # the average tone down. Lightened the color and roughly halved the blend strength.
     edge = (_edge_ink(gray.astype(np.uint8)) * mask)[..., None]
     edge_ink_color = np.array([70.0, 62.0, 52.0], np.float32)
+    del edge   # computed for the ek blend below, which is 0.0: nothing reads it
     # Removed (ek was 0.30). Measured on the dog's eye: the catchlight is L=196 in the source and
     # survives the color pipeline at ~185, but a bright glint inside a dark iris is the strongest
     # internal edge in the image, so this blend pulled it 30% toward (70,62,52) -> predicted ~148,
@@ -3079,6 +3091,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         clahe_clip, L_clahe, clahe_ls = clip, cand, cand_ls
         if cand_ls >= target_ls:
             break
+    del cand
     # Solve k against the POST-match result, not the pre-match blend: measured, calibrating
     # pre-match landed at 19.9 and the quantile match then pulled it to 16.6 (the map compresses
     # wherever the render's histogram is denser than the source's). Bisection on k over the
@@ -3263,6 +3276,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     composited = cv2.cvtColor(np.clip(comp_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
     _dbg("after L-match", comp_rgb.astype(np.float32))
     _dbg("final (after S-match)", composited)
+    del comp_hsv, comp_rgb, comp_lab, S_matched, L_matched, L_work, L_clahe, src_hsv
 
     L_after = cv2.cvtColor(np.clip(composited, 0, 255).astype(np.uint8), cv2.COLOR_RGB2LAB)[..., 0].astype(np.float32)
     pcts = [5, 50, 95]
@@ -3270,6 +3284,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
           f"before={np.percentile(L_before, pcts).round(0)} after={np.percentile(L_after[m_in], pcts).round(0)}")
     _log(f"local contrast (mean 32px-block L std): source={target_ls:.1f} before={cur_ls:.1f} "
           f"after={_local_std(L_after, m_in):.1f}  (CLAHE clip={clahe_clip} blend k={k:.2f})")
+    del src_lab, L_before, L_cur
     # Typography legibility in the delivered composite, as a number: mean L of letter pixels vs
     # gap pixels inside the mask. If these converge, the words have disappeared into the photo.
     gap_px = m_in & (ink_raw < 0.1)
@@ -3573,7 +3588,19 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         with _RENDER_CACHE_LOCK:
             _RENDER_INFLIGHT.pop(key, None)
         ev.set()
+        _trim_heap()
     return _finish(entry)
+
+
+def _trim_heap():
+    """Hand freed heap memory back to the OS after a render. glibc keeps what a render freed
+    unless asked (measured: 2.1 GB held after one preview, 1.0 GB after this call). Nothing
+    the render produced is touched; only memory nothing references any more."""
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:  # noqa: BLE001 -- not glibc, or no libc by that name: nothing to do
+        pass
 
 
 def main():
