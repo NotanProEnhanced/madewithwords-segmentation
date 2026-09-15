@@ -1544,7 +1544,7 @@ async def render(
     # Paws in Words: route to the landmark-free pet engine (no face mesh). The human path is
     # byte-identical when pet_on is False, so the live brands are unaffected.
     pet_on = str(pet or "").strip().lower() in ("1", "true", "yes", "on")
-    _PET_GROUNDS = ("dark", "mid", "charcoal", "paper", "slate")
+    _PET_GROUNDS = ("dark", "mid", "charcoal", "paper", "slate", "photo")   # photo: the source's own background colour (v2)
     pet_ground_sel = (ground or "dark").strip().lower()
     if pet_ground_sel not in _PET_GROUNDS:
         pet_ground_sel = "dark"

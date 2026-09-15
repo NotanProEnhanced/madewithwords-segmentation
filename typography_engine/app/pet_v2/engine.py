@@ -3555,6 +3555,23 @@ def _with_backdrop(rgb_u8, outside_w_u8, old_rgb, new_rgb):
     return np.clip(rgb_u8.astype(np.float32) + delta * w, 0, 255).astype(np.uint8)
 
 
+def _photo_background_rgb(bgr, matte):
+    """The colour of the photo's own background, as an (r, g, b) tuple of floats, or None.
+
+    The median of every pixel the matte calls background, taken per channel in LAB so a
+    bright window, a red toy or a patch of sky moves it little (a mean would be pulled toward
+    them). Read from the source photo before any print fitting, so the padding the fit adds
+    is never mistaken for background. None when the animal fills the frame and fewer than 2%
+    of the pixels are background: nothing to read, the caller keeps its gallery ground."""
+    bg = matte < 0.3
+    if int(bg.sum()) < max(500, int(0.02 * bg.size)):
+        return None
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
+    med = np.median(lab[bg].reshape(-1, 3), axis=0).astype(np.uint8).reshape(1, 1, 3)
+    b, g, r = cv2.cvtColor(med, cv2.COLOR_LAB2BGR)[0, 0]
+    return (float(r), float(g), float(b))
+
+
 def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
                            print_aspect=None, type_scale=None, notices=None):
     """Drop-in for pet_proto.render_pet_portrait (same signature, PNG bytes out). `height` is
@@ -3566,6 +3583,10 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
     it, or a face the model could not read -- the same for a cached render as a fresh one."""
     import hashlib
     from ..pet_proto import _fit_print_aspect, _fit_print_padding, _raw_matte, _solidify_matte, GROUNDS
+    # "photo": the source's own background colour, read from the pixels outside the animal
+    # once the matte is known (below), so the portrait sits in the light the photo was taken
+    # in. Any other name is a gallery ground from pet_proto.GROUNDS, dark when unknown.
+    _photo_ground = (ground or "").strip().lower() == "photo"
     gb, gg, gr = GROUNDS.get((ground or "dark").strip().lower(), GROUNDS["dark"])
     ground_rgb = (float(gr), float(gg), float(gb))
     cap = int(os.environ.get("PET_V2_MAX_RENDER_PX", "2400") or 2400)
@@ -3594,7 +3615,10 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         cached_h, rgb, outside_w, old_ground = entry[:4]
         if notices is not None and len(entry) > 4:
             notices.extend(entry[4])
-        rgb = _with_backdrop(rgb, outside_w, old_ground, ground_rgb)
+        # The photo's own ground was read at render time and travels with the cached render,
+        # so a switch to "photo" on a cached portrait is the same arithmetic as any backdrop.
+        want = (entry[5] if (_photo_ground and len(entry) > 5 and entry[5] is not None) else ground_rgb)
+        rgb = _with_backdrop(rgb, outside_w, old_ground, want)
         if height and height > 0 and rgb.shape[0] != int(height):
             out_w = int(round(rgb.shape[1] * height / rgb.shape[0]))
             rgb = cv2.resize(rgb, (out_w, int(height)),
@@ -3642,6 +3666,9 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         _lm_on = os.environ.get("PET_V2_LANDMARKS", "1").strip().lower() not in ("0", "false", "off")
         m_raw = _raw_matte(bgr)
         W0, H0 = bgr.shape[1], bgr.shape[0]
+        photo_bg = _photo_background_rgb(bgr, m_raw)     # the source's own ground, kept with the render
+        if _photo_ground and photo_bg is not None:
+            ground_rgb = photo_bg
         _pad = _fit_print_padding(W0, H0, float(print_aspect)) if print_aspect else (0, 0, 0, 0)
         bgr_fit = _fit_print_aspect(bgr, m_raw, float(print_aspect))[0] if print_aspect else bgr
         boxes = None        # None: the detector is unavailable; []: it ran and saw no cat or dog
@@ -3740,7 +3767,7 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=_scale, backdrop_rgb=ground_rgb,
                                  type_scale=_ts, landmarks=_lm_str, auto_res=(_scale == 1.0),
                                  verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"))
-        entry = (int(rgb.shape[0]), rgb, metrics["outside_w"], ground_rgb, _notes)   # the height actually rendered
+        entry = (int(rgb.shape[0]), rgb, metrics["outside_w"], ground_rgb, _notes, photo_bg)   # the height actually rendered
         _cache_put(key, entry)
     finally:
         with _RENDER_CACHE_LOCK:
