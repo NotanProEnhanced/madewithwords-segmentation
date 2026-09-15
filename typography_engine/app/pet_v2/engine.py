@@ -86,6 +86,8 @@ class _RenderState(threading.local):
         self.pass_tags = []
         self.pass_name = "feature"
         self.stats = {"glyph_px": 0, "overlap_px": 0, "core_px": 0, "core_overlap_px": 0}
+        self.pass_stats = {}   # pass name -> [core_px, core_overlap_px]: which pass the collisions come from
+        self.reseeds = [0, 0]  # portrait-wide growth this iteration: [re-seeds, lines they added]
         # Default 0.08: every claim metric was measured at this cap (letter-body collisions
         # ~1%). The first staging run shipped with 1.0 (no cap) and reported 6.71% -- the
         # callers' own tolerances (up to 0.24 in gap-fill) are placement heuristics, not a
@@ -301,6 +303,9 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
         _TL.stats["overlap_px"] += overlap_px     # this word's stroke pixels landing on prior ink
         _TL.stats["core_px"] += int(core.sum())
         _TL.stats["core_overlap_px"] += core_overlap
+        _ps = _TL.pass_stats.setdefault(_TL.pass_name, [0, 0])
+        _ps[0] += int(core.sum())
+        _ps[1] += core_overlap
     return placed_px
 
 
@@ -1638,6 +1643,8 @@ def evenly_spaced_streamlines(theta, coherence, mask, sep_px, step=4.0, max_step
         cy, cx = cidx[int(np.argmax(coherence[cidx[:, 0], cidx[:, 1]]))]
         n_before = len(lines)
         grow_from(cx, cy)
+        _TL.reseeds[0] += 1
+        _TL.reseeds[1] += len(lines) - n_before
         if os.environ.get("PET_V2_RESEED_DEBUG"):
             print(f"[reseed] at ({cx},{cy}) far={float(far[cy, cx]):.0f}px reach={float(reach[cy, cx]) if is_field else reach:.0f}px "
                   f"territory={int(cand.sum())}px coherence={float(coherence[cy, cx]):.2f} -> +{len(lines) - n_before} lines", flush=True)
@@ -2055,6 +2062,12 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # A 0.75 power so Large is bold and graphic without the far body outgrowing the frame.
     _tsk = (float(type_scale) / 0.30) ** 0.75 if type_scale else 1.0
     _tsk = min(2.0, max(0.7, _tsk))
+    # The per-word overlap cap is a FRACTION of the word's own pixels, so a word 1.6x larger was
+    # allowed 1.6x the ink on its neighbour, and the soak's one failing row was letter-body
+    # collisions at Large (1.23-1.70% against the 1.20% claim; the structural pass makes three
+    # quarters of them at every setting, measured). The cap shrinks with the slider so the
+    # ink a word may plant on another stays what it is at Small; Small itself is unchanged.
+    _TL.max_overlap_cap = _TL.max_overlap_cap / max(1.0, _tsk)
     MICRO_PX = base * 0.10 * _tsk
     STRUCT_PX = base * 0.52 * _tsk   # widened from 0.40 so the far body genuinely reads larger (size_field)
     # Widened from 1.3x -- measured the ACTUAL micro/structural/hero split (recommendation #6's
@@ -2238,6 +2251,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     best_placements = []
     best_pass = []
     best_stats = dict(_TL.stats)
+    best_pass_stats = {}
     down_streak = 0
     for iteration in range(N_ITERS):
         sep_field = np.clip(sep_field_base * sep_correction, sep_px * 0.30, sep_px * 1.8).astype(np.float32)
@@ -2253,6 +2267,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         # Line caps scale with pixel count: a fixed 3000 is fine at 1x (~1000 lines grown) but binds
         # at 2x, and everything downstream (fill, footprint) starves for lanes.
         px_scale = (W / 1000.0) ** 2
+        _TL.reseeds[:] = [0, 0]
         lines = evenly_spaced_streamlines(theta_s, coherence_s, mask, sep_field, max_lines=int(3000 * max(1.0, px_scale)),
                                           step=max(3.0, base * 0.12), min_coherence=0.05, max_turn=0.10,
                                           seed_region=(edge_zone < 0.5), region_map=region_map, reseed=True)
@@ -2362,6 +2377,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         _TL.pass_name = "feature"
         for _k in _TL.stats:
             _TL.stats[_k] = 0
+        _TL.pass_stats.clear()
         micro_px_area, struct_px_area, hero_px_area, fill_px_area = 0, 0, 0, 0
         MICRO_STRUCT_SPLIT = 0.5   # size_t below this counts toward micro, above -> structural
 
@@ -2532,7 +2548,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         error = (target_density_blur - current_blur) * (mask > 0.5)   # + means still too light
         mean_abs_err = float(np.abs(error[mask > 0.5]).mean())
         score, _, _ = type_only_likeness(canvas, mask, bgr_source, attractor_pts, base, corr_sigma, extra_faces)
-        _log(f"iteration {iteration}: grown {len(lines)} lines, gap-fill "
+        _log(f"iteration {iteration}: grown {len(lines)} lines ({_TL.reseeds[0]} re-seeded, +{_TL.reseeds[1]}), gap-fill "
               f"{pre_fill_coverage:.1%}->{post_fill_coverage:.1%}  mean tonal error={mean_abs_err:.4f}  "
               f"likeness={score:.4f}")
 
@@ -2546,6 +2562,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             best_placements = list(_TL.placements)
             best_pass = list(_TL.pass_tags)
             best_stats = dict(_TL.stats)
+            best_pass_stats = {k: list(v) for k, v in _TL.pass_stats.items()}
             best_tier_stats = (micro_px_area, struct_px_area, hero_px_area, fill_px_area)
         elif iteration >= 1 and score < best_score - 0.005:
             # The score has turned down. One dip is not a verdict -- measured: a single-decrease
@@ -2577,6 +2594,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     _TL.placements[:] = best_placements
     _TL.pass_tags[:] = best_pass
     _TL.stats.update(best_stats)
+    _TL.pass_stats.clear()
+    _TL.pass_stats.update({k: list(v) for k, v in best_pass_stats.items()})
     _TL.pass_name = "residual"
     micro_px_area += render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
                                           tokens=short_tokens, size_field_px=size_px_field)
@@ -2588,6 +2607,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     best_placements = list(_TL.placements)
     best_pass = list(_TL.pass_tags)
     best_stats = dict(_TL.stats)
+    best_pass_stats = {k: list(v) for k, v in _TL.pass_stats.items()}
 
     # Gap-fill text is fine detail closing bare patches -- counts toward the micro share, same
     # spirit as the micro tier itself ("texture, fine tonal modeling, transitions").
@@ -3274,16 +3294,53 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # each other, the restyled half keeps the iris rings and pupil legible as typography.
     _eye_keep = (np.clip(eye_reveal, 0, 1) * 0.5).astype(np.float32)
 
+    # Per-animal tone. The letter, gap and saturation maps below are quantile maps from the
+    # composite's distribution to the source's, taken once over the whole silhouette. With
+    # two animals that is one coat: measured on the tabby beside the golden retriever, the
+    # cat rendered greyer and flatter than a tabby alone, because a map that has to serve a
+    # golden coat too cannot give a grey one its own range. With two or more faces, each
+    # face owns the part of the silhouette nearer to it (a Voronoi split on the eye
+    # midpoints), the maps are taken per region, and the results are blended by a soft
+    # weight over half an eye-separation so the seam between the two animals carries no
+    # step. With one face nothing here runs and the maps are exactly the ones they were.
+    _tone_regions = None
+    if extra_faces and len(attractor_pts) >= 2:
+        _ctrs = ([(0.5 * (attractor_pts[0][0] + attractor_pts[1][0]), 0.5 * (attractor_pts[0][1] + attractor_pts[1][1]))]
+                 + [(0.5 * (f["eyes"][0][0] + f["eyes"][1][0]), 0.5 * (f["eyes"][0][1] + f["eyes"][1][1])) for f in extra_faces])
+        _dst = np.stack([np.hypot(xx - cx, yy - cy) for (cx, cy) in _ctrs]).astype(np.float32)
+        _tau = 0.5 * float(np.mean([_es] + [f["es"] for f in extra_faces]))
+        _wgt = np.exp(-(_dst - _dst.min(axis=0, keepdims=True)) / max(1.0, _tau))
+        _wgt /= _wgt.sum(axis=0, keepdims=True)
+        _own = _dst.argmin(axis=0)
+        _tone_regions = [((_own == i) & m_in, _wgt[i]) for i in range(len(_ctrs))]
+    _src_L2d = src_lab[..., 0]
+
+    def _qm_regional(sel, x, src2d, src_in):
+        """The quantile map of `x` onto the source, sampled from x[sel] (or the whole mask when
+        that is thin), per tonal region when there are two, blended by the region weights."""
+        if _tone_regions is None:
+            return _quantile_match(x[sel] if sel.sum() > 1000 else x[m_in], src_in, x)
+        out = np.zeros(x.shape, np.float32)
+        for _R, _w in _tone_regions:
+            _s = sel & _R
+            if _s.sum() <= 1000:
+                _s = m_in & _R
+            if _s.sum() < 50:
+                _s = sel if sel.sum() > 1000 else m_in     # a face with no silhouette of its own
+                _ref_src = src_in
+            else:
+                _ref_src = src2d[m_in & _R]
+            out += _w * _quantile_match(x[_s], _ref_src, x)
+        return out
+
     def _chain(kk):
         Lw = (L_cur + kk * (L_clahe - L_cur)) * mask + L_cur * (1.0 - mask)
         # Each layer is matched to the source INDEPENDENTLY (a map built from gap pixels applied
         # to letter pixels sent the letters above the source range -- measured: delta collapsed
         # to +6 on the doodle). With both layers on the source's own range, the two scales set
         # the separation exactly: delta = source mean x (letter_scale - gap_scale).
-        ref_l = Lw[letters_in] if letters_in.sum() > 1000 else Lw[m_in]
-        ref_g = Lw[gaps_in] if gaps_in.sum() > 1000 else Lw[m_in]
-        Lm_letters = _quantile_match(ref_l, src_L_in, Lw) * letter_scale
-        Lm_gaps = _quantile_match(ref_g, src_L_in, Lw) * gap_scale
+        Lm_letters = _qm_regional(letters_in, Lw, _src_L2d, src_L_in) * letter_scale
+        Lm_gaps = _qm_regional(gaps_in, Lw, _src_L2d, src_L_in) * gap_scale
         # Absolute local floor on top of the ratio: a x0.70 step is 18 L in an iris at L~60 --
         # invisible -- which is exactly why eyes and nostrils still read as photo at 2x while the
         # fur around them reads as words (measured on the crop). Words in shadow need a fixed
@@ -3346,7 +3403,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
 
     # Step 3 -- saturation distribution match, same idea.
     comp_hsv = cv2.cvtColor(comp_rgb, cv2.COLOR_RGB2HSV).astype(np.float32)
-    S_matched = _quantile_match(comp_hsv[..., 1][m_in], src_hsv[..., 1][m_in], comp_hsv[..., 1])
+    S_matched = _qm_regional(m_in, comp_hsv[..., 1], src_hsv[..., 1], src_hsv[..., 1][m_in])
     comp_hsv[..., 1] = S_matched * mask + comp_hsv[..., 1] * (1.0 - mask)
     composited = cv2.cvtColor(np.clip(comp_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
     _dbg("after L-match", comp_rgb.astype(np.float32))
@@ -3411,6 +3468,12 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
           f"(>{_thr:.0f}px from any glyph) {exposed:.1%}; glyph-fillable but unfilled {fillable:.1%}; "
           f"{len(best_placements)} words; collisions: letter BODIES overlapping {coll_core:.2%}, "
           f"any antialiased touch {coll:.2%}")
+    # Where the collisions come from, pass by pass: each pass's own body-overlap rate, and its
+    # share of every colliding pixel in the portrait.
+    _tot_ov = max(1, sum(v[1] for v in best_pass_stats.values()))
+    _log("collisions by pass: " + "  ".join(
+        f"{k} {v[1] / max(1, v[0]):.2%} ({v[1] / _tot_ov:.0%} of all)"
+        for k, v in sorted(best_pass_stats.items(), key=lambda kv: -kv[1][1])))
 
     composited_u8 = np.clip(composited, 0, 255).astype(np.uint8)
     if debug_dir:
