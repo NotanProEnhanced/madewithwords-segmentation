@@ -1744,9 +1744,15 @@ async def render(
             # print_aspect=aspect). It was None here, so the preview kept the source's
             # own proportions while the purchased file was composed on a 4:5 gallery
             # canvas -- the buyer approved one framing and received another.
+            # What the v2 engine saw in the photo -- no cat or dog, a face it could not read --
+            # goes to the customer as a gentle note under the preview (stage "input", the same
+            # channel as the low-resolution note on the human brands).
+            _pet_notes = []
             png_bytes = await _bounded_to_thread(
                 render_pet_portrait, img_bytes, text, pet_ground_sel,
-                int(min(1600, max(1050, preview_w))), aspect, pet_type_scale)
+                int(min(1600, max(1050, preview_w))), aspect, pet_type_scale, notices=_pet_notes)
+            for _n in _pet_notes:
+                warns.warn("input", _n["code"], _n["message"])
             runs, ground_hex, mask_svg = [], None, None
         elif is_displacement or disp_route:
             from .pipeline.displacement import render_displacement_portrait

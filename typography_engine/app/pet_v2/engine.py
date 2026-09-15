@@ -1131,7 +1131,7 @@ def ssim_map(img1, img2, sigma=7.0):
     return num / np.maximum(den, 1e-9)
 
 
-def build_likeness_weight_map(mask, attractor_pts, base):
+def build_likeness_weight_map(mask, attractor_pts, base, extra_faces=None):
     """recommendation #14's face-weighted comparison, approximated with what we can actually
     detect: real per-part segmentation (nose vs. muzzle vs. cheeks) isn't available without a
     landmark model, so nose+muzzle are combined into one 'face center' region (their combined
@@ -1156,6 +1156,17 @@ def build_likeness_weight_map(mask, attractor_pts, base):
             eyes = np.zeros((H, W), np.uint8)
             cv2.circle(eyes, (int(ax), int(ay)), int(round(eye_sep * 0.35)), 1, -1)
             w[m & (eyes > 0)] = 4.0         # E_eyes
+    for f in (extra_faces or []):           # a second pet's face weighs the same as the first's
+        e1, e2 = f["eyes"][0], f["eyes"][1]
+        es2 = max(1.0, math.hypot(e2[0] - e1[0], e2[1] - e1[1]))
+        face = np.zeros((H, W), np.uint8)
+        cv2.ellipse(face, (int(0.5 * (e1[0] + e2[0])), int(0.5 * (e1[1] + e2[1]) + es2 * 0.9)),
+                    (int(es2 * 0.9), int(es2 * 1.1)), 0, 0, 360, 1, -1)
+        w[m & (face > 0)] = 6.0
+        for (ax, ay) in (e1, e2):
+            eyes = np.zeros((H, W), np.uint8)
+            cv2.circle(eyes, (int(ax), int(ay)), int(round(es2 * 0.35)), 1, -1)
+            w[m & (eyes > 0)] = 4.0
     return w
 
 
@@ -1192,7 +1203,7 @@ def build_region_map(mask, attractor_pts, base):
     return region
 
 
-def type_only_likeness(canvas, mask, bgr_source, attractor_pts, base, blur_sigma):
+def type_only_likeness(canvas, mask, bgr_source, attractor_pts, base, blur_sigma, extra_faces=None):
     """The test recommendation #14 asks for: blur the typography-only render and a similarly
     blurred grayscale source past the point where individual letters are legible, and compare
     what's left -- the macro tonal structure. If a change makes this number go up, the
@@ -1227,12 +1238,13 @@ def type_only_likeness(canvas, mask, bgr_source, attractor_pts, base, blur_sigma
         source_gray = cv2.resize(source_gray, sz, interpolation=interp)
         mask = cv2.resize(mask.astype(np.float32), sz, interpolation=interp)
         attractor_pts = [(x * sc, y * sc) for (x, y) in attractor_pts]
+        extra_faces = [{"eyes": [(x * sc, y * sc) for (x, y) in f["eyes"]]} for f in (extra_faces or [])]
         base = base * sc
         blur_sigma = blur_sigma * sc
     a = _gblur(type_only_gray, (0, 0), sigmaX=blur_sigma)
     b = _gblur(source_gray, (0, 0), sigmaX=blur_sigma)
     smap = ssim_map(a, b, sigma=blur_sigma)
-    weights = build_likeness_weight_map(mask, attractor_pts, base)
+    weights = build_likeness_weight_map(mask, attractor_pts, base, extra_faces)
     m = mask > 0.5
     score = float((smap[m] * weights[m]).sum() / max(1e-6, weights[m].sum()))
     if abs(sc - 1.0) > 1e-3:   # the debug panels are saved at the render's own size
@@ -1429,7 +1441,7 @@ def perpendicular(angle):
 
 def evenly_spaced_streamlines(theta, coherence, mask, sep_px, step=4.0, max_steps=4000,
                               min_coherence=0.05, max_turn=0.10, test_frac=0.55, max_lines=3000,
-                              seed_region=None, region_map=None):
+                              seed_region=None, region_map=None, reseed=False):
     """Returns a list of streamlines, each a list of (x, y, angle) points, tiling `mask`
     at roughly `sep_px` spacing everywhere -- see module docstring for the algorithm.
 
@@ -1549,33 +1561,73 @@ def evenly_spaced_streamlines(theta, coherence, mask, sep_px, step=4.0, max_step
     idxs = np.argwhere(seed_pool)
     if len(idxs) == 0:
         return lines
+    guard = 0
+
+    def grow_from(x0, y0):
+        """Seed one line at (x0, y0) and let the wave run from it until the queue empties."""
+        nonlocal guard
+        first = trace_bidirectional(float(x0), float(y0), 0.0)
+        if path_length(first) > sep_at(x0, y0):
+            lines.append(first)
+            stamp(first, seed_covered, 1.0)
+            stamp(first, trace_covered, test_frac)
+            enqueue_seeds_from(first)
+        while queue and len(lines) < max_lines:
+            guard += 1
+            if guard > max_lines * 8:
+                break
+            qx, qy, qa = queue.pop()
+            xi, yi = int(round(qx)), int(round(qy))
+            if not (0 <= xi < W and 0 <= yi < H) or mask[yi, xi] < 0.5 or seed_covered[yi, xi]:
+                continue
+            line = trace_bidirectional(qx, qy, qa)
+            if path_length(line) < sep_at(qx, qy) * 1.1:
+                continue
+            lines.append(line)
+            stamp(line, seed_covered, 1.0)
+            stamp(line, trace_covered, test_frac)
+            enqueue_seeds_from(line)
+
     coh_at_mask = coherence[idxs[:, 0], idxs[:, 1]]
     y0, x0 = idxs[int(np.argmax(coh_at_mask))]
-    first = trace_bidirectional(float(x0), float(y0), 0.0)
-    if path_length(first) > sep_at(x0, y0):
-        lines.append(first)
-        stamp(first, seed_covered, 1.0)
-        stamp(first, trace_covered, test_frac)
-        enqueue_seeds_from(first)
+    grow_from(x0, y0)
 
-    guard = 0
-    while queue and len(lines) < max_lines:
-        guard += 1
-        if guard > max_lines * 8:
+    # The wave is one seed and its descendants, each a lane's width from its parent. It cannot
+    # cross to a part of the mask it is not connected to, and it crosses a narrow bridge (two
+    # pets touching at the chest) only if a seed happens to land on it: measured on a two-dog
+    # composite, one landmark configuration crossed and another left the second dog with no
+    # lanes at all. So while the budget lasts, any unreached territory a good three lanes from
+    # everything grown so far gets its own seed and its own wave. Pockets between lanes are
+    # narrower than that and are not touched, so a single pet grows exactly the lines it did.
+    # `reseed` is for the portrait-wide growth only: the pocket, channel and micro-fill callers
+    # work small zones with their own budgets and want exactly the one wave they always had.
+    while reseed and len(lines) < max_lines and guard <= max_lines * 8:
+        far = cv2.distanceTransform((seed_covered == 0).astype(np.uint8), cv2.DIST_L2, 5)
+        reach = 3.0 * (sep_px if is_field else float(sep_px))
+        cand = seed_pool & (seed_covered == 0) & (far > reach)
+        if not cand.any():
             break
-        qx, qy, qa = queue.pop()
-        xi, yi = int(round(qx)), int(round(qy))
-        if not (0 <= xi < W and 0 <= yi < H) or mask[yi, xi] < 0.5 or seed_covered[yi, xi]:
-            continue
-        line = trace_bidirectional(qx, qy, qa)
-        if path_length(line) < sep_at(qx, qy) * 1.1:
-            continue
-        lines.append(line)
-        stamp(line, seed_covered, 1.0)
-        stamp(line, trace_covered, test_frac)
-        enqueue_seeds_from(line)
+        cidx = np.argwhere(cand)
+        cy, cx = cidx[int(np.argmax(coherence[cidx[:, 0], cidx[:, 1]]))]
+        n_before = len(lines)
+        grow_from(cx, cy)
+        if os.environ.get("PET_V2_RESEED_DEBUG"):
+            print(f"[reseed] at ({cx},{cy}) far={float(far[cy, cx]):.0f}px reach={float(reach[cy, cx]) if is_field else reach:.0f}px "
+                  f"territory={int(cand.sum())}px coherence={float(coherence[cy, cx]):.2f} -> +{len(lines) - n_before} lines", flush=True)
+        if len(lines) == n_before:   # nothing traceable there: mark it so the search moves on
+            cv2.circle(seed_covered, (int(cx), int(cy)), max(1, int(round(sep_at(cx, cy)))), 1, -1)
 
     return lines
+
+
+def _landmark_string(faces, scale=1.0):
+    """The `landmarks` argument render_v2 reads, from [(eyes, nose_or_None), ...]: one face per
+    "|"-separated group, "x,y;x,y[;nx,ny]", every coordinate multiplied by `scale`."""
+    groups = []
+    for eyes, nose in faces:
+        pts = list(eyes[:2]) + ([nose] if nose is not None else [])
+        groups.append(";".join(f"{float(x) * scale:.1f},{float(y) * scale:.1f}" for (x, y) in pts))
+    return "|".join(groups)
 
 
 def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None,
@@ -1587,7 +1639,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     `mask`: optional precomputed foreground matte (e.g. after print-aspect fitting). `render_scale`:
     upsample factor applied here (None -> GOP_SCALE env, default 1). `max_overlap`: global
     collision cap (None -> GOP_MAX_OVERLAP env). `landmarks`: "x1,y1;x2,y2[;nx,ny]" eyes(+nose)
-    from the production landmark model (None -> GOP_LANDMARKS env -> heuristic detector).
+    from the production landmark model (None -> GOP_LANDMARKS env -> heuristic detector); a
+    second pet's face follows after "|" in the same form, and any number may follow.
     `debug_dir`: when set, writes the A/B/C/D QA panels there as <out_stem>_*.jpg. `backdrop_rgb`:
     an (r, g, b) tuple for everything OUTSIDE the animal (the site's Gallery Dark / Gallery
     Gray choice); None keeps the photo-derived backdrop. The gap color between letters ON the
@@ -1712,13 +1765,25 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # model's hosts are blocked from this sandbox, so known coordinates are supplied directly
     # instead. Overrides the heuristic above entirely -- a real detection beats a proxy.
     _lm_env = (landmarks or os.environ.get("GOP_LANDMARKS", "")).strip()
+    # Every further animal in the photo, as {"eyes": [(x, y), (x, y)], "nose": (x, y) | None};
+    # "es" and "nose_fit" are added below once the photo has been read. The first face stays
+    # the primary (hero words, head_center, the region map); these get the same feature passes,
+    # the same fine zone and the same weight in the likeness score.
+    extra_faces = []
     if _lm_env:
-        _pts = [tuple(float(v) for v in p.split(",")) for p in _lm_env.split(";") if p.strip()]
+        _groups = [g for g in _lm_env.split("|") if g.strip()]
+        _parse = lambda g: [tuple(float(v) for v in p.split(",")) for p in g.split(";") if p.strip()]   # noqa: E731
+        _pts = _parse(_groups[0]) if _groups else []
         if len(_pts) >= 2:
             attractor_pts = [_pts[0], _pts[1]]
         if len(_pts) >= 3:
             _TL.nose_hint = _pts[2]
-        _log(f"landmarks injected from GOP_LANDMARKS: eyes={attractor_pts} nose={_pts[2] if len(_pts) >= 3 else None}")
+        for _g in _groups[1:]:
+            _fp = _parse(_g)
+            if len(_fp) >= 2:
+                extra_faces.append({"eyes": [_fp[0], _fp[1]], "nose": _fp[2] if len(_fp) >= 3 else None})
+        _log(f"landmarks injected from GOP_LANDMARKS: eyes={attractor_pts} nose={_pts[2] if len(_pts) >= 3 else None}"
+             + (f"; {len(extra_faces)} more face(s): {extra_faces}" if extra_faces else ""))
     _log(f"anatomical attractors found (used for hero placement + size gradation only): "
           f"{len(attractor_pts)}  {attractor_pts}")
     # ---- Resolution follows face size ------------------------------------------------------
@@ -1732,16 +1797,21 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # entry point resizes for delivery and caches the larger render for the print file.
     TARGET_ES = 170.0
     if auto_res and render_scale == 1.0 and len(attractor_pts) >= 2:
-        _es0 = math.hypot(attractor_pts[0][0] - attractor_pts[1][0], attractor_pts[0][1] - attractor_pts[1][1])
+        # The smallest face in the photo sets the resolution: with two pets, both need the pixels.
+        _es0 = min(math.hypot(e[0][0] - e[1][0], e[0][1] - e[1][1])
+                   for e in [attractor_pts[:2]] + [f["eyes"] for f in extra_faces])
         _cap_h = int(os.environ.get("PET_V2_MAX_RENDER_PX", "2400") or 2400)
         _factor = min(TARGET_ES / max(1.0, _es0), _cap_h / float(H))
         if _factor >= 1.15:
             _log(f"eyes {_es0:.0f}px apart at {W}x{H}: re-rendering at {_factor:.2f}x for the face "
                  f"(target {TARGET_ES:.0f}px, cap {_cap_h}px tall)")
-            _lm = ";".join(f"{x * _factor:.1f},{y * _factor:.1f}" for (x, y) in attractor_pts) if _lm_env else None
+            _lm = _landmark_string([(attractor_pts[:2], _TL.nose_hint)] + [(f["eyes"], f["nose"]) for f in extra_faces],
+                                   _factor) if _lm_env else None
             return render_v2(_bgr_in, words, mask=_mask_in, render_scale=_factor, max_overlap=max_overlap,
                              landmarks=_lm, debug_dir=debug_dir, out_stem=out_stem, verbose=verbose,
                              backdrop_rgb=backdrop_rgb, type_scale=type_scale, auto_res=False)
+    # Every eye in the photo: what density, hero placement and the structural pass keep clear of.
+    all_eye_pts = list(attractor_pts) + [p for f in extra_faces for p in f["eyes"]]
     # NOT blending these into theta/coherence anymore: two corrected attempts both made the
     # flow visibly more chaotic than the plain texture field, which already curves around the
     # eyes on its own (confirmed by comparing real renders side by side, not assumed) -- the
@@ -1805,7 +1875,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # controlled classes.
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
     dist_to_feat = np.full((H, W), 1e6, np.float32)
-    for (ax, ay) in attractor_pts:
+    for (ax, ay) in all_eye_pts:
         dist_to_feat = np.minimum(dist_to_feat, np.hypot(xx - ax, yy - ay))
     feat_zone = np.clip(1.0 - dist_to_feat / (attractor_radius * 1.6), 0, 1)      # 1 at a feature
     edge_zone = np.clip(1.0 - dist_to_edge / (base * 1.2), 0, 1)                  # 1 at the silhouette
@@ -1835,7 +1905,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # [0,1] and used below to scale ink alpha (visual priority/boldness), not density -- density's
     # own feat/edge/chest zones are already tuned and this avoids double-compounding two
     # overlapping "near a feature" signals into an unpredictable extreme.
-    importance_map = build_likeness_weight_map(mask, attractor_pts, base)
+    importance_map = build_likeness_weight_map(mask, attractor_pts, base, extra_faces)
     importance_norm = importance_map / max(1.0, float(importance_map.max()))
 
     def line_importance(line):
@@ -1862,7 +1932,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             return float("inf")
         pts = np.array([(x, y) for x, y, _ in line[::3]])
         best = float("inf")
-        for (ax, ay) in attractor_pts:
+        for (ax, ay) in all_eye_pts:
             d = float(np.min(np.hypot(pts[:, 0] - ax, pts[:, 1] - ay)))
             best = min(best, d)
         return best
@@ -1947,7 +2017,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         if not attractor_pts:
             return float("inf")
         lx, ly = line_mean_xy(line)
-        return min(math.hypot(lx - ax, ly - ay) for ax, ay in attractor_pts)
+        return min(math.hypot(lx - ax, ly - ay) for ax, ay in all_eye_pts)
 
     FILL_PX = MICRO_PX * 0.85
 
@@ -1980,6 +2050,24 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         feature_pts.append((float(np.mean([p[0] for p in attractor_pts[:2]])),
                             float(np.mean([p[1] for p in attractor_pts[:2]])) + _es * 0.75))
 
+    # A second pet's face: its own eye separation and nose fit, and the same three points. The
+    # nose locator and renderer read the landmark nose from thread-local state, so each face's
+    # nose is swapped in for the duration of its own call.
+    def _with_nose_hint(hint, fn, *a, **k):
+        _saved = _TL.nose_hint
+        _TL.nose_hint = hint
+        try:
+            return fn(*a, **k)
+        finally:
+            _TL.nose_hint = _saved
+    for _f in extra_faces:
+        _e1, _e2 = _f["eyes"]
+        _f["es"] = max(1.0, math.hypot(_e1[0] - _e2[0], _e1[1] - _e2[1]))
+        _f["nose_fit"] = _with_nose_hint(_f["nose"], locate_nose, gray, mask, _f["eyes"])
+        _f["mouth"] = ((float(_f["nose_fit"][0][0]), float(_f["nose_fit"][0][1])) if _f["nose_fit"] is not None
+                       else (0.5 * (_e1[0] + _e2[0]), 0.5 * (_e1[1] + _e2[1]) + _f["es"] * 0.75))
+        feature_pts.extend([_e1, _e2, _f["mouth"]])
+
     # Where type must stay fine: the eyes, nose and mouth THEMSELVES, graduating out. The cap
     # used to key on the likeness weight map (importance_norm > 0.45), whose "face-center"
     # ellipse is 1.8 eye-separations wide and 2.2 tall -- a scoring choice, not an anatomical
@@ -2003,6 +2091,19 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         else:
             mx, my = feature_pts[2]
             cv2.ellipse(fine, (int(mx), int(my)), (int(_es * 0.30), int(_es * 0.45)), 0, 0, 360, 1, -1)
+        for _f in extra_faces:   # the same fine zone on every further face, at its own scale
+            for (ax, ay) in _f["eyes"]:
+                cv2.circle(fine, (int(ax), int(ay)), int(round(_f["es"] * 0.20)), 1, -1)
+            if _f["nose_fit"] is not None:
+                (ncx, ncy), (na, nb), nang = _f["nose_fit"]
+                cv2.ellipse(fine, (int(ncx), int(ncy)), (int(na * 1.0) + 1, int(nb * 1.0) + 1),
+                            float(nang), 0, 360, 1, -1)
+                nr = max(na, nb)
+                cv2.ellipse(fine, (int(ncx), int(ncy + nr * 1.3)), (int(_f["es"] * 0.35), int(nr * 0.9) + 1),
+                            0, 0, 360, 1, -1)
+            else:
+                mx, my = _f["mouth"]
+                cv2.ellipse(fine, (int(mx), int(my)), (int(_f["es"] * 0.30), int(_f["es"] * 0.45)), 0, 0, 360, 1, -1)
         _out = cv2.distanceTransform((1 - fine).astype(np.uint8), cv2.DIST_L2, 5)
         fine_blend = np.clip(_out / max(1.0, _es * 0.20), 0, 1).astype(np.float32)
 
@@ -2082,7 +2183,14 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         px_scale = (W / 1000.0) ** 2
         lines = evenly_spaced_streamlines(theta_s, coherence_s, mask, sep_field, max_lines=int(3000 * max(1.0, px_scale)),
                                           step=max(3.0, base * 0.12), min_coherence=0.05, max_turn=0.10,
-                                          seed_region=(edge_zone < 0.5), region_map=region_map)
+                                          seed_region=(edge_zone < 0.5), region_map=region_map, reseed=True)
+        if _KEEP_FIELDS:   # where the lanes went this round, for reading a bare region afterwards
+            _lmap = np.zeros((H, W), np.uint8)
+            for _l in lines:
+                for (_x, _y, _a) in _l[::2]:
+                    _lmap[min(H - 1, max(0, int(_y))), min(W - 1, max(0, int(_x)))] = 1
+            _TL.fields[f"lines_iter{iteration}"] = _lmap
+            _TL.fields[f"sep_iter{iteration}"] = sep_field.copy()
 
         # ---- Fallback fill for genuinely bare pockets left by region confinement ------------
         # Confirmed directly on the Goldendoodle: a wrongly-placed attractor point (landing on
@@ -2197,6 +2305,14 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             nose_fit = render_nose_feature(canvas, occupancy, gray, mask, base, attractor_pts, get_font, rng)
             render_mouth_feature(canvas, occupancy, gray, mask, base, nose_fit, get_font, rng)
             render_muzzle_topology(canvas, occupancy, gray, mask, base, nose_fit, attractor_pts, stream, get_font, rng)
+        for _f in extra_faces:   # a second pet's face: the same passes at its own scale
+            for (ax, ay) in _f["eyes"]:
+                render_eye_feature(canvas, occupancy, gray, mask, base, (ax, ay), get_font, rng,
+                                   eye_sep=_f["es"], trusted=True)
+            _nf2 = _with_nose_hint(_f["nose"], render_nose_feature,
+                                   canvas, occupancy, gray, mask, base, _f["eyes"], get_font, rng)
+            render_mouth_feature(canvas, occupancy, gray, mask, base, _nf2, get_font, rng)
+            render_muzzle_topology(canvas, occupancy, gray, mask, base, _nf2, _f["eyes"], stream, get_font, rng)
 
 
         _TL.pass_name = "fringe"
@@ -2340,7 +2456,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         current_blur = _gblur(ink_now, (0, 0), sigmaX=corr_sigma)
         error = (target_density_blur - current_blur) * (mask > 0.5)   # + means still too light
         mean_abs_err = float(np.abs(error[mask > 0.5]).mean())
-        score, _, _ = type_only_likeness(canvas, mask, bgr_source, attractor_pts, base, corr_sigma)
+        score, _, _ = type_only_likeness(canvas, mask, bgr_source, attractor_pts, base, corr_sigma, extra_faces)
         _log(f"iteration {iteration}: grown {len(lines)} lines, gap-fill "
               f"{pre_fill_coverage:.1%}->{post_fill_coverage:.1%}  mean tonal error={mean_abs_err:.4f}  "
               f"likeness={score:.4f}")
@@ -2463,8 +2579,10 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # render_eye_feature builds the lid from, with the old disk as the fallback when no
     # plausible ellipse is found.
     eye_reveal = np.zeros((H, W), np.float32)
-    for (ax, ay) in attractor_pts:
-        geo = eye_geometry(gray, mask, base, (ax, ay), eye_sep=_es, trusted=bool(_lm_env))
+    _every_eye = ([(p, _es, bool(_lm_env)) for p in attractor_pts]
+                  + [(p, f["es"], True) for f in extra_faces for p in f["eyes"]])
+    for (ax, ay), _es_f, _tr_f in _every_eye:
+        geo = eye_geometry(gray, mask, base, (ax, ay), eye_sep=_es_f, trusted=_tr_f)
         if geo is not None:
             (ecx, ecy), (a_ax, b_ax), ang, _how = geo
             cv2.ellipse(eye_reveal, (int(round(ecx)), int(round(ecy))),
@@ -2494,8 +2612,10 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # nose ellipse used by the dedicated renderer and reveal the real leather color within it.
     nose_reveal = np.zeros((H, W), np.float32)
     nose_fit_final = locate_nose(gray, mask, attractor_pts)
-    if nose_fit_final is not None:
-        (fncx, fncy), (fna, fnb), fnangle = nose_fit_final
+    for _nfit in [nose_fit_final] + [f["nose_fit"] for f in extra_faces]:
+        if _nfit is None:
+            continue
+        (fncx, fncy), (fna, fnb), fnangle = _nfit
         cv2.ellipse(nose_reveal, (int(round(fncx)), int(round(fncy))),
                    (max(1, int(round(fna * 0.95))), max(1, int(round(fnb * 0.95)))),
                    fnangle, 0, 360, 1.0, -1)
@@ -2514,9 +2634,12 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # actual photo pixels that don't meaningfully exist for a hair drawn past the animal's edge.
     whisker_zone = np.zeros((H, W), np.float32)
     whisker_region_inside = np.zeros((H, W), np.float32)
-    if nose_fit_final is not None and len(attractor_pts) >= 2:
-        (wncx, wncy), (wna, wnb), _ = nose_fit_final
-        (wx1, wy1), (wx2, wy2) = attractor_pts[0], attractor_pts[1]
+    _whisker_faces = [(nose_fit_final, attractor_pts)] + [(f["nose_fit"], f["eyes"]) for f in extra_faces]
+    for _wfit, _weyes in _whisker_faces:
+        if _wfit is None or len(_weyes) < 2:
+            continue
+        (wncx, wncy), (wna, wnb), _ = _wfit
+        (wx1, wy1), (wx2, wy2) = _weyes[0], _weyes[1]
         w_eye_sep = max(1.0, math.hypot(wx2 - wx1, wy2 - wy1))
         pad_offset = wna * 0.55
         pad_y = wncy + wnb * 0.6
@@ -2539,25 +2662,25 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             # visualizing the detector's own signal against the source -- real whiskers extend
             # roughly 1.5-2x eye separation from the pad), so most of a whisker's visible length
             # fell outside the suppression band and remained fully visible.
-            cv2.ellipse(whisker_region_inside, (int(round(pad_x)), int(round(pad_y))),
+            _wreg = np.zeros((H, W), np.float32)
+            cv2.ellipse(_wreg, (int(round(pad_x)), int(round(pad_y))),
                        (int(round(w_eye_sep * 1.8)), int(round(w_eye_sep * 0.9))),
                        0, 0, 360, 1.0, -1)
+            # Probed at the dog's iris catchlight: source L=157, ink_alpha 0.86, but a=0.051 --
+            # this region (scaled by eye separation, 545px on the dog -> a 980x490 ellipse)
+            # reached the eyes, and a glint against a dark iris is precisely the thin-line signal
+            # the suppression kills. Whiskers grow from the muzzle, below the eyes: clip the
+            # region to strictly below THIS face's eye line so it can never touch an eye again,
+            # whatever the photo's proportions -- per face, so a second pet's eyes are judged
+            # against its own eye line, not the first pet's.
+            _wreg *= (yy > 0.5 * (wy1 + wy2) + 0.18 * w_eye_sep).astype(np.float32)
+            whisker_region_inside = np.maximum(whisker_region_inside, _wreg)
     # Silhouette fringe hairs share the exact same problem as the whisker spokes -- ink drawn
     # past mask=0 that the standard compositing would otherwise drop -- so they share the same
     # fix: a reveal zone computed deterministically (build_fringe_zone) and merged into the same
     # outside-mask reveal pass below rather than building a second parallel mechanism.
     fringe_zone = build_fringe_zone(mask, theta_s, base, fringe_points)
     whisker_outside = np.maximum(whisker_zone, fringe_zone) * (mask <= 0.5)
-    # Probed at the dog's iris catchlight: source L=157, ink_alpha 0.86, but a=0.051 -- this
-    # region (scaled by eye separation, 545px on the dog -> a 980x490 ellipse) reached the
-    # eyes, and a glint against a dark iris is precisely the thin-line signal the suppression
-    # kills. Whiskers grow from the muzzle, below the eyes: clip the region to strictly below
-    # the eye line so it can never touch an eye again, whatever the photo's proportions.
-    if len(attractor_pts) >= 2:
-        (ex1, ey1), (ex2, ey2) = attractor_pts[0], attractor_pts[1]
-        eye_line_y = 0.5 * (ey1 + ey2)
-        eye_sep_w = max(1.0, math.hypot(ex2 - ex1, ey2 - ey1))
-        whisker_region_inside *= (yy > eye_line_y + 0.18 * eye_sep_w).astype(np.float32)
     whisker_region_inside = _gblur(whisker_region_inside, (0, 0), sigmaX=max(1.0, base * 0.1)) * mask
 
     # ---- Saturation-anomaly dampening (the open-mouth/tongue fix) --------------------------
@@ -3212,7 +3335,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # of by eye. ~25px at this photo's resolution, per the recommendation's "~20-30px."
     blur_sigma = max(8.0, W * 0.022)
     score, blurred_type, blurred_source = type_only_likeness(
-        canvas, mask, bgr_source, attractor_pts, base, blur_sigma)
+        canvas, mask, bgr_source, attractor_pts, base, blur_sigma, extra_faces)
     if debug_dir:
         stem = out_path.rsplit(".", 1)[0]
         Image.fromarray(np.clip(blurred_type, 0, 255).astype(np.uint8)).save(stem + "_D_blurred.jpg")
@@ -3280,14 +3403,16 @@ def _with_backdrop(rgb_u8, outside_w_u8, old_rgb, new_rgb):
 
 
 def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
-                           print_aspect=None, type_scale=None):
+                           print_aspect=None, type_scale=None, notices=None):
     """Drop-in for pet_proto.render_pet_portrait (same signature, PNG bytes out). `height` is
     the working resolution and therefore the typography fineness: previews ~1050-1600, print
     at the PET_V2_MAX_RENDER_PX cap (default 2400) then upscaled. `ground` is the site's
     backdrop choice (pet_proto.GROUNDS) and colors everything outside the animal; `type_scale`
-    is the site's Small/Medium/Large slider (see render_v2)."""
+    is the site's Small/Medium/Large slider (see render_v2). `notices`: a list to receive what
+    the customer should be told about the photo, as {"code", "message"} -- no cat or dog in
+    it, or a face the model could not read -- the same for a cached render as a fresh one."""
     import hashlib
-    from ..pet_proto import _fit_print_aspect, GROUNDS
+    from ..pet_proto import _fit_print_aspect, _fit_print_padding, _raw_matte, _solidify_matte, GROUNDS
     gb, gg, gr = GROUNDS.get((ground or "dark").strip().lower(), GROUNDS["dark"])
     ground_rgb = (float(gr), float(gg), float(gb))
     cap = int(os.environ.get("PET_V2_MAX_RENDER_PX", "2400") or 2400)
@@ -3313,7 +3438,9 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
     key = (hashlib.sha1(image_bytes).hexdigest(), str(words or ""), float(print_aspect or 0.0), _ts)
 
     def _finish(entry):
-        cached_h, rgb, outside_w, old_ground = entry
+        cached_h, rgb, outside_w, old_ground = entry[:4]
+        if notices is not None and len(entry) > 4:
+            notices.extend(entry[4])
         rgb = _with_backdrop(rgb, outside_w, old_ground, ground_rgb)
         if height and height > 0 and rgb.shape[0] != int(height):
             out_w = int(round(rgb.shape[1] * height / rgb.shape[0]))
@@ -3351,7 +3478,36 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         if bgr.shape[0] != work_h:
             bgr = cv2.resize(bgr, (max(1, int(bgr.shape[1] * work_h / bgr.shape[0])), work_h),
                              interpolation=cv2.INTER_AREA if work_h < bgr.shape[0] else cv2.INTER_CUBIC)
-        mask = _foreground_mask(bgr)
+        # The matte, the detector and the face points, in an order that serves two pets as well
+        # as one. The detector runs first and sees every cat and dog in the frame; the raw matte
+        # is then solidified with those boxes in hand, so a second pet standing apart from the
+        # first is kept instead of painted over as background (the matte's largest-component
+        # rule); the pose model then reads each subject's face. With one pet none of this
+        # changes a byte: the detector and pose model see the same print-fitted image they did,
+        # and the matte is solidified exactly as before.
+        _say = print if os.environ.get("PET_V2_VERBOSE", "") not in ("", "0") else (lambda *a, **k: None)
+        _lm_on = os.environ.get("PET_V2_LANDMARKS", "1").strip().lower() not in ("0", "false", "off")
+        m_raw = _raw_matte(bgr)
+        W0, H0 = bgr.shape[1], bgr.shape[0]
+        _pad = _fit_print_padding(W0, H0, float(print_aspect)) if print_aspect else (0, 0, 0, 0)
+        bgr_fit = _fit_print_aspect(bgr, m_raw, float(print_aspect))[0] if print_aspect else bgr
+        boxes = None        # None: the detector is unavailable; []: it ran and saw no cat or dog
+        subjects = []       # the boxes that count as subjects, largest first (on the fitted frame)
+        faces = []          # confident face readings, one per subject that gave one
+        if _lm_on:
+            try:
+                from .. import pet_landmarks
+                boxes = pet_landmarks.detect_subjects(bgr_fit)
+                if boxes:
+                    subjects = pet_landmarks.comparable_subjects(boxes)
+            except Exception as _e:  # noqa: BLE001 -- the heuristic is the fallback, never a failed render
+                boxes, subjects = None, []
+                _say(f"detector failed: {_e!r}", flush=True)
+        # Two-pet handling only when there are two pets: with one, keep_boxes stays None and the
+        # matte is the one every gate run was measured on.
+        _keep = ([(b[0] - _pad[2], b[1] - _pad[0], b[2] - _pad[2], b[3] - _pad[0]) for b in subjects]
+                 if len(subjects) >= 2 else None)
+        mask = _solidify_matte(m_raw, W0, keep_boxes=_keep)
         if print_aspect:
             bgr, mask = _fit_print_aspect(bgr, mask, float(print_aspect))
         # Real face landmarks from the pose model (pet_landmarks.py: YOLOX + RTMPose AP-10K,
@@ -3362,37 +3518,56 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         # The model's eyes and nose are handed to render_v2 as the landmark override; when the
         # model is unavailable or not confident it returns None and the heuristic runs as
         # before. PET_V2_LANDMARKS=0 turns this off.
-        _lm_str = None
-        _say = print if os.environ.get("PET_V2_VERBOSE", "") not in ("", "0") else (lambda *a, **k: None)
-        if os.environ.get("PET_V2_LANDMARKS", "1").strip().lower() not in ("0", "false", "off"):
+        if _lm_on and subjects:
             try:
-                from .. import pet_landmarks
-                _lm = pet_landmarks.face_landmarks(bgr, mask)
-            except Exception as _e:  # noqa: BLE001 -- the heuristic is the fallback, never a failed render
-                _lm = None
+                faces = [f for f in pet_landmarks.all_face_landmarks(bgr, subjects, mask) if f]
+            except Exception as _e:  # noqa: BLE001
+                faces = []
                 _say(f"landmark model failed: {_e!r}", flush=True)
-            if _lm:
-                _lm_str = f"{_lm['eye_l'][0]:.1f},{_lm['eye_l'][1]:.1f};{_lm['eye_r'][0]:.1f},{_lm['eye_r'][1]:.1f};{_lm['nose'][0]:.1f},{_lm['nose'][1]:.1f}"
+            for _lm in faces:
                 _say(f"landmark model: eyes {tuple(round(v) for v in _lm['eye_l'])} {tuple(round(v) for v in _lm['eye_r'])} nose {tuple(round(v) for v in _lm['nose'])}", flush=True)
-            else:
+            if len(subjects) > 1:
+                _say(f"{len(subjects)} pets of comparable size in the photo, {len(faces)} face(s) read", flush=True)
+            if not faces:
                 _say("landmark model: no confident face; heuristic detector will run", flush=True)
+        elif _lm_on and boxes is not None:
+            _say("detector: no cat or dog in the photo; heuristic detector will run", flush=True)
+        # What the customer should know. The detector's word, never a guess: nothing is said when
+        # it could not run.
+        _notes = []
+        if _lm_on and boxes is not None:
+            if not boxes:
+                _notes.append({"code": "pet_not_found", "message":
+                               "We couldn't spot a cat or dog in this photo, so the eyes and nose are our best "
+                               "guess. A clear, front-on photo of your pet's face gives the finest portrait."})
+            elif not faces:
+                _notes.append({"code": "pet_face_unclear", "message":
+                               "We found your pet but couldn't make out the face clearly, so the eyes and nose "
+                               "are our best guess. A sharper, front-on photo of the face gives the finest portrait."})
+            elif len(faces) < len(subjects):
+                _notes.append({"code": "pet_face_unclear", "message":
+                               f"We found {len(subjects)} pets but could only make out "
+                               f"{'one face' if len(faces) == 1 else str(len(faces)) + ' faces'} clearly, so the "
+                               f"portrait is built around {'that one' if len(faces) == 1 else 'those'}."})
         # With the model's eyes in hand the face-size decision is made HERE, before any of the
         # engine's setup runs, instead of inside render_v2 after a pass that then gets thrown
         # away (measured: the aborted first pass cost several seconds on a full-body photo).
+        # With two pets the smaller face decides, so both get the pixels the passes need.
+        _lm_str = None
         _scale = 1.0
-        if _lm_str:
-            _es_lm = math.hypot(_lm["eye_l"][0] - _lm["eye_r"][0], _lm["eye_l"][1] - _lm["eye_r"][1])
+        if faces:
+            _face_pairs = [((f["eye_l"], f["eye_r"]), f["nose"]) for f in faces]
+            _es_lm = min(math.hypot(e[0][0] - e[1][0], e[0][1] - e[1][1]) for e, _n in _face_pairs)
             _f = min(170.0 / max(1.0, _es_lm), cap / float(bgr.shape[0]),
                      math.sqrt(cap * cap * 0.8 / float(bgr.shape[0] * bgr.shape[1])))
             if _f >= 1.15:
                 _scale = _f
                 _say(f"eyes {_es_lm:.0f}px apart: rendering at {_scale:.2f}x for the face", flush=True)
-                _lm_str = ";".join(f"{float(x) * _scale:.1f},{float(y) * _scale:.1f}" for x, y in
-                                   (_lm["eye_l"], _lm["eye_r"], _lm["nose"]))
+            _lm_str = _landmark_string(_face_pairs, _scale)
         rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=_scale, backdrop_rgb=ground_rgb,
                                  type_scale=_ts, landmarks=_lm_str, auto_res=(_scale == 1.0),
                                  verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"))
-        entry = (int(rgb.shape[0]), rgb, metrics["outside_w"], ground_rgb)   # the height actually rendered
+        entry = (int(rgb.shape[0]), rgb, metrics["outside_w"], ground_rgb, _notes)   # the height actually rendered
         _cache_put(key, entry)
     finally:
         with _RENDER_CACHE_LOCK:

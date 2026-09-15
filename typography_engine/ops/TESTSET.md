@@ -279,3 +279,11 @@ crops that the full-body development photos never showed. A good starting set:
 
 To add a photo: copy it to `pets/src/` with the next number, optionally drop a `.words`
 file beside it, render once at the current commit so the baseline exists.
+
+Two photos the set still lacks, and why they matter. **Two pets** (side by side, both faces
+readable): the engine builds every face the pose model reads, and the matte keeps a second
+animal standing apart from the first; without a photo in the set, neither is gated. **A
+person, or no animal** on the pet site: the render goes ahead on the heuristic eye finder
+and the customer gets a note under the preview ("we couldn't spot a cat or dog"); the gate
+should show that photo's numbers do not drift either. When either is added, look for the
+log lines `N pets of comparable size` and `detector: no cat or dog` in its `.metrics` run.

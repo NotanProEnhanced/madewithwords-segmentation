@@ -190,11 +190,16 @@ def _u2net_mask(bgr):
         return None
 
 
-def _solidify_matte(m, w):
+def _solidify_matte(m, w, keep_boxes=None):
     """Keep the WHOLE subject. U2-Net gives a LIGHT-fur-on-WHITE neck/chest low confidence, so it
     drops out -> a 'floating head'. Threshold to a solid silhouette (largest component + filled
     interior holes), feather it, then UNION with the confident soft matte so wispy fur edges
-    survive. PET_MATTE_FILL is the keep threshold (0 disables)."""
+    survive. PET_MATTE_FILL is the keep threshold (0 disables).
+
+    `keep_boxes`: (x0, y0, x1, y1) boxes of every animal that is a subject of the portrait
+    (pet_landmarks.comparable_subjects). Two pets standing apart are two components, and the
+    largest-component rule alone painted the second one over as background; a component that
+    lies mostly inside one of these boxes is kept as well. None or empty keeps the old rule."""
     thr = float(os.environ.get("PET_MATTE_FILL", "0.35") or 0.35)
     if thr <= 0:
         return m
@@ -203,7 +208,20 @@ def _solidify_matte(m, w):
         return m
     n, lab, stats, _ = cv2.connectedComponentsWithStats(b, 8)
     if n > 1:
-        b = (lab == (1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA])))).astype(np.uint8)
+        keep = {1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))}
+        H_, W_ = lab.shape
+        for box in (keep_boxes or []):
+            x0, y0 = max(0, int(box[0])), max(0, int(box[1]))
+            x1, y1 = min(W_, int(np.ceil(box[2]))), min(H_, int(np.ceil(box[3])))
+            if x1 <= x0 or y1 <= y0:
+                continue
+            sub = lab[y0:y1, x0:x1]
+            ids, counts = np.unique(sub[sub > 0], return_counts=True)
+            for i, c in zip(ids, counts):
+                # Mostly inside the box (half its own pixels) and not a speck (a fiftieth of it).
+                if c >= 0.5 * stats[i, cv2.CC_STAT_AREA] and c >= 0.02 * (x1 - x0) * (y1 - y0):
+                    keep.add(int(i))
+        b = np.isin(lab, list(keep)).astype(np.uint8)
     # Fill ONLY true interior holes. PAD a background frame first so background pockets walled
     # off by the subject touching the image edge (ears/shoulders in a tight crop) stay connected
     # to the border and are NOT mistaken for holes -- otherwise they fill and leak type into the
@@ -279,13 +297,18 @@ def _solidify_matte(m, w):
     return np.clip(np.maximum(m, solid), 0, 1)
 
 
-def _foreground_mask(bgr):
-    """Real matte first (U2-Net); GrabCut fallback when the model is unavailable. Solidified so a
-    light-fur-on-white body is kept (no 'floating head')."""
+def _raw_matte(bgr):
+    """The soft matte as the model gives it: U2-Net, or GrabCut when the model is unavailable."""
     m = _u2net_mask(bgr)
     if m is None:
         m = _grabcut_mask(bgr)
-    return _solidify_matte(m, bgr.shape[1])
+    return m
+
+
+def _foreground_mask(bgr, keep_boxes=None):
+    """Real matte first (U2-Net); GrabCut fallback when the model is unavailable. Solidified so a
+    light-fur-on-white body is kept (no 'floating head'). `keep_boxes`: see _solidify_matte."""
+    return _solidify_matte(_raw_matte(bgr), bgr.shape[1], keep_boxes=keep_boxes)
 
 
 def _detail_map(gray):
@@ -757,19 +780,27 @@ def _fit_print_aspect(bgr, mask, aspect):
     on a proper canvas -- e.g. 0.8 = 4:5. Margins get mask=0 so the render fills them with the
     ground, and the vignette then lights the whole print. Subject is centered (a touch high)."""
     H, W = bgr.shape[:2]
-    cur = W / max(1, H)
-    if abs(cur - aspect) < 0.005:
+    top, bot, l, r = _fit_print_padding(W, H, aspect)
+    if not (top or bot or l or r):
         return bgr, mask
-    if cur > aspect:                                   # too wide -> pad top/bottom
-        newH = int(round(W / aspect)); pad = newH - H
-        top = int(pad * 0.42); bot = pad - top         # subject sits slightly high (portrait framing)
-        l = r = 0
-    else:                                              # too tall -> pad left/right
-        newW = int(round(H * aspect)); pad = newW - W
-        l = pad // 2; r = pad - l; top = bot = 0
     bgr2 = cv2.copyMakeBorder(bgr, top, bot, l, r, cv2.BORDER_CONSTANT, value=(128, 128, 128))
     mask2 = cv2.copyMakeBorder(mask, top, bot, l, r, cv2.BORDER_CONSTANT, value=0)
     return bgr2, mask2
+
+
+def _fit_print_padding(W, H, aspect):
+    """The (top, bottom, left, right) padding _fit_print_aspect adds to a W x H image, so a
+    point measured on the fitted canvas maps back to the source by (x - left, y - top)."""
+    cur = W / max(1, H)
+    if abs(cur - aspect) < 0.005:
+        return 0, 0, 0, 0
+    if cur > aspect:                                   # too wide -> pad top/bottom
+        newH = int(round(W / aspect)); pad = newH - H
+        top = int(pad * 0.42); bot = pad - top         # subject sits slightly high (portrait framing)
+        return top, bot, 0, 0
+    newW = int(round(H * aspect)); pad = newW - W      # too tall -> pad left/right
+    l = pad // 2
+    return 0, 0, l, pad - l
 
 
 def render_pet_portrait(image_bytes: bytes, words: str, ground: str = "dark", height: int = 900,
@@ -813,4 +844,5 @@ def render_pet_portrait_dispatch(*args, **kwargs):
     if (os.environ.get("PET_ENGINE", "") or "").strip().lower() == "v2":
         from .pet_v2.engine import render_pet_portrait_v2
         return render_pet_portrait_v2(*args, **kwargs)
+    kwargs.pop("notices", None)   # v2 reports what it saw in the photo; this engine has nothing to say
     return render_pet_portrait(*args, **kwargs)

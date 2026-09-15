@@ -65,6 +65,9 @@ _POSE_MODEL_PATH = os.environ.get("PET_LM_POSE_MODEL", _DEFAULT_POSE_PATH) or _D
 # still well above noise-level scores. (Body points are NOT gated by this alone -- see the module
 # docstring for why they are not used here at all.)
 _MIN_SCORE = float(os.environ.get("PET_LM_MIN_SCORE", "0.7") or 0.7)
+# A second animal counts as a subject of the portrait when its box is at least this fraction
+# of the largest one's area (see comparable_subjects).
+_SECOND_MIN = float(os.environ.get("PET_LM_SECOND_MIN", "0.25") or 0.25)
 # Empty string (compose's `${PET_LM_USE_NECK:-}` default) happens to fall through to "on" here
 # too, since "" isn't in the off-list below -- but explicit is better than relying on that,
 # given the _DET_MODEL_PATH/_POSE_MODEL_PATH bug this exact "empty string from compose" shape
@@ -131,6 +134,40 @@ def _load_models():
             return None, None
 
 
+def detect_subjects(bgr):
+    """Every cat or dog the detector sees, largest first, as (x0, y0, x1, y1) pixel boxes.
+
+    None when the detector is unavailable (so the caller cannot tell whether there is a pet);
+    an empty list when it ran and found no cat or dog -- a person, a rabbit, an empty room.
+    Never raises.
+    """
+    det, _pose = _load_models()
+    if det is None:
+        return None
+    try:
+        bboxes, classes = det(bgr)
+        # The detector's own rows, untouched: the pose model's crop is computed from the box in
+        # its own precision, and a converted copy could move a keypoint by a hair.
+        pet_boxes = [b[:4] for b, c in zip(bboxes, classes) if c in (_COCO_CAT, _COCO_DOG)]
+        if not pet_boxes:
+            _dbg("no dog/cat detected (detector found %d box(es) total, none cat/dog)" % len(bboxes))
+        pet_boxes.sort(key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True)
+        return pet_boxes
+    except Exception as e:  # noqa: BLE001 -- a bad frame must degrade to "nothing found", never crash a render
+        _dbg("detector FAILED: %r" % (e,))
+        return None
+
+
+def comparable_subjects(boxes):
+    """The boxes that count as subjects of the portrait: the largest, and any other whose area
+    is at least PET_LM_SECOND_MIN (default 0.25) of it. Two dogs sitting together both pass; a
+    cat asleep in the far corner of the room does not, and is background."""
+    if not boxes:
+        return []
+    a0 = max(1.0, (boxes[0][2] - boxes[0][0]) * (boxes[0][3] - boxes[0][1]))
+    return [b for b in boxes if (b[2] - b[0]) * (b[3] - b[1]) >= _SECOND_MIN * a0]
+
+
 def face_landmarks(bgr, mask=None):
     """Return a dict with pixel coords for the verified-reliable face points, or None.
 
@@ -141,22 +178,29 @@ def face_landmarks(bgr, mask=None):
 
     If more than one dog/cat is detected, the LARGEST bbox is used (the render is a single-subject
     portrait; a smaller animal elsewhere in frame is treated as background, not the subject).
+    all_face_landmarks() is the multi-subject form.
 
     Never raises. Returns None on: missing dependency/model files, no dog/cat detected, or the
     eyes/nose not clearing the confidence floor.
     """
-    det, pose = _load_models()
-    if det is None or pose is None:
+    boxes = detect_subjects(bgr)
+    if not boxes:
+        return None
+    return face_in_box(bgr, boxes[0], mask)
+
+
+def all_face_landmarks(bgr, boxes, mask=None):
+    """One face reading per box, in the boxes' order: the dict face_landmarks() returns, or
+    None where that animal's eyes and nose did not clear the confidence floor. Never raises."""
+    return [face_in_box(bgr, b, mask) for b in (boxes or [])]
+
+
+def face_in_box(bgr, box, mask=None):
+    """The face points of the animal inside `box` (see face_landmarks for the keys), or None."""
+    _det, pose = _load_models()
+    if pose is None:
         return None
     try:
-        bboxes, classes = det(bgr)
-        pet_boxes = [b for b, c in zip(bboxes, classes) if c in (_COCO_CAT, _COCO_DOG)]
-        if not pet_boxes:
-            _dbg("no dog/cat detected (detector found %d box(es) total, none cat/dog)" % len(bboxes))
-            return None
-        # Largest by area = the primary subject.
-        areas = [(b[2] - b[0]) * (b[3] - b[1]) for b in pet_boxes]
-        box = pet_boxes[int(np.argmax(areas))]
         keypoints, scores = pose(bgr, bboxes=[box])
         kpts, scs = keypoints[0], scores[0]
 
