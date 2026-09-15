@@ -154,7 +154,15 @@ def _u2net_session():
             if not path:
                 _U2_FAILED_AT = time.monotonic()
                 return None
-            _U2_SESSION = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+            # No memory arena. With the default arena this session kept 0.9 GB after its
+            # first run and 1.95 GB after its second, for the life of the process (measured,
+            # ISNet at 1024): the unexplained gigabyte between a container's first and second
+            # render, and half of the memory that took the box down on 2026-09-15. Without
+            # the arena the run allocates and frees its own buffers (measured: 2.2-3.2 s
+            # either way) and keeps nothing.
+            _so = ort.SessionOptions()
+            _so.enable_cpu_mem_arena = False
+            _U2_SESSION = ort.InferenceSession(path, _so, providers=["CPUExecutionProvider"])
             _U2_FAILED_AT = 0.0
         except Exception:  # noqa: BLE001  -- any failure -> fall back to GrabCut
             _U2_FAILED_AT = time.monotonic()

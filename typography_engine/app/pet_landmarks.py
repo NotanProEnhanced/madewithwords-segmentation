@@ -99,6 +99,21 @@ def _dbg(msg):
         print("[pet_landmarks] %s" % msg, flush=True)
 
 
+def _no_arena(tool, path):
+    """Re-open the tool's runtime session without a memory arena. rtmlib builds its sessions
+    with the default options, and an onnxruntime arena keeps every buffer a run ever needed
+    for the life of the process (measured on the matting model: 1.95 GB after two runs).
+    Same model, same provider, same numbers; the run allocates and frees its own buffers."""
+    try:
+        import onnxruntime as ort
+        if isinstance(getattr(tool, "session", None), ort.InferenceSession):
+            so = ort.SessionOptions()
+            so.enable_cpu_mem_arena = False
+            tool.session = ort.InferenceSession(path, so, providers=["CPUExecutionProvider"])
+    except Exception as e:  # noqa: BLE001 -- the arena is a memory matter, never a reason not to detect
+        _dbg("could not rebuild session without arena: %r" % (e,))
+
+
 def _load_models():
     """Return (det, pose) sessions, or (None, None) if unavailable. Cached; a failure backs off
     for _RETRY_AFTER seconds instead of re-attempting (and re-logging) on every render."""
@@ -124,6 +139,8 @@ def _load_models():
         try:
             det = YOLOX(_DET_MODEL_PATH, det_mode="multiclass", model_input_size=_DET_INPUT)
             pose = RTMPose(_POSE_MODEL_PATH, model_input_size=_POSE_INPUT)
+            _no_arena(det, _DET_MODEL_PATH)
+            _no_arena(pose, _POSE_MODEL_PATH)
             _STATE["det"], _STATE["pose"], _STATE["ready"] = det, pose, True
             _dbg("models loaded OK")
             return det, pose

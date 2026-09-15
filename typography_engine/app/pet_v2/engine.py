@@ -1676,6 +1676,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     theta, coherence = multi_scale_orientation(gray, W)
     theta_s = _gblur(theta, (0, 0), sigmaX=max(1.0, W * 0.006))
     coherence_s = _gblur(coherence, (0, 0), sigmaX=max(1.0, W * 0.006))
+    del coherence   # only the smoothed field is read from here on (memory; see the composite stage)
 
     base = max(16, int(round(W * 0.048)))
 
@@ -1739,6 +1740,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                                      cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ok, ok)))
     feat_dark = np.clip(_gblur(feat_dark_raw, (0, 0), sigmaX=max(1.0, W_det * 0.012)) * 1.6, 0, 1)
     attractor_pts = find_attractor_points(feat_dark, mask)
+    del localdark, feat_dark_raw, feat_dark
     # Validate the dark-only pair by depth inside the silhouette, with the original detector as
     # fallback. Measured on the three test photos (edge distance as a fraction of head width):
     # every real eye >= 0.174 (dog 0.174/0.176, doodle 0.229/0.259, cat 0.274); the one false
@@ -1890,6 +1892,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # This is now the STARTING point for the per-iteration density, not the final field --
     # sep_correction (below) adjusts it each round based on measured tonal error.
     sep_field_base = np.clip(sep_px * density_mult, sep_px * 0.45, sep_px * 1.3).astype(np.float32)
+    del dist_to_feat, feat_zone, chest_zone, density_mult
 
     # Semantic anatomical regions (recommendations #3/#4) -- see build_region_map's docstring
     # for what this can and can't distinguish given no landmark model. None when no attractor
@@ -1907,6 +1910,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # overlapping "near a feature" signals into an unpredictable extreme.
     importance_map = build_likeness_weight_map(mask, attractor_pts, base, extra_faces)
     importance_norm = importance_map / max(1.0, float(importance_map.max()))
+    del importance_map
 
     def line_importance(line):
         vals = [importance_norm[min(H - 1, max(0, int(y))), min(W - 1, max(0, int(x)))] for x, y, _ in line[::4]]
@@ -2106,6 +2110,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                 cv2.ellipse(fine, (int(mx), int(my)), (int(_f["es"] * 0.30), int(_f["es"] * 0.45)), 0, 0, 360, 1, -1)
         _out = cv2.distanceTransform((1 - fine).astype(np.uint8), cv2.DIST_L2, 5)
         fine_blend = np.clip(_out / max(1.0, _es * 0.20), 0, 1).astype(np.float32)
+        del _out
 
     # "Distance from the face" is the distance to the NEAREST feature -- eye, eye or nose --
     # not to the midpoint between the eyes. On a close-up the nose sits a full eye-separation
@@ -2153,6 +2158,10 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                           importance_norm=importance_norm, micro_px=MICRO_PX, struct_px=STRUCT_PX, es=_es,
                           denom=_denom, max_in_mask=_max_in_mask, fine_blend=fine_blend,
                           size_px_field=size_px_field, feature_pts=feature_pts)
+    # The size rule's intermediates are folded into size_field / size_px_field; nothing below
+    # reads them (the `_dist` at the end of the render is a new one). Freed before the loop
+    # holds its own fields for four iterations (memory; every plane is 18 MB at print size).
+    del _gx, _gy, _energy, _dist, _d_es, _near, _far, _smooth_gate, _raw_px, face_dist_field, detail_field
 
     # ---- The iterative loop: regrow geometry, rasterize, compare, correct DENSITY, regrow -----
     # This is the follow-up to the fixed-geometry version (which corrected only word size/alpha
