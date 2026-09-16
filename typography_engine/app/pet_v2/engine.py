@@ -2470,7 +2470,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             # Opacity stays neutral in feature territory: a -18% ease-off there dropped the
             # muzzle's tonal mass (the brightest region on both test dogs, where tone wants the
             # MOST ink) -- muzzle SSIM 0.856 -> 0.746 measured. Fineness comes from size alone.
-            alpha = int(min(255, 195 + 55 * t_coh))
+            alpha = 255 if human else int(min(255, 195 + 55 * t_coh))   # a person: every letter at full ink, crisp
             # words_for_curvature (line-mean-coherence bucketing) is defined above but NOT used
             # here -- tried it, and it made things worse, not better. See its docstring: this
             # pipeline's coherence field reads high almost everywhere on the doodle (a side effect
@@ -3049,7 +3049,9 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     deep_fur_rgb = _F[..., ::-1].astype(np.float32)   # RGB, for the fringe hairs below
     del _src_f, _F, _bgw, _B, _BF, _Pl, _Fl, _Bl, _BFab, _BF2, _t, _band, _mask_deep, _d_in, _hard
 
-    fur_sigma = max(2.0, W * 0.006)
+    # The gap layer: a coat's rest tone is the photo blurred past letter-scale noise. A face
+    # wants its own detail between the letters, so a person's gap layer is barely blurred.
+    fur_sigma = max(1.0, W * 0.0012) if human else max(2.0, W * 0.006)
     fur_num = _gblur(bgr_clean.astype(np.float32) * fur_weight2d[..., None], (0, 0), sigmaX=fur_sigma)
     fur_den = _gblur(fur_weight2d, (0, 0), sigmaX=fur_sigma)[..., None]
     fur_bgr = np.divide(fur_num, fur_den, out=np.full_like(fur_num, 120.0), where=fur_den > 1e-6)
@@ -3064,7 +3066,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # saturation, is a coat's rest tone; on a face it read as dark orange (measured on the
     # boy: face L 92 against a source of 130, saturation 112 against 90). A person keeps
     # more of the face's own value in the gaps and a little less of its colour.
-    _gap_s, _gap_v = (0.75, 0.55) if human else (0.85, 0.40)
+    _gap_s, _gap_v = (0.80, 0.70) if human else (0.85, 0.40)
     fur_hsv[..., 1] *= _gap_s
     fur_hsv[..., 2] = np.clip(fur_hsv[..., 2] * _gap_v, 0, 255)   # same picture, well below the letters
     inner_ground_bgr = cv2.cvtColor(np.clip(fur_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR)
@@ -3292,7 +3294,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     #   legibility -- |letter mean - gap mean| >= MIN_DELTA_L, which wins if the two conflict.
     # The layer carrying the source tone stays at 1.0; the other is solved from the letter
     # coverage; the two modes blend by light_mix. GAP_TONE/LETTER_TONE above are now the floors.
-    TONE_FIDELITY, MIN_DELTA_L = (0.92, 30.0) if human else (0.85, 40.0)   # delta 29 read too photographic on the dog; 73 too dark; skin keeps more of its own value
+    TONE_FIDELITY, MIN_DELTA_L = (1.0, 24.0) if human else (0.85, 40.0)   # delta 29 read too photographic on the dog; 73 too dark; skin keeps more of its own value
     c_eff = float(ink_soft[_ref_in].mean())                            # soft letter coverage
     # Solve from the MEASURED unscaled layer means (m_l, m_g), not from the assumption that a
     # matched layer's mean equals the source's -- it doesn't (measured ~139 vs 147 on the dog,

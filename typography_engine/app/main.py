@@ -1769,8 +1769,11 @@ async def render(
             # style; Gallery Dark ground; the pet slider's Small.
             from .pet_v2.engine import render_pet_portrait_v2   # v2 only: the first engine has no idea of a person
             _woven_notes = []
+            # The page's own ground, so a Woven render can be compared with Displacement like
+            # for like: paper stays paper, navy is the gallery dark, black the charcoal.
+            _woven_ground = {"paper": "paper", "navy": "dark", "black": "charcoal"}.get(ground_choice, "dark")
             png_bytes = await _bounded_to_thread(
-                render_pet_portrait_v2, img_bytes, text, "dark",
+                render_pet_portrait_v2, img_bytes, text, _woven_ground,
                 int(min(1600, max(1050, preview_w))), aspect, 0.30, notices=_woven_notes, subject="human")
             for _n in _woven_notes:
                 warns.warn("input", _n["code"], _n["message"])
@@ -4551,7 +4554,8 @@ def _compose_clean_png(job, aspect, path, recipe_path, src_path):
             # engine with the person as its subject, at download resolution.
             from .pet_v2.engine import render_pet_portrait_v2
             png_bytes = render_pet_portrait_v2(
-                src_path.read_bytes(), (r.get("text", "") or ""), ground="dark",
+                src_path.read_bytes(), (r.get("text", "") or ""),
+                ground={"paper": "paper", "navy": "dark", "black": "charcoal"}.get(r.get("ground") or "navy", "dark"),
                 height=int(round(DOWNLOAD_PNG_WIDTH / max(0.5, aspect))),
                 print_aspect=aspect, type_scale=0.30, subject="human")
             if not png_bytes:
