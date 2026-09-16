@@ -2887,6 +2887,14 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     wash = wash_strength * mask * brightness * (1.0 - 0.95 * sat_anomaly)
     a = np.clip(np.maximum(a, wash), 0, 1)
     del brightness
+    if human:
+        # Wisps of hair. The matte is soft at a flyaway strand (0.1-0.4), no letter is ever laid
+        # on a strand a few pixels wide, and the ground is painted up to the matte, so the
+        # strands Displacement keeps (it feathers the silhouette) vanish here. In the soft
+        # edge of the matte a person's photo is revealed at the matte's own opacity, strand
+        # for strand; inside the solid silhouette nothing changes.
+        _edge = np.clip((0.5 - mask) / 0.2, 0, 1).astype(np.float32)   # 1 where the matte is under 0.3
+        a = np.maximum(a, mask * _edge)
 
     # ---- Suppress REAL photographic whiskers within the mask ------------------------------
     # "Whiskers should also be typography... a high-end portrait should eventually have no
