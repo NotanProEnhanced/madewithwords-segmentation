@@ -2092,7 +2092,11 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # ink a word may plant on another stays what it is at Small; Small itself is unchanged.
     _TL.max_overlap_cap = _TL.max_overlap_cap / max(1.0, _tsk)
     MICRO_PX = base * 0.10 * _tsk
-    STRUCT_PX = base * 0.52 * _tsk   # widened from 0.40 so the far body genuinely reads larger (size_field)
+    # A person: a narrower range, three to one against five. The far body of a dog is a
+    # chest and flanks, and it earns the biggest words; a person's far body is a neck and a
+    # collar, next to the chin's smallest words. Measured on the boy across the jaw and neck:
+    # one word in twenty sat beside a neighbour 3.8x its size, the widest pair 7.3x.
+    STRUCT_PX = base * (0.30 if human else 0.52) * _tsk   # widened from 0.40 so the far body genuinely reads larger (size_field)
     # Widened from 1.3x -- measured the ACTUAL micro/structural/hero split (recommendation #6's
     # target: 20-30% / 60-70% / 3-7% of ink area) and found micro was only 11-15%: at 1.3x, only
     # a small ring right around the eyes graded toward the fine end, so nearly the whole rest of
@@ -2231,17 +2235,24 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # FAR is frame-relative: whatever lies beyond 1.2 eye-separations grades up to the largest
     # type at the farthest visible part of the animal, chest bottom or ear tips alike.
     _d_es = _dist / _es
-    _near = np.clip(_d_es / 1.2, 0, 1) ** 0.8
-    _far_span = max(_es * 0.3, _max_in_mask - _es * 1.2)
-    _far = np.clip((_dist - _es * 1.2) / _far_span, 0, 1)
+    # A person: the near ramp runs 2.0 eye-separations, not 1.2, so size grows down the neck
+    # instead of finishing at the chin (on a laughing face the chin is 0.6 from the mouth).
+    _near_es = 2.0 if human else 1.2
+    _near = np.clip(_d_es / _near_es, 0, 1) ** 0.8
+    _far_span = max(_es * 0.3, _max_in_mask - _es * _near_es)
+    _far = np.clip((_dist - _es * _near_es) / _far_span, 0, 1)
     face_dist_field = (0.55 * _near + 0.45 * _far).astype(np.float32)
-    _denom = _es * 1.2
+    _denom = _es * _near_es
     # Smoothness may only ENLARGE type away from the features. A whitened senior muzzle is
     # the smoothest, brightest patch on the head, and the ungated term opened type up right
     # there. It fades in between 0.45 and 0.85 eye-separations from the nearest feature, so
     # on the face itself size is distance alone.
+    # A person's neck is the smoothest skin in the frame, and this term read it as far body
+    # and gave it the biggest words in the portrait, under the chin's smallest. For a person
+    # smoothness carries 0.15 of the size, not 0.40; distance carries the rest.
     _smooth_gate = np.clip((_d_es - 0.45) / 0.40, 0, 1)
-    size_field = np.clip(0.60 * face_dist_field + 0.40 * (1.0 - detail_field) * _smooth_gate, 0, 1).astype(np.float32)
+    _w_dist, _w_smooth = (0.85, 0.15) if human else (0.60, 0.40)
+    size_field = np.clip(_w_dist * face_dist_field + _w_smooth * (1.0 - detail_field) * _smooth_gate, 0, 1).astype(np.float32)
 
     def line_size_t(line):
         vals = [size_field[min(H - 1, max(0, int(y))), min(W - 1, max(0, int(x)))] for x, y, _ in line[::4]]
@@ -2526,12 +2537,16 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                 # word. Measured at 2400px with an absolute fill size, fills sat at 7-9px in
                 # every band and buried a 38-44px far-body hierarchy in count.
                 local_struct = MICRO_PX + (STRUCT_PX - MICRO_PX) * line_size_t(line)
-                font_px = local_struct * (round_px / FILL_PX) * 0.55 * (0.90 + 0.20 * rng.random())
+                # A person: the fills sit at 0.70 of the local structural size, not 0.55. On
+                # fur a small word between two big ones reads as fur; on a neck it reads as
+                # the size jumping about. Closer to their neighbours, they read as one text.
+                _fill_ratio = 0.70 if human else 0.55
+                font_px = local_struct * (round_px / FILL_PX) * _fill_ratio * (0.90 + 0.20 * rng.random())
                 font = get_font(font_px)
                 t_coh = np.clip(line_coh[id(line)] / 0.5, 0, 1)
                 alpha = int(min(255, 165 + 65 * t_coh))
 
-                def fill_size_at(x, y, _ratio=(round_px / FILL_PX) * 0.55):
+                def fill_size_at(x, y, _ratio=(round_px / FILL_PX) * _fill_ratio):
                     xi, yi = min(W - 1, max(0, int(x))), min(H - 1, max(0, int(y)))
                     ls = MICRO_PX + (STRUCT_PX - MICRO_PX) * float(size_field[yi, xi])
                     px = ls * _ratio * (0.90 + 0.20 * rng.random())
