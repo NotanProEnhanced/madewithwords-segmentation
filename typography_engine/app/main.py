@@ -603,6 +603,42 @@ def index(request: Request) -> Response:
     return RedirectResponse(url="/static/index.html" + (f"?{q}" if q else ""))
 
 
+def _woven_finish(backdrop_choice):
+    """The Woven style's last step for a human site's backdrop that is not a colour: the
+    floral frames (wildflowers, roses, eucalyptus, line) and the transparent Cutout. Returns
+    (finish, ground_rgb): `finish(rgb, outside_w)` encodes the file the way Displacement
+    composites its own edge, and `ground_rgb` is the outer ground the render should be
+    painted on first (the frame's cream, so the soft edge blends into the mat). (None, None)
+    for a plain colour or no backdrop: the engine encodes as it always has."""
+    import cv2
+    import numpy as np
+    from .pipeline.displacement import _load_floral, _FLORAL_KEYS, _FLORAL_CREAM
+    bd = (backdrop_choice or "").strip().lower()
+    if bd in _FLORAL_KEYS:
+        def finish(rgb, outside_w):
+            h, w = rgb.shape[:2]
+            fl = _load_floral(bd)
+            fl = (np.full((h, w, 3), _FLORAL_CREAM, np.float32) if fl is None
+                  else cv2.resize(fl, (w, h), interpolation=cv2.INTER_AREA).astype(np.float32))
+            a = outside_w.astype(np.float32)[..., None] / 255.0          # 1 where the pixel is the outer ground
+            out = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR).astype(np.float32) * (1.0 - a) + fl * a
+            ok, png = cv2.imencode(".png", np.clip(out, 0, 255).astype(np.uint8))
+            if not ok:
+                raise RuntimeError("PNG encode failed")
+            return png.tobytes()
+        _b, _g, _r = _FLORAL_CREAM
+        return finish, (float(_r), float(_g), float(_b))
+    if bd == "transparent":
+        def finish(rgb, outside_w):
+            bgra = np.dstack([cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), (255 - outside_w).astype(np.uint8)])
+            ok, png = cv2.imencode(".png", bgra)
+            if not ok:
+                raise RuntimeError("PNG encode failed")
+            return png.tobytes()
+        return finish, None
+    return None, None
+
+
 @app.get("/health")
 def health() -> JSONResponse:
     caps = probe()
@@ -612,6 +648,10 @@ def health() -> JSONResponse:
             "service": "typography-portrait-engine",
             "version": __version__,
             "capabilities": caps,
+            # The Woven style is offered on the page only where this tree has switched it on
+            # (TYPO_WOVEN=1 in .env), so a production tree without it never shows a card
+            # that would quietly render the default style instead.
+            "woven": bool(WOVEN_ENABLED),
             "render": {
                 "concurrency_limit": RENDER_CONCURRENCY,
                 "in_flight": _render_inflight,
@@ -1780,10 +1820,15 @@ async def render(
             if backdrop_choice in _BD:
                 _b, _g, _r = _BD[backdrop_choice]
                 _woven_rgb = (float(_r), float(_g), float(_b))
+            # The florals and the Cutout are not colours: they are a last step over the
+            # finished render, the way Displacement applies them (_woven_finish).
+            _woven_fin, _woven_fin_rgb = _woven_finish(backdrop_choice)
+            if _woven_fin_rgb is not None:
+                _woven_rgb = _woven_fin_rgb
             png_bytes = await _bounded_to_thread(
                 render_pet_portrait_v2, img_bytes, text, _woven_ground,
                 int(min(1600, max(1050, preview_w))), aspect, 0.30, notices=_woven_notes, subject="human",
-                ground_override=_woven_rgb)
+                ground_override=_woven_rgb, finish=_woven_fin)
             for _n in _woven_notes:
                 warns.warn("input", _n["code"], _n["message"])
             runs, ground_hex, mask_svg = [], None, None
@@ -4567,10 +4612,13 @@ def _compose_clean_png(job, aspect, path, recipe_path, src_path):
             if r.get("backdrop") in _BD:
                 _b, _g, _r = _BD[r.get("backdrop")]
                 _dl_rgb = (float(_r), float(_g), float(_b))
+            _dl_fin, _dl_fin_rgb = _woven_finish(r.get("backdrop"))   # florals and the Cutout, as the preview had them
+            if _dl_fin_rgb is not None:
+                _dl_rgb = _dl_fin_rgb
             png_bytes = render_pet_portrait_v2(
                 src_path.read_bytes(), (r.get("text", "") or ""),
                 ground={"paper": "paper", "navy": "dark", "black": "charcoal"}.get(r.get("ground") or "navy", "dark"),
-                ground_override=_dl_rgb,
+                ground_override=_dl_rgb, finish=_dl_fin,
                 height=int(round(DOWNLOAD_PNG_WIDTH / max(0.5, aspect))),
                 print_aspect=aspect, type_scale=0.30, subject="human")
             if not png_bytes:

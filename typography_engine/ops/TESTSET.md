@@ -290,9 +290,10 @@ log lines `N pets of comparable size` and `detector: no cat or dog` in its `.met
 
 ## Woven (staging experiment): people through the pet engine
 
-The v2 engine pointed at a person, the face mesh steering the lanes. Reached only by a
-request with `style=woven` on a tree whose `.env` has `TYPO_WOVEN=1`; production trees do
-not, so a `?woven=1` page there renders the brand's own style. To gate it:
+The v2 engine pointed at a person, the face mesh steering the lanes. On the page it is
+the "Natural" style card, shown only where the tree's `.env` has `TYPO_WOVEN=1` (the
+page asks `/health`); `?woven=1` still forces it. A tree without the switch renders the
+brand's own style for either. To gate it:
 
     mkdir -p /root/typortrait-testset/woven/src
     cp /root/typortrait-testset/src/10-smile.jpg /root/typortrait-testset/woven/src/01-smile.jpg   # and so on

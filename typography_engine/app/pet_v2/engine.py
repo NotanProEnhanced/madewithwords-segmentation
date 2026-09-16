@@ -2915,12 +2915,12 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # Outside the face ellipse the photo is revealed through everything at PET_V2_HAIR_REVEAL,
     # so the hair is the photo with the words on it, as it is in Displacement; the face keeps
     # the type-only recipe every judgment was made on. A floor, never a cut: dense ink still
-    # reveals more. Off by default (0): on the boy, whose photo is 640px wide and upscaled,
-    # 0.7 raised the correlation only to 0.39 and the eye saw little, so it is switched on
-    # per tree for her photo and judged there, not shipped on a proxy. Animals never enter
-    # this branch.
+    # reveals more. On the boy, whose photo is 640px wide and upscaled, 0.7 raised the
+    # correlation only to 0.39; on her photo at the loupe it was the closest Woven came to
+    # Displacement's hair, and the blind test (3-0, 3-0) was run with it. 0.7 is the
+    # default; PET_V2_HAIR_REVEAL overrides it, 0 turns it off. Animals never enter this branch.
     if human and len(attractor_pts) >= 2:
-        _hr = float(os.environ.get("PET_V2_HAIR_REVEAL", "0") or 0.0)
+        _hr = float(os.environ.get("PET_V2_HAIR_REVEAL", "0.7") or 0.0)
         if _hr > 0.0:
             _fx0 = 0.5 * (attractor_pts[0][0] + attractor_pts[1][0])
             _fy0 = 0.5 * (attractor_pts[0][1] + attractor_pts[1][1]) + 0.5 * _es
@@ -3766,7 +3766,7 @@ def _photo_background_rgb(bgr, matte):
 
 def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
                            print_aspect=None, type_scale=None, notices=None, subject=None,
-                           ground_override=None):
+                           ground_override=None, finish=None):
     """Drop-in for pet_proto.render_pet_portrait (same signature, PNG bytes out). `height` is
     the working resolution and therefore the typography fineness: previews ~1050-1600, print
     at the PET_V2_MAX_RENDER_PX cap (default 2400) then upscaled. `ground` is the site's
@@ -3827,8 +3827,14 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         rgb = _with_backdrop(rgb, outside_w, old_ground, want)
         if height and height > 0 and rgb.shape[0] != int(height):
             out_w = int(round(rgb.shape[1] * height / rgb.shape[0]))
-            rgb = cv2.resize(rgb, (out_w, int(height)),
-                             interpolation=cv2.INTER_AREA if int(height) < rgb.shape[0] else cv2.INTER_CUBIC)
+            _interp = cv2.INTER_AREA if int(height) < rgb.shape[0] else cv2.INTER_CUBIC
+            rgb = cv2.resize(rgb, (out_w, int(height)), interpolation=_interp)
+            outside_w = cv2.resize(outside_w, (out_w, int(height)), interpolation=_interp)
+        if finish is not None:
+            # The caller's own last step (the human sites' floral frame, the transparent
+            # Cutout): given the finished RGB and how much of each pixel is the outer ground,
+            # it returns the encoded file. This engine knows nothing about frames.
+            return finish(rgb, outside_w)
         ok, png = cv2.imencode(".png", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
         if not ok:
             raise RuntimeError("PNG encode failed")

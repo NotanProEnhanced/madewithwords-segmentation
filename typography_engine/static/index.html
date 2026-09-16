@@ -734,6 +734,9 @@
         <button type="button" data-style="words"><span class="styleth" data-hint="Word cloud"></span><span class="nm">Mosaic</span></button>
         <button type="button" data-style="message"><span class="styleth" data-hint="Verses, Lyrics, etc."></span><span class="nm">Passage</span></button>
         <button type="button" data-style="letter" style="display:none"><span class="styleth" data-hint="A letter, sculpted"></span><span class="nm">Letter</span></button>
+        <!-- Woven: the person's photograph held in the words, hair and skin as they are. Shown
+             only where the server reports the style switched on (see /health "woven"). -->
+        <button type="button" data-style="woven" style="display:none"><span class="styleth" data-hint="Their photo, in words"></span><span class="nm">Natural</span></button>
       </div>
       <div class="ctl-hint" id="styleCaption">A lifelike portrait — the words follow their face.</div>
       <div class="ctl-hint" id="bestNote" style="display:none"></div>
@@ -1050,6 +1053,16 @@ const _isPet=!!(BRAND && BRAND.pet);   // pet STUDIO: the Paws in Words interfac
 // ignores `style` once it is set, so the brand's real style still travels with the request:
 // that is what keeps Passage working (main.py only reads `message` when style=="message").
 const _petEngine=!!(BRAND && (BRAND.pet || BRAND.petEngine));
+// Woven ("Natural"): the server says whether this tree has it switched on. Until it answers
+// the card stays hidden, so a tree without it never offers a look it would not render.
+window._wovenOn=false;
+if(!_petEngine){
+  fetch("/health",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+    window._wovenOn=!!(d && d.woven);
+    if(window._wovenOn && typeof updateStyleChooserVisibility==="function")
+      updateStyleChooserVisibility(state.style==="message" || state.style==="letter");
+  }).catch(()=>{});
+}
 if(_petEngine && !state.petGround) state.petGround="dark";   // gallery-dark hero by default
 if(_petEngine && (state.petType===undefined || state.petType===null)) state.petType=0.30;   // typography size, continuous 0.30 (fine) - 0.56 (bold)
 // Named breakpoints for the pet slider's live descriptor -- same three values
@@ -1381,6 +1394,9 @@ function variantPost(id){
   // (staging); anywhere else the request renders as the brand's own style. No control on
   // the page: a URL flag, so nothing a customer sees changes.
   if(new URLSearchParams(location.search).get("woven")==="1") return {ink:"photo", style:"woven", ground:"navy", backdrop:(state.backdrop||"")};
+  // The "Natural" card (style "woven"): the same request the URL flag made, now a choice on
+  // the page. The chosen backdrop chip travels; the ink axis does not apply.
+  if(state.style==="woven") return {ink:"photo", style:"woven", ground:"navy", backdrop:(state.backdrop||"")};
   const base = (state.style==="displacement" || state.style==="letter")
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
     : {ink:(id||"photo"), style:state.style, ground:"navy"};
@@ -1512,7 +1528,7 @@ const bgRow=$("#bgRow"), bgSwitch=$("#bgSwitch"), sunSwitch=$("#sunSwitch");
 // Shared style switcher — used by the style control on BOTH the input screen and
 // the result screen (the result one re-renders in place). Keeps both segments in sync.
 function setStyle(newStyle, rerender){
-  const wasDisp = state.style==="displacement" || state.style==="letter";
+  const wasDisp = state.style==="displacement" || state.style==="letter" || state.style==="woven";
   state.style=newStyle;
   // Type color (photo/mono/custom) and background are independent axes now, and both
   // work in every mode -- so neither is reset on a style switch; the user's picks persist.
@@ -1521,7 +1537,9 @@ function setStyle(newStyle, rerender){
   // "letter" = a MESSAGE sculpted by the Lifelike renderer: it composes like a sculpt
   // (disp swatches) but is written/typed like a passage (letter textarea).
   const letter = newStyle==="letter";
-  const prose = newStyle==="message", disp = newStyle==="displacement" || letter;
+  // "woven" (Natural) is a word-list look with the sculpt's swatches: a backdrop, no ink axis.
+  const woven = newStyle==="woven";
+  const prose = newStyle==="message", disp = newStyle==="displacement" || letter || woven;
   const letterUI = prose || letter;
   // Memorial input labels use gentle, plain wording (no "sculpt"/"drape" jargon) to
   // match the Words/Passage/Letter naming; the generic studio keeps its maker language.
@@ -1550,9 +1568,11 @@ function setStyle(newStyle, rerender){
   const cap=document.getElementById("styleCaption");
   if(cap) cap.textContent = _isMemorialBrand
     ? ( letter ? "Their letter, formed into their face — reading like a refrain."
+      : woven ? "Their photograph, held in the words — as they were."
       : prose ? "Their face, formed from what you write — a letter, a verse, a tribute."
       : "Their face, formed from their name and the words that describe them." )
     : ( letter ? "Their letter, sculpted into their face — reading like a refrain."
+      : woven ? "Their photograph, held in the words — hair, skin and light as they are."
       : disp ? "A lifelike portrait — the words shaped to follow their face."
       : prose ? "Their face from a whole message — a letter, a poem, a tribute."
       : "Their face from scattered words & names you choose." );
@@ -1588,6 +1608,11 @@ function updateStyleChooserVisibility(msgMode){
   vis("displacement", false);
   vis("words", false);
   vis("message", false);
+  // Woven ("Natural" on the page) is a second real look, so where the server has it on
+  // the chooser comes back with two cards: the sculpt and the photograph in words. Word
+  // lists only: a written message keeps the single Lifelike look.
+  if(window._wovenOn && !_petEngine && !msgMode){ vis("displacement", true); vis("woven", true); }
+  else vis("woven", false);
   const shown=[...seg.querySelectorAll('button[data-style]')].filter(b=>b.style.display!=="none").length;
   gal.style.display = shown>=2 ? "" : "none";          // one style -> no chooser
 }
