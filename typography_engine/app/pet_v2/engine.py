@@ -1673,7 +1673,7 @@ def _landmark_string(faces, scale=1.0):
 
 def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None,
               landmarks=None, debug_dir=None, out_stem="render", verbose=False, backdrop_rgb=None,
-              type_scale=None, auto_res=True, anatomy=None, human=False):
+              type_scale=None, auto_res=True, anatomy=None, human=False, wisp_alpha=None):
     """Render a typographic portrait of the pet in `bgr` (BGR uint8, already at the working
     resolution). Returns (rgb_uint8, metrics). `words`: the customer's comma-separated name +
     descriptors (the first entries weight highest; see _weighted_stream); None -> DEFAULT_WORDS.
@@ -1703,11 +1703,13 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         bgr = cv2.resize(bgr, None, fx=render_scale, fy=render_scale, interpolation=cv2.INTER_CUBIC)
         if mask is not None:
             mask = cv2.resize(mask, (bgr.shape[1], bgr.shape[0]), interpolation=cv2.INTER_LINEAR)
+        if wisp_alpha is not None:
+            wisp_alpha = cv2.resize(wisp_alpha, (bgr.shape[1], bgr.shape[0]), interpolation=cv2.INTER_LINEAR)
         _log(f"render scale {render_scale:g}x -> {bgr.shape[1]}x{bgr.shape[0]}")
     H, W = bgr.shape[:2]
     if mask is None:
         mask = _foreground_mask(bgr)
-    _bgr_in, _mask_in = bgr, mask   # untouched, in case the face turns out to need more pixels
+    _bgr_in, _mask_in, _wisp_in = bgr, mask, wisp_alpha   # untouched, in case the face turns out to need more pixels
     bgr_source = bgr.copy()   # kept for the type-only likeness test -- compare against the
                               # REAL photo, not our own contrast-enhanced version of it
     bgr = _enhance_contrast(bgr, mask)
@@ -1885,7 +1887,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             return render_v2(_bgr_in, words, mask=_mask_in, render_scale=_factor, max_overlap=max_overlap,
                              landmarks=_lm, debug_dir=debug_dir, out_stem=out_stem, verbose=verbose,
                              backdrop_rgb=backdrop_rgb, type_scale=type_scale, auto_res=False, anatomy=anatomy,
-                             human=human)
+                             human=human, wisp_alpha=_wisp_in)
     # Every eye in the photo: what density, hero placement and the structural pass keep clear of.
     all_eye_pts = list(attractor_pts) + [p for f in extra_faces for p in f["eyes"]]
     # NOT blending these into theta/coherence anymore: two corrected attempts both made the
@@ -2887,14 +2889,10 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     wash = wash_strength * mask * brightness * (1.0 - 0.95 * sat_anomaly)
     a = np.clip(np.maximum(a, wash), 0, 1)
     del brightness
-    if human:
-        # Wisps of hair. The matte is soft at a flyaway strand (0.1-0.4), no letter is ever laid
-        # on a strand a few pixels wide, and the ground is painted up to the matte, so the
-        # strands Displacement keeps (it feathers the silhouette) vanish here. In the soft
-        # edge of the matte a person's photo is revealed at the matte's own opacity, strand
-        # for strand; inside the solid silhouette nothing changes.
-        _edge = np.clip((0.5 - mask) / 0.2, 0, 1).astype(np.float32)   # 1 where the matte is under 0.3
-        a = np.maximum(a, mask * _edge)
+    # (A person's flyaway hair is composited at the end, from the guided fringe matte: see
+    # "wisps" below. Revealing the photo at the matte's own opacity here did nothing, because
+    # the solidified matte has no strands in it to reveal -- measured on the boy, 0 pixels
+    # of the raw matte reach 0.6 outside the solid silhouette.)
 
     # ---- Suppress REAL photographic whiskers within the mask ------------------------------
     # "Whiskers should also be typography... a high-end portrait should eventually have no
@@ -3080,6 +3078,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     inner_ground_bgr = cv2.cvtColor(np.clip(fur_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR)
     inner_ground_rgb = cv2.cvtColor(inner_ground_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
     ground_rgb = inner_ground_rgb * mask[..., None] + outer_ground_rgb * (1.0 - mask[..., None])
+    _outer_keep = outer_ground_rgb if (human and wisp_alpha is not None) else None   # the wisps sit on it
     del fur_weight2d, fur_num, fur_den, fur_bgr, fur_hsv, inner_ground_bgr, inner_ground_rgb, outer_ground_rgb
     # Vividness boost for the pet's own revealed colors -- flagged directly as "muted," and the
     # side-by-side reference photos confirmed it again at a brightness level, not just
@@ -3115,6 +3114,24 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # pre-distort the colors at all: use the real photo, and let the match enforce the range.
     photo_rgb = cv2.cvtColor(bgr_clean, cv2.COLOR_BGR2RGB).astype(np.float32)
     composited = ground_rgb * (1.0 - a) + photo_rgb * a
+    # ---- Wisps: a person's flyaway hair, outside the solid silhouette -------------------
+    # Displacement feathers its silhouette with a guided filter that snaps the matte onto
+    # the hair's real edges, so a strand a few pixels wide keeps its own alpha and shows on
+    # the backdrop. This engine's matte is a solidified silhouette with a blurred outline
+    # (right for fur, where the letters carry the edge), and outside that outline the
+    # ground was painted flat -- the strands the customer sees in Displacement were gone.
+    # `wisp_alpha` is that same guided fringe matte, built by the entry point for a person;
+    # outside the solid silhouette the pixel is the outer ground with the photo over it at
+    # the fringe's own alpha, exactly as Displacement composites its edge. Inside nothing
+    # changes: the fringe weight is 0 wherever the matte is solid.
+    _wisp_fr = None
+    if _outer_keep is not None:
+        _wisp_fr = np.clip((0.52 - mask) / 0.06, 0, 1).astype(np.float32)   # 1 outside the solid silhouette
+        _al = np.clip(wisp_alpha, 0, 1).astype(np.float32)[..., None]
+        _strand = _outer_keep * (1.0 - _al) + photo_rgb * _al
+        composited = composited * (1.0 - _wisp_fr[..., None]) + _strand * _wisp_fr[..., None]
+        del _strand, _al
+    del _outer_keep
 
     # Per-pixel stage probe: GOP_DEBUG_PT="x,y" prints each compositing stage's value at that
     # pixel, so a lost detail (a catchlight, a highlight) can be traced to the exact stage that
@@ -3569,7 +3586,9 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         # How much of each final pixel is the OUTER ground (outside the animal, under no
         # fringe hair): lets a later request swap the backdrop color by arithmetic instead of
         # a re-render. Stored as uint8 to keep the render cache small.
-        "outside_w": np.clip((1.0 - mask) * (1.0 - whisker_ink_alpha) * 255.0, 0, 255).astype(np.uint8),
+        "outside_w": np.clip(((1.0 - mask) if _wisp_fr is None else
+                              ((1.0 - np.clip(wisp_alpha, 0, 1)) * _wisp_fr + (1.0 - mask) * (1.0 - _wisp_fr)))
+                             * (1.0 - whisker_ink_alpha) * 255.0, 0, 255).astype(np.uint8),
         "backdrop_rgb": tuple(float(v) for v in backdrop_rgb) if backdrop_rgb is not None else None,
     }
     return composited_u8, metrics
@@ -3618,6 +3637,42 @@ def _with_backdrop(rgb_u8, outside_w_u8, old_rgb, new_rgb):
     w = outside_w_u8.astype(np.float32)[..., None] / 255.0
     delta = np.asarray(new_rgb, np.float32) - np.asarray(old_rgb, np.float32)
     return np.clip(rgb_u8.astype(np.float32) + delta * w, 0, 255).astype(np.uint8)
+
+
+def _wisp_matte(bgr, mask, raw):
+    """A person's fringe matte: the raw matte snapped onto the hair's real edges, the way
+    Displacement feathers its silhouette (app/pipeline/silhouette.py, _soft_matte), so a
+    flyaway strand keeps its own alpha on the backdrop. Same guided filter, same radius
+    (0.6% of the short side), confined to a band around the solid silhouette so nothing far
+    from the subject reappears. Only the fringe outside the solid silhouette is ever read
+    from it (render_v2, "wisps"). None when the filter is unavailable.
+
+    The knee is gentler than Displacement's (floor 0.12, gamma 1.5): that one cleans the
+    wide, soft band MediaPipe leaves, whereas the matte here is tight and a thin strand
+    peaks near 0.3 in it. Measured on the boy, outside the solid silhouette (pixels over
+    0.3): Displacement's knee 5, no knee 1130, this knee 6041, gamma 0.5 14975 -- but gamma
+    0.5 lifts a haze round the whole outline (2px ring at 0.32), and this stays at 0.21."""
+    try:
+        from ..pipeline.silhouette import _guided_filter
+        h, w = mask.shape[:2]
+        guide = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+        r = max(4, int(round(min(w, h) * 0.006)))
+        al = np.clip(_guided_filter(guide, np.clip(raw, 0.0, 1.0).astype(np.float32), r, 1e-4), 0.0, 1.0)
+        al = np.clip((al - 0.05) / 0.95, 0.0, 1.0) ** 0.6
+        # Lifting the alpha lifts the matte's own soft ring with the strands (the boy rendered
+        # with a tan feather round the whole outline). A strand is an edge in the photo and
+        # the ring is not: gate by the luminance gradient, so a flat pixel keeps a fifth of
+        # its alpha and a hair edge all of it. Measured outside the solid silhouette: ring
+        # 0.21 -> 0.14 (2px mean), strands over 0.3 6041 -> 1647, all of them on hair.
+        _gb = cv2.GaussianBlur(guide, (0, 0), 1.0)
+        _grad = np.hypot(cv2.Sobel(_gb, cv2.CV_32F, 1, 0, ksize=3), cv2.Sobel(_gb, cv2.CV_32F, 0, 1, ksize=3)) / 8.0
+        al = al * (0.2 + 0.8 * np.clip(_grad / 0.04, 0.0, 1.0))
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        hard = (mask > 0.5).astype(np.uint8)
+        band = cv2.dilate(hard, k, iterations=max(2, int(round(min(w, h) * 0.012))))
+        return (al * (band > 0)).astype(np.float32)
+    except Exception:  # noqa: BLE001 -- the fringe is a refinement, never a failed render
+        return None
 
 
 def _photo_background_rgb(bgr, matte):
@@ -3749,7 +3804,7 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         if _photo_ground and photo_bg is not None:
             ground_rgb = photo_bg
         _pad = _fit_print_padding(W0, H0, float(print_aspect)) if print_aspect else (0, 0, 0, 0)
-        bgr_fit = _fit_print_aspect(bgr, m_raw, float(print_aspect))[0] if print_aspect else bgr
+        bgr_fit, _raw_fit = _fit_print_aspect(bgr, m_raw, float(print_aspect)) if print_aspect else (bgr, m_raw)
         boxes = None        # None: the detector is unavailable; []: it ran and saw no cat or dog
         subjects = []       # the boxes that count as subjects, largest first (on the fitted frame)
         faces = []          # confident face readings, one per subject that gave one
@@ -3769,6 +3824,8 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         mask = _solidify_matte(m_raw, W0, keep_boxes=_keep)
         if print_aspect:
             bgr, mask = _fit_print_aspect(bgr, mask, float(print_aspect))
+        # A person's hair: the fringe matte Displacement feathers its edge with (see _wisp_matte).
+        _wisp = _wisp_matte(bgr, mask, _raw_fit) if _human else None
         # Real face landmarks from the pose model (pet_landmarks.py: YOLOX + RTMPose AP-10K,
         # verified on tight crops, full bodies and multi-pet photos alike). The photometric
         # detector inside render_v2 has no notion of where the head is on a full-body photo:
@@ -3853,7 +3910,7 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=_scale, backdrop_rgb=ground_rgb,
                                  type_scale=_ts, landmarks=_lm_str, auto_res=(_scale == 1.0),
                                  verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"), anatomy=_anat,
-                                 human=_human)
+                                 human=_human, wisp_alpha=_wisp)
         entry = (int(rgb.shape[0]), rgb, metrics["outside_w"], ground_rgb, _notes, photo_bg)   # the height actually rendered
         _cache_put(key, entry)
     finally:
