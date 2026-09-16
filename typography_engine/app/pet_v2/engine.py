@@ -3676,6 +3676,41 @@ def _with_backdrop(rgb_u8, outside_w_u8, old_rgb, new_rgb):
     return np.clip(rgb_u8.astype(np.float32) + delta * w, 0, 255).astype(np.uint8)
 
 
+def _with_person_silhouette(bgr, m_raw, say=None):
+    """The matte, unioned with the human pipeline's silhouette (app/pipeline/silhouette.py:
+    MediaPipe's person segmenter refined with a guided filter, the cut every live human
+    site is made with). The matte model is the better judge of fur and hair; the person
+    segmenter is the better judge of clothes against a wall of the same colour, which the
+    matte model reads as background and the largest-piece rule then discards. Measured on a
+    woman in a beige cardigan against a beige wall: the matte gave 55% of the lower-right
+    region, the segmenter 86%, and Woven painted her right sleeve as ground. Fail-safe:
+    any error returns the matte as it was. A collapsed matte (None) becomes the silhouette."""
+    try:
+        from ..pipeline.preprocess import LoadedImage
+        from ..pipeline.warnings import WarningCollector
+        from ..pipeline.silhouette import extract_silhouette
+        img = LoadedImage(bgr=bgr, gray=cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY),
+                          orig_w=bgr.shape[1], orig_h=bgr.shape[0], scale=1.0)
+        sil = extract_silhouette(img, WarningCollector())
+        soft = sil.soft if getattr(sil, "soft", None) is not None else sil.mask
+        s = np.clip(np.asarray(soft, np.float32) / 255.0, 0.0, 1.0)
+        if s.shape != bgr.shape[:2]:
+            s = cv2.resize(s, (bgr.shape[1], bgr.shape[0]), interpolation=cv2.INTER_LINEAR)
+        if float((s > 0.5).mean()) < 0.004:           # the segmenter found nobody: keep the matte
+            return m_raw
+        if m_raw is None:
+            return s
+        out = np.maximum(m_raw, s)
+        if say is not None:
+            say(f"person silhouette: matte {float((m_raw > 0.5).mean()):.1%} of the frame, "
+                f"union {float((out > 0.5).mean()):.1%}", flush=True)
+        return out
+    except Exception as _e:  # noqa: BLE001 -- a refinement, never a failed render
+        if say is not None:
+            say(f"person silhouette unavailable: {_e!r}", flush=True)
+        return m_raw
+
+
 def _wisp_matte(bgr, mask, raw):
     """A person's fringe matte: the raw matte snapped onto the hair's real edges, the way
     Displacement feathers its silhouette (app/pipeline/silhouette.py, _soft_matte), so a
@@ -3836,6 +3871,12 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         _say = print if os.environ.get("PET_V2_VERBOSE", "") not in ("", "0") else (lambda *a, **k: None)
         _lm_on = os.environ.get("PET_V2_LANDMARKS", "1").strip().lower() not in ("0", "false", "off")
         m_raw = _raw_matte(bgr)
+        if _human:
+            # A person's matte is the union with the human pipeline's own silhouette. Her
+            # beige cardigan against a beige wall: the matte model saw 55% of the lower-right
+            # region as her, one piece, no sleeve; the segmenter the live human sites run
+            # saw 86%. What those sites keep, Woven keeps.
+            m_raw = _with_person_silhouette(bgr, m_raw, _say)
         W0, H0 = bgr.shape[1], bgr.shape[0]
         photo_bg = _photo_background_rgb(bgr, m_raw)     # the source's own ground, kept with the render
         if _photo_ground and photo_bg is not None:

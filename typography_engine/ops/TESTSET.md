@@ -300,5 +300,8 @@ not, so a `?woven=1` page there renders the brand's own style. To gate it:
     SET=/root/typortrait-testset/woven MODE=woven BRAND=typortrait ./ops/render-petset.sh
     SET=/root/typortrait-testset/woven ./ops/pet-gate.sh <A> <B>
 
+`H15.png` (a woman in a beige cardigan against a beige wall, her right sleeve lost by the
+matte model alone) joined the set on 2026-09-16.
+
 Runs file under `/root/typortrait-testset/woven/out/<image>/`. The same photos through the
 human engine (`./ops/render-testset.sh`) are the other half of a blind pair.
