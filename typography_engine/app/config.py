@@ -313,6 +313,13 @@ def _render_concurrency() -> int:
 
 RENDER_CONCURRENCY = _render_concurrency()
 
+# --- Woven (staging experiment) ---------------------------------------------
+# The pet engine pointed at a person, with the face mesh steering the lanes. Reached only by
+# a request whose style is "woven" AND this switch, so production trees, which do not set
+# it, cannot render it whatever a request says. Remove TYPO_WOVEN from a tree's .env to
+# take it away; nothing else changes.
+WOVEN_ENABLED = (os.environ.get("TYPO_WOVEN", "") or "").strip() == "1"
+
 # --- Content moderation -----------------------------------------------------
 # The user's words/message BECOME the portrait, so we moderate that text (hate,
 # sexual, harassment, etc.) via OpenAI's free moderation endpoint. With no key

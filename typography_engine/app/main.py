@@ -43,6 +43,7 @@ from .config import (
     WORD_VARIETY,
     STUDIO_BREATHE,
     RENDER_CONCURRENCY,
+    WOVEN_ENABLED,
     DATA_DIR,
     DOWNLOAD_PNG_WIDTH,
     DOWNLOAD_PRICE_CENTS,
@@ -1544,6 +1545,9 @@ async def render(
     # Paws in Words: route to the landmark-free pet engine (no face mesh). The human path is
     # byte-identical when pet_on is False, so the live brands are unaffected.
     pet_on = str(pet or "").strip().lower() in ("1", "true", "yes", "on")
+    # Woven (staging experiment): the pet engine pointed at a person. Only when the request
+    # asks for it AND the tree's .env switches it on (TYPO_WOVEN=1); production trees do not.
+    woven_on = (str(style or "").strip().lower() == "woven") and WOVEN_ENABLED and not pet_on
     _PET_GROUNDS = ("dark", "mid", "charcoal", "paper", "slate", "photo")   # photo: the source's own background colour (v2)
     pet_ground_sel = (ground or "dark").strip().lower()
     if pet_ground_sel not in _PET_GROUNDS:
@@ -1636,9 +1640,10 @@ async def render(
                 manual_mask_arr = _arr
         except Exception:  # noqa: BLE001
             manual_mask_arr = None
-    if pet_on:
+    if pet_on or woven_on:
         # Pet engine is landmark-free (its own U2-Net matte) -- no face analyze, and the
         # human-face quality gate ("we couldn't find a face") must NOT run on an animal.
+        # Woven reads the face itself, inside the engine.
         an = None
     else:
         try:
@@ -1677,7 +1682,8 @@ async def render(
     # User-facing styles: "displacement" = type-follows-the-form portrait (its own
     # raster renderer + ground choice); "message" = poster rows; anything else =
     # "words" (the scattered mosaic). Words/Passage share the layered renderer.
-    is_displacement = (style == "displacement")
+    # A "woven" request where the switch is off renders as the brand's own style, Displacement.
+    is_displacement = (style == "displacement") or (str(style or "").strip().lower() == "woven" and not woven_on)
     disp_flow = is_displacement and str(flow or "").strip().lower() in ("1", "true", "yes", "on")
     ground_choice = ground if ground in ("paper", "navy", "black") else "navy"
     # "Match your space" backdrop: recolors ONLY the segmented background behind the
@@ -1710,6 +1716,9 @@ async def render(
     disp_route = (not is_displacement and style_choice in ("words", "message")
                   and ink_choice in _DISP_SCULPT_INKS and lifelike_route_on())
     disp_flow_eff = disp_flow if is_displacement else (style_choice == "message")
+    if woven_on:                    # decided beside pet_on above; it is its own style, not a sculpt route
+        style_choice = "woven"
+        disp_route = False
     # Same Lifelike RENDERING for all three styles; only the TYPOGRAPHY differs:
     #   Lifelike -> importance-weighted words (env WORD_VARIETY, name/leading words repeat)
     #   Mosaic   -> a varied word-cloud: flat frequency (variety=1) so every word shows,
@@ -1752,6 +1761,18 @@ async def render(
                 render_pet_portrait, img_bytes, text, pet_ground_sel,
                 int(min(1600, max(1050, preview_w))), aspect, pet_type_scale, notices=_pet_notes)
             for _n in _pet_notes:
+                warns.warn("input", _n["code"], _n["message"])
+            runs, ground_hex, mask_svg = [], None, None
+        elif woven_on:
+            # Woven (staging experiment): the pet engine with the person as its subject. The
+            # face mesh steers the lanes; the customer's words and print shape as for any
+            # style; Gallery Dark ground; the pet slider's Small.
+            from .pet_v2.engine import render_pet_portrait_v2   # v2 only: the first engine has no idea of a person
+            _woven_notes = []
+            png_bytes = await _bounded_to_thread(
+                render_pet_portrait_v2, img_bytes, text, "dark",
+                int(min(1600, max(1050, preview_w))), aspect, 0.30, notices=_woven_notes, subject="human")
+            for _n in _woven_notes:
                 warns.warn("input", _n["code"], _n["message"])
             runs, ground_hex, mask_svg = [], None, None
         elif is_displacement or disp_route:
@@ -1917,6 +1938,7 @@ async def render(
             "sunglasses": bool(sunglasses_on),   # manual opaque-lens flag -> paid recompose must match
             "sunglass_faces": sunglass_faces_sel,   # per-subject lens selection -> paid recompose must match
             "pet": bool(pet_on),   # Paws in Words -> paid recompose renders via the pet engine
+            "woven": bool(woven_on),   # Woven (staging experiment) -> paid recompose renders via the pet engine as a person
             "pet_ground": pet_ground_sel if pet_on else None,
             "pet_type": (pet_type or "small") if pet_on else None,   # raw slider value, kept for reference
             "pet_type_scale": pet_type_scale if pet_on else None,   # authoritative: what actually rendered
@@ -4524,6 +4546,18 @@ def _compose_clean_png(job, aspect, path, recipe_path, src_path):
         dl_sun = bool(r.get("sunglasses"))     # manual opaque-lens flag -> match the preview
         _dlsf = r.get("sunglass_faces")        # per-subject lens selection -> match the preview
         dl_sunf = list(_dlsf) if isinstance(_dlsf, (list, tuple)) else None
+        if r.get("woven"):
+            # Woven (staging experiment): the paid file the way the preview was made, the pet
+            # engine with the person as its subject, at download resolution.
+            from .pet_v2.engine import render_pet_portrait_v2
+            png_bytes = render_pet_portrait_v2(
+                src_path.read_bytes(), (r.get("text", "") or ""), ground="dark",
+                height=int(round(DOWNLOAD_PNG_WIDTH / max(0.5, aspect))),
+                print_aspect=aspect, type_scale=0.30, subject="human")
+            if not png_bytes:
+                return None
+            _write_atomic(path, png_bytes)
+            return path
         if r.get("pet"):
             # Paws in Words: paid file via the pet engine, on a 4:5 gallery print canvas at
             # download resolution. Skips the face pipeline entirely.

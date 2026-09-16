@@ -287,3 +287,18 @@ person, or no animal** on the pet site: the render goes ahead on the heuristic e
 and the customer gets a note under the preview ("we couldn't spot a cat or dog"); the gate
 should show that photo's numbers do not drift either. When either is added, look for the
 log lines `N pets of comparable size` and `detector: no cat or dog` in its `.metrics` run.
+
+## Woven (staging experiment): people through the pet engine
+
+The v2 engine pointed at a person, the face mesh steering the lanes. Reached only by a
+request with `style=woven` on a tree whose `.env` has `TYPO_WOVEN=1`; production trees do
+not, so a `?woven=1` page there renders the brand's own style. To gate it:
+
+    mkdir -p /root/typortrait-testset/woven/src
+    cp /root/typortrait-testset/src/10-smile.jpg /root/typortrait-testset/woven/src/01-smile.jpg   # and so on
+    echo "ELEANOR, GRACE, KIND, BRAVE, WISE, WARM, LOYAL, HOME" > /root/typortrait-testset/woven/words.txt
+    SET=/root/typortrait-testset/woven MODE=woven BRAND=typortrait ./ops/render-petset.sh
+    SET=/root/typortrait-testset/woven ./ops/pet-gate.sh <A> <B>
+
+Runs file under `/root/typortrait-testset/woven/out/<image>/`. The same photos through the
+human engine (`./ops/render-testset.sh`) are the other half of a blind pair.

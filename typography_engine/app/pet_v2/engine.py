@@ -1673,7 +1673,7 @@ def _landmark_string(faces, scale=1.0):
 
 def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None,
               landmarks=None, debug_dir=None, out_stem="render", verbose=False, backdrop_rgb=None,
-              type_scale=None, auto_res=True):
+              type_scale=None, auto_res=True, anatomy=None):
     """Render a typographic portrait of the pet in `bgr` (BGR uint8, already at the working
     resolution). Returns (rgb_uint8, metrics). `words`: the customer's comma-separated name +
     descriptors (the first entries weight highest; see _weighted_stream); None -> DEFAULT_WORDS.
@@ -1715,6 +1715,26 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # Multi-scale (recommendation #11) replaces the old single-sigma tensor -- see
     # multi_scale_orientation's docstring for why (the doodle's vertical-striping complaint).
     theta, coherence = multi_scale_orientation(gray, W)
+    if anatomy is not None:
+        # A person's face: the flow direction comes from the face's own structure where the
+        # mesh knows it (pet_landmarks.anatomy_field: oval, brows, eyes, lips, nose), and from
+        # texture where it does not (hair, clothes). Blended in doubled-angle space, so the
+        # two directions never cancel; the anatomy weight is 1 on a contour and 0 beyond
+        # 1.5 eye-separations. Skin has almost no texture, so without this the lanes on a
+        # face take their direction from noise (measured: the texture field's coherence on a
+        # cheek is a fifth of what it is on fur). None for every animal: byte-identical.
+        _ta, _wa = anatomy
+        if _ta.shape != gray.shape:
+            _c = cv2.resize(np.cos(2 * _ta) * _wa, (W, H), interpolation=cv2.INTER_LINEAR)
+            _s = cv2.resize(np.sin(2 * _ta) * _wa, (W, H), interpolation=cv2.INTER_LINEAR)
+            _wa = cv2.resize(_wa, (W, H), interpolation=cv2.INTER_LINEAR)
+        else:
+            _c, _s = np.cos(2 * _ta) * _wa, np.sin(2 * _ta) * _wa
+        _ct = coherence * np.cos(2 * theta) * (1.0 - _wa) + _c
+        _st = coherence * np.sin(2 * theta) * (1.0 - _wa) + _s
+        theta = (0.5 * np.arctan2(_st, _ct)).astype(np.float32)
+        coherence = np.clip(np.hypot(_ct, _st), 0, 1).astype(np.float32)
+        del _ta, _wa, _c, _s, _ct, _st
     theta_s = _gblur(theta, (0, 0), sigmaX=max(1.0, W * 0.006))
     coherence_s = _gblur(coherence, (0, 0), sigmaX=max(1.0, W * 0.006))
     del coherence   # only the smoothed field is read from here on (memory; see the composite stage)
@@ -1864,7 +1884,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                                    _factor) if _lm_env else None
             return render_v2(_bgr_in, words, mask=_mask_in, render_scale=_factor, max_overlap=max_overlap,
                              landmarks=_lm, debug_dir=debug_dir, out_stem=out_stem, verbose=verbose,
-                             backdrop_rgb=backdrop_rgb, type_scale=type_scale, auto_res=False)
+                             backdrop_rgb=backdrop_rgb, type_scale=type_scale, auto_res=False, anatomy=anatomy)
     # Every eye in the photo: what density, hero placement and the structural pass keep clear of.
     all_eye_pts = list(attractor_pts) + [p for f in extra_faces for p in f["eyes"]]
     # NOT blending these into theta/coherence anymore: two corrected attempts both made the
@@ -3573,7 +3593,7 @@ def _photo_background_rgb(bgr, matte):
 
 
 def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
-                           print_aspect=None, type_scale=None, notices=None):
+                           print_aspect=None, type_scale=None, notices=None, subject=None):
     """Drop-in for pet_proto.render_pet_portrait (same signature, PNG bytes out). `height` is
     the working resolution and therefore the typography fineness: previews ~1050-1600, print
     at the PET_V2_MAX_RENDER_PX cap (default 2400) then upscaled. `ground` is the site's
@@ -3609,7 +3629,11 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         if _canvas_w * _canvas_h > _budget * 1.05:
             work_h = max(600, int(round(work_h * math.sqrt(_budget / (_canvas_w * _canvas_h)))))
     _ts = round(float(type_scale), 3) if type_scale else 0.30
-    key = (hashlib.sha1(image_bytes).hexdigest(), str(words or ""), float(print_aspect or 0.0), _ts)
+    # `subject`: None for the pet site; "human" for the Woven style on the human brands, where
+    # the face mesh's structure steers the lanes and no pet is looked for. Part of the cache
+    # key: the same photo renders differently under the two.
+    _human = (subject or "").strip().lower() == "human"
+    key = (hashlib.sha1(image_bytes).hexdigest(), str(words or ""), float(print_aspect or 0.0), _ts, _human)
 
     def _finish(entry):
         cached_h, rgb, outside_w, old_ground = entry[:4]
@@ -3723,10 +3747,11 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         # and is dropped. A person of comparable size to the largest pet, or anyone when there
         # is no pet, becomes a subject too: eye reveal and fine type, no leather or whiskers.
         humans = []
-        if _lm_on and boxes is not None:
+        if _lm_on and (boxes is not None or _human):
             try:
+                from .. import pet_landmarks
                 _pet_es = max([math.hypot(f["eye_l"][0] - f["eye_r"][0], f["eye_l"][1] - f["eye_r"][1]) for f in faces] or [0.0])
-                humans = [h for h in pet_landmarks.human_faces(bgr, exclude_boxes=boxes) if h["eye_sep"] >= 0.5 * _pet_es]
+                humans = [h for h in pet_landmarks.human_faces(bgr, exclude_boxes=boxes or []) if h["eye_sep"] >= 0.5 * _pet_es]
             except Exception as _e:  # noqa: BLE001 -- a person is a bonus subject, never a failed render
                 humans = []
                 _say(f"human face mesh failed: {_e!r}", flush=True)
@@ -3736,7 +3761,7 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         # What the customer should know. The detector's word, never a guess: nothing is said when
         # it could not run.
         _notes = []
-        if _lm_on and boxes is not None:
+        if _lm_on and boxes is not None and not _human:   # on the human brands a person is the point
             if not boxes and humans:
                 _notes.append({"code": "pet_not_found", "message":
                                "We couldn't spot a cat or dog in this photo, so we built the portrait around "
@@ -3770,9 +3795,15 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
                 _scale = _f
                 _say(f"eyes {_es_lm:.0f}px apart: rendering at {_scale:.2f}x for the face", flush=True)
             _lm_str = _landmark_string(_face_pairs, _scale)
+        # The Woven style: the largest person's mesh steers the lanes across their face.
+        _anat = None
+        if _human and humans and not faces:
+            _anat = pet_landmarks.anatomy_field(humans[0]["points"], bgr.shape[0], bgr.shape[1], humans[0]["eye_sep"])
+            _say(f"anatomy field: {'built' if _anat is not None else 'unavailable'} for the face "
+                 f"{humans[0]['eye_sep']:.0f}px eyes apart", flush=True)
         rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=_scale, backdrop_rgb=ground_rgb,
                                  type_scale=_ts, landmarks=_lm_str, auto_res=(_scale == 1.0),
-                                 verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"))
+                                 verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"), anatomy=_anat)
         entry = (int(rgb.shape[0]), rgb, metrics["outside_w"], ground_rgb, _notes, photo_bg)   # the height actually rendered
         _cache_put(key, entry)
     finally:

@@ -1376,6 +1376,11 @@ function variantPost(id){
   // Paws in Words: the pet engine uses its own grounds (dark/mid/paper…), driven off the pet
   // flag on the server. Send the chosen pet ground; backdrop/ink don't apply.
   if(_petEngine) return {ink:"photo", style:"pet", ground:(state.petGround||"dark"), petType:(state.petType||0.30)};
+  // Woven (staging experiment): ?woven=1 on a human brand asks the server for the pet engine
+  // with the person as its subject. The server honours it only where TYPO_WOVEN=1 is set
+  // (staging); anywhere else the request renders as the brand's own style. No control on
+  // the page: a URL flag, so nothing a customer sees changes.
+  if(new URLSearchParams(location.search).get("woven")==="1") return {ink:"photo", style:"woven", ground:"navy"};
   const base = (state.style==="displacement" || state.style==="letter")
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
     : {ink:(id||"photo"), style:state.style, ground:"navy"};

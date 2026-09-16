@@ -246,9 +246,78 @@ def human_faces(bgr, exclude_boxes=None, min_eye_sep=40.0):
         out.append({"eye_l": eye_l, "eye_r": eye_r,
                     "nose": (float(p[1][0]), float(p[1][1])),
                     "mouth": (float((p[13][0] + p[14][0]) / 2), float((p[13][1] + p[14][1]) / 2)),
-                    "eye_sep": sep})
+                    "eye_sep": sep, "points": np.asarray(p, np.float32)})
     out.sort(key=lambda d: d["eye_sep"], reverse=True)
     return out
+
+
+def anatomy_field(points, H, W, eye_sep):
+    """A tangent field from a face's own structure, for the streamlines to follow on skin.
+
+    The engine's flow field comes from texture (fur, hair); skin has almost none, so on a
+    face the lanes take their direction from noise. This builds the direction from the mesh
+    instead: the face oval, both brows, both eye rings, the lips and the nose are traced as
+    chains, and every pixel takes the tangent of the nearest point on the nearest chain, so
+    the cheek runs concentric with the jaw, the forehead with the brow and the crown, and the
+    type circles each eye and the mouth. Returns (theta, weight) at the frame's size, theta
+    in radians, weight 1 on a contour falling to 0 by 1.5 eye-separations away, or None when
+    the mesh is unusable. The weight is what the engine blends by; where it is 0 the texture
+    field stands untouched, which is the hair and everything below the jaw."""
+    try:
+        import cv2
+        from mediapipe.tasks.python.vision import FaceLandmarksConnections as C
+        from .pipeline.pathgen import order_edges_into_chains
+    except Exception as e:  # noqa: BLE001
+        _dbg("anatomy field unavailable: %r" % (e,))
+        return None
+    pts_all = np.asarray(points, np.float32)
+    if pts_all.shape[0] < 478 or eye_sep <= 1:
+        return None
+    label = np.zeros((H, W), np.int32)
+    tangents = [0.0]
+    sid = 0
+    for name in ("FACE_LANDMARKS_FACE_OVAL", "FACE_LANDMARKS_LEFT_EYEBROW", "FACE_LANDMARKS_RIGHT_EYEBROW",
+                 "FACE_LANDMARKS_LIPS", "FACE_LANDMARKS_LEFT_EYE", "FACE_LANDMARKS_RIGHT_EYE", "FACE_LANDMARKS_NOSE"):
+        conns = getattr(C, name, None)
+        if not conns:
+            continue
+        for chain, closed in order_edges_into_chains([(e.start, e.end) for e in conns]):
+            pts = pts_all[chain]
+            if closed:
+                pts = np.vstack([pts, pts[:1]])
+            for i in range(len(pts) - 1):
+                p, q = pts[i], pts[i + 1]
+                d = q - p
+                seg = float(np.hypot(d[0], d[1]))
+                if seg < 1e-3:
+                    continue
+                ang = float(np.arctan2(d[1], d[0]))
+                n = max(1, int(seg / 2.0))
+                for t in np.linspace(0.0, 1.0, n, endpoint=False):
+                    x, y = p + t * d
+                    xi, yi = int(x), int(y)
+                    if 0 <= xi < W and 0 <= yi < H:
+                        sid += 1
+                        tangents.append(ang)
+                        label[yi, xi] = sid
+    if sid == 0:
+        return None
+    src = (label == 0).astype(np.uint8)
+    dist, labels = cv2.distanceTransformWithLabels(src, cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
+    # DIST_LABEL_PIXEL numbers every contour pixel in scan order; map that number to the tangent.
+    ys, xs = np.nonzero(label)
+    lut = np.zeros(int(labels.max()) + 1, np.float32)
+    lut[labels[ys, xs]] = np.asarray(tangents, np.float32)[label[ys, xs]]
+    theta = lut[labels]
+    sig = 0.6 * float(eye_sep)
+    weight = np.exp(-(dist / sig) ** 2).astype(np.float32)
+    weight[dist > 1.5 * eye_sep] = 0.0
+    # Smooth in doubled-angle space so the seam between two chains' nearest regions is soft.
+    k = max(1.0, 0.08 * float(eye_sep))
+    c = cv2.GaussianBlur(np.cos(2 * theta) * weight, (0, 0), k)
+    s = cv2.GaussianBlur(np.sin(2 * theta) * weight, (0, 0), k)
+    theta = (0.5 * np.arctan2(s, c)).astype(np.float32)
+    return theta, weight
 
 
 def face_in_box(bgr, box, mask=None):

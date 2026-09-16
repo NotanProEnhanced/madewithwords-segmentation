@@ -144,10 +144,20 @@ for f in "$SET"/src/*.jpg "$SET"/src/*.jpeg "$SET"/src/*.png; do
     printf '  %-22s ' "$b"
     since=$(date -u +%Y-%m-%dT%H:%M:%S)
     t0=$(date +%s)
+    # MODE=woven: the same engine pointed at a person (the Woven staging experiment). The
+    # request carries style=woven instead of the pet flag; the container honours it only
+    # with TYPO_WOVEN=1 in its .env, otherwise it renders Displacement and the metrics line
+    # is missing, which the run reports. SET should then point at a folder of people, e.g.
+    #   SET=/root/typortrait-testset/woven MODE=woven BRAND=typortrait ./ops/render-petset.sh
+    if [ "${MODE:-pet}" = "woven" ]; then
+        _subject=(-F "style=woven" -F "ground=navy")
+    else
+        _subject=(-F "pet=1" -F "pet_type=$PET_TYPE" -F "ground=$GROUND")
+    fi
     resp=$(curl -s --max-time 600 -X POST "$BASE/render" \
         -F "image=@$f" \
         -F "words=$words" \
-        -F "pet=1" -F "pet_type=$PET_TYPE" -F "ground=$GROUND" \
+        "${_subject[@]}" \
         -F "png_width=$PNG_W" -F "aspect=$ASPECT" -F "remove_bg=true" -F "uppercase=true" \
         -F "brand=$BRAND" -F "ref=$BRAND" -F "biometric_consent=on" 2>&1)
     dt=$(( $(date +%s) - t0 ))
