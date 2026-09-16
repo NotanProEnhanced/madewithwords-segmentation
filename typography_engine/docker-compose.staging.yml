@@ -105,6 +105,9 @@ services:
       - PET_ENGINE=${PET_ENGINE:-}
       - PET_V2_VERBOSE=${PET_V2_VERBOSE:-}
       - PET_V2_MAX_RENDER_PX=${PET_V2_MAX_RENDER_PX:-}
+      # Woven (a person): the photo revealed through the hair, outside the face, at this
+      # strength (0..1). Unset = off. An experiment switched on per tree and judged by eye.
+      - PET_V2_HAIR_REVEAL=${PET_V2_HAIR_REVEAL:-}
       # Pet prototype render knobs (live-tunable via .env, no rebuild): drape wrap depth,
       # type fineness (<1 finer), edge-ink strength, tonal depth.
       - PET_DRAPE=${PET_DRAPE:-}

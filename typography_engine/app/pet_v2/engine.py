@@ -2889,10 +2889,32 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     wash = wash_strength * mask * brightness * (1.0 - 0.95 * sat_anomaly)
     a = np.clip(np.maximum(a, wash), 0, 1)
     del brightness
-    # (A person's flyaway hair is composited at the end, from the guided fringe matte: see
-    # "wisps" below. Revealing the photo at the matte's own opacity here did nothing, because
-    # the solidified matte has no strands in it to reveal -- measured on the boy, 0 pixels
-    # of the raw matte reach 0.6 outside the solid silhouette.)
+    # ---- A person's hair: the photo shows through, outside the face --------------------
+    # "Strands of wispy hair are not evident in the woven version." Traced on her photo:
+    # the hairline is smooth and every matte agrees on it, so the strands were never at the
+    # edge. They are the hair's own texture, strand by strand, which Displacement keeps
+    # because its letters are a warp of the photo and the photo is everywhere, and which
+    # this engine paints over: a letter reveals the photo, a gap is a darkened copy, and the
+    # letters' own edges are what the eye reads. Measured on the boy (high-pass L in the
+    # hair, correlation with the source's): Woven carried 0.33 of the strand structure.
+    # Outside the face ellipse the photo is revealed through everything at PET_V2_HAIR_REVEAL,
+    # so the hair is the photo with the words on it, as it is in Displacement; the face keeps
+    # the type-only recipe every judgment was made on. A floor, never a cut: dense ink still
+    # reveals more. Off by default (0): on the boy, whose photo is 640px wide and upscaled,
+    # 0.7 raised the correlation only to 0.39 and the eye saw little, so it is switched on
+    # per tree for her photo and judged there, not shipped on a proxy. Animals never enter
+    # this branch.
+    if human and len(attractor_pts) >= 2:
+        _hr = float(os.environ.get("PET_V2_HAIR_REVEAL", "0") or 0.0)
+        if _hr > 0.0:
+            _fx0 = 0.5 * (attractor_pts[0][0] + attractor_pts[1][0])
+            _fy0 = 0.5 * (attractor_pts[0][1] + attractor_pts[1][1]) + 0.5 * _es
+            _fr0 = np.sqrt(((xx - _fx0) / (1.1 * _es)) ** 2 + ((yy - _fy0) / (1.5 * _es)) ** 2)
+            _hair_w = np.clip((_fr0 - 1.0) / 0.3, 0.0, 1.0).astype(np.float32)   # 0 on the face, 1 past 1.3
+            a = np.clip(np.maximum(a, _hr * mask * _hair_w * (1.0 - 0.95 * sat_anomaly)), 0, 1)
+            del _fr0, _hair_w
+    # (A person's flyaway hair at the edge is composited at the end, from the guided fringe
+    # matte: see "wisps" below.)
 
     # ---- Suppress REAL photographic whiskers within the mask ------------------------------
     # "Whiskers should also be typography... a high-end portrait should eventually have no
