@@ -1673,7 +1673,7 @@ def _landmark_string(faces, scale=1.0):
 
 def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None,
               landmarks=None, debug_dir=None, out_stem="render", verbose=False, backdrop_rgb=None,
-              type_scale=None, auto_res=True, anatomy=None):
+              type_scale=None, auto_res=True, anatomy=None, human=False):
     """Render a typographic portrait of the pet in `bgr` (BGR uint8, already at the working
     resolution). Returns (rgb_uint8, metrics). `words`: the customer's comma-separated name +
     descriptors (the first entries weight highest; see _weighted_stream); None -> DEFAULT_WORDS.
@@ -1884,7 +1884,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                                    _factor) if _lm_env else None
             return render_v2(_bgr_in, words, mask=_mask_in, render_scale=_factor, max_overlap=max_overlap,
                              landmarks=_lm, debug_dir=debug_dir, out_stem=out_stem, verbose=verbose,
-                             backdrop_rgb=backdrop_rgb, type_scale=type_scale, auto_res=False, anatomy=anatomy)
+                             backdrop_rgb=backdrop_rgb, type_scale=type_scale, auto_res=False, anatomy=anatomy,
+                             human=human)
     # Every eye in the photo: what density, hero placement and the structural pass keep clear of.
     all_eye_pts = list(attractor_pts) + [p for f in extra_faces for p in f["eyes"]]
     # NOT blending these into theta/coherence anymore: two corrected attempts both made the
@@ -3059,8 +3060,13 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # and true whites outright, and sat*0.45 is the desaturation. Clamp removed, desaturation
     # eased; the real enforcement of the source's tonal range is the distribution match at the
     # end of the composite (see "tonal match" below), which this no longer fights.
-    fur_hsv[..., 1] *= 0.85
-    fur_hsv[..., 2] = np.clip(fur_hsv[..., 2] * 0.40, 0, 255)   # same picture, well below the letters
+    # Skin is not fur. The gap layer at 0.40 of the source's value, with 0.85 of its
+    # saturation, is a coat's rest tone; on a face it read as dark orange (measured on the
+    # boy: face L 92 against a source of 130, saturation 112 against 90). A person keeps
+    # more of the face's own value in the gaps and a little less of its colour.
+    _gap_s, _gap_v = (0.75, 0.55) if human else (0.85, 0.40)
+    fur_hsv[..., 1] *= _gap_s
+    fur_hsv[..., 2] = np.clip(fur_hsv[..., 2] * _gap_v, 0, 255)   # same picture, well below the letters
     inner_ground_bgr = cv2.cvtColor(np.clip(fur_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR)
     inner_ground_rgb = cv2.cvtColor(inner_ground_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
     ground_rgb = inner_ground_rgb * mask[..., None] + outer_ground_rgb * (1.0 - mask[..., None])
@@ -3182,6 +3188,21 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         return float(np.mean(vals)) if vals else 0.0
 
     m_in = mask > 0.5
+    # A person: the FACE is the tonal reference, not the whole silhouette. The boy's mask is
+    # mostly a navy hoodie, so its mean L was 87 and the engine chose a dark-coat policy for a
+    # face at L 130 (measured: face rendered at L 92). For a human subject the reference
+    # samples, the coat-mode decision and the saturation gain come from an ellipse round the
+    # face, and the tonal maps run per region, face against the rest. For every animal
+    # `_ref_in` is `m_in` and nothing below changes.
+    _ref_in = m_in
+    _face_r = None
+    if human and len(attractor_pts) >= 2:
+        _fx = 0.5 * (attractor_pts[0][0] + attractor_pts[1][0])
+        _fy = 0.5 * (attractor_pts[0][1] + attractor_pts[1][1]) + 0.5 * _es
+        _face_r = np.sqrt(((xx - _fx) / (1.1 * _es)) ** 2 + ((yy - _fy) / (1.5 * _es)) ** 2).astype(np.float32)
+        _ref_in = m_in & (_face_r <= 1.0)
+        if int(_ref_in.sum()) < 500:
+            _ref_in, _face_r = m_in, None
     src_lab = cv2.cvtColor(cv2.cvtColor(bgr_source, cv2.COLOR_BGR2RGB), cv2.COLOR_RGB2LAB).astype(np.float32)
     src_hsv = cv2.cvtColor(bgr_source, cv2.COLOR_BGR2HSV).astype(np.float32)
     comp_lab = cv2.cvtColor(np.clip(composited, 0, 255).astype(np.uint8), cv2.COLOR_RGB2LAB)
@@ -3211,7 +3232,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # pre-match landed at 19.9 and the quantile match then pulled it to 16.6 (the map compresses
     # wherever the render's histogram is denser than the source's). Bisection on k over the
     # full blend -> L-match chain, so the number that's checked is the number that ships.
-    src_L_in = src_lab[..., 0][m_in]
+    src_L_in = src_lab[..., 0][_ref_in]
     # The UNdilated ink: `ink_alpha` was widened in dark regions earlier (dark_gate), which is
     # right for reveal but wrong for "is this pixel a letter" -- measured: with the dilated
     # mask the letter/gap delta read +1 while an external check with the typography panel
@@ -3271,15 +3292,16 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     #   legibility -- |letter mean - gap mean| >= MIN_DELTA_L, which wins if the two conflict.
     # The layer carrying the source tone stays at 1.0; the other is solved from the letter
     # coverage; the two modes blend by light_mix. GAP_TONE/LETTER_TONE above are now the floors.
-    TONE_FIDELITY, MIN_DELTA_L = 0.85, 40.0   # delta 29 read too photographic on the dog; 73 too dark
-    c_eff = float(ink_soft[m_in].mean())                               # soft letter coverage
+    TONE_FIDELITY, MIN_DELTA_L = (0.92, 30.0) if human else (0.85, 40.0)   # delta 29 read too photographic on the dog; 73 too dark; skin keeps more of its own value
+    c_eff = float(ink_soft[_ref_in].mean())                            # soft letter coverage
     # Solve from the MEASURED unscaled layer means (m_l, m_g), not from the assumption that a
     # matched layer's mean equals the source's -- it doesn't (measured ~139 vs 147 on the dog,
     # which left the delta at 31 against a 40 floor when solved analytically).
-    _ref_l0 = L_cur[letters_in] if letters_in.sum() > 1000 else L_cur[m_in]
-    _ref_g0 = L_cur[gaps_in] if gaps_in.sum() > 1000 else L_cur[m_in]
-    m_l = float(_quantile_match(_ref_l0, src_L_in, L_cur)[letters_in].mean()) if letters_in.any() else src_mean_L
-    m_g = float(_quantile_match(_ref_g0, src_L_in, L_cur)[gaps_in].mean()) if gaps_in.any() else src_mean_L
+    _let_ref, _gap_ref = letters_in & _ref_in, gaps_in & _ref_in     # the reference region's letters and gaps
+    _ref_l0 = L_cur[_let_ref] if _let_ref.sum() > 1000 else L_cur[_ref_in]
+    _ref_g0 = L_cur[_gap_ref] if _gap_ref.sum() > 1000 else L_cur[_ref_in]
+    m_l = float(_quantile_match(_ref_l0, src_L_in, L_cur)[_let_ref].mean()) if _let_ref.any() else src_mean_L
+    m_g = float(_quantile_match(_ref_g0, src_L_in, L_cur)[_gap_ref].mean()) if _gap_ref.any() else src_mean_L
     target_mean = TONE_FIDELITY * src_mean_L
     # dark mode: letters at 1.0, gaps scaled -- fidelity target, then legibility floor wins
     g_dark = (target_mean - c_eff * m_l) / max(1e-6, (1.0 - c_eff) * m_g)
@@ -3333,6 +3355,11 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         _wgt /= _wgt.sum(axis=0, keepdims=True)
         _own = _dst.argmin(axis=0)
         _tone_regions = [((_own == i) & m_in, _wgt[i]) for i in range(len(_ctrs))]
+    elif _face_r is not None:
+        # A person alone: the face against the rest (hair, clothes), blended over a third of
+        # an eye-separation past the face ellipse, so skin is matched to skin.
+        _wf = np.clip(1.0 - (_face_r - 1.0) / 0.3, 0.0, 1.0).astype(np.float32)
+        _tone_regions = [(m_in & (_face_r <= 1.0), _wf), (m_in & (_face_r > 1.0), (1.0 - _wf).astype(np.float32))]
     _src_L2d = src_lab[..., 0]
 
     def _qm_regional(sel, x, src2d, src_in):
@@ -3423,7 +3450,15 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
 
     # Step 3 -- saturation distribution match, same idea.
     comp_hsv = cv2.cvtColor(comp_rgb, cv2.COLOR_RGB2HSV).astype(np.float32)
-    S_matched = _qm_regional(m_in, comp_hsv[..., 1], src_hsv[..., 1], src_hsv[..., 1][m_in])
+    if human:
+        # A face: the quantile map over the whole silhouette (hair, clothes, skin as one
+        # distribution) left the skin more saturated than the photo (112 against 90 on the
+        # boy). Match the mean instead, a single gain, which keeps the photo's own relation
+        # between skin, lips and hair.
+        _sg = float(np.clip(float(src_hsv[..., 1][_ref_in].mean()) / max(1.0, float(comp_hsv[..., 1][_ref_in].mean())), 0.5, 1.5))
+        S_matched = comp_hsv[..., 1] * _sg
+    else:
+        S_matched = _qm_regional(m_in, comp_hsv[..., 1], src_hsv[..., 1], src_hsv[..., 1][m_in])
     comp_hsv[..., 1] = S_matched * mask + comp_hsv[..., 1] * (1.0 - mask)
     composited = cv2.cvtColor(np.clip(comp_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
     _dbg("after L-match", comp_rgb.astype(np.float32))
@@ -3803,7 +3838,8 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
                  f"{humans[0]['eye_sep']:.0f}px eyes apart", flush=True)
         rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=_scale, backdrop_rgb=ground_rgb,
                                  type_scale=_ts, landmarks=_lm_str, auto_res=(_scale == 1.0),
-                                 verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"), anatomy=_anat)
+                                 verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"), anatomy=_anat,
+                                 human=_human)
         entry = (int(rgb.shape[0]), rgb, metrics["outside_w"], ground_rgb, _notes, photo_bg)   # the height actually rendered
         _cache_put(key, entry)
     finally:
