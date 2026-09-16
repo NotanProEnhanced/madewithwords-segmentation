@@ -1380,7 +1380,7 @@ function variantPost(id){
   // with the person as its subject. The server honours it only where TYPO_WOVEN=1 is set
   // (staging); anywhere else the request renders as the brand's own style. No control on
   // the page: a URL flag, so nothing a customer sees changes.
-  if(new URLSearchParams(location.search).get("woven")==="1") return {ink:"photo", style:"woven", ground:"navy"};
+  if(new URLSearchParams(location.search).get("woven")==="1") return {ink:"photo", style:"woven", ground:"navy", backdrop:(state.backdrop||"")};
   const base = (state.style==="displacement" || state.style==="letter")
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
     : {ink:(id||"photo"), style:state.style, ground:"navy"};

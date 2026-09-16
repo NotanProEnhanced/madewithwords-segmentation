@@ -3630,7 +3630,8 @@ def _photo_background_rgb(bgr, matte):
 
 
 def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
-                           print_aspect=None, type_scale=None, notices=None, subject=None):
+                           print_aspect=None, type_scale=None, notices=None, subject=None,
+                           ground_override=None):
     """Drop-in for pet_proto.render_pet_portrait (same signature, PNG bytes out). `height` is
     the working resolution and therefore the typography fineness: previews ~1050-1600, print
     at the PET_V2_MAX_RENDER_PX cap (default 2400) then upscaled. `ground` is the site's
@@ -3646,6 +3647,9 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
     _photo_ground = (ground or "").strip().lower() == "photo"
     gb, gg, gr = GROUNDS.get((ground or "dark").strip().lower(), GROUNDS["dark"])
     ground_rgb = (float(gr), float(gg), float(gb))
+    if ground_override is not None:          # an explicit (r, g, b): the human brands' backdrop chips
+        ground_rgb = tuple(float(v) for v in ground_override)
+        _photo_ground = False
     cap = int(os.environ.get("PET_V2_MAX_RENDER_PX", "2400") or 2400)
     want_h = min(int(height), cap) if height and height > 0 else 0
     # Preview-class requests (1050-1600) all render at 1600 so the loupe is a resize of the
