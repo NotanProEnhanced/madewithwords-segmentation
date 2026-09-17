@@ -455,6 +455,13 @@ def _face_region_on() -> bool:
     return os.environ.get("TYPO_FACE_REGION", "0") not in ("", "0", "false", "off", "no")
 
 
+def _matte_union_on() -> bool:
+    """TYPO_MATTE_UNION=1: union the matte model's alpha with the person segmenter's soft
+    mask, so hair (the model's strength) and clothes (the segmenter's) both survive. Off
+    by default; the compose files have carried the name since before it did anything."""
+    return os.environ.get("TYPO_MATTE_UNION", "0").strip().lower() not in ("", "0", "false", "off", "no")
+
+
 def _face_anchor_on() -> bool:
     """Off by default. It changes who is in every portrait, so it is enabled per tree
     once measured against the fixed set, not shipped switched on."""
@@ -489,6 +496,20 @@ def extract_silhouette(
     from . import matting
     if matting.enabled():
         alpha = _unpad(matting.matte(_seg_img.bgr, warns), _seg_box)
+        if alpha is not None and _matte_union_on():
+            # TYPO_MATTE_UNION=1: the matte model is the better judge of hair, the person
+            # segmenter the better judge of clothes against a wall of the same tone, which
+            # the matte model reads as background. Seen on the twelve-photo set, 2026-09-17:
+            # with ISNet the smile keeps her hair and loses her blue top; with RVM the
+            # reverse. The union keeps both. Same idea as the pet engine's
+            # _with_person_silhouette, which brought a cardigan sleeve back on Natural.
+            # Off (the default) is byte-identical: this block is skipped entirely.
+            _ub, _us = _selfie_mask(_seg_img, warns)
+            _ub, _us = _unpad(_ub, _seg_box), _unpad(_us, _seg_box)
+            if _us is not None:
+                alpha = np.maximum(alpha, np.clip(_us.astype(np.float32) / 255.0, 0.0, 1.0))
+            elif _ub is not None:
+                alpha = np.maximum(alpha, (_ub > 127).astype(np.float32))
         if alpha is not None:
             _athr = float(os.environ.get("TYPO_MATTE_ALPHA", "0.5") or 0.5)
             if os.environ.get("TYPO_MASK_DEBUG", "") not in ("", "0", "false", "off", "no"):
