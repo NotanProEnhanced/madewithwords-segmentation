@@ -44,6 +44,7 @@ services:
     ports:
       - "127.0.0.1:8081:8077"
     environment:
+      - RENDER_LOCK_DIR=${RENDER_LOCK_DIR-/app/locks}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
       # Pet digital download: $29 (recommended). Framed prints priced per-size in Printful.
       - TYPO_PRICE_CENTS=${TYPO_PRICE_CENTS:-2900}

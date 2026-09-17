@@ -35,6 +35,7 @@ services:
       # ignored -- which happened three times in one day.
       - .env
     environment:
+      - RENDER_LOCK_DIR=${RENDER_LOCK_DIR-/app/locks}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - PET_DEWHISKER=${PET_DEWHISKER:-}
       - PET_DRAPE=${PET_DRAPE:-}

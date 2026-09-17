@@ -41,6 +41,7 @@ services:
     ports:
       - "127.0.0.1:8079:8077"
     environment:
+      - RENDER_LOCK_DIR=${RENDER_LOCK_DIR-/app/locks}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
       - TYPO_PRICE_CENTS=${TYPO_PRICE_CENTS:-1499}
       - TYPO_CURRENCY=${TYPO_CURRENCY:-usd}
