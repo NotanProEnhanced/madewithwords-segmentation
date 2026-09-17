@@ -30,6 +30,14 @@ services:
     image: ${IMAGE_TAG}
     container_name: typortrait-faithinwords
     restart: unless-stopped
+    # The same cap every other tree has (see docker-compose.pawsinwords.yml): the box, not
+    # the container, is what this protects. Measured on 2026-09-17 after item 1: these two
+    # trees alone showed a 7.7 GiB limit, i.e. none, while the others showed 3.4 GiB.
+    mem_limit: ${CONTAINER_MEM_LIMIT:-3500m}
+    deploy:            # the same limit in the form every Compose v2 honors; mem_limit alone was ignored on the box
+      resources:
+        limits:
+          memory: ${CONTAINER_MEM_LIMIT:-3500m}
     ports:
       - "127.0.0.1:8079:8077"
     environment:
