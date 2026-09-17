@@ -2674,7 +2674,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # A relative floor instead (0.35 of the local size, 4ca35f2) left the gaps they had
     # filled bare: exposed 1.5% -> 4% at Large on all twelve, likeness down 0.02-0.04.
     # A person keeps the flat 6px.
-    _spec_px = 6.0 if human else 6.0 * _tsk
+    _spec_px = 6.0   # scaling them with the slider (6.0 * _tsk) opened the gaps too: exposed 1.3 -> 4.7% at Large
     micro_px_area += render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
                                           tokens=short_tokens, size_field_px=size_px_field, min_px=_spec_px)
     _TL.pass_name = "channel"
