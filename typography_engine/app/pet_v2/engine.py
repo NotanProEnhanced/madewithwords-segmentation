@@ -318,7 +318,7 @@ _TEXT_CACHE = {}     # (word, font px, alpha bin) -> unrotated RGBA text, shared
 
 def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
                         letters=("L", "S", "K", "J", "H", "G", "P", "W"), min_px=6, max_overlap=0.08,
-                        size_cap=None, floor_frac=0.0):
+                        size_cap=None):
     """Fill the free-space CHANNELS (the leading between lines of text, which at 2x is a lace of
     4-10px-wide corridors across the whole coat) along their own medial axis. The streamline
     tracer can't do this -- measured: 1 lane in a 107k-px lace region, because a path following
@@ -349,11 +349,6 @@ def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
         if size_cap is not None:
             _cap_px = max(min_px, float(size_cap[y, x]))
             _px = min(_cap_px, max(float(min_px), float(dist[y, x]) * 2.0 / 1.3))
-            # `floor_frac` > 0: a corridor narrower than that fraction of the local size gets
-            # no letter -- a 6px glyph in the leading beside a 24px word is the speck that
-            # reads as a jump, not the lace it was placed as.
-            if floor_frac > 0.0 and _px < _cap_px * floor_frac:
-                continue
             font = get_font(_px)
             half = _px * 0.9
         ang = float(theta_s[y, x])
@@ -372,17 +367,14 @@ def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
 
 
 def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
-                         tokens=("SOUL", "KIND", "HOME", "JOY", "WARM", "WISE", "LOVE"), size_field_px=None,
-                         floor_frac=0.0, min_px=6):
+                         tokens=("SOUL", "KIND", "HOME", "JOY", "WARM", "WISE", "LOVE"), size_field_px=None):
     """Fill every remaining free region larger than the smallest glyph with short tokens at the
     finest size, along the local orientation. Free space = inside the mask and not within half a
     glyph of existing ink (so nothing placed here can touch a neighbor). Repeats while a pass
     still gains footprint, so it stops when the gaps left are genuinely smaller than a glyph --
     the physical limit of "every exposed space has typography" at this resolution."""
     H, W = mask.shape
-    # `min_px`: the floor size of these tokens. 6 at the slider's Small; the caller scales it
-    # with the slider for an animal, so Large is the Small layout enlarged rather than the
-    # same specks beside words 1.6x bigger.
+    min_px = 6
     r = max(1, int(round(min_px * 0.35)))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
     total_placed = 0
@@ -401,19 +393,10 @@ def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, ge
         def size_at(x, y):
             xi, yi = min(W - 1, max(0, int(x))), min(H - 1, max(0, int(y)))
             return max(min_px, float(size_field_px[yi, xi]) * 0.55)
-    # `floor_frac` > 0: the later rounds, which placed every token at the 6px floor whatever
-    # the local size, size themselves at this fraction of it instead. A gap too small for that
-    # stays bare. Measured on two dogs at Large: with the floor flat, the smallest twentieth
-    # of the words sat at 6px beside 22-26px neighbours -- the specks beside the large.
-    floor_at = None
-    if size_field_px is not None and floor_frac > 0.0:
-        def floor_at(x, y):
-            xi, yi = min(W - 1, max(0, int(x))), min(H - 1, max(0, int(y)))
-            return max(min_px, float(size_field_px[yi, xi]) * floor_frac)
     for _round in range(4):
         if _round == 3:
             tokens = letter_tokens
-        _sz = size_at if _round == 0 else floor_at
+        _sz = size_at if _round == 0 else None
         occ_dil = cv2.dilate((occupancy > 40).astype(np.uint8), kernel)
         free = ((mask > 0.5) & (occ_dil == 0)).astype(np.uint8)
         n, labels, stats, _ = cv2.connectedComponentsWithStats(free, 8)
@@ -2113,14 +2096,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # chest and flanks, and it earns the biggest words; a person's far body is a neck and a
     # collar, next to the chin's smallest words. Measured on the boy across the jaw and neck:
     # one word in twenty sat beside a neighbour 3.8x its size, the widest pair 7.3x.
-    # An animal at Large: the range narrows with the slider, 0.52 base at Small (the value
-    # every gate judgment was made at, byte-identical) down to 0.42 at Large, four to one.
-    # On a cat's chest at Large the far-body words sat beside the smallest fills at five
-    # times their size and read as a jump, not a hierarchy. Gated at Small, the same change
-    # applied flat cost seven of twelve pets 0.010-0.022 of likeness: the small fills carry
-    # tone, and at Small they are not the problem. `_large` is 0 at Small, 1 at Large.
-    _large = float(np.clip((_tsk - 1.0) / 0.6, 0.0, 1.0))
-    STRUCT_PX = base * (0.30 if human else (0.52 - 0.10 * _large)) * _tsk
+    STRUCT_PX = base * (0.30 if human else 0.52) * _tsk   # widened from 0.40 so the far body genuinely reads larger (size_field)
     # Widened from 1.3x -- measured the ACTUAL micro/structural/hero split (recommendation #6's
     # target: 20-30% / 60-70% / 3-7% of ink area) and found micro was only 11-15%: at 1.3x, only
     # a small ring right around the eyes graded toward the fine end, so nearly the whole rest of
@@ -2564,26 +2540,16 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                 # A person: the fills sit at 0.70 of the local structural size, not 0.55. On
                 # fur a small word between two big ones reads as fur; on a neck it reads as
                 # the size jumping about. Closer to their neighbours, they read as one text.
-                # An animal: fills at 0.65 of the local size (was 0.55), and never under 0.35 of
-                # it -- the fourth round's words fell to 0.23 of their neighbours, the tiny type
-                # beside the large that reads as a jump on a cat's chest. A person keeps 0.70
-                # and no floor, the values every judgment on her was made at.
-                # (A raised ratio and a floor here, ramped with the slider, were part of what
-                # opened the gaps at Large on 4ca35f2; the gap fills already scale with the
-                # local size, so they keep 0.55 and no floor for an animal.)
                 _fill_ratio = 0.70 if human else 0.55
-                _fill_floor = 0.0
                 font_px = local_struct * (round_px / FILL_PX) * _fill_ratio * (0.90 + 0.20 * rng.random())
-                font_px = max(font_px, local_struct * _fill_floor)
                 font = get_font(font_px)
                 t_coh = np.clip(line_coh[id(line)] / 0.5, 0, 1)
                 alpha = int(min(255, 165 + 65 * t_coh))
 
-                def fill_size_at(x, y, _ratio=(round_px / FILL_PX) * _fill_ratio, _floor=_fill_floor):
+                def fill_size_at(x, y, _ratio=(round_px / FILL_PX) * _fill_ratio):
                     xi, yi = min(W - 1, max(0, int(x))), min(H - 1, max(0, int(y)))
                     ls = MICRO_PX + (STRUCT_PX - MICRO_PX) * float(size_field[yi, xi])
                     px = ls * _ratio * (0.90 + 0.20 * rng.random())
-                    px = max(px, ls * _floor)
                     cap = MICRO_PX * 1.05
                     return cap + (px - cap) * float(fine_blend[yi, xi]) if px > cap else px
                 fill_px_area += place_words_collision_aware(canvas, occupancy, line, stream, font,
@@ -2669,18 +2635,11 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     _TL.pass_stats.clear()
     _TL.pass_stats.update({k: list(v) for k, v in best_pass_stats.items()})
     _TL.pass_name = "residual"
-    # An animal: the residual tokens and channel letters scale with the slider like every
-    # other word (6px at Small, the value every gate judgment was made at; 9.6px at Large).
-    # A relative floor instead (0.35 of the local size, 4ca35f2) left the gaps they had
-    # filled bare: exposed 1.5% -> 4% at Large on all twelve, likeness down 0.02-0.04.
-    # A person keeps the flat 6px.
-    _spec_px = 6.0   # scaling them with the slider (6.0 * _tsk) opened the gaps too: exposed 1.3 -> 4.7% at Large
     micro_px_area += render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
-                                          tokens=short_tokens, size_field_px=size_px_field, min_px=_spec_px)
+                                          tokens=short_tokens, size_field_px=size_px_field)
     _TL.pass_name = "channel"
     ch_n, ch_px = render_channel_fill(canvas, occupancy, theta_s, mask, get_font, letters=letter_tokens,
-                                      tone=gray.astype(np.float32) / 255.0, size_cap=size_px_field,
-                                      min_px=_spec_px)
+                                      tone=gray.astype(np.float32) / 255.0, size_cap=size_px_field)
     micro_px_area += ch_px
     _log(f"final fills: channel fill placed {ch_n} letters ({ch_px}px)")
     best_placements = list(_TL.placements)
