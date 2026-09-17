@@ -97,6 +97,13 @@ def _isnet_session(warns: WarningCollector):
 
             so = ort.SessionOptions()
             so.intra_op_num_threads = max(1, (os.cpu_count() or 2) - 1)
+            # No memory arena: onnxruntime otherwise keeps every activation buffer it ever
+            # needed, so a container that has run one matte sits at a gigabyte idle. The
+            # pet engine's sessions got this in the September memory pass; measured on the
+            # box on 2026-09-17, two human containers held 1 GB each after a render against
+            # 550 MB for the idle ones, and with four sites on ISNet that ate the margin
+            # under one Natural render. Same pixels: the arena is allocation, not math.
+            so.enable_cpu_mem_arena = False
             _ISNET_SESSION = ort.InferenceSession(
                 path, sess_options=so, providers=["CPUExecutionProvider"]
             )
@@ -161,6 +168,7 @@ def _get_session(warns: WarningCollector):
 
             so = ort.SessionOptions()
             so.intra_op_num_threads = max(1, (os.cpu_count() or 2) - 1)
+            so.enable_cpu_mem_arena = False   # see _isnet_session: idle memory, not pixels
             _SESSION = ort.InferenceSession(
                 str(MATTE_MODEL), sess_options=so, providers=["CPUExecutionProvider"]
             )
