@@ -639,6 +639,14 @@ def _woven_finish(backdrop_choice):
     return None, None
 
 
+def _render_lock_status() -> dict:
+    try:
+        from .render_lock import status
+        return status()
+    except Exception as e:  # noqa: BLE001 -- a health field, never a failed health check
+        return {"enabled": False, "error": repr(e)}
+
+
 @app.get("/health")
 def health() -> JSONResponse:
     caps = probe()
@@ -657,6 +665,9 @@ def health() -> JSONResponse:
                 "in_flight": _render_inflight,
                 "queued": _render_waiting,
             },
+            # One heavy render at a time across the box (app/render_lock.py): on/off, how
+            # many of this process's renders are waiting or holding, and the longest wait.
+            "heavy_lock": _render_lock_status(),
         }
     )
 

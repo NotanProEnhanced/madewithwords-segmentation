@@ -3857,6 +3857,11 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
             continue
         break
 
+    # One heavy render at a time across the box (app/render_lock.py): this waits while
+    # another brand's container is rendering, and holds until the cache entry is stored.
+    # Off unless RENDER_LOCK_DIR is set; the pixels are the same either way.
+    from ..render_lock import acquire as _acquire_box
+    _box = _acquire_box()
     try:
         arr = np.frombuffer(image_bytes, np.uint8)
         bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
@@ -4002,6 +4007,7 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
             _RENDER_INFLIGHT.pop(key, None)
         ev.set()
         _trim_heap()
+        _box.release()     # the box is free for the next heavy render once this one's memory is back
     return _finish(entry)
 
 

@@ -269,6 +269,10 @@ services:
       # faster; identical output for the current solid-fill SVGs) | cairosvg.
       # Text moderation (OpenAI moderation endpoint). Unset -> text moderation off.
     volumes:
+      # One heavy render at a time across the box: every container mounts the SAME host
+      # directory and takes a file lock in it (app/render_lock.py). Set RENDER_LOCK_DIR=
+      # (empty) in .env to switch the lock off for a tree.
+      - ${RENDER_LOCK_HOST_DIR:-/root/typortrait-shared/locks}:/app/locks
       # Persist previews + paid clean files across restarts/rebuilds.
       - ./data/outputs:/app/outputs
       - ./data/private:/app/private
