@@ -318,7 +318,7 @@ _TEXT_CACHE = {}     # (word, font px, alpha bin) -> unrotated RGBA text, shared
 
 def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
                         letters=("L", "S", "K", "J", "H", "G", "P", "W"), min_px=6, max_overlap=0.08,
-                        size_cap=None):
+                        size_cap=None, floor_frac=0.0):
     """Fill the free-space CHANNELS (the leading between lines of text, which at 2x is a lace of
     4-10px-wide corridors across the whole coat) along their own medial axis. The streamline
     tracer can't do this -- measured: 1 lane in a 107k-px lace region, because a path following
@@ -349,6 +349,11 @@ def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
         if size_cap is not None:
             _cap_px = max(min_px, float(size_cap[y, x]))
             _px = min(_cap_px, max(float(min_px), float(dist[y, x]) * 2.0 / 1.3))
+            # `floor_frac` > 0: a corridor narrower than that fraction of the local size gets
+            # no letter -- a 6px glyph in the leading beside a 24px word is the speck that
+            # reads as a jump, not the lace it was placed as.
+            if floor_frac > 0.0 and _px < _cap_px * floor_frac:
+                continue
             font = get_font(_px)
             half = _px * 0.9
         ang = float(theta_s[y, x])
@@ -367,7 +372,8 @@ def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
 
 
 def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
-                         tokens=("SOUL", "KIND", "HOME", "JOY", "WARM", "WISE", "LOVE"), size_field_px=None):
+                         tokens=("SOUL", "KIND", "HOME", "JOY", "WARM", "WISE", "LOVE"), size_field_px=None,
+                         floor_frac=0.0):
     """Fill every remaining free region larger than the smallest glyph with short tokens at the
     finest size, along the local orientation. Free space = inside the mask and not within half a
     glyph of existing ink (so nothing placed here can touch a neighbor). Repeats while a pass
@@ -393,10 +399,19 @@ def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, ge
         def size_at(x, y):
             xi, yi = min(W - 1, max(0, int(x))), min(H - 1, max(0, int(y)))
             return max(min_px, float(size_field_px[yi, xi]) * 0.55)
+    # `floor_frac` > 0: the later rounds, which placed every token at the 6px floor whatever
+    # the local size, size themselves at this fraction of it instead. A gap too small for that
+    # stays bare. Measured on two dogs at Large: with the floor flat, the smallest twentieth
+    # of the words sat at 6px beside 22-26px neighbours -- the specks beside the large.
+    floor_at = None
+    if size_field_px is not None and floor_frac > 0.0:
+        def floor_at(x, y):
+            xi, yi = min(W - 1, max(0, int(x))), min(H - 1, max(0, int(y)))
+            return max(min_px, float(size_field_px[yi, xi]) * floor_frac)
     for _round in range(4):
         if _round == 3:
             tokens = letter_tokens
-        _sz = size_at if _round == 0 else None
+        _sz = size_at if _round == 0 else floor_at
         occ_dil = cv2.dilate((occupancy > 40).astype(np.uint8), kernel)
         free = ((mask > 0.5) & (occ_dil == 0)).astype(np.uint8)
         n, labels, stats, _ = cv2.connectedComponentsWithStats(free, 8)
@@ -2645,11 +2660,15 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     _TL.pass_stats.clear()
     _TL.pass_stats.update({k: list(v) for k, v in best_pass_stats.items()})
     _TL.pass_name = "residual"
+    # An animal: no residual token or channel letter under 0.35 of the local size (a person's
+    # fills were judged at the flat floor and keep it).
+    _fill_floor_frac = 0.0 if human else 0.35
     micro_px_area += render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
-                                          tokens=short_tokens, size_field_px=size_px_field)
+                                          tokens=short_tokens, size_field_px=size_px_field, floor_frac=_fill_floor_frac)
     _TL.pass_name = "channel"
     ch_n, ch_px = render_channel_fill(canvas, occupancy, theta_s, mask, get_font, letters=letter_tokens,
-                                      tone=gray.astype(np.float32) / 255.0, size_cap=size_px_field)
+                                      tone=gray.astype(np.float32) / 255.0, size_cap=size_px_field,
+                                      floor_frac=_fill_floor_frac)
     micro_px_area += ch_px
     _log(f"final fills: channel fill placed {ch_n} letters ({ch_px}px)")
     best_placements = list(_TL.placements)
