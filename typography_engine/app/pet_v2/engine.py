@@ -2111,10 +2111,14 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # chest and flanks, and it earns the biggest words; a person's far body is a neck and a
     # collar, next to the chin's smallest words. Measured on the boy across the jaw and neck:
     # one word in twenty sat beside a neighbour 3.8x its size, the widest pair 7.3x.
-    # An animal: four to one (0.42) against the 0.52 that was widened from 0.40 "so the far
-    # body genuinely reads larger". On a cat's chest at Large the far-body words sat beside
-    # the smallest fills at five times their size and read as a jump, not a hierarchy.
-    STRUCT_PX = base * (0.30 if human else 0.42) * _tsk
+    # An animal at Large: the range narrows with the slider, 0.52 base at Small (the value
+    # every gate judgment was made at, byte-identical) down to 0.42 at Large, four to one.
+    # On a cat's chest at Large the far-body words sat beside the smallest fills at five
+    # times their size and read as a jump, not a hierarchy. Gated at Small, the same change
+    # applied flat cost seven of twelve pets 0.010-0.022 of likeness: the small fills carry
+    # tone, and at Small they are not the problem. `_large` is 0 at Small, 1 at Large.
+    _large = float(np.clip((_tsk - 1.0) / 0.6, 0.0, 1.0))
+    STRUCT_PX = base * (0.30 if human else (0.52 - 0.10 * _large)) * _tsk
     # Widened from 1.3x -- measured the ACTUAL micro/structural/hero split (recommendation #6's
     # target: 20-30% / 60-70% / 3-7% of ink area) and found micro was only 11-15%: at 1.3x, only
     # a small ring right around the eyes graded toward the fine end, so nearly the whole rest of
@@ -2562,8 +2566,8 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                 # it -- the fourth round's words fell to 0.23 of their neighbours, the tiny type
                 # beside the large that reads as a jump on a cat's chest. A person keeps 0.70
                 # and no floor, the values every judgment on her was made at.
-                _fill_ratio = 0.70 if human else 0.65
-                _fill_floor = 0.0 if human else 0.35
+                _fill_ratio = 0.70 if human else (0.55 + 0.10 * _large)   # 0.55 at Small, as gated
+                _fill_floor = 0.0 if human else 0.35 * _large             # no floor at Small
                 font_px = local_struct * (round_px / FILL_PX) * _fill_ratio * (0.90 + 0.20 * rng.random())
                 font_px = max(font_px, local_struct * _fill_floor)
                 font = get_font(font_px)
@@ -2660,9 +2664,9 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     _TL.pass_stats.clear()
     _TL.pass_stats.update({k: list(v) for k, v in best_pass_stats.items()})
     _TL.pass_name = "residual"
-    # An animal: no residual token or channel letter under 0.35 of the local size (a person's
-    # fills were judged at the flat floor and keep it).
-    _fill_floor_frac = 0.0 if human else 0.35
+    # An animal at Large: no residual token or channel letter under 0.35 of the local size;
+    # at Small the flat 6px floor every gate judgment was made at (a person keeps it always).
+    _fill_floor_frac = 0.0 if human else 0.35 * _large
     micro_px_area += render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
                                           tokens=short_tokens, size_field_px=size_px_field, floor_frac=_fill_floor_frac)
     _TL.pass_name = "channel"
