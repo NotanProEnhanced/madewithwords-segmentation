@@ -2096,7 +2096,10 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # chest and flanks, and it earns the biggest words; a person's far body is a neck and a
     # collar, next to the chin's smallest words. Measured on the boy across the jaw and neck:
     # one word in twenty sat beside a neighbour 3.8x its size, the widest pair 7.3x.
-    STRUCT_PX = base * (0.30 if human else 0.52) * _tsk   # widened from 0.40 so the far body genuinely reads larger (size_field)
+    # An animal: four to one (0.42) against the 0.52 that was widened from 0.40 "so the far
+    # body genuinely reads larger". On a cat's chest at Large the far-body words sat beside
+    # the smallest fills at five times their size and read as a jump, not a hierarchy.
+    STRUCT_PX = base * (0.30 if human else 0.42) * _tsk
     # Widened from 1.3x -- measured the ACTUAL micro/structural/hero split (recommendation #6's
     # target: 20-30% / 60-70% / 3-7% of ink area) and found micro was only 11-15%: at 1.3x, only
     # a small ring right around the eyes graded toward the fine end, so nearly the whole rest of
@@ -2540,16 +2543,23 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                 # A person: the fills sit at 0.70 of the local structural size, not 0.55. On
                 # fur a small word between two big ones reads as fur; on a neck it reads as
                 # the size jumping about. Closer to their neighbours, they read as one text.
-                _fill_ratio = 0.70 if human else 0.55
+                # An animal: fills at 0.65 of the local size (was 0.55), and never under 0.35 of
+                # it -- the fourth round's words fell to 0.23 of their neighbours, the tiny type
+                # beside the large that reads as a jump on a cat's chest. A person keeps 0.70
+                # and no floor, the values every judgment on her was made at.
+                _fill_ratio = 0.70 if human else 0.65
+                _fill_floor = 0.0 if human else 0.35
                 font_px = local_struct * (round_px / FILL_PX) * _fill_ratio * (0.90 + 0.20 * rng.random())
+                font_px = max(font_px, local_struct * _fill_floor)
                 font = get_font(font_px)
                 t_coh = np.clip(line_coh[id(line)] / 0.5, 0, 1)
                 alpha = int(min(255, 165 + 65 * t_coh))
 
-                def fill_size_at(x, y, _ratio=(round_px / FILL_PX) * _fill_ratio):
+                def fill_size_at(x, y, _ratio=(round_px / FILL_PX) * _fill_ratio, _floor=_fill_floor):
                     xi, yi = min(W - 1, max(0, int(x))), min(H - 1, max(0, int(y)))
                     ls = MICRO_PX + (STRUCT_PX - MICRO_PX) * float(size_field[yi, xi])
                     px = ls * _ratio * (0.90 + 0.20 * rng.random())
+                    px = max(px, ls * _floor)
                     cap = MICRO_PX * 1.05
                     return cap + (px - cap) * float(fine_blend[yi, xi]) if px > cap else px
                 fill_px_area += place_words_collision_aware(canvas, occupancy, line, stream, font,
