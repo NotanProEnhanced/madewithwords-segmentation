@@ -2342,6 +2342,19 @@ async function recommendStyle(){
       if(r.ok && d.ok && d.preview) setStyleThumb(st, d.preview);   // thumbnail of THEIR photo in this style
     }catch(e){}
   }
+  // The Natural tile: a 700px thumbnail of THEIR face in that style, rendered after the
+  // others behind the box's render lock (a few seconds of the heavy engine). Not scored --
+  // its likeness is on a different scale from Lifelike's -- so it never wins the star.
+  // Only when the card is on the page: a tree without the switch never asks for it.
+  const _wb=document.querySelector('#styleSegResult button[data-style="woven"]');
+  if(window._wovenOn && _wb && _wb.style.display!=="none" && state.style!=="woven" && !_wb.querySelector(".styleth.has-img")){
+    try{
+      const fd=recoFd("woven",true); fd.set("style","woven"); fd.set("ground","navy"); if(state.backdrop) fd.set("backdrop",state.backdrop);
+      const r=await fetchWithTimeout("/render",{method:"POST",body:fd}, RENDER_TIMEOUT_MS);
+      const d=await r.json();
+      if(myGen===gen && r.ok && d.ok && d.preview) setStyleThumb("woven", d.preview);
+    }catch(e){}
+  }
   const ranked=Object.keys(styleScores).filter(s=>typeof styleScores[s]==="number")
     .sort((a,b)=>styleScores[b]-styleScores[a]);
   if(ranked.length<2) return;                       // not enough signal to recommend

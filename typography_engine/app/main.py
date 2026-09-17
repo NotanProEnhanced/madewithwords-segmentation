@@ -1836,10 +1836,16 @@ async def render(
             _woven_fin, _woven_fin_rgb = _woven_finish(backdrop_choice)
             if _woven_fin_rgb is not None:
                 _woven_rgb = _woven_fin_rgb
+            # The page's style-tile probe (render_w <= 800, the same request the other tiles
+            # make) gets a 700px thumbnail capped at 700px, a few seconds behind the box lock,
+            # so the Natural tile shows the customer's own face like the others. Anything
+            # else is a preview-class render, 1050-1600.
+            _woven_thumb = int(render_w) <= 800
             png_bytes = await _bounded_to_thread(
                 render_pet_portrait_v2, img_bytes, text, _woven_ground,
-                int(min(1600, max(1050, preview_w))), aspect, 0.30, notices=_woven_notes, subject="human",
-                ground_override=_woven_rgb, finish=_woven_fin)
+                700 if _woven_thumb else int(min(1600, max(1050, preview_w))), aspect, 0.30,
+                notices=_woven_notes, subject="human", ground_override=_woven_rgb, finish=_woven_fin,
+                max_px=(700 if _woven_thumb else None))
             for _n in _woven_notes:
                 warns.warn("input", _n["code"], _n["message"])
             runs, ground_hex, mask_svg = [], None, None

@@ -1673,7 +1673,7 @@ def _landmark_string(faces, scale=1.0):
 
 def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None,
               landmarks=None, debug_dir=None, out_stem="render", verbose=False, backdrop_rgb=None,
-              type_scale=None, auto_res=True, anatomy=None, human=False, wisp_alpha=None):
+              type_scale=None, auto_res=True, anatomy=None, human=False, wisp_alpha=None, max_px=None):
     """Render a typographic portrait of the pet in `bgr` (BGR uint8, already at the working
     resolution). Returns (rgb_uint8, metrics). `words`: the customer's comma-separated name +
     descriptors (the first entries weight highest; see _weighted_stream); None -> DEFAULT_WORDS.
@@ -1876,7 +1876,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         # The smallest face in the photo sets the resolution: with two pets, both need the pixels.
         _es0 = min(math.hypot(e[0][0] - e[1][0], e[0][1] - e[1][1])
                    for e in [attractor_pts[:2]] + [f["eyes"] for f in extra_faces])
-        _cap_h = int(os.environ.get("PET_V2_MAX_RENDER_PX", "2400") or 2400)
+        _cap_h = int(max_px) if max_px else int(os.environ.get("PET_V2_MAX_RENDER_PX", "2400") or 2400)
         _factor = min(TARGET_ES / max(1.0, _es0), _cap_h / float(H))
         if _factor >= 1.15:
             _log(f"eyes {_es0:.0f}px apart at {W}x{H}: re-rendering at {_factor:.2f}x for the face "
@@ -1887,7 +1887,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             return render_v2(_bgr_in, words, mask=_mask_in, render_scale=_factor, max_overlap=max_overlap,
                              landmarks=_lm, debug_dir=debug_dir, out_stem=out_stem, verbose=verbose,
                              backdrop_rgb=backdrop_rgb, type_scale=type_scale, auto_res=False, anatomy=anatomy,
-                             human=human, wisp_alpha=_wisp_in)
+                             human=human, wisp_alpha=_wisp_in, max_px=max_px)
     # Every eye in the photo: what density, hero placement and the structural pass keep clear of.
     all_eye_pts = list(attractor_pts) + [p for f in extra_faces for p in f["eyes"]]
     # NOT blending these into theta/coherence anymore: two corrected attempts both made the
@@ -3766,7 +3766,7 @@ def _photo_background_rgb(bgr, matte):
 
 def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
                            print_aspect=None, type_scale=None, notices=None, subject=None,
-                           ground_override=None, finish=None):
+                           ground_override=None, finish=None, max_px=None):
     """Drop-in for pet_proto.render_pet_portrait (same signature, PNG bytes out). `height` is
     the working resolution and therefore the typography fineness: previews ~1050-1600, print
     at the PET_V2_MAX_RENDER_PX cap (default 2400) then upscaled. `ground` is the site's
@@ -3785,7 +3785,10 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
     if ground_override is not None:          # an explicit (r, g, b): the human brands' backdrop chips
         ground_rgb = tuple(float(v) for v in ground_override)
         _photo_ground = False
-    cap = int(os.environ.get("PET_V2_MAX_RENDER_PX", "2400") or 2400)
+    # `max_px`: a cap on the working height for THIS request, above the tree's
+    # PET_V2_MAX_RENDER_PX. The style tile on the page asks for a 700px thumbnail after the
+    # main render; without the cap the face-size rule would re-render it at up to 2400px.
+    cap = int(max_px) if max_px else int(os.environ.get("PET_V2_MAX_RENDER_PX", "2400") or 2400)
     want_h = min(int(height), cap) if height and height > 0 else 0
     # Preview-class requests (1050-1600) all render at 1600 so the loupe is a resize of the
     # preview's own render rather than a second one -- and preview and loupe then agree.
@@ -3999,7 +4002,7 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=_scale, backdrop_rgb=ground_rgb,
                                  type_scale=_ts, landmarks=_lm_str, auto_res=(_scale == 1.0),
                                  verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"), anatomy=_anat,
-                                 human=_human, wisp_alpha=_wisp)
+                                 human=_human, wisp_alpha=_wisp, max_px=max_px)
         entry = (int(rgb.shape[0]), rgb, metrics["outside_w"], ground_rgb, _notes, photo_bg)   # the height actually rendered
         _cache_put(key, entry)
     finally:
