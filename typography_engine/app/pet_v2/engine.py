@@ -373,14 +373,16 @@ def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
 
 def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
                          tokens=("SOUL", "KIND", "HOME", "JOY", "WARM", "WISE", "LOVE"), size_field_px=None,
-                         floor_frac=0.0):
+                         floor_frac=0.0, min_px=6):
     """Fill every remaining free region larger than the smallest glyph with short tokens at the
     finest size, along the local orientation. Free space = inside the mask and not within half a
     glyph of existing ink (so nothing placed here can touch a neighbor). Repeats while a pass
     still gains footprint, so it stops when the gaps left are genuinely smaller than a glyph --
     the physical limit of "every exposed space has typography" at this resolution."""
     H, W = mask.shape
-    min_px = 6
+    # `min_px`: the floor size of these tokens. 6 at the slider's Small; the caller scales it
+    # with the slider for an animal, so Large is the Small layout enlarged rather than the
+    # same specks beside words 1.6x bigger.
     r = max(1, int(round(min_px * 0.35)))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
     total_placed = 0
@@ -2566,8 +2568,11 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
                 # it -- the fourth round's words fell to 0.23 of their neighbours, the tiny type
                 # beside the large that reads as a jump on a cat's chest. A person keeps 0.70
                 # and no floor, the values every judgment on her was made at.
-                _fill_ratio = 0.70 if human else (0.55 + 0.10 * _large)   # 0.55 at Small, as gated
-                _fill_floor = 0.0 if human else 0.35 * _large             # no floor at Small
+                # (A raised ratio and a floor here, ramped with the slider, were part of what
+                # opened the gaps at Large on 4ca35f2; the gap fills already scale with the
+                # local size, so they keep 0.55 and no floor for an animal.)
+                _fill_ratio = 0.70 if human else 0.55
+                _fill_floor = 0.0
                 font_px = local_struct * (round_px / FILL_PX) * _fill_ratio * (0.90 + 0.20 * rng.random())
                 font_px = max(font_px, local_struct * _fill_floor)
                 font = get_font(font_px)
@@ -2664,15 +2669,18 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     _TL.pass_stats.clear()
     _TL.pass_stats.update({k: list(v) for k, v in best_pass_stats.items()})
     _TL.pass_name = "residual"
-    # An animal at Large: no residual token or channel letter under 0.35 of the local size;
-    # at Small the flat 6px floor every gate judgment was made at (a person keeps it always).
-    _fill_floor_frac = 0.0 if human else 0.35 * _large
+    # An animal: the residual tokens and channel letters scale with the slider like every
+    # other word (6px at Small, the value every gate judgment was made at; 9.6px at Large).
+    # A relative floor instead (0.35 of the local size, 4ca35f2) left the gaps they had
+    # filled bare: exposed 1.5% -> 4% at Large on all twelve, likeness down 0.02-0.04.
+    # A person keeps the flat 6px.
+    _spec_px = 6.0 if human else 6.0 * _tsk
     micro_px_area += render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
-                                          tokens=short_tokens, size_field_px=size_px_field, floor_frac=_fill_floor_frac)
+                                          tokens=short_tokens, size_field_px=size_px_field, min_px=_spec_px)
     _TL.pass_name = "channel"
     ch_n, ch_px = render_channel_fill(canvas, occupancy, theta_s, mask, get_font, letters=letter_tokens,
                                       tone=gray.astype(np.float32) / 255.0, size_cap=size_px_field,
-                                      floor_frac=_fill_floor_frac)
+                                      min_px=_spec_px)
     micro_px_area += ch_px
     _log(f"final fills: channel fill placed {ch_n} letters ({ch_px}px)")
     best_placements = list(_TL.placements)
