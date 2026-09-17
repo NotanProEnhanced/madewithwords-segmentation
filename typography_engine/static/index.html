@@ -730,15 +730,15 @@
     <div class="ctl" id="styleGallery" style="margin-top:6px">
       <div class="ctl-lbl">Choose your style</div>
       <div class="seg stylecards" id="styleSegResult" aria-label="Choose your style">
-        <button type="button" data-style="displacement" class="on"><span class="styleth" data-hint="Words"></span><span class="nm">Lifelike</span></button>
+        <button type="button" data-style="displacement" class="on"><span class="styleth" data-hint="Made of the words"></span><span class="nm">Words</span></button>
         <button type="button" data-style="words"><span class="styleth" data-hint="Word cloud"></span><span class="nm">Mosaic</span></button>
         <button type="button" data-style="message"><span class="styleth" data-hint="Verses, Lyrics, etc."></span><span class="nm">Passage</span></button>
         <button type="button" data-style="letter" style="display:none"><span class="styleth" data-hint="A letter, sculpted"></span><span class="nm">Letter</span></button>
         <!-- Woven: the person's photograph held in the words, hair and skin as they are. Shown
              only where the server reports the style switched on (see /health "woven"). -->
-        <button type="button" data-style="woven" style="display:none"><span class="styleth" data-hint="Their photo, in words"></span><span class="nm">Natural</span></button>
+        <button type="button" data-style="woven" style="display:none"><span class="styleth" data-hint="Your photo, in words"></span><span class="nm">Photo</span></button>
       </div>
-      <div class="ctl-hint" id="styleCaption">A lifelike portrait — the words follow their face.</div>
+      <div class="ctl-hint" id="styleCaption">Their face, formed from your words.</div>
       <div class="ctl-hint" id="bestNote" style="display:none"></div>
     </div>
     <div class="ctl swatchgroup" id="inkGroup" style="margin-top:14px">
@@ -1569,12 +1569,12 @@ function setStyle(newStyle, rerender){
   const cap=document.getElementById("styleCaption");
   if(cap) cap.textContent = _isMemorialBrand
     ? ( letter ? "Their letter, formed into their face — reading like a refrain."
-      : woven ? "Their photograph, held in the words — as they were."
+      : woven ? "Their photograph, held in your words."
       : prose ? "Their face, formed from what you write — a letter, a verse, a tribute."
       : "Their face, formed from their name and the words that describe them." )
     : ( letter ? "Their letter, sculpted into their face — reading like a refrain."
-      : woven ? "Their photograph, held in the words — hair, skin and light as they are."
-      : disp ? "A lifelike portrait — the words shaped to follow their face."
+      : woven ? "Their photograph, held in your words."
+      : disp ? "Their face, formed from your words."
       : prose ? "Their face from a whole message — a letter, a poem, a tribute."
       : "Their face from scattered words & names you choose." );
   if(disp !== wasDisp) rebuildSwatches();          // swap the swatch strip: inks <-> grounds
@@ -2300,7 +2300,7 @@ async function prewarmSizes(){ if(_petEngine) return;
    the studio adopts it with a gentle crossfade -- never a spinner over the
    portrait they're already looking at. */
 let styleScores={}, recoStarted=false, recoDone=false, userTouched=false;
-const STYLE_NAMES={words:"Mosaic",message:"Passage",displacement:"Lifelike"};
+const STYLE_NAMES={words:"Mosaic",message:"Passage",displacement:"Words",woven:"Photo"};
 // Style-picker thumbnails: show a short text HINT (data-hint) until the BUYER'S OWN
 // photo, rendered in that style, lands -- then the tile swaps to it (no extra renders;
 // the reco already probes each style, we just keep its preview). A new photo/words
