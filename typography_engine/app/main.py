@@ -603,6 +603,70 @@ def index(request: Request) -> Response:
     return RedirectResponse(url="/static/index.html" + (f"?{q}" if q else ""))
 
 
+def _woven_tone(img_bytes: bytes, ink, ink_hex=None) -> bytes:
+    """The Natural style's type colour. Natural renders the photograph held in the words,
+    so an ink is a treatment of the photograph itself, applied before the engine sees it:
+    Noir is the photo in grayscale; Sepia, Navy, Rose, Sage and Ember are a duotone from
+    the palette's dark ink to its light (Lifelike's own colours, so the two styles match);
+    Spectrum and Aurora colour the tone by the same top-to-bottom hue Lifelike uses; a
+    custom colour tints it. "photo" (and the page's photo_* ground chips) leave it alone.
+    The engine's tonal match then holds the render to THIS photo's luminance and
+    saturation, so a grayscale source stays grayscale through the words. Returns PNG
+    bytes; on any failure, the original bytes, so a tone can never fail a render."""
+    ink = (ink or "photo").strip().lower()
+    if not ink or ink.startswith("photo"):
+        return img_bytes
+    try:
+        import cv2
+        import numpy as np
+        from .pipeline.tonal import _PALETTES, _GRADIENTS, _hex_to_rgb, _grad_rgb
+        arr = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+        if arr is None:
+            return img_bytes
+        L = cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0   # H x W
+
+        def _lum(rgb):
+            return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+
+        def _duotone(dark_rgb, light_rgb):
+            d = np.asarray(dark_rgb[::-1], np.float32)      # BGR
+            l = np.asarray(light_rgb[::-1], np.float32)
+            return (d[None, None, :] + (l - d)[None, None, :] * L[..., None])
+
+        def _colorize(rgb):
+            # the photo's value, the colour's hue and saturation (HSV): a tint, not a duotone
+            hsv = cv2.cvtColor(arr, cv2.COLOR_BGR2HSV).astype(np.float32)
+            c = cv2.cvtColor(np.array([[rgb[::-1]]], np.uint8), cv2.COLOR_BGR2HSV)[0, 0]
+            hsv[..., 0] = float(c[0])
+            hsv[..., 1] = 0.6 * float(c[1])     # a tint: at the swatch's full saturation the photo drowned (contact sheet, boy)
+            return cv2.cvtColor(np.clip(hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
+
+        if ink == "mono":
+            out = cv2.cvtColor(cv2.cvtColor(arr, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR).astype(np.float32)
+        elif ink in _PALETTES:
+            a, b, _paper = _PALETTES[ink]
+            ca, cb = _hex_to_rgb(a), _hex_to_rgb(b)
+            dark, light = (ca, cb) if _lum(ca) <= _lum(cb) else (cb, ca)
+            out = _duotone(dark, light)
+        elif ink in _GRADIENTS:
+            h = arr.shape[0]
+            rows = np.array([_grad_rgb(_GRADIENTS[ink], y / max(1.0, h - 1.0)) for y in range(h)], np.float32)  # H x 3, RGB
+            hsv = cv2.cvtColor(arr, cv2.COLOR_BGR2HSV).astype(np.float32)
+            chsv = cv2.cvtColor(np.clip(rows[:, None, ::-1], 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)  # H x 1 x 3
+            hsv[..., 0] = chsv[:, :, 0]
+            hsv[..., 1] = 0.6 * chsv[:, :, 1]   # same tint strength as a custom colour
+            out = cv2.cvtColor(np.clip(hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
+        elif ink == "custom" and ink_hex:
+            out = _colorize(_hex_to_rgb(str(ink_hex)))
+        else:
+            return img_bytes
+        ok, png = cv2.imencode(".png", np.clip(out, 0, 255).astype(np.uint8))
+        return png.tobytes() if ok else img_bytes
+    except Exception as e:  # noqa: BLE001 -- a tone is a treatment, never a failed portrait
+        print(f"[woven-tone] {ink}: {e!r}; rendering the photo untoned", flush=True)
+        return img_bytes
+
+
 def _woven_finish(backdrop_choice):
     """The Woven style's last step for a human site's backdrop that is not a colour: the
     floral frames (wildflowers, roses, eucalyptus, line) and the transparent Cutout. Returns
@@ -1841,8 +1905,12 @@ async def render(
             # so the Natural tile shows the customer's own face like the others. Anything
             # else is a preview-class render, 1050-1600.
             _woven_thumb = int(render_w) <= 800
+            # The type colour tones the photograph itself (Noir is the photo in grayscale);
+            # a toned photo is a different photo to the engine's cache, so each ink is its
+            # own render, as it is for Lifelike.
+            _woven_src = _woven_tone(img_bytes, ink, ink_hex if ink == "custom" else None)
             png_bytes = await _bounded_to_thread(
-                render_pet_portrait_v2, img_bytes, text, _woven_ground,
+                render_pet_portrait_v2, _woven_src, text, _woven_ground,
                 700 if _woven_thumb else int(min(1600, max(1050, preview_w))), aspect, 0.30,
                 notices=_woven_notes, subject="human", ground_override=_woven_rgb, finish=_woven_fin,
                 max_px=(700 if _woven_thumb else None))
@@ -4633,7 +4701,8 @@ def _compose_clean_png(job, aspect, path, recipe_path, src_path):
             if _dl_fin_rgb is not None:
                 _dl_rgb = _dl_fin_rgb
             png_bytes = render_pet_portrait_v2(
-                src_path.read_bytes(), (r.get("text", "") or ""),
+                _woven_tone(src_path.read_bytes(), r.get("ink"), r.get("ink_hex")),   # the type colour, as the preview had it
+                (r.get("text", "") or ""),
                 ground={"paper": "paper", "navy": "dark", "black": "charcoal"}.get(r.get("ground") or "navy", "dark"),
                 ground_override=_dl_rgb, finish=_dl_fin,
                 height=int(round(DOWNLOAD_PNG_WIDTH / max(0.5, aspect))),

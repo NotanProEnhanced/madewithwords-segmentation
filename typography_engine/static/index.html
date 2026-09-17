@@ -1393,10 +1393,11 @@ function variantPost(id){
   // with the person as its subject. The server honours it only where TYPO_WOVEN=1 is set
   // (staging); anywhere else the request renders as the brand's own style. No control on
   // the page: a URL flag, so nothing a customer sees changes.
-  if(new URLSearchParams(location.search).get("woven")==="1") return {ink:"photo", style:"woven", ground:"navy", backdrop:(state.backdrop||"")};
+  if(new URLSearchParams(location.search).get("woven")==="1") return {ink:(id||"photo"), style:"woven", ground:"navy", backdrop:(state.backdrop||"")};
   // The "Natural" card (style "woven"): the same request the URL flag made, now a choice on
-  // the page. The chosen backdrop chip travels; the ink axis does not apply.
-  if(state.style==="woven") return {ink:"photo", style:"woven", ground:"navy", backdrop:(state.backdrop||"")};
+  // the page. The chosen backdrop chip and the type colour both travel: Noir, Sepia and the
+  // rest tone the photograph itself before it is held in the words (server, _woven_tone).
+  if(state.style==="woven") return {ink:(id||"photo"), style:"woven", ground:"navy", backdrop:(state.backdrop||"")};
   const base = (state.style==="displacement" || state.style==="letter")
     ? {ink:(id||"photo"), style:"displacement", ground:"navy"}
     : {ink:(id||"photo"), style:state.style, ground:"navy"};
