@@ -2773,608 +2773,8 @@ def _phase_final_fills(canvas, best_placements, best_pass, best_stats, best_pass
     return best_placements, best_pass, best_stats, best_pass_stats
 
 
-def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None,
-              landmarks=None, debug_dir=None, out_stem="render", verbose=False, backdrop_rgb=None,
-              type_scale=None, auto_res=True, anatomy=None, human=False, wisp_alpha=None, max_px=None):
-    """Render a typographic portrait of the pet in `bgr` (BGR uint8, already at the working
-    resolution). Returns (rgb_uint8, metrics). `words`: the customer's comma-separated name +
-    descriptors (the first entries weight highest; see _weighted_stream); None -> DEFAULT_WORDS.
-    `mask`: optional precomputed foreground matte (e.g. after print-aspect fitting). `render_scale`:
-    upsample factor applied here (None -> GOP_SCALE env, default 1). `max_overlap`: global
-    collision cap (None -> GOP_MAX_OVERLAP env). `landmarks`: "x1,y1;x2,y2[;nx,ny]" eyes(+nose)
-    from the production landmark model (None -> GOP_LANDMARKS env -> heuristic detector); a
-    second pet's face follows after "|" in the same form, and any number may follow.
-    `debug_dir`: when set, writes the A/B/C/D QA panels there as <out_stem>_*.jpg. `backdrop_rgb`:
-    an (r, g, b) tuple for everything OUTSIDE the animal (the site's Gallery Dark / Gallery
-    Gray choice); None keeps the photo-derived backdrop. The gap color between letters ON the
-    animal is always derived from the coat -- it carries tone -- and is not affected.
-    `type_scale`: the site's Small/Medium/Large slider (0.30 fine .. 0.56 bold, pet_proto's
-    scale). It multiplies the micro and structural sizes TOGETHER, so the hierarchy between
-    the fine face and the far body is the same at every setting; 0.30, the slider's default
-    and what every staging judgment was made at, is 1.0x. `auto_res`: when the detected eyes
-    are close together (a full-body photo), re-render at a working resolution that gives the
-    face enough pixels, up to PET_V2_MAX_RENDER_PX; the caller receives the larger image."""
-    _TL.verbose = bool(verbose)
-    _TL.nose_hint = None
-    _TL.max_overlap_cap = float(max_overlap) if max_overlap is not None else \
-        float(_settings.raw("GOP_MAX_OVERLAP") or 0.08)
-    out_path = os.path.join(debug_dir, out_stem + ".jpg") if debug_dir else None
-    if render_scale is None:
-        render_scale = float(_settings.raw("GOP_SCALE") or 1)
-    if render_scale != 1.0:
-        bgr = cv2.resize(bgr, None, fx=render_scale, fy=render_scale, interpolation=cv2.INTER_CUBIC)
-        if mask is not None:
-            mask = cv2.resize(mask, (bgr.shape[1], bgr.shape[0]), interpolation=cv2.INTER_LINEAR)
-        if wisp_alpha is not None:
-            wisp_alpha = cv2.resize(wisp_alpha, (bgr.shape[1], bgr.shape[0]), interpolation=cv2.INTER_LINEAR)
-        _log(f"render scale {render_scale:g}x -> {bgr.shape[1]}x{bgr.shape[0]}")
-    H, W = bgr.shape[:2]
-    if mask is None:
-        mask = _foreground_mask(bgr)
-    _bgr_in, _mask_in, _wisp_in = bgr, mask, wisp_alpha   # untouched, in case the face turns out to need more pixels
-    bgr_source = bgr.copy()   # kept for the type-only likeness test -- compare against the
-                              # REAL photo, not our own contrast-enhanced version of it
-    bgr = _enhance_contrast(bgr, mask)
-    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    # Multi-scale (recommendation #11) replaces the old single-sigma tensor -- see
-    # multi_scale_orientation's docstring for why (the doodle's vertical-striping complaint).
-    theta, coherence = multi_scale_orientation(gray, W)
-    if anatomy is not None:
-        # A person's face: the flow direction comes from the face's own structure where the
-        # mesh knows it (pet_landmarks.anatomy_field: oval, brows, eyes, lips, nose), and from
-        # texture where it does not (hair, clothes). Blended in doubled-angle space, so the
-        # two directions never cancel; the anatomy weight is 1 on a contour and 0 beyond
-        # 1.5 eye-separations. Skin has almost no texture, so without this the lanes on a
-        # face take their direction from noise (measured: the texture field's coherence on a
-        # cheek is a fifth of what it is on fur). None for every animal: byte-identical.
-        _ta, _wa = anatomy
-        if _ta.shape != gray.shape:
-            _c = cv2.resize(np.cos(2 * _ta) * _wa, (W, H), interpolation=cv2.INTER_LINEAR)
-            _s = cv2.resize(np.sin(2 * _ta) * _wa, (W, H), interpolation=cv2.INTER_LINEAR)
-            _wa = cv2.resize(_wa, (W, H), interpolation=cv2.INTER_LINEAR)
-        else:
-            _c, _s = np.cos(2 * _ta) * _wa, np.sin(2 * _ta) * _wa
-        _ct = coherence * np.cos(2 * theta) * (1.0 - _wa) + _c
-        _st = coherence * np.sin(2 * theta) * (1.0 - _wa) + _s
-        theta = (0.5 * np.arctan2(_st, _ct)).astype(np.float32)
-        coherence = np.clip(np.hypot(_ct, _st), 0, 1).astype(np.float32)
-        del _ta, _wa, _c, _s, _ct, _st
-    theta_s = _gblur(theta, (0, 0), sigmaX=max(1.0, W * 0.006))
-    coherence_s = _gblur(coherence, (0, 0), sigmaX=max(1.0, W * 0.006))
-    del coherence   # only the smoothed field is read from here on (memory; see the composite stage)
-
-    base = max(16, int(round(W * 0.048)))
-
-    # ---- Silhouette-tangent field near the boundary (recommendation #13) ------------------
-    # As a streamline nears the silhouette, blend its direction toward the boundary's own
-    # tangent -- the level sets of the mask's distance transform run parallel to the edge
-    # everywhere, so the tangent to that level set IS the local silhouette tangent. This is a
-    # different technique from the swirl-blend tried earlier for the eyes (which fought the
-    # real fur signal and made things worse, per the user's own comparison): here the field
-    # being blended toward is a genuine geometric property of the shape itself, not a synthetic
-    # radial guess, and it only dominates in a narrow band right at the edge. Mod-pi angles
-    # again require the double-angle trick to blend correctly (see blend_attractor_field).
-    dist_to_edge = cv2.distanceTransform((mask > 0.5).astype(np.uint8), cv2.DIST_L2, 5)
-    dist_blur = _gblur(dist_to_edge, (0, 0), sigmaX=max(1.5, W * 0.006))
-    gy, gx = np.gradient(dist_blur)
-    boundary_theta = np.arctan2(gy, gx) + math.pi / 2.0   # tangent = inward normal rotated 90 deg
-    boundary_w = np.clip(1.0 - dist_to_edge / (base * 1.3), 0, 1) ** 1.5   # 1 at the edge, 0 inland
-    cos2 = np.cos(2 * theta_s) * (1 - boundary_w) + np.cos(2 * boundary_theta) * boundary_w
-    sin2 = np.sin(2 * theta_s) * (1 - boundary_w) + np.sin(2 * boundary_theta) * boundary_w
-    theta_s = 0.5 * np.arctan2(sin2, cos2)
-    coherence_s = np.clip(coherence_s + boundary_w * 0.35, 0, 1)
-
-    # Feature field (eyes/nose proxy -- see find_attractor_points' docstring for why this
-    # stands in for real pet_landmarks.py detections in this sandbox). Computed once, reused
-    # for BOTH the attractor field below and the eyes/nose ink-protection at composite time.
-    # The detector's scales follow the SUBJECT, not the frame: the head band's width (the
-    # upper 65% of the mask, the same measure the pair scorer uses) stands in for W when it
-    # is narrower than the ~0.6 W a head-and-shoulders crop gives. On a full-body photo the
-    # eyes are a fraction of that, and frame-sized blur and opening erased them.
-    _ys_m, _xs_m = np.nonzero(mask > 0.5)
-    if len(_ys_m):
-        _cut = _ys_m.min() + (_ys_m.max() - _ys_m.min()) * 0.65
-        _bxs = _xs_m[_ys_m <= _cut]
-        _head_w = float(_bxs.max() - _bxs.min()) if len(_bxs) else float(W)
-    else:
-        _head_w = float(W)
-    W_det = float(min(W, max(_head_w / 0.6, W * 0.25)))
-    broad = _gblur(gray.astype(np.float32), (0, 0), sigmaX=max(1.0, W_det * 0.06))
-    localdark = np.clip((broad - gray.astype(np.float32)) / 55.0, 0, 1)
-    locallight = np.clip((gray.astype(np.float32) - broad) / 70.0, 0, 1)
-    feat_raw = np.maximum(localdark, locallight) * (mask > 0.5)
-    ok = int(max(3, round(W_det * 0.011))) | 1
-    feat_raw = cv2.morphologyEx(feat_raw, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ok, ok)))
-    feat = np.clip(_gblur(feat_raw, (0, 0), sigmaX=max(1.0, W_det * 0.012)) * 1.6, 0, 1)
-
-    # Silhouette fringe points (recommendation: "edges are irregular, furry and directional" in
-    # the source vs. "generally smooth/masked" in the render) -- picked once, from the mask's own
-    # antialiased edge, so they're a stable feature of this animal's silhouette rather than
-    # reshuffling per iteration. See find_fringe_points' docstring for why this counts as real
-    # evidence rather than a fabricated guess.
-    fringe_points = find_fringe_points(mask, n_points=max(40, int(W * 0.05)), gray=gray, theta_s=theta_s, base=base)
-    _log(f"fringe: {len(fringe_points)} hairs with evidence of leaving the outline")
-
-    attractor_radius = base * 2.2
-    # Eye candidates come from the DARK half of the feature field only. `feat` (used below for
-    # density/size gradation) is max(localdark, locallight), and on the dog the pair-scorer's
-    # best pair was two bright tan fur patches on the forehead (measured: gray ~170 at both
-    # attractor points vs ~30 at the real eyes, ~110px away). Eyes are dark; a bright anomaly
-    # should never have been eligible.
-    feat_dark_raw = cv2.morphologyEx(localdark * (mask > 0.5), cv2.MORPH_OPEN,
-                                     cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ok, ok)))
-    feat_dark = np.clip(_gblur(feat_dark_raw, (0, 0), sigmaX=max(1.0, W_det * 0.012)) * 1.6, 0, 1)
-    attractor_pts = find_attractor_points(feat_dark, mask)
-    del localdark, feat_dark_raw, feat_dark
-    # Validate the dark-only pair by depth inside the silhouette, with the original detector as
-    # fallback. Measured on the three test photos (edge distance as a fraction of head width):
-    # every real eye >= 0.174 (dog 0.174/0.176, doodle 0.229/0.259, cat 0.274); the one false
-    # positive -- the cat's second point landing on a dark ear edge -- 0.036. An eye is never at
-    # the silhouette edge; 0.10 splits the two with margin either side. The original max(dark,
-    # light) field found the cat's eyes correctly and the dog's/doodle's wrongly; the dark-only
-    # field is the reverse, so the two together cover all three -- by measurement, not by hope.
-    _m5 = mask > 0.5
-    _ys, _xs = np.nonzero(_m5)
-    if len(_ys) and len(attractor_pts) >= 2:
-        _top, _bot = _ys.min(), _ys.max()
-        _bx = _xs[_ys <= _top + (_bot - _top) * 0.65]
-        _band_w = max(1.0, float(_bx.max() - _bx.min())) if len(_bx) else 1.0
-        _ed = cv2.distanceTransform(_m5.astype(np.uint8), cv2.DIST_L2, 5)
-        _depths = [float(_ed[min(H - 1, max(0, int(py))), min(W - 1, max(0, int(px)))]) / _band_w
-                   for (px, py) in attractor_pts]
-        if min(_depths) < 0.10:
-            fallback = find_attractor_points(feat, mask)
-            _log(f"dark-only eye pair rejected (edge depth {[round(d, 3) for d in _depths]} < 0.10 of head width); "
-                  f"falling back to combined-field pair {fallback}")
-            attractor_pts = fallback
-    # Landmark injection: GOP_LANDMARKS="x1,y1;x2,y2[;nx,ny]" (two eyes, optional nose). This is
-    # the seam where production's pet_landmarks.py (RTMPose AP-10K) output enters; the pose
-    # model's hosts are blocked from this sandbox, so known coordinates are supplied directly
-    # instead. Overrides the heuristic above entirely -- a real detection beats a proxy.
-    _lm_env = (landmarks or _settings.raw("GOP_LANDMARKS")).strip()
-    # Every further animal in the photo, as {"eyes": [(x, y), (x, y)], "nose": (x, y) | None};
-    # "es" and "nose_fit" are added below once the photo has been read. The first face stays
-    # the primary (hero words, head_center, the region map); these get the same feature passes,
-    # the same fine zone and the same weight in the likeness score.
-    extra_faces = []
-    # A face's kind: "p" for a cat or dog, "h" for a person (a group written "h:..." with a
-    # fourth point, the mouth). A person gets the eye reveal and the fine zone; the nose
-    # leather, the mouth crease and the whiskers are an animal's and are not drawn on one.
-    primary_kind, primary_mouth = "p", None
-    if _lm_env:
-        _groups = [g.strip() for g in _lm_env.split("|") if g.strip()]
-
-        def _parse(g):
-            kind = "h" if g.startswith("h:") else "p"
-            body = g[2:] if kind == "h" else g
-            return kind, [tuple(float(v) for v in p.split(",")) for p in body.split(";") if p.strip()]
-        primary_kind, _pts = _parse(_groups[0]) if _groups else ("p", [])
-        if len(_pts) >= 2:
-            attractor_pts = [_pts[0], _pts[1]]
-        if len(_pts) >= 3:
-            _TL.nose_hint = _pts[2]
-        if primary_kind == "h" and len(_pts) >= 4:
-            primary_mouth = _pts[3]
-        for _g in _groups[1:]:
-            _k, _fp = _parse(_g)
-            if len(_fp) >= 2:
-                extra_faces.append({"eyes": [_fp[0], _fp[1]], "nose": _fp[2] if len(_fp) >= 3 else None,
-                                    "kind": _k, "mouth": _fp[3] if (_k == "h" and len(_fp) >= 4) else None})
-        _log(f"landmarks injected from GOP_LANDMARKS: eyes={attractor_pts} nose={_pts[2] if len(_pts) >= 3 else None}"
-             + (f"; {len(extra_faces)} more face(s): {extra_faces}" if extra_faces else ""))
-    _log(f"anatomical attractors found (used for hero placement + size gradation only): "
-          f"{len(attractor_pts)}  {attractor_pts}")
-    # ---- Resolution follows face size ------------------------------------------------------
-    # Every feature pass and the fine zone are sized by eye separation, but the font floor is
-    # 6px whatever the photo. On a full-body photo the eyes are 50-80px apart at preview size,
-    # the eye itself ~20px across, and the eye, nose and mouth passes all land at the floor:
-    # the shepherd and collie faces on staging were two dots and a smudge. The head-and-
-    # shoulders photos that render well have the eyes 230-400px apart. If the eyes are closer
-    # than TARGET_ES here, render the whole photo larger, up to the print cap, so the face
-    # gets the pixels the passes need. The caller gets the larger image back; the site's
-    # entry point resizes for delivery and caches the larger render for the print file.
-    TARGET_ES = 170.0
-    if auto_res and render_scale == 1.0 and len(attractor_pts) >= 2:
-        # The smallest face in the photo sets the resolution: with two pets, both need the pixels.
-        _es0 = min(math.hypot(e[0][0] - e[1][0], e[0][1] - e[1][1])
-                   for e in [attractor_pts[:2]] + [f["eyes"] for f in extra_faces])
-        _cap_h = int(max_px) if max_px else int(_settings.raw("PET_V2_MAX_RENDER_PX") or 2400)
-        _factor = min(TARGET_ES / max(1.0, _es0), _cap_h / float(H))
-        if _factor >= 1.15:
-            _log(f"eyes {_es0:.0f}px apart at {W}x{H}: re-rendering at {_factor:.2f}x for the face "
-                 f"(target {TARGET_ES:.0f}px, cap {_cap_h}px tall)")
-            _lm = _landmark_string([(attractor_pts[:2], _TL.nose_hint, primary_kind, primary_mouth)]
-                                   + [(f["eyes"], f["nose"], f["kind"], f["mouth"]) for f in extra_faces],
-                                   _factor) if _lm_env else None
-            return render_v2(_bgr_in, words, mask=_mask_in, render_scale=_factor, max_overlap=max_overlap,
-                             landmarks=_lm, debug_dir=debug_dir, out_stem=out_stem, verbose=verbose,
-                             backdrop_rgb=backdrop_rgb, type_scale=type_scale, auto_res=False, anatomy=anatomy,
-                             human=human, wisp_alpha=_wisp_in, max_px=max_px)
-    # Every eye in the photo: what density, hero placement and the structural pass keep clear of.
-    all_eye_pts = list(attractor_pts) + [p for f in extra_faces for p in f["eyes"]]
-    # NOT blending these into theta/coherence anymore: two corrected attempts both made the
-    # flow visibly more chaotic than the plain texture field, which already curves around the
-    # eyes on its own (confirmed by comparing real renders side by side, not assumed) -- the
-    # artificial circular swirl fought that real signal rather than reinforcing it. The points
-    # are still useful for WHERE to anchor hero words and size gradation below, just not for
-    # bending the flow direction itself.
-    head_center = (float(np.mean([p[0] for p in attractor_pts])), float(np.mean([p[1] for p in attractor_pts]))) \
-        if attractor_pts else (W / 2.0, H * 0.35)
-
-    # Expanded from 3 phrases -- flagged directly as reading like "texture stamps" once density
-    # got high enough to show the pattern clearly. _weighted_stream already front-loads whatever
-    # comes first with more repetition (up to ~3.2x, decaying by position), so ordering this list
-    # IS the hierarchy: short, plain words up front get seen often; the longer, more specific
-    # tail appears but doesn't dominate. Deliberately mixes short/medium/long phrases throughout
-    # (not grouped by length) so curvature_adaptive has real material in every bucket everywhere,
-    # not just wherever the "short" words happen to sit in the list.
-    full_words = words if (words and words.strip()) else DEFAULT_WORDS
-    # Two vocabularies from the customer's text. _phrases splits on COMMAS, so a customer's
-    # sentence ("MAGGIE LOSES HER MIND WHEN I COME IN THE DOOR") arrived as ONE 44-character
-    # rigid token and was the only thing the engine had to place -- seen on staging: every
-    # placement a banner, nothing short enough to follow a curl, fill a gap or build an eye.
-    # The full phrases stay for the hero lines (a sentence across the brow reads well); the
-    # streamline and fill passes get the individual WORDS, order preserved (name first keeps
-    # its top weight in _weighted_stream), deduplicated, two-letter filler dropped.
-    phrases = _phrases(full_words)
-    seen, word_list = set(), []
-    for ph in phrases:
-        for w in ph.split():
-            if len(w) >= 3 and w not in seen:
-                seen.add(w); word_list.append(w)
-    # Under ten distinct words -- a bare name, or a six-word sentence like "SHADOW SITS ON THE
-    # WARM LAUNDRY" -- the same word repeats across every inch of the crown (seen on staging).
-    # Pad with the brand vocabulary. The customer's words stay first, so _weighted_stream still
-    # gives the name the top weight and the padding the least; the fills and the initials
-    # (short_tokens, letter_tokens below) keep drawing on the customer's own words first.
-    if len(word_list) < 10:
-        for w in _phrases(DEFAULT_WORDS):
-            for ww in w.split():
-                if ww not in seen and len(word_list) < 14:
-                    seen.add(ww); word_list.append(ww)
-    stream = _weighted_stream(", ".join(word_list))
-    hero_words = (phrases or stream)[:1]
-    # Short tokens for the residual fill and initials for the channel fill come from the
-    # customer's own words too, so the fine texture is theirs (the pet's name most of all).
-    short_tokens = tuple(w for w in word_list if len(w) <= 5) or ("SOUL", "KIND", "HOME", "JOY")
-    letter_tokens = tuple(dict.fromkeys(w[0] for w in word_list))
-
-    # Baseline spacing tied to the SMALLER end of the size range that will be assigned
-    # afterward, so fine/mid text fits the tiling without excessive overlap. Tightened from
-    # 0.34x to 0.28x base along with the density-field tuning above, in response to "too
-    # sparse" -- more streamlines everywhere, not just in the feature/edge zones.
-    sep_px = max(6, int(round(base * 0.28)))
-
-    # ---- Spatially variable separation (recommendation #4) --------------------------------
-    # A charcoal portrait doesn't put the same number of marks per square inch everywhere;
-    # neither should this. Denser (smaller separation -> more streamlines -> more typographic
-    # material) near real features and right at the silhouette, where detail is what carries
-    # the likeness; sparser (larger separation) over calm regions far from the head -- "longer,
-    # calmer trajectories through the chest." This is now what carries TONE, not font size (see
-    # recommendation #5/#6 below) -- density is the primary mechanism, size stays in three
-    # controlled classes.
-    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
-    dist_to_feat = np.full((H, W), 1e6, np.float32)
-    for (ax, ay) in all_eye_pts:
-        dist_to_feat = np.minimum(dist_to_feat, np.hypot(xx - ax, yy - ay))
-    feat_zone = np.clip(1.0 - dist_to_feat / (attractor_radius * 1.6), 0, 1)      # 1 at a feature
-    edge_zone = np.clip(1.0 - dist_to_edge / (base * 1.2), 0, 1)                  # 1 at the silhouette
-    # Tuned down from an earlier pass that read as "too sparse" overall (user feedback,
-    # confirmed by comparing coverage: 46% with the old font-size-driven tone vs 32% with the
-    # first density-driven version) -- the chest/background falloff was too aggressive (up to
-    # 1.8x baseline separation) and the baseline itself was too loose. Density should still be
-    # LOWEST far from the head, but the floor of that falloff needs to stay closer to the
-    # baseline so calm regions read as "fewer, calmer strokes," not "empty."
-    chest_zone = np.clip((yy - head_center[1]) / max(1.0, H * 0.35), 0, 1) * (1.0 - np.maximum(feat_zone, edge_zone))
-    density_mult = 1.0 - 0.45 * feat_zone - 0.30 * edge_zone + 0.30 * chest_zone
-    # This is now the STARTING point for the per-iteration density, not the final field --
-    # sep_correction (below) adjusts it each round based on measured tonal error.
-    sep_field_base = np.clip(sep_px * density_mult, sep_px * 0.45, sep_px * 1.3).astype(np.float32)
-    del dist_to_feat, feat_zone, chest_zone, density_mult
-
-    # Semantic anatomical regions (recommendations #3/#4) -- see build_region_map's docstring
-    # for what this can and can't distinguish given no landmark model. None when no attractor
-    # pair was found, which evenly_spaced_streamlines treats as "no barriers" (old behavior).
-    region_map = build_region_map(mask, attractor_pts, base)
-
-    # ---- Anatomical importance map, reused as a RENDERING control, not just a scoring metric --
-    # build_likeness_weight_map already encodes the right hierarchy (eyes=4, nose+muzzle=6,
-    # silhouette=2, rest=1) because it was built to match how a viewer actually reads a face --
-    # but until now it only ever fed the likeness score, never the render itself, so the eyes and
-    # nose got the SAME ink boldness as a patch of neck fur. Reusing the identical map for both
-    # means the portrait is now optimizing for the same thing it's being judged on. Normalized to
-    # [0,1] and used below to scale ink alpha (visual priority/boldness), not density -- density's
-    # own feat/edge/chest zones are already tuned and this avoids double-compounding two
-    # overlapping "near a feature" signals into an unpredictable extreme.
-    importance_map = build_likeness_weight_map(mask, attractor_pts, base, extra_faces)
-    importance_norm = importance_map / max(1.0, float(importance_map.max()))
-    del importance_map
-
-    def line_importance(line):
-        vals = [importance_norm[min(H - 1, max(0, int(y))), min(W - 1, max(0, int(x)))] for x, y, _ in line[::4]]
-        return float(np.mean(vals)) if vals else 0.0
-
-    rng = random.Random(7)
-    font_cache = {}
-
-    def get_font(px):
-        px = max(6, int(round(px)))
-        f = font_cache.get(px)
-        if f is None:
-            f = ImageFont.truetype(_FONT, px) if _FONT else ImageFont.load_default()
-            font_cache[px] = f
-        return f
-
-    def mean_coherence(line):
-        vals = [coherence_s[min(H - 1, max(0, int(y))), min(W - 1, max(0, int(x)))] for x, y, _ in line[::4]]
-        return float(np.mean(vals)) if vals else 0.0
-
-    def min_dist_to_attractor(line):
-        if not attractor_pts:
-            return float("inf")
-        pts = np.array([(x, y) for x, y, _ in line[::3]])
-        best = float("inf")
-        for (ax, ay) in all_eye_pts:
-            d = float(np.min(np.hypot(pts[:, 0] - ax, pts[:, 1] - ay)))
-            best = min(best, d)
-        return best
-
-    # ---- Target tonal map for iterative error-correction ------------------------------------
-    # The missing piece, diagnosed via the type-only likeness test: nothing before this point
-    # ties ink density to the photo's actual LIGHT/DARK pattern -- density was driven by
-    # distance-from-feature and fur coherence, never by "does this patch need to read as light
-    # or dark to match the animal." That's why the typography-only panel never showed a face
-    # when blurred (uniform gray texture where the source showed clear eye/nose blobs): its own
-    # tonal map was never asked to resemble the source's. This target, and the loop below that
-    # converges toward it, is that missing objective. Built from the same photo (`gray`, already
-    # contrast-enhanced) and at the same kind of local-averaging scale the likeness test itself
-    # uses, so what we optimize against here is the same thing that test measures.
-    #
-    # SIGN FIX: this was originally `1 - gray/255` (dark photo -> high target ink), copying
-    # ordinary charcoal-on-white-paper logic where more ink makes a mark darker. That's the
-    # wrong model for THIS compositor: the ground is a dark navy, and `a` (which scales directly
-    # with ink density) controls how much of the actual PHOTO shows through it -- composited =
-    # dark_ground*(1-a) + photo*a. More ink reveals MORE of the photo, whatever its color; less
-    # ink reveals more of the dark ground regardless of what the photo actually looked like
-    # there. So the inverted target was starving typography from every BRIGHT part of the coat
-    # (the majority of most pets' faces) and pushing extra density into already-dark regions
-    # that read as dark either way -- confirmed as the direct cause of "far too dark, doesn't
-    # look like the source photo": the correction was correct arithmetic aimed at the wrong
-    # goal. Flipped so bright photo -> high target ink -> that brightness gets revealed.
-    target_density = np.clip(gray.astype(np.float32) / 255.0, 0, 1)
-    target_density = 0.08 + 0.77 * target_density   # keep some paper AND some ink everywhere --
-                                                     # a pure-black or pure-white target would
-                                                     # erase texture at the tonal extremes
-    corr_sigma = max(10.0, W * 0.02)
-    target_density_blur = _gblur(target_density, (0, 0), sigmaX=corr_sigma)
-    # Correct harder where likeness actually depends on it (eyes, muzzle/nose) than on generic
-    # body texture -- reuses the SAME weighting the automated likeness test itself scores by.
-    likeness_weights = build_likeness_weight_map(mask, attractor_pts, base)
-    lr_map = 0.35 + 0.55 * np.clip(likeness_weights / 6.0, 0, 1)
-    # First version of this loop kept streamline geometry FIXED across iterations and corrected
-    # only word size/alpha on the existing lines. It converged (every one of 5 test photos
-    # improved 20-145% in likeness) but plateaued well short of the target: collision-avoidance
-    # caps how much MORE ink a given lane can hold before overlap-avoidance itself blocks further
-    # placement, so the correction ran into a ceiling that had nothing to do with the tonal
-    # target being wrong -- there was just nowhere left to put more ink within that geometry.
-    # `sep_correction` fixes that by feeding back into the density FIELD itself: under-inked
-    # regions get genuinely denser streamlines next round (more lanes to place words on, not
-    # just bigger/darker words on the same lanes), over-inked regions get sparser ones.
-    sep_correction = np.ones((H, W), np.float32)
-    # Regrowing the streamline geometry every round (real Jobard-Lefer growth, not just a
-    # placement re-run) is genuinely more expensive -- fewer rounds than the fixed-geometry
-    # version, which could afford 4-7.
-    # Was a fixed 5. Measured across the test photos, the best-scoring round was the 2nd-4th;
-    # rounds after the score turns down were pure cost (each is a full grow + place). Cap at 4
-    # (PET_V2_ITERS to override) and stop early on the first clear decrease -- see the loop tail.
-    N_ITERS = int(_settings.raw("PET_V2_ITERS") or 4)
-
-    def line_mean_xy(line):
-        pts = np.array([(x, y) for x, y, _ in line[::4]])
-        return float(pts[:, 0].mean()), float(pts[:, 1].mean())
-
-    # ---- Continuous size gradation, tone still carried by density (recommendations #5, #6) --
-    # An earlier version of this used two hard-switched sizes (MICRO / STRUCTURAL) based on a
-    # single distance threshold -- fixed the old word-cloud problem, but the user flagged the
-    # visible result as "jumps from small to medium to large without care": a line just inside
-    # the threshold and one just outside it could differ suddenly with nothing in between.
-    # Replaced with a smoothstep interpolation across the SAME distance-from-feature measure,
-    # so every line in between gets a proportionate size -- a continuous gradient from fine
-    # near the eyes/nose out to the (still modest, non-hero) structural size, rather than three
-    # discrete steps. Tone is still primarily density (sep_field above), not size -- the low end
-    # was also lowered (0.17x -> 0.10x base) per "smallest text should be finer."
-    # Slider: Small 0.30 -> 1.00x (the tuned look), Medium 0.42 -> 1.29x, Large 0.56 -> 1.60x.
-    # A 0.75 power so Large is bold and graphic without the far body outgrowing the frame.
-    _tsk = (float(type_scale) / 0.30) ** 0.75 if type_scale else 1.0
-    _tsk = min(2.0, max(0.7, _tsk))
-    # The per-word overlap cap is a FRACTION of the word's own pixels, so a word 1.6x larger was
-    # allowed 1.6x the ink on its neighbour, and the soak's one failing row was letter-body
-    # collisions at Large (1.23-1.70% against the 1.20% claim; the structural pass makes three
-    # quarters of them at every setting, measured). The cap shrinks with the slider so the
-    # ink a word may plant on another stays what it is at Small; Small itself is unchanged.
-    _TL.max_overlap_cap = _TL.max_overlap_cap / max(1.0, _tsk)
-    MICRO_PX = base * 0.10 * _tsk
-    # A person: a narrower range, three to one against five. The far body of a dog is a
-    # chest and flanks, and it earns the biggest words; a person's far body is a neck and a
-    # collar, next to the chin's smallest words. Measured on the boy across the jaw and neck:
-    # one word in twenty sat beside a neighbour 3.8x its size, the widest pair 7.3x.
-    STRUCT_PX = base * (0.30 if human else 0.52) * _tsk   # widened from 0.40 so the far body genuinely reads larger (size_field)
-    # Widened from 1.3x -- measured the ACTUAL micro/structural/hero split (recommendation #6's
-    # target: 20-30% / 60-70% / 3-7% of ink area) and found micro was only 11-15%: at 1.3x, only
-    # a small ring right around the eyes graded toward the fine end, so nearly the whole rest of
-    # the portrait defaulted to full structural size regardless of how far it actually was.
-    feat_close_radius = attractor_radius * 3.7
-
-    def line_feat_dist(line):
-        if not attractor_pts:
-            return float("inf")
-        lx, ly = line_mean_xy(line)
-        return min(math.hypot(lx - ax, ly - ay) for ax, ay in all_eye_pts)
-
-    FILL_PX = MICRO_PX * 0.85
-
-    # ---- Size rule for everything outside the features (a continuous field, one rule for every
-    # photo) -----------------------------------------------------------------------------------
-    # At preview size every zone measured a 6px median: outside the eyes/nose the whole animal
-    # sat at one size and there was no hierarchy to read. Three signals, combined per pixel:
-    #   * distance from the face -- fine near it, opening up down the neck and chest; hero words
-    #     only far from it (see hero selection);
-    #   * texture energy -- fine wherever the photo has fine detail (fur strands, folds), larger
-    #     where the coat is smooth, so size follows what the fur needs to be described;
-    #   * flow coherence -- a minor opener where the fur runs calm and straight (added per line).
-    _gx = cv2.Sobel(gray.astype(np.float32), cv2.CV_32F, 1, 0, ksize=3)
-    _gy = cv2.Sobel(gray.astype(np.float32), cv2.CV_32F, 0, 1, ksize=3)
-    _energy = _gblur(np.hypot(_gx, _gy), (0, 0), sigmaX=max(2.0, base * 0.6))
-    _p95 = float(np.percentile(_energy[mask > 0.5], 95)) if (mask > 0.5).any() else 1.0
-    detail_field = np.clip(_energy / max(1e-6, _p95), 0, 1)
-    if len(attractor_pts) >= 2:
-        _es = max(1.0, math.hypot(attractor_pts[0][0] - attractor_pts[1][0], attractor_pts[0][1] - attractor_pts[1][1]))
-    else:
-        _es = base * 4.0
-
-    # ---- The features: both eyes and the nose, as points and as a fine zone ------------------
-    # locate_nose reads only the photo, so this is computed once here rather than per iteration.
-    if primary_kind == "h":
-        # A person's nose: no leather to fit, a nose-sized ellipse at the mesh's nose tip.
-        _nf = (((float(_TL.nose_hint[0]), float(_TL.nose_hint[1])), (_es * 0.14, _es * 0.10), 0.0)
-               if _TL.nose_hint is not None else None)
-    else:
-        _nf = locate_nose(gray, mask, attractor_pts) if len(attractor_pts) >= 2 else None
-    feature_pts = list(attractor_pts[:2])
-    if _nf is not None:
-        feature_pts.append((float(_nf[0][0]), float(_nf[0][1])))
-    elif len(attractor_pts) >= 2:
-        feature_pts.append((float(np.mean([p[0] for p in attractor_pts[:2]])),
-                            float(np.mean([p[1] for p in attractor_pts[:2]])) + _es * 0.75))
-
-    # A second pet's face: its own eye separation and nose fit, and the same three points. The
-    # nose locator and renderer read the landmark nose from thread-local state, so each face's
-    # nose is swapped in for the duration of its own call.
-    def _with_nose_hint(hint, fn, *a, **k):
-        _saved = _TL.nose_hint
-        _TL.nose_hint = hint
-        try:
-            return fn(*a, **k)
-        finally:
-            _TL.nose_hint = _saved
-    for _f in extra_faces:
-        _e1, _e2 = _f["eyes"]
-        _f["es"] = max(1.0, math.hypot(_e1[0] - _e2[0], _e1[1] - _e2[1]))
-        if _f["kind"] == "h":
-            _f["nose_fit"] = (((float(_f["nose"][0]), float(_f["nose"][1])), (_f["es"] * 0.14, _f["es"] * 0.10), 0.0)
-                              if _f["nose"] is not None else None)
-        else:
-            _f["nose_fit"] = _with_nose_hint(_f["nose"], locate_nose, gray, mask, _f["eyes"])
-        _f["mouth_pt"] = ((float(_f["nose_fit"][0][0]), float(_f["nose_fit"][0][1])) if _f["nose_fit"] is not None
-                          else (0.5 * (_e1[0] + _e2[0]), 0.5 * (_e1[1] + _e2[1]) + _f["es"] * 0.75))
-        feature_pts.extend([_e1, _e2, _f["mouth_pt"]])
-        if _f["mouth"] is not None:
-            feature_pts.append(_f["mouth"])   # a person's mouth is a feature of its own
-
-    # Where type must stay fine: the eyes, nose and mouth THEMSELVES, graduating out. The cap
-    # used to key on the likeness weight map (importance_norm > 0.45), whose "face-center"
-    # ellipse is 1.8 eye-separations wide and 2.2 tall -- a scoring choice, not an anatomical
-    # one; on a tight crop it covered half the animal and 80% of the structural words, and
-    # everything was pinned to the micro size. Now: the eye discs (0.20 eye-sep: the eye, its
-    # lids and the socket -- "the typography around and in the eyes should be fine"), the nose
-    # leather locate_nose fits, and a mouth band below it are the fine zone; the cap eases off
-    # over 0.20 eye-separations outside it. Fine ON the features, growing steadily away.
-    fine_blend = np.ones((H, W), np.float32)
-    if len(attractor_pts) >= 2:
-        fine = np.zeros((H, W), np.uint8)
-        for (ax, ay) in attractor_pts[:2]:
-            cv2.circle(fine, (int(ax), int(ay)), int(round(_es * 0.20)), 1, -1)
-        if _nf is not None:
-            (ncx, ncy), (na, nb), nang = _nf
-            cv2.ellipse(fine, (int(ncx), int(ncy)), (int(na * 1.0) + 1, int(nb * 1.0) + 1),
-                        float(nang), 0, 360, 1, -1)
-            nr = max(na, nb)
-            cv2.ellipse(fine, (int(ncx), int(ncy + nr * 1.3)), (int(_es * 0.35), int(nr * 0.9) + 1),
-                        0, 0, 360, 1, -1)
-        else:
-            mx, my = feature_pts[2]
-            cv2.ellipse(fine, (int(mx), int(my)), (int(_es * 0.30), int(_es * 0.45)), 0, 0, 360, 1, -1)
-        if primary_kind == "h" and primary_mouth is not None:
-            cv2.ellipse(fine, (int(primary_mouth[0]), int(primary_mouth[1])),
-                        (int(_es * 0.35), int(_es * 0.12)), 0, 0, 360, 1, -1)
-        for _f in extra_faces:   # the same fine zone on every further face, at its own scale
-            for (ax, ay) in _f["eyes"]:
-                cv2.circle(fine, (int(ax), int(ay)), int(round(_f["es"] * 0.20)), 1, -1)
-            if _f["nose_fit"] is not None:
-                (ncx, ncy), (na, nb), nang = _f["nose_fit"]
-                cv2.ellipse(fine, (int(ncx), int(ncy)), (int(na * 1.0) + 1, int(nb * 1.0) + 1),
-                            float(nang), 0, 360, 1, -1)
-                nr = max(na, nb)
-                cv2.ellipse(fine, (int(ncx), int(ncy + nr * 1.3)), (int(_f["es"] * 0.35), int(nr * 0.9) + 1),
-                            0, 0, 360, 1, -1)
-            else:
-                mx, my = _f["mouth_pt"]
-                cv2.ellipse(fine, (int(mx), int(my)), (int(_f["es"] * 0.30), int(_f["es"] * 0.45)), 0, 0, 360, 1, -1)
-            if _f["mouth"] is not None:   # a person's mouth, where the mesh says it is
-                cv2.ellipse(fine, (int(_f["mouth"][0]), int(_f["mouth"][1])),
-                            (int(_f["es"] * 0.35), int(_f["es"] * 0.12)), 0, 0, 360, 1, -1)
-        _out = cv2.distanceTransform((1 - fine).astype(np.uint8), cv2.DIST_L2, 5)
-        fine_blend = np.clip(_out / max(1.0, _es * 0.20), 0, 1).astype(np.float32)
-        del _out
-
-    # "Distance from the face" is the distance to the NEAREST feature -- eye, eye or nose --
-    # not to the midpoint between the eyes. On a close-up the nose sits a full eye-separation
-    # below that midpoint, so the old rule read the nose and muzzle as far from the face and
-    # put the largest words in the frame on them (seen on staging, twice). Normalized by what
-    # is in the frame: the farthest visible part of the animal gets the largest type whether
-    # that is the chest bottom or, on a tight crop, the ear tips.
-    if feature_pts:
-        _dist = np.full((H, W), 1e9, np.float32)
-        for (fx, fy) in feature_pts:
-            _dist = np.minimum(_dist, np.hypot(xx - fx, yy - fy))
-    else:
-        _dist = np.hypot(xx - head_center[0], yy - head_center[1])
-    _max_in_mask = float(np.percentile(_dist[mask > 0.5], 97)) if (mask > 0.5).any() else _es * 2.4
-    # Two parts. NEAR is anatomical, in eye-separations: 0 at a feature, full at 1.2 eye-
-    # separations (the ear tips), the same on every framing -- so a tight crop, where the
-    # whole frame is close to the face, cannot stretch the fine region into medium type on
-    # the muzzle bridge (a single frame-relative normalization did exactly that on staging).
-    # FAR is frame-relative: whatever lies beyond 1.2 eye-separations grades up to the largest
-    # type at the farthest visible part of the animal, chest bottom or ear tips alike.
-    _d_es = _dist / _es
-    # A person: the near ramp runs 2.0 eye-separations, not 1.2, so size grows down the neck
-    # instead of finishing at the chin (on a laughing face the chin is 0.6 from the mouth).
-    _near_es = 2.0 if human else 1.2
-    _near = np.clip(_d_es / _near_es, 0, 1) ** 0.8
-    _far_span = max(_es * 0.3, _max_in_mask - _es * _near_es)
-    _far = np.clip((_dist - _es * _near_es) / _far_span, 0, 1)
-    face_dist_field = (0.55 * _near + 0.45 * _far).astype(np.float32)
-    _denom = _es * _near_es
-    # Smoothness may only ENLARGE type away from the features. A whitened senior muzzle is
-    # the smoothest, brightest patch on the head, and the ungated term opened type up right
-    # there. It fades in between 0.45 and 0.85 eye-separations from the nearest feature, so
-    # on the face itself size is distance alone.
-    # A person's neck is the smoothest skin in the frame, and this term read it as far body
-    # and gave it the biggest words in the portrait, under the chin's smallest. For a person
-    # smoothness carries 0.15 of the size, not 0.40; distance carries the rest.
-    _smooth_gate = np.clip((_d_es - 0.45) / 0.40, 0, 1)
-    _w_dist, _w_smooth = (0.85, 0.15) if human else (0.60, 0.40)
-    size_field = np.clip(_w_dist * face_dist_field + _w_smooth * (1.0 - detail_field) * _smooth_gate, 0, 1).astype(np.float32)
-
-    def line_size_t(line):
-        vals = [size_field[min(H - 1, max(0, int(y))), min(W - 1, max(0, int(x)))] for x, y, _ in line[::4]]
-        return float(np.mean(vals)) if vals else 0.0
-
-    # The structural size every pixel would get (before per-line coherence/jitter): what the
-    # lane spacing, the channel fill and the residual fill size themselves against.
-    _cap = MICRO_PX * 1.05
-    _raw_px = MICRO_PX + (STRUCT_PX - MICRO_PX) * np.clip(0.65 * size_field + 0.20, 0, 1)
-    size_px_field = np.where(_raw_px > _cap, _cap + (_raw_px - _cap) * fine_blend, _raw_px).astype(np.float32)
-    if _KEEP_FIELDS:   # ~100 MB of float32 planes at print size, so never retained in production
-        _TL.fields.update(size_field=size_field, face_dist_field=face_dist_field, detail_field=detail_field,
-                          importance_norm=importance_norm, micro_px=MICRO_PX, struct_px=STRUCT_PX, es=_es,
-                          denom=_denom, max_in_mask=_max_in_mask, fine_blend=fine_blend,
-                          size_px_field=size_px_field, feature_pts=feature_pts)
-    # The size rule's intermediates are folded into size_field / size_px_field; nothing below
-    # reads them (the `_dist` at the end of the render is a new one). Freed before the loop
-    # holds its own fields for four iterations (memory; every plane is 18 MB at print size).
-    del _gx, _gy, _energy, _dist, _d_es, _near, _far, _smooth_gate, _raw_px, face_dist_field, detail_field
-
+def _phase_iterative_loop(stream, N_ITERS, base, sep_correction, sep_field_base, sep_px, W, size_px_field, coherence_s, mask, theta_s, edge_zone, region_map, H, mean_coherence, min_dist_to_attractor, dist_to_edge, STRUCT_PX, attractor_radius, line_importance, FILL_PX, attractor_pts, get_font, gray, rng, _es, _lm_env, primary_kind, extra_faces, _with_nose_hint, fringe_points, feat_close_radius, line_feat_dist, size_field, line_size_t, MICRO_PX, fine_blend, importance_norm, human, hero_words, corr_sigma, target_density_blur, bgr_source, lr_map):
+    """The iterative loop: regrow geometry, rasterize, compare, correct DENSITY, regrow. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
     # ---- The iterative loop: regrow geometry, rasterize, compare, correct DENSITY, regrow -----
     # This is the follow-up to the fixed-geometry version (which corrected only word size/alpha
     # and plateaued because collision-avoidance caps how much ink an EXISTING lane can hold).
@@ -3727,6 +3127,654 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     micro_px_area, struct_px_area, hero_px_area, fill_px_area = best_tier_stats
     _log(f"using iteration with best likeness ({best_score:.4f})")
 
+    return canvas, occupancy, best_placements, best_pass, best_stats, best_pass_stats, fill_px_area, hero_px_area, micro_px_area, struct_px_area
+
+
+def _phase_features(primary_kind, _es, attractor_pts, gray, mask, extra_faces, H, W, importance_norm, primary_mouth, xx, yy, head_center, human, detail_field, MICRO_PX, STRUCT_PX, _energy, _gx, _gy):
+    """The features: both eyes and the nose, as points and as a fine zone. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- The features: both eyes and the nose, as points and as a fine zone ------------------
+    # locate_nose reads only the photo, so this is computed once here rather than per iteration.
+    if primary_kind == "h":
+        # A person's nose: no leather to fit, a nose-sized ellipse at the mesh's nose tip.
+        _nf = (((float(_TL.nose_hint[0]), float(_TL.nose_hint[1])), (_es * 0.14, _es * 0.10), 0.0)
+               if _TL.nose_hint is not None else None)
+    else:
+        _nf = locate_nose(gray, mask, attractor_pts) if len(attractor_pts) >= 2 else None
+    feature_pts = list(attractor_pts[:2])
+    if _nf is not None:
+        feature_pts.append((float(_nf[0][0]), float(_nf[0][1])))
+    elif len(attractor_pts) >= 2:
+        feature_pts.append((float(np.mean([p[0] for p in attractor_pts[:2]])),
+                            float(np.mean([p[1] for p in attractor_pts[:2]])) + _es * 0.75))
+
+    # A second pet's face: its own eye separation and nose fit, and the same three points. The
+    # nose locator and renderer read the landmark nose from thread-local state, so each face's
+    # nose is swapped in for the duration of its own call.
+    def _with_nose_hint(hint, fn, *a, **k):
+        _saved = _TL.nose_hint
+        _TL.nose_hint = hint
+        try:
+            return fn(*a, **k)
+        finally:
+            _TL.nose_hint = _saved
+    for _f in extra_faces:
+        _e1, _e2 = _f["eyes"]
+        _f["es"] = max(1.0, math.hypot(_e1[0] - _e2[0], _e1[1] - _e2[1]))
+        if _f["kind"] == "h":
+            _f["nose_fit"] = (((float(_f["nose"][0]), float(_f["nose"][1])), (_f["es"] * 0.14, _f["es"] * 0.10), 0.0)
+                              if _f["nose"] is not None else None)
+        else:
+            _f["nose_fit"] = _with_nose_hint(_f["nose"], locate_nose, gray, mask, _f["eyes"])
+        _f["mouth_pt"] = ((float(_f["nose_fit"][0][0]), float(_f["nose_fit"][0][1])) if _f["nose_fit"] is not None
+                          else (0.5 * (_e1[0] + _e2[0]), 0.5 * (_e1[1] + _e2[1]) + _f["es"] * 0.75))
+        feature_pts.extend([_e1, _e2, _f["mouth_pt"]])
+        if _f["mouth"] is not None:
+            feature_pts.append(_f["mouth"])   # a person's mouth is a feature of its own
+
+    # Where type must stay fine: the eyes, nose and mouth THEMSELVES, graduating out. The cap
+    # used to key on the likeness weight map (importance_norm > 0.45), whose "face-center"
+    # ellipse is 1.8 eye-separations wide and 2.2 tall -- a scoring choice, not an anatomical
+    # one; on a tight crop it covered half the animal and 80% of the structural words, and
+    # everything was pinned to the micro size. Now: the eye discs (0.20 eye-sep: the eye, its
+    # lids and the socket -- "the typography around and in the eyes should be fine"), the nose
+    # leather locate_nose fits, and a mouth band below it are the fine zone; the cap eases off
+    # over 0.20 eye-separations outside it. Fine ON the features, growing steadily away.
+    fine_blend = np.ones((H, W), np.float32)
+    if len(attractor_pts) >= 2:
+        fine = np.zeros((H, W), np.uint8)
+        for (ax, ay) in attractor_pts[:2]:
+            cv2.circle(fine, (int(ax), int(ay)), int(round(_es * 0.20)), 1, -1)
+        if _nf is not None:
+            (ncx, ncy), (na, nb), nang = _nf
+            cv2.ellipse(fine, (int(ncx), int(ncy)), (int(na * 1.0) + 1, int(nb * 1.0) + 1),
+                        float(nang), 0, 360, 1, -1)
+            nr = max(na, nb)
+            cv2.ellipse(fine, (int(ncx), int(ncy + nr * 1.3)), (int(_es * 0.35), int(nr * 0.9) + 1),
+                        0, 0, 360, 1, -1)
+        else:
+            mx, my = feature_pts[2]
+            cv2.ellipse(fine, (int(mx), int(my)), (int(_es * 0.30), int(_es * 0.45)), 0, 0, 360, 1, -1)
+        if primary_kind == "h" and primary_mouth is not None:
+            cv2.ellipse(fine, (int(primary_mouth[0]), int(primary_mouth[1])),
+                        (int(_es * 0.35), int(_es * 0.12)), 0, 0, 360, 1, -1)
+        for _f in extra_faces:   # the same fine zone on every further face, at its own scale
+            for (ax, ay) in _f["eyes"]:
+                cv2.circle(fine, (int(ax), int(ay)), int(round(_f["es"] * 0.20)), 1, -1)
+            if _f["nose_fit"] is not None:
+                (ncx, ncy), (na, nb), nang = _f["nose_fit"]
+                cv2.ellipse(fine, (int(ncx), int(ncy)), (int(na * 1.0) + 1, int(nb * 1.0) + 1),
+                            float(nang), 0, 360, 1, -1)
+                nr = max(na, nb)
+                cv2.ellipse(fine, (int(ncx), int(ncy + nr * 1.3)), (int(_f["es"] * 0.35), int(nr * 0.9) + 1),
+                            0, 0, 360, 1, -1)
+            else:
+                mx, my = _f["mouth_pt"]
+                cv2.ellipse(fine, (int(mx), int(my)), (int(_f["es"] * 0.30), int(_f["es"] * 0.45)), 0, 0, 360, 1, -1)
+            if _f["mouth"] is not None:   # a person's mouth, where the mesh says it is
+                cv2.ellipse(fine, (int(_f["mouth"][0]), int(_f["mouth"][1])),
+                            (int(_f["es"] * 0.35), int(_f["es"] * 0.12)), 0, 0, 360, 1, -1)
+        _out = cv2.distanceTransform((1 - fine).astype(np.uint8), cv2.DIST_L2, 5)
+        fine_blend = np.clip(_out / max(1.0, _es * 0.20), 0, 1).astype(np.float32)
+        del _out
+
+    # "Distance from the face" is the distance to the NEAREST feature -- eye, eye or nose --
+    # not to the midpoint between the eyes. On a close-up the nose sits a full eye-separation
+    # below that midpoint, so the old rule read the nose and muzzle as far from the face and
+    # put the largest words in the frame on them (seen on staging, twice). Normalized by what
+    # is in the frame: the farthest visible part of the animal gets the largest type whether
+    # that is the chest bottom or, on a tight crop, the ear tips.
+    if feature_pts:
+        _dist = np.full((H, W), 1e9, np.float32)
+        for (fx, fy) in feature_pts:
+            _dist = np.minimum(_dist, np.hypot(xx - fx, yy - fy))
+    else:
+        _dist = np.hypot(xx - head_center[0], yy - head_center[1])
+    _max_in_mask = float(np.percentile(_dist[mask > 0.5], 97)) if (mask > 0.5).any() else _es * 2.4
+    # Two parts. NEAR is anatomical, in eye-separations: 0 at a feature, full at 1.2 eye-
+    # separations (the ear tips), the same on every framing -- so a tight crop, where the
+    # whole frame is close to the face, cannot stretch the fine region into medium type on
+    # the muzzle bridge (a single frame-relative normalization did exactly that on staging).
+    # FAR is frame-relative: whatever lies beyond 1.2 eye-separations grades up to the largest
+    # type at the farthest visible part of the animal, chest bottom or ear tips alike.
+    _d_es = _dist / _es
+    # A person: the near ramp runs 2.0 eye-separations, not 1.2, so size grows down the neck
+    # instead of finishing at the chin (on a laughing face the chin is 0.6 from the mouth).
+    _near_es = 2.0 if human else 1.2
+    _near = np.clip(_d_es / _near_es, 0, 1) ** 0.8
+    _far_span = max(_es * 0.3, _max_in_mask - _es * _near_es)
+    _far = np.clip((_dist - _es * _near_es) / _far_span, 0, 1)
+    face_dist_field = (0.55 * _near + 0.45 * _far).astype(np.float32)
+    _denom = _es * _near_es
+    # Smoothness may only ENLARGE type away from the features. A whitened senior muzzle is
+    # the smoothest, brightest patch on the head, and the ungated term opened type up right
+    # there. It fades in between 0.45 and 0.85 eye-separations from the nearest feature, so
+    # on the face itself size is distance alone.
+    # A person's neck is the smoothest skin in the frame, and this term read it as far body
+    # and gave it the biggest words in the portrait, under the chin's smallest. For a person
+    # smoothness carries 0.15 of the size, not 0.40; distance carries the rest.
+    _smooth_gate = np.clip((_d_es - 0.45) / 0.40, 0, 1)
+    _w_dist, _w_smooth = (0.85, 0.15) if human else (0.60, 0.40)
+    size_field = np.clip(_w_dist * face_dist_field + _w_smooth * (1.0 - detail_field) * _smooth_gate, 0, 1).astype(np.float32)
+
+    def line_size_t(line):
+        vals = [size_field[min(H - 1, max(0, int(y))), min(W - 1, max(0, int(x)))] for x, y, _ in line[::4]]
+        return float(np.mean(vals)) if vals else 0.0
+
+    # The structural size every pixel would get (before per-line coherence/jitter): what the
+    # lane spacing, the channel fill and the residual fill size themselves against.
+    _cap = MICRO_PX * 1.05
+    _raw_px = MICRO_PX + (STRUCT_PX - MICRO_PX) * np.clip(0.65 * size_field + 0.20, 0, 1)
+    size_px_field = np.where(_raw_px > _cap, _cap + (_raw_px - _cap) * fine_blend, _raw_px).astype(np.float32)
+    if _KEEP_FIELDS:   # ~100 MB of float32 planes at print size, so never retained in production
+        _TL.fields.update(size_field=size_field, face_dist_field=face_dist_field, detail_field=detail_field,
+                          importance_norm=importance_norm, micro_px=MICRO_PX, struct_px=STRUCT_PX, es=_es,
+                          denom=_denom, max_in_mask=_max_in_mask, fine_blend=fine_blend,
+                          size_px_field=size_px_field, feature_pts=feature_pts)
+    # The size rule's intermediates are folded into size_field / size_px_field; nothing below
+    # reads them (the `_dist` at the end of the render is a new one). Freed before the loop
+    # holds its own fields for four iterations (memory; every plane is 18 MB at print size).
+    del _gx, _gy, _energy, _dist, _d_es, _near, _far, _smooth_gate, _raw_px, face_dist_field, detail_field
+
+    return _with_nose_hint, fine_blend, size_field, line_size_t, size_px_field
+
+
+def _phase_size_rule(gray, base, mask, attractor_pts):
+    """Size rule for everything outside the features (a continuous field, one rule for every. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Size rule for everything outside the features (a continuous field, one rule for every
+    # photo) -----------------------------------------------------------------------------------
+    # At preview size every zone measured a 6px median: outside the eyes/nose the whole animal
+    # sat at one size and there was no hierarchy to read. Three signals, combined per pixel:
+    #   * distance from the face -- fine near it, opening up down the neck and chest; hero words
+    #     only far from it (see hero selection);
+    #   * texture energy -- fine wherever the photo has fine detail (fur strands, folds), larger
+    #     where the coat is smooth, so size follows what the fur needs to be described;
+    #   * flow coherence -- a minor opener where the fur runs calm and straight (added per line).
+    _gx = cv2.Sobel(gray.astype(np.float32), cv2.CV_32F, 1, 0, ksize=3)
+    _gy = cv2.Sobel(gray.astype(np.float32), cv2.CV_32F, 0, 1, ksize=3)
+    _energy = _gblur(np.hypot(_gx, _gy), (0, 0), sigmaX=max(2.0, base * 0.6))
+    _p95 = float(np.percentile(_energy[mask > 0.5], 95)) if (mask > 0.5).any() else 1.0
+    detail_field = np.clip(_energy / max(1e-6, _p95), 0, 1)
+    if len(attractor_pts) >= 2:
+        _es = max(1.0, math.hypot(attractor_pts[0][0] - attractor_pts[1][0], attractor_pts[0][1] - attractor_pts[1][1]))
+    else:
+        _es = base * 4.0
+
+    return _gx, _gy, _energy, detail_field, _es
+
+
+def _phase_size_gradation(base, type_scale, human, attractor_radius, attractor_pts, line_mean_xy, all_eye_pts):
+    """Continuous size gradation, tone still carried by density (recommendations #5, #6). Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Continuous size gradation, tone still carried by density (recommendations #5, #6) --
+    # An earlier version of this used two hard-switched sizes (MICRO / STRUCTURAL) based on a
+    # single distance threshold -- fixed the old word-cloud problem, but the user flagged the
+    # visible result as "jumps from small to medium to large without care": a line just inside
+    # the threshold and one just outside it could differ suddenly with nothing in between.
+    # Replaced with a smoothstep interpolation across the SAME distance-from-feature measure,
+    # so every line in between gets a proportionate size -- a continuous gradient from fine
+    # near the eyes/nose out to the (still modest, non-hero) structural size, rather than three
+    # discrete steps. Tone is still primarily density (sep_field above), not size -- the low end
+    # was also lowered (0.17x -> 0.10x base) per "smallest text should be finer."
+    # Slider: Small 0.30 -> 1.00x (the tuned look), Medium 0.42 -> 1.29x, Large 0.56 -> 1.60x.
+    # A 0.75 power so Large is bold and graphic without the far body outgrowing the frame.
+    _tsk = (float(type_scale) / 0.30) ** 0.75 if type_scale else 1.0
+    _tsk = min(2.0, max(0.7, _tsk))
+    # The per-word overlap cap is a FRACTION of the word's own pixels, so a word 1.6x larger was
+    # allowed 1.6x the ink on its neighbour, and the soak's one failing row was letter-body
+    # collisions at Large (1.23-1.70% against the 1.20% claim; the structural pass makes three
+    # quarters of them at every setting, measured). The cap shrinks with the slider so the
+    # ink a word may plant on another stays what it is at Small; Small itself is unchanged.
+    _TL.max_overlap_cap = _TL.max_overlap_cap / max(1.0, _tsk)
+    MICRO_PX = base * 0.10 * _tsk
+    # A person: a narrower range, three to one against five. The far body of a dog is a
+    # chest and flanks, and it earns the biggest words; a person's far body is a neck and a
+    # collar, next to the chin's smallest words. Measured on the boy across the jaw and neck:
+    # one word in twenty sat beside a neighbour 3.8x its size, the widest pair 7.3x.
+    STRUCT_PX = base * (0.30 if human else 0.52) * _tsk   # widened from 0.40 so the far body genuinely reads larger (size_field)
+    # Widened from 1.3x -- measured the ACTUAL micro/structural/hero split (recommendation #6's
+    # target: 20-30% / 60-70% / 3-7% of ink area) and found micro was only 11-15%: at 1.3x, only
+    # a small ring right around the eyes graded toward the fine end, so nearly the whole rest of
+    # the portrait defaulted to full structural size regardless of how far it actually was.
+    feat_close_radius = attractor_radius * 3.7
+
+    def line_feat_dist(line):
+        if not attractor_pts:
+            return float("inf")
+        lx, ly = line_mean_xy(line)
+        return min(math.hypot(lx - ax, ly - ay) for ax, ay in all_eye_pts)
+
+    FILL_PX = MICRO_PX * 0.85
+
+    return MICRO_PX, STRUCT_PX, feat_close_radius, line_feat_dist, FILL_PX
+
+
+def _phase_target_tone(H, gray, W, attractor_pts, base, mask):
+    """Target tonal map for iterative error-correction. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Target tonal map for iterative error-correction ------------------------------------
+    # The missing piece, diagnosed via the type-only likeness test: nothing before this point
+    # ties ink density to the photo's actual LIGHT/DARK pattern -- density was driven by
+    # distance-from-feature and fur coherence, never by "does this patch need to read as light
+    # or dark to match the animal." That's why the typography-only panel never showed a face
+    # when blurred (uniform gray texture where the source showed clear eye/nose blobs): its own
+    # tonal map was never asked to resemble the source's. This target, and the loop below that
+    # converges toward it, is that missing objective. Built from the same photo (`gray`, already
+    # contrast-enhanced) and at the same kind of local-averaging scale the likeness test itself
+    # uses, so what we optimize against here is the same thing that test measures.
+    #
+    # SIGN FIX: this was originally `1 - gray/255` (dark photo -> high target ink), copying
+    # ordinary charcoal-on-white-paper logic where more ink makes a mark darker. That's the
+    # wrong model for THIS compositor: the ground is a dark navy, and `a` (which scales directly
+    # with ink density) controls how much of the actual PHOTO shows through it -- composited =
+    # dark_ground*(1-a) + photo*a. More ink reveals MORE of the photo, whatever its color; less
+    # ink reveals more of the dark ground regardless of what the photo actually looked like
+    # there. So the inverted target was starving typography from every BRIGHT part of the coat
+    # (the majority of most pets' faces) and pushing extra density into already-dark regions
+    # that read as dark either way -- confirmed as the direct cause of "far too dark, doesn't
+    # look like the source photo": the correction was correct arithmetic aimed at the wrong
+    # goal. Flipped so bright photo -> high target ink -> that brightness gets revealed.
+    target_density = np.clip(gray.astype(np.float32) / 255.0, 0, 1)
+    target_density = 0.08 + 0.77 * target_density   # keep some paper AND some ink everywhere --
+                                                     # a pure-black or pure-white target would
+                                                     # erase texture at the tonal extremes
+    corr_sigma = max(10.0, W * 0.02)
+    target_density_blur = _gblur(target_density, (0, 0), sigmaX=corr_sigma)
+    # Correct harder where likeness actually depends on it (eyes, muzzle/nose) than on generic
+    # body texture -- reuses the SAME weighting the automated likeness test itself scores by.
+    likeness_weights = build_likeness_weight_map(mask, attractor_pts, base)
+    lr_map = 0.35 + 0.55 * np.clip(likeness_weights / 6.0, 0, 1)
+    # First version of this loop kept streamline geometry FIXED across iterations and corrected
+    # only word size/alpha on the existing lines. It converged (every one of 5 test photos
+    # improved 20-145% in likeness) but plateaued well short of the target: collision-avoidance
+    # caps how much MORE ink a given lane can hold before overlap-avoidance itself blocks further
+    # placement, so the correction ran into a ceiling that had nothing to do with the tonal
+    # target being wrong -- there was just nowhere left to put more ink within that geometry.
+    # `sep_correction` fixes that by feeding back into the density FIELD itself: under-inked
+    # regions get genuinely denser streamlines next round (more lanes to place words on, not
+    # just bigger/darker words on the same lanes), over-inked regions get sparser ones.
+    sep_correction = np.ones((H, W), np.float32)
+    # Regrowing the streamline geometry every round (real Jobard-Lefer growth, not just a
+    # placement re-run) is genuinely more expensive -- fewer rounds than the fixed-geometry
+    # version, which could afford 4-7.
+    # Was a fixed 5. Measured across the test photos, the best-scoring round was the 2nd-4th;
+    # rounds after the score turns down were pure cost (each is a full grow + place). Cap at 4
+    # (PET_V2_ITERS to override) and stop early on the first clear decrease -- see the loop tail.
+    N_ITERS = int(_settings.raw("PET_V2_ITERS") or 4)
+
+    def line_mean_xy(line):
+        pts = np.array([(x, y) for x, y, _ in line[::4]])
+        return float(pts[:, 0].mean()), float(pts[:, 1].mean())
+
+    return corr_sigma, target_density_blur, lr_map, sep_correction, N_ITERS, line_mean_xy
+
+
+def _phase_importance_map(attractor_pts, base, extra_faces, mask, H, W, coherence_s, all_eye_pts):
+    """Anatomical importance map, reused as a RENDERING control, not just a scoring metric. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Anatomical importance map, reused as a RENDERING control, not just a scoring metric --
+    # build_likeness_weight_map already encodes the right hierarchy (eyes=4, nose+muzzle=6,
+    # silhouette=2, rest=1) because it was built to match how a viewer actually reads a face --
+    # but until now it only ever fed the likeness score, never the render itself, so the eyes and
+    # nose got the SAME ink boldness as a patch of neck fur. Reusing the identical map for both
+    # means the portrait is now optimizing for the same thing it's being judged on. Normalized to
+    # [0,1] and used below to scale ink alpha (visual priority/boldness), not density -- density's
+    # own feat/edge/chest zones are already tuned and this avoids double-compounding two
+    # overlapping "near a feature" signals into an unpredictable extreme.
+    importance_map = build_likeness_weight_map(mask, attractor_pts, base, extra_faces)
+    importance_norm = importance_map / max(1.0, float(importance_map.max()))
+    del importance_map
+
+    def line_importance(line):
+        vals = [importance_norm[min(H - 1, max(0, int(y))), min(W - 1, max(0, int(x)))] for x, y, _ in line[::4]]
+        return float(np.mean(vals)) if vals else 0.0
+
+    rng = random.Random(7)
+    font_cache = {}
+
+    def get_font(px):
+        px = max(6, int(round(px)))
+        f = font_cache.get(px)
+        if f is None:
+            f = ImageFont.truetype(_FONT, px) if _FONT else ImageFont.load_default()
+            font_cache[px] = f
+        return f
+
+    def mean_coherence(line):
+        vals = [coherence_s[min(H - 1, max(0, int(y))), min(W - 1, max(0, int(x)))] for x, y, _ in line[::4]]
+        return float(np.mean(vals)) if vals else 0.0
+
+    def min_dist_to_attractor(line):
+        if not attractor_pts:
+            return float("inf")
+        pts = np.array([(x, y) for x, y, _ in line[::3]])
+        best = float("inf")
+        for (ax, ay) in all_eye_pts:
+            d = float(np.min(np.hypot(pts[:, 0] - ax, pts[:, 1] - ay)))
+            best = min(best, d)
+        return best
+
+    return importance_norm, line_importance, rng, get_font, mean_coherence, min_dist_to_attractor
+
+
+def _phase_separation(H, W, all_eye_pts, attractor_radius, base, dist_to_edge, head_center, sep_px, attractor_pts, mask):
+    """Spatially variable separation (recommendation #4). Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Spatially variable separation (recommendation #4) --------------------------------
+    # A charcoal portrait doesn't put the same number of marks per square inch everywhere;
+    # neither should this. Denser (smaller separation -> more streamlines -> more typographic
+    # material) near real features and right at the silhouette, where detail is what carries
+    # the likeness; sparser (larger separation) over calm regions far from the head -- "longer,
+    # calmer trajectories through the chest." This is now what carries TONE, not font size (see
+    # recommendation #5/#6 below) -- density is the primary mechanism, size stays in three
+    # controlled classes.
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    dist_to_feat = np.full((H, W), 1e6, np.float32)
+    for (ax, ay) in all_eye_pts:
+        dist_to_feat = np.minimum(dist_to_feat, np.hypot(xx - ax, yy - ay))
+    feat_zone = np.clip(1.0 - dist_to_feat / (attractor_radius * 1.6), 0, 1)      # 1 at a feature
+    edge_zone = np.clip(1.0 - dist_to_edge / (base * 1.2), 0, 1)                  # 1 at the silhouette
+    # Tuned down from an earlier pass that read as "too sparse" overall (user feedback,
+    # confirmed by comparing coverage: 46% with the old font-size-driven tone vs 32% with the
+    # first density-driven version) -- the chest/background falloff was too aggressive (up to
+    # 1.8x baseline separation) and the baseline itself was too loose. Density should still be
+    # LOWEST far from the head, but the floor of that falloff needs to stay closer to the
+    # baseline so calm regions read as "fewer, calmer strokes," not "empty."
+    chest_zone = np.clip((yy - head_center[1]) / max(1.0, H * 0.35), 0, 1) * (1.0 - np.maximum(feat_zone, edge_zone))
+    density_mult = 1.0 - 0.45 * feat_zone - 0.30 * edge_zone + 0.30 * chest_zone
+    # This is now the STARTING point for the per-iteration density, not the final field --
+    # sep_correction (below) adjusts it each round based on measured tonal error.
+    sep_field_base = np.clip(sep_px * density_mult, sep_px * 0.45, sep_px * 1.3).astype(np.float32)
+    del dist_to_feat, feat_zone, chest_zone, density_mult
+
+    # Semantic anatomical regions (recommendations #3/#4) -- see build_region_map's docstring
+    # for what this can and can't distinguish given no landmark model. None when no attractor
+    # pair was found, which evenly_spaced_streamlines treats as "no barriers" (old behavior).
+    region_map = build_region_map(mask, attractor_pts, base)
+
+    return xx, yy, edge_zone, sep_field_base, region_map
+
+
+def _phase_tangent_field(mask, W, base, theta_s, coherence_s, landmarks, H, gray):
+    """Silhouette-tangent field near the boundary (recommendation #13). Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Silhouette-tangent field near the boundary (recommendation #13) ------------------
+    # As a streamline nears the silhouette, blend its direction toward the boundary's own
+    # tangent -- the level sets of the mask's distance transform run parallel to the edge
+    # everywhere, so the tangent to that level set IS the local silhouette tangent. This is a
+    # different technique from the swirl-blend tried earlier for the eyes (which fought the
+    # real fur signal and made things worse, per the user's own comparison): here the field
+    # being blended toward is a genuine geometric property of the shape itself, not a synthetic
+    # radial guess, and it only dominates in a narrow band right at the edge. Mod-pi angles
+    # again require the double-angle trick to blend correctly (see blend_attractor_field).
+    dist_to_edge = cv2.distanceTransform((mask > 0.5).astype(np.uint8), cv2.DIST_L2, 5)
+    dist_blur = _gblur(dist_to_edge, (0, 0), sigmaX=max(1.5, W * 0.006))
+    gy, gx = np.gradient(dist_blur)
+    boundary_theta = np.arctan2(gy, gx) + math.pi / 2.0   # tangent = inward normal rotated 90 deg
+    boundary_w = np.clip(1.0 - dist_to_edge / (base * 1.3), 0, 1) ** 1.5   # 1 at the edge, 0 inland
+    cos2 = np.cos(2 * theta_s) * (1 - boundary_w) + np.cos(2 * boundary_theta) * boundary_w
+    sin2 = np.sin(2 * theta_s) * (1 - boundary_w) + np.sin(2 * boundary_theta) * boundary_w
+    theta_s = 0.5 * np.arctan2(sin2, cos2)
+    coherence_s = np.clip(coherence_s + boundary_w * 0.35, 0, 1)
+
+    # Feature field (eyes/nose proxy -- see find_attractor_points' docstring for why this
+    # stands in for real pet_landmarks.py detections in this sandbox). Computed once, reused
+    # for BOTH the attractor field below and the eyes/nose ink-protection at composite time.
+    # The detector's scales follow the SUBJECT, not the frame: the head band's width (the
+    # upper 65% of the mask, the same measure the pair scorer uses) stands in for W when it
+    # is narrower than the ~0.6 W a head-and-shoulders crop gives. On a full-body photo the
+    # eyes are a fraction of that, and frame-sized blur and opening erased them.
+    _ys_m, _xs_m = np.nonzero(mask > 0.5)
+    if len(_ys_m):
+        _cut = _ys_m.min() + (_ys_m.max() - _ys_m.min()) * 0.65
+        _bxs = _xs_m[_ys_m <= _cut]
+        _head_w = float(_bxs.max() - _bxs.min()) if len(_bxs) else float(W)
+    else:
+        _head_w = float(W)
+    W_det = float(min(W, max(_head_w / 0.6, W * 0.25)))
+    broad = _gblur(gray.astype(np.float32), (0, 0), sigmaX=max(1.0, W_det * 0.06))
+    localdark = np.clip((broad - gray.astype(np.float32)) / 55.0, 0, 1)
+    locallight = np.clip((gray.astype(np.float32) - broad) / 70.0, 0, 1)
+    feat_raw = np.maximum(localdark, locallight) * (mask > 0.5)
+    ok = int(max(3, round(W_det * 0.011))) | 1
+    feat_raw = cv2.morphologyEx(feat_raw, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ok, ok)))
+    feat = np.clip(_gblur(feat_raw, (0, 0), sigmaX=max(1.0, W_det * 0.012)) * 1.6, 0, 1)
+
+    # Silhouette fringe points (recommendation: "edges are irregular, furry and directional" in
+    # the source vs. "generally smooth/masked" in the render) -- picked once, from the mask's own
+    # antialiased edge, so they're a stable feature of this animal's silhouette rather than
+    # reshuffling per iteration. See find_fringe_points' docstring for why this counts as real
+    # evidence rather than a fabricated guess.
+    fringe_points = find_fringe_points(mask, n_points=max(40, int(W * 0.05)), gray=gray, theta_s=theta_s, base=base)
+    _log(f"fringe: {len(fringe_points)} hairs with evidence of leaving the outline")
+
+    attractor_radius = base * 2.2
+    # Eye candidates come from the DARK half of the feature field only. `feat` (used below for
+    # density/size gradation) is max(localdark, locallight), and on the dog the pair-scorer's
+    # best pair was two bright tan fur patches on the forehead (measured: gray ~170 at both
+    # attractor points vs ~30 at the real eyes, ~110px away). Eyes are dark; a bright anomaly
+    # should never have been eligible.
+    feat_dark_raw = cv2.morphologyEx(localdark * (mask > 0.5), cv2.MORPH_OPEN,
+                                     cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ok, ok)))
+    feat_dark = np.clip(_gblur(feat_dark_raw, (0, 0), sigmaX=max(1.0, W_det * 0.012)) * 1.6, 0, 1)
+    attractor_pts = find_attractor_points(feat_dark, mask)
+    del localdark, feat_dark_raw, feat_dark
+    # Validate the dark-only pair by depth inside the silhouette, with the original detector as
+    # fallback. Measured on the three test photos (edge distance as a fraction of head width):
+    # every real eye >= 0.174 (dog 0.174/0.176, doodle 0.229/0.259, cat 0.274); the one false
+    # positive -- the cat's second point landing on a dark ear edge -- 0.036. An eye is never at
+    # the silhouette edge; 0.10 splits the two with margin either side. The original max(dark,
+    # light) field found the cat's eyes correctly and the dog's/doodle's wrongly; the dark-only
+    # field is the reverse, so the two together cover all three -- by measurement, not by hope.
+    _m5 = mask > 0.5
+    _ys, _xs = np.nonzero(_m5)
+    if len(_ys) and len(attractor_pts) >= 2:
+        _top, _bot = _ys.min(), _ys.max()
+        _bx = _xs[_ys <= _top + (_bot - _top) * 0.65]
+        _band_w = max(1.0, float(_bx.max() - _bx.min())) if len(_bx) else 1.0
+        _ed = cv2.distanceTransform(_m5.astype(np.uint8), cv2.DIST_L2, 5)
+        _depths = [float(_ed[min(H - 1, max(0, int(py))), min(W - 1, max(0, int(px)))]) / _band_w
+                   for (px, py) in attractor_pts]
+        if min(_depths) < 0.10:
+            fallback = find_attractor_points(feat, mask)
+            _log(f"dark-only eye pair rejected (edge depth {[round(d, 3) for d in _depths]} < 0.10 of head width); "
+                  f"falling back to combined-field pair {fallback}")
+            attractor_pts = fallback
+    # Landmark injection: GOP_LANDMARKS="x1,y1;x2,y2[;nx,ny]" (two eyes, optional nose). This is
+    # the seam where production's pet_landmarks.py (RTMPose AP-10K) output enters; the pose
+    # model's hosts are blocked from this sandbox, so known coordinates are supplied directly
+    # instead. Overrides the heuristic above entirely -- a real detection beats a proxy.
+    _lm_env = (landmarks or _settings.raw("GOP_LANDMARKS")).strip()
+    # Every further animal in the photo, as {"eyes": [(x, y), (x, y)], "nose": (x, y) | None};
+    # "es" and "nose_fit" are added below once the photo has been read. The first face stays
+    # the primary (hero words, head_center, the region map); these get the same feature passes,
+    # the same fine zone and the same weight in the likeness score.
+    extra_faces = []
+    # A face's kind: "p" for a cat or dog, "h" for a person (a group written "h:..." with a
+    # fourth point, the mouth). A person gets the eye reveal and the fine zone; the nose
+    # leather, the mouth crease and the whiskers are an animal's and are not drawn on one.
+    primary_kind, primary_mouth = "p", None
+    if _lm_env:
+        _groups = [g.strip() for g in _lm_env.split("|") if g.strip()]
+
+        def _parse(g):
+            kind = "h" if g.startswith("h:") else "p"
+            body = g[2:] if kind == "h" else g
+            return kind, [tuple(float(v) for v in p.split(",")) for p in body.split(";") if p.strip()]
+        primary_kind, _pts = _parse(_groups[0]) if _groups else ("p", [])
+        if len(_pts) >= 2:
+            attractor_pts = [_pts[0], _pts[1]]
+        if len(_pts) >= 3:
+            _TL.nose_hint = _pts[2]
+        if primary_kind == "h" and len(_pts) >= 4:
+            primary_mouth = _pts[3]
+        for _g in _groups[1:]:
+            _k, _fp = _parse(_g)
+            if len(_fp) >= 2:
+                extra_faces.append({"eyes": [_fp[0], _fp[1]], "nose": _fp[2] if len(_fp) >= 3 else None,
+                                    "kind": _k, "mouth": _fp[3] if (_k == "h" and len(_fp) >= 4) else None})
+        _log(f"landmarks injected from GOP_LANDMARKS: eyes={attractor_pts} nose={_pts[2] if len(_pts) >= 3 else None}"
+             + (f"; {len(extra_faces)} more face(s): {extra_faces}" if extra_faces else ""))
+    _log(f"anatomical attractors found (used for hero placement + size gradation only): "
+          f"{len(attractor_pts)}  {attractor_pts}")
+    return dist_to_edge, theta_s, coherence_s, feat, fringe_points, attractor_radius, attractor_pts, _lm_env, extra_faces, primary_kind, primary_mouth
+
+
+def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None,
+              landmarks=None, debug_dir=None, out_stem="render", verbose=False, backdrop_rgb=None,
+              type_scale=None, auto_res=True, anatomy=None, human=False, wisp_alpha=None, max_px=None):
+    """Render a typographic portrait of the pet in `bgr` (BGR uint8, already at the working
+    resolution). Returns (rgb_uint8, metrics). `words`: the customer's comma-separated name +
+    descriptors (the first entries weight highest; see _weighted_stream); None -> DEFAULT_WORDS.
+    `mask`: optional precomputed foreground matte (e.g. after print-aspect fitting). `render_scale`:
+    upsample factor applied here (None -> GOP_SCALE env, default 1). `max_overlap`: global
+    collision cap (None -> GOP_MAX_OVERLAP env). `landmarks`: "x1,y1;x2,y2[;nx,ny]" eyes(+nose)
+    from the production landmark model (None -> GOP_LANDMARKS env -> heuristic detector); a
+    second pet's face follows after "|" in the same form, and any number may follow.
+    `debug_dir`: when set, writes the A/B/C/D QA panels there as <out_stem>_*.jpg. `backdrop_rgb`:
+    an (r, g, b) tuple for everything OUTSIDE the animal (the site's Gallery Dark / Gallery
+    Gray choice); None keeps the photo-derived backdrop. The gap color between letters ON the
+    animal is always derived from the coat -- it carries tone -- and is not affected.
+    `type_scale`: the site's Small/Medium/Large slider (0.30 fine .. 0.56 bold, pet_proto's
+    scale). It multiplies the micro and structural sizes TOGETHER, so the hierarchy between
+    the fine face and the far body is the same at every setting; 0.30, the slider's default
+    and what every staging judgment was made at, is 1.0x. `auto_res`: when the detected eyes
+    are close together (a full-body photo), re-render at a working resolution that gives the
+    face enough pixels, up to PET_V2_MAX_RENDER_PX; the caller receives the larger image."""
+    _TL.verbose = bool(verbose)
+    _TL.nose_hint = None
+    _TL.max_overlap_cap = float(max_overlap) if max_overlap is not None else \
+        float(_settings.raw("GOP_MAX_OVERLAP") or 0.08)
+    out_path = os.path.join(debug_dir, out_stem + ".jpg") if debug_dir else None
+    if render_scale is None:
+        render_scale = float(_settings.raw("GOP_SCALE") or 1)
+    if render_scale != 1.0:
+        bgr = cv2.resize(bgr, None, fx=render_scale, fy=render_scale, interpolation=cv2.INTER_CUBIC)
+        if mask is not None:
+            mask = cv2.resize(mask, (bgr.shape[1], bgr.shape[0]), interpolation=cv2.INTER_LINEAR)
+        if wisp_alpha is not None:
+            wisp_alpha = cv2.resize(wisp_alpha, (bgr.shape[1], bgr.shape[0]), interpolation=cv2.INTER_LINEAR)
+        _log(f"render scale {render_scale:g}x -> {bgr.shape[1]}x{bgr.shape[0]}")
+    H, W = bgr.shape[:2]
+    if mask is None:
+        mask = _foreground_mask(bgr)
+    _bgr_in, _mask_in, _wisp_in = bgr, mask, wisp_alpha   # untouched, in case the face turns out to need more pixels
+    bgr_source = bgr.copy()   # kept for the type-only likeness test -- compare against the
+                              # REAL photo, not our own contrast-enhanced version of it
+    bgr = _enhance_contrast(bgr, mask)
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    # Multi-scale (recommendation #11) replaces the old single-sigma tensor -- see
+    # multi_scale_orientation's docstring for why (the doodle's vertical-striping complaint).
+    theta, coherence = multi_scale_orientation(gray, W)
+    if anatomy is not None:
+        # A person's face: the flow direction comes from the face's own structure where the
+        # mesh knows it (pet_landmarks.anatomy_field: oval, brows, eyes, lips, nose), and from
+        # texture where it does not (hair, clothes). Blended in doubled-angle space, so the
+        # two directions never cancel; the anatomy weight is 1 on a contour and 0 beyond
+        # 1.5 eye-separations. Skin has almost no texture, so without this the lanes on a
+        # face take their direction from noise (measured: the texture field's coherence on a
+        # cheek is a fifth of what it is on fur). None for every animal: byte-identical.
+        _ta, _wa = anatomy
+        if _ta.shape != gray.shape:
+            _c = cv2.resize(np.cos(2 * _ta) * _wa, (W, H), interpolation=cv2.INTER_LINEAR)
+            _s = cv2.resize(np.sin(2 * _ta) * _wa, (W, H), interpolation=cv2.INTER_LINEAR)
+            _wa = cv2.resize(_wa, (W, H), interpolation=cv2.INTER_LINEAR)
+        else:
+            _c, _s = np.cos(2 * _ta) * _wa, np.sin(2 * _ta) * _wa
+        _ct = coherence * np.cos(2 * theta) * (1.0 - _wa) + _c
+        _st = coherence * np.sin(2 * theta) * (1.0 - _wa) + _s
+        theta = (0.5 * np.arctan2(_st, _ct)).astype(np.float32)
+        coherence = np.clip(np.hypot(_ct, _st), 0, 1).astype(np.float32)
+        del _ta, _wa, _c, _s, _ct, _st
+    theta_s = _gblur(theta, (0, 0), sigmaX=max(1.0, W * 0.006))
+    coherence_s = _gblur(coherence, (0, 0), sigmaX=max(1.0, W * 0.006))
+    del coherence   # only the smoothed field is read from here on (memory; see the composite stage)
+
+    base = max(16, int(round(W * 0.048)))
+
+    dist_to_edge, theta_s, coherence_s, feat, fringe_points, attractor_radius, attractor_pts, _lm_env, extra_faces, primary_kind, primary_mouth = _phase_tangent_field(mask, W, base, theta_s, coherence_s, landmarks, H, gray)
+    # ---- Resolution follows face size ------------------------------------------------------
+    # Every feature pass and the fine zone are sized by eye separation, but the font floor is
+    # 6px whatever the photo. On a full-body photo the eyes are 50-80px apart at preview size,
+    # the eye itself ~20px across, and the eye, nose and mouth passes all land at the floor:
+    # the shepherd and collie faces on staging were two dots and a smudge. The head-and-
+    # shoulders photos that render well have the eyes 230-400px apart. If the eyes are closer
+    # than TARGET_ES here, render the whole photo larger, up to the print cap, so the face
+    # gets the pixels the passes need. The caller gets the larger image back; the site's
+    # entry point resizes for delivery and caches the larger render for the print file.
+    TARGET_ES = 170.0
+    if auto_res and render_scale == 1.0 and len(attractor_pts) >= 2:
+        # The smallest face in the photo sets the resolution: with two pets, both need the pixels.
+        _es0 = min(math.hypot(e[0][0] - e[1][0], e[0][1] - e[1][1])
+                   for e in [attractor_pts[:2]] + [f["eyes"] for f in extra_faces])
+        _cap_h = int(max_px) if max_px else int(_settings.raw("PET_V2_MAX_RENDER_PX") or 2400)
+        _factor = min(TARGET_ES / max(1.0, _es0), _cap_h / float(H))
+        if _factor >= 1.15:
+            _log(f"eyes {_es0:.0f}px apart at {W}x{H}: re-rendering at {_factor:.2f}x for the face "
+                 f"(target {TARGET_ES:.0f}px, cap {_cap_h}px tall)")
+            _lm = _landmark_string([(attractor_pts[:2], _TL.nose_hint, primary_kind, primary_mouth)]
+                                   + [(f["eyes"], f["nose"], f["kind"], f["mouth"]) for f in extra_faces],
+                                   _factor) if _lm_env else None
+            return render_v2(_bgr_in, words, mask=_mask_in, render_scale=_factor, max_overlap=max_overlap,
+                             landmarks=_lm, debug_dir=debug_dir, out_stem=out_stem, verbose=verbose,
+                             backdrop_rgb=backdrop_rgb, type_scale=type_scale, auto_res=False, anatomy=anatomy,
+                             human=human, wisp_alpha=_wisp_in, max_px=max_px)
+    # Every eye in the photo: what density, hero placement and the structural pass keep clear of.
+    all_eye_pts = list(attractor_pts) + [p for f in extra_faces for p in f["eyes"]]
+    # NOT blending these into theta/coherence anymore: two corrected attempts both made the
+    # flow visibly more chaotic than the plain texture field, which already curves around the
+    # eyes on its own (confirmed by comparing real renders side by side, not assumed) -- the
+    # artificial circular swirl fought that real signal rather than reinforcing it. The points
+    # are still useful for WHERE to anchor hero words and size gradation below, just not for
+    # bending the flow direction itself.
+    head_center = (float(np.mean([p[0] for p in attractor_pts])), float(np.mean([p[1] for p in attractor_pts]))) \
+        if attractor_pts else (W / 2.0, H * 0.35)
+
+    # Expanded from 3 phrases -- flagged directly as reading like "texture stamps" once density
+    # got high enough to show the pattern clearly. _weighted_stream already front-loads whatever
+    # comes first with more repetition (up to ~3.2x, decaying by position), so ordering this list
+    # IS the hierarchy: short, plain words up front get seen often; the longer, more specific
+    # tail appears but doesn't dominate. Deliberately mixes short/medium/long phrases throughout
+    # (not grouped by length) so curvature_adaptive has real material in every bucket everywhere,
+    # not just wherever the "short" words happen to sit in the list.
+    full_words = words if (words and words.strip()) else DEFAULT_WORDS
+    # Two vocabularies from the customer's text. _phrases splits on COMMAS, so a customer's
+    # sentence ("MAGGIE LOSES HER MIND WHEN I COME IN THE DOOR") arrived as ONE 44-character
+    # rigid token and was the only thing the engine had to place -- seen on staging: every
+    # placement a banner, nothing short enough to follow a curl, fill a gap or build an eye.
+    # The full phrases stay for the hero lines (a sentence across the brow reads well); the
+    # streamline and fill passes get the individual WORDS, order preserved (name first keeps
+    # its top weight in _weighted_stream), deduplicated, two-letter filler dropped.
+    phrases = _phrases(full_words)
+    seen, word_list = set(), []
+    for ph in phrases:
+        for w in ph.split():
+            if len(w) >= 3 and w not in seen:
+                seen.add(w); word_list.append(w)
+    # Under ten distinct words -- a bare name, or a six-word sentence like "SHADOW SITS ON THE
+    # WARM LAUNDRY" -- the same word repeats across every inch of the crown (seen on staging).
+    # Pad with the brand vocabulary. The customer's words stay first, so _weighted_stream still
+    # gives the name the top weight and the padding the least; the fills and the initials
+    # (short_tokens, letter_tokens below) keep drawing on the customer's own words first.
+    if len(word_list) < 10:
+        for w in _phrases(DEFAULT_WORDS):
+            for ww in w.split():
+                if ww not in seen and len(word_list) < 14:
+                    seen.add(ww); word_list.append(ww)
+    stream = _weighted_stream(", ".join(word_list))
+    hero_words = (phrases or stream)[:1]
+    # Short tokens for the residual fill and initials for the channel fill come from the
+    # customer's own words too, so the fine texture is theirs (the pet's name most of all).
+    short_tokens = tuple(w for w in word_list if len(w) <= 5) or ("SOUL", "KIND", "HOME", "JOY")
+    letter_tokens = tuple(dict.fromkeys(w[0] for w in word_list))
+
+    # Baseline spacing tied to the SMALLER end of the size range that will be assigned
+    # afterward, so fine/mid text fits the tiling without excessive overlap. Tightened from
+    # 0.34x to 0.28x base along with the density-field tuning above, in response to "too
+    # sparse" -- more streamlines everywhere, not just in the feature/edge zones.
+    sep_px = max(6, int(round(base * 0.28)))
+
+    xx, yy, edge_zone, sep_field_base, region_map = _phase_separation(H, W, all_eye_pts, attractor_radius, base, dist_to_edge, head_center, sep_px, attractor_pts, mask)
+    importance_norm, line_importance, rng, get_font, mean_coherence, min_dist_to_attractor = _phase_importance_map(attractor_pts, base, extra_faces, mask, H, W, coherence_s, all_eye_pts)
+    corr_sigma, target_density_blur, lr_map, sep_correction, N_ITERS, line_mean_xy = _phase_target_tone(H, gray, W, attractor_pts, base, mask)
+    MICRO_PX, STRUCT_PX, feat_close_radius, line_feat_dist, FILL_PX = _phase_size_gradation(base, type_scale, human, attractor_radius, attractor_pts, line_mean_xy, all_eye_pts)
+    _gx, _gy, _energy, detail_field, _es = _phase_size_rule(gray, base, mask, attractor_pts)
+    _with_nose_hint, fine_blend, size_field, line_size_t, size_px_field = _phase_features(primary_kind, _es, attractor_pts, gray, mask, extra_faces, H, W, importance_norm, primary_mouth, xx, yy, head_center, human, detail_field, MICRO_PX, STRUCT_PX, _energy, _gx, _gy)
+    canvas, occupancy, best_placements, best_pass, best_stats, best_pass_stats, fill_px_area, hero_px_area, micro_px_area, struct_px_area = _phase_iterative_loop(stream, N_ITERS, base, sep_correction, sep_field_base, sep_px, W, size_px_field, coherence_s, mask, theta_s, edge_zone, region_map, H, mean_coherence, min_dist_to_attractor, dist_to_edge, STRUCT_PX, attractor_radius, line_importance, FILL_PX, attractor_pts, get_font, gray, rng, _es, _lm_env, primary_kind, extra_faces, _with_nose_hint, fringe_points, feat_close_radius, line_feat_dist, size_field, line_size_t, MICRO_PX, fine_blend, importance_norm, human, hero_words, corr_sigma, target_density_blur, bgr_source, lr_map)
     best_placements, best_pass, best_stats, best_pass_stats = _phase_final_fills(canvas, best_placements, best_pass, best_stats, best_pass_stats, base, coherence_s, get_font, mask, micro_px_area, occupancy, rng, theta_s, short_tokens, size_px_field, letter_tokens, gray, fill_px_area, hero_px_area, struct_px_area)
     canvas, ink_raw, ink_alpha = _phase_opacity_tone(canvas, base, gray, debug_dir, H, W, out_path, mask)
     eye_reveal = _phase_eye_reveal(H, W, base, _es, _lm_env, attractor_pts, extra_faces, gray, mask)
