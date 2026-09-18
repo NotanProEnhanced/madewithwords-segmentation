@@ -57,6 +57,7 @@ from .fur_flow import orientation_field
 from .glyph_paths import (
     resolve_angle, clamp_turn, path_length, sample_path_at, render_word_bitmap,
 )
+from .. import settings as _settings
 
 DEFAULT_WORDS = ("LOYAL, GENTLE, SOUL, PLAYFUL, SWEET, KIND, HOME, JOY, WARM, CURIOUS, "
                  "FAITHFUL, BRAVE, WISE, FUNNY, CUDDLY, DEVOTED, PRECIOUS, BELOVED, "
@@ -92,7 +93,7 @@ class _RenderState(threading.local):
         # ~1%). The first staging run shipped with 1.0 (no cap) and reported 6.71% -- the
         # callers' own tolerances (up to 0.24 in gap-fill) are placement heuristics, not a
         # collision policy.
-        self.max_overlap_cap = float(os.environ.get("GOP_MAX_OVERLAP", "0.08") or 0.08)
+        self.max_overlap_cap = float(_settings.raw("GOP_MAX_OVERLAP") or 0.08)
         # Set from landmarks/GOP_LANDMARKS in render_v2; a real nose detection beats the scan.
         self.nose_hint = None
         self.fields = {}   # last render's size-rule fields (PET_V2_KEEP_FIELDS=1), measurement only
@@ -309,7 +310,7 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
     return placed_px
 
 
-_KEEP_FIELDS = os.environ.get("PET_V2_KEEP_FIELDS", "").strip().lower() not in ("", "0", "false", "off")
+_KEEP_FIELDS = _settings.raw("PET_V2_KEEP_FIELDS").strip().lower() not in ("", "0", "false", "off")
 # (word, font px, alpha, angle deg) -> (w, h, rotated RGBA, its alpha array). Shared across
 # threads on purpose: entries are immutable once built, and dict get/set are atomic in CPython.
 _BITMAP_CACHE = {}
@@ -1661,7 +1662,7 @@ def evenly_spaced_streamlines(theta, coherence, mask, sep_px, step=4.0, max_step
         grow_from(cx, cy)
         _TL.reseeds[0] += 1
         _TL.reseeds[1] += len(lines) - n_before
-        if os.environ.get("PET_V2_RESEED_DEBUG"):
+        if _settings.raw("PET_V2_RESEED_DEBUG"):
             print(f"[reseed] at ({cx},{cy}) far={float(far[cy, cx]):.0f}px reach={float(reach[cy, cx]) if is_field else reach:.0f}px "
                   f"territory={int(cand.sum())}px coherence={float(coherence[cy, cx]):.2f} -> +{len(lines) - n_before} lines", flush=True)
         if len(lines) == n_before:   # nothing traceable there: mark it so the search moves on
@@ -1711,10 +1712,10 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     _TL.verbose = bool(verbose)
     _TL.nose_hint = None
     _TL.max_overlap_cap = float(max_overlap) if max_overlap is not None else \
-        float(os.environ.get("GOP_MAX_OVERLAP", "0.08") or 0.08)
+        float(_settings.raw("GOP_MAX_OVERLAP") or 0.08)
     out_path = os.path.join(debug_dir, out_stem + ".jpg") if debug_dir else None
     if render_scale is None:
-        render_scale = float(os.environ.get("GOP_SCALE", "1") or 1)
+        render_scale = float(_settings.raw("GOP_SCALE") or 1)
     if render_scale != 1.0:
         bgr = cv2.resize(bgr, None, fx=render_scale, fy=render_scale, interpolation=cv2.INTER_CUBIC)
         if mask is not None:
@@ -1845,7 +1846,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # the seam where production's pet_landmarks.py (RTMPose AP-10K) output enters; the pose
     # model's hosts are blocked from this sandbox, so known coordinates are supplied directly
     # instead. Overrides the heuristic above entirely -- a real detection beats a proxy.
-    _lm_env = (landmarks or os.environ.get("GOP_LANDMARKS", "")).strip()
+    _lm_env = (landmarks or _settings.raw("GOP_LANDMARKS")).strip()
     # Every further animal in the photo, as {"eyes": [(x, y), (x, y)], "nose": (x, y) | None};
     # "es" and "nose_fit" are added below once the photo has been read. The first face stays
     # the primary (hero words, head_center, the region map); these get the same feature passes,
@@ -1892,7 +1893,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         # The smallest face in the photo sets the resolution: with two pets, both need the pixels.
         _es0 = min(math.hypot(e[0][0] - e[1][0], e[0][1] - e[1][1])
                    for e in [attractor_pts[:2]] + [f["eyes"] for f in extra_faces])
-        _cap_h = int(max_px) if max_px else int(os.environ.get("PET_V2_MAX_RENDER_PX", "2400") or 2400)
+        _cap_h = int(max_px) if max_px else int(_settings.raw("PET_V2_MAX_RENDER_PX") or 2400)
         _factor = min(TARGET_ES / max(1.0, _es0), _cap_h / float(H))
         if _factor >= 1.15:
             _log(f"eyes {_es0:.0f}px apart at {W}x{H}: re-rendering at {_factor:.2f}x for the face "
@@ -2081,7 +2082,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # Was a fixed 5. Measured across the test photos, the best-scoring round was the 2nd-4th;
     # rounds after the score turns down were pure cost (each is a full grow + place). Cap at 4
     # (PET_V2_ITERS to override) and stop early on the first clear decrease -- see the loop tail.
-    N_ITERS = int(os.environ.get("PET_V2_ITERS", "4") or 4)
+    N_ITERS = int(_settings.raw("PET_V2_ITERS") or 4)
 
     def line_mean_xy(line):
         pts = np.array([(x, y) for x, y, _ in line[::4]])
@@ -2936,7 +2937,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # Displacement's hair, and the blind test (3-0, 3-0) was run with it. 0.7 is the
     # default; PET_V2_HAIR_REVEAL overrides it, 0 turns it off. Animals never enter this branch.
     if human and len(attractor_pts) >= 2:
-        _hr = float(os.environ.get("PET_V2_HAIR_REVEAL", "0.7") or 0.0)
+        _hr = float(_settings.raw("PET_V2_HAIR_REVEAL") or 0.0)
         if _hr > 0.0:
             _fx0 = 0.5 * (attractor_pts[0][0] + attractor_pts[1][0])
             _fy0 = 0.5 * (attractor_pts[0][1] + attractor_pts[1][1]) + 0.5 * _es
@@ -3189,7 +3190,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # Per-pixel stage probe: GOP_DEBUG_PT="x,y" prints each compositing stage's value at that
     # pixel, so a lost detail (a catchlight, a highlight) can be traced to the exact stage that
     # loses it instead of being guessed at from the final image.
-    _dbg_pt = os.environ.get("GOP_DEBUG_PT")
+    _dbg_pt = _settings.raw("GOP_DEBUG_PT")
     _dbg_pt = tuple(int(v) for v in _dbg_pt.split(",")) if _dbg_pt else None
 
     def _dbg(label, rgb):
@@ -3657,7 +3658,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
 # A request already rendering for the same key is waited on, not duplicated.
 _RENDER_CACHE = {}            # key -> (work_h, rgb_u8, outside_w_u8, ground_rgb)
 _RENDER_CACHE_ORDER = []      # LRU, oldest first
-_RENDER_CACHE_MAX = int(os.environ.get("PET_V2_CACHE_ENTRIES", "4") or 4)
+_RENDER_CACHE_MAX = int(_settings.raw("PET_V2_CACHE_ENTRIES") or 4)
 _RENDER_INFLIGHT = {}         # key -> threading.Event
 _RENDER_CACHE_LOCK = threading.Lock()
 _PREVIEW_UNIFY_MAX = 1600     # preview and loupe both come from one render at this height
@@ -3804,7 +3805,7 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
     # `max_px`: a cap on the working height for THIS request, above the tree's
     # PET_V2_MAX_RENDER_PX. The style tile on the page asks for a 700px thumbnail after the
     # main render; without the cap the face-size rule would re-render it at up to 2400px.
-    cap = int(max_px) if max_px else int(os.environ.get("PET_V2_MAX_RENDER_PX", "2400") or 2400)
+    cap = int(max_px) if max_px else int(_settings.raw("PET_V2_MAX_RENDER_PX") or 2400)
     want_h = min(int(height), cap) if height and height > 0 else 0
     # Preview-class requests (1050-1600) all render at 1600 so the loupe is a resize of the
     # preview's own render rather than a second one -- and preview and loupe then agree.
@@ -3898,8 +3899,8 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         # rule); the pose model then reads each subject's face. With one pet none of this
         # changes a byte: the detector and pose model see the same print-fitted image they did,
         # and the matte is solidified exactly as before.
-        _say = print if os.environ.get("PET_V2_VERBOSE", "") not in ("", "0") else (lambda *a, **k: None)
-        _lm_on = os.environ.get("PET_V2_LANDMARKS", "1").strip().lower() not in ("0", "false", "off")
+        _say = print if _settings.raw("PET_V2_VERBOSE") not in ("", "0") else (lambda *a, **k: None)
+        _lm_on = _settings.raw("PET_V2_LANDMARKS").strip().lower() not in ("0", "false", "off")
         m_raw = _raw_matte(bgr)
         if _human:
             # A person's matte is the union with the human pipeline's own silhouette. Her
@@ -4017,7 +4018,7 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
                  f"{humans[0]['eye_sep']:.0f}px eyes apart", flush=True)
         rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=_scale, backdrop_rgb=ground_rgb,
                                  type_scale=_ts, landmarks=_lm_str, auto_res=(_scale == 1.0),
-                                 verbose=os.environ.get("PET_V2_VERBOSE", "") not in ("", "0"), anatomy=_anat,
+                                 verbose=_settings.raw("PET_V2_VERBOSE") not in ("", "0"), anatomy=_anat,
                                  human=_human, wisp_alpha=_wisp, max_px=max_px)
         entry = (int(rgb.shape[0]), rgb, metrics["outside_w"], ground_rgb, _notes, photo_bg)   # the height actually rendered
         _cache_put(key, entry)

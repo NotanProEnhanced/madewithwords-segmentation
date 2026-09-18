@@ -29,6 +29,7 @@ import cv2
 from PIL import Image, ImageDraw, ImageFont
 
 from . import pet_landmarks
+from . import settings as _settings
 
 _FONT = next((p for p in (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -78,12 +79,12 @@ _MATTE_MODELS = {
     "isnet": ("https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx", 1024),
     "u2net": ("https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx", 320),
 }
-_MATTE_NAME = (os.environ.get("PET_MATTE_MODEL", "isnet").strip().lower() or "isnet")
+_MATTE_NAME = (_settings.raw("PET_MATTE_MODEL").strip().lower() or "isnet")
 if _MATTE_NAME not in _MATTE_MODELS:
     _MATTE_NAME = "isnet"
-_MATTE_URL = (os.environ.get("PET_MATTE_URL", "").strip() or _MATTE_MODELS[_MATTE_NAME][0])
+_MATTE_URL = (_settings.raw("PET_MATTE_URL").strip() or _MATTE_MODELS[_MATTE_NAME][0])
 _MATTE_SIZE = _MATTE_MODELS[_MATTE_NAME][1]
-_MATTE_PATH = os.path.join(os.environ.get("PET_MATTE_DIR", tempfile.gettempdir()), _MATTE_NAME + ".onnx")
+_MATTE_PATH = os.path.join(_settings.raw("PET_MATTE_DIR"), _MATTE_NAME + ".onnx")
 # Both models are ~170MB. Used to reject a TRUNCATED file instead of handing it to
 # onnxruntime; the old check was 1MB, which a 170MB download passes almost instantly.
 _MATTE_MIN_BYTES = 100_000_000
@@ -231,7 +232,7 @@ def _solidify_matte(m, w, keep_boxes=None):
     (pet_landmarks.comparable_subjects). Two pets standing apart are two components, and the
     largest-component rule alone painted the second one over as background; a component that
     lies mostly inside one of these boxes is kept as well. None or empty keeps the old rule."""
-    thr = float(os.environ.get("PET_MATTE_FILL", "0.35") or 0.35)
+    thr = float(_settings.raw("PET_MATTE_FILL") or 0.35)
     if thr <= 0:
         return m
     b = (m > thr).astype(np.uint8)
@@ -278,9 +279,9 @@ def _solidify_matte(m, w, keep_boxes=None):
     # Calibrated on ONE two-subject photograph and on no animals at all. Three subjects, or a
     # dog with a real gap between its legs, are not represented; treat it as well-founded for
     # couples and provisional elsewhere until the test set covers them.
-    _hmax = float(os.environ.get("PET_HOLE_MAX", "0.012") or 0.012)
+    _hmax = float(_settings.raw("PET_HOLE_MAX") or 0.012)
     _subj = float(b.sum()) or 1.0
-    if os.environ.get("PET_HOLE_DEBUG", "").strip() or _hmax > 0.0:
+    if _settings.raw("PET_HOLE_DEBUG").strip() or _hmax > 0.0:
         _nh, _lh, _sh, _ = cv2.connectedComponentsWithStats(holes, 8)
         _keep = np.zeros_like(holes)
         _rep = []
@@ -292,7 +293,7 @@ def _solidify_matte(m, w, keep_boxes=None):
                 _keep[_lh == _i] = 1
             if _frac >= 0.0005:
                 _rep.append((_frac, _fill))
-        if os.environ.get("PET_HOLE_DEBUG", "").strip():
+        if _settings.raw("PET_HOLE_DEBUG").strip():
             print("[holes] %d found, %d over 0.05%% of subject: %s  (PET_HOLE_MAX=%s)"
                   % (_nh - 1, len(_rep),
                      ", ".join("%.3f%%%s" % (100 * f, "" if k else " REJECTED")
@@ -313,7 +314,7 @@ def _solidify_matte(m, w, keep_boxes=None):
     #
     # PET_TORSO_FILL is the fraction of the height below which a column counts as "reaching":
     # 0 disables. Off by default -- turn it on per tree and look before adopting it.
-    _tf = float(os.environ.get("PET_TORSO_FILL", "0") or 0.0)
+    _tf = float(_settings.raw("PET_TORSO_FILL") or 0.0)
     if _tf > 0.0 and b.any():
         H = b.shape[0]
         cut = int(H * min(0.95, max(0.05, _tf)))
@@ -386,14 +387,14 @@ def _rows(stream, W, H, fs, rng, pad=0):
     d = ImageDraw.Draw(im)
     # Subtle letter tracking so glyphs in a row don't crowd -- a hair of space between words
     # opens the type up (reads less like a solid mass). PET_TRACK adds inter-phrase spacing.
-    _trk = float(os.environ.get("PET_TRACK", "1.0") or 1.0)
+    _trk = float(_settings.raw("PET_TRACK") or 1.0)
     sep = "," + (" " * max(1, int(round(2 * _trk))))
     base = sep.join(stream) + "," + (" " * max(2, int(round(2 * _trk))))
     bw = max(1.0, float(d.textlength(base, font=font)))
     line = base * max(2, int((W + fs * 7) / bw) + 2)
     # Row gap: leave a sliver of ground between rows so lines breathe instead of colliding
     # into a busy wall of text. PET_ROW_GAP multiplies the line step (1.0 = touching).
-    _gap = float(os.environ.get("PET_ROW_GAP", "1.12") or 1.12)
+    _gap = float(_settings.raw("PET_ROW_GAP") or 1.12)
     step = max(6, int(round(fs * _gap)))
     y = 0
     while y < H + pad + fs:
@@ -438,7 +439,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # out). Run on the PRISTINE input, before any of the tonal preprocessing below, since that
     # is the same kind of photo the model was validated against; the coordinates stay valid
     # after preprocessing because it never changes bgr's shape, only its tone.
-    _lm_on = (os.environ.get("PET_LANDMARKS", "0").strip().lower() not in ("0", "false", "off", ""))
+    _lm_on = (_settings.raw("PET_LANDMARKS").strip().lower() not in ("0", "false", "off", ""))
     lm = pet_landmarks.face_landmarks(bgr, mask) if _lm_on else None
     # --- Preprocess the PHOTO first, so the portrait is built from WORDS, not a photo with type
     #     laid over it: the coat should read as type; only the eyes/nose stay photographic. ---
@@ -456,9 +457,9 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # OR BRIGHTER (light iris, catchlight) than the broad neighborhood. Computed UP FRONT so it can
     # PROTECT the eyes from the de-whisker and CONFINE the photographic blend to the features. A
     # uniform coat sits ~= its neighborhood and scores ~0, so it is never over-processed.
-    _fp = float(os.environ.get("PET_FEATURE_PROTECT", "0.7") or 0.7)
+    _fp = float(_settings.raw("PET_FEATURE_PROTECT") or 0.7)
     feat = np.zeros_like(gray0)                                            # 0..1 feature field (eyes/nose)
-    broad = cv2.GaussianBlur(gray0, (0, 0), sigmaX=max(1.0, W * float(os.environ.get("PET_FEATURE_SCOPE","0.06") or 0.06)))  # neighborhood luminance
+    broad = cv2.GaussianBlur(gray0, (0, 0), sigmaX=max(1.0, W * float(_settings.raw("PET_FEATURE_SCOPE") or 0.06)))  # neighborhood luminance
     if _fp > 0.0:
         localdark = np.clip((broad - gray0) / 55.0, 0, 1) * mask
         locallight = np.clip((gray0 - broad) / 70.0, 0, 1) * mask          # bright side less sensitive (÷70) -> fur/stripes don't register
@@ -475,7 +476,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         # feat reads 0 and the interior falls to the COARSE tier -- big words on the nose.
         # Seal the rim with a small close, then flood-fill from the border: anything the
         # fill cannot reach is interior. Same technique as _solidify_matte. 0 = off.
-        _ff = float(os.environ.get("PET_FEATURE_FILL", "0") or 0.0)
+        _ff = float(_settings.raw("PET_FEATURE_FILL") or 0.0)
         if _ff > 0.0:
             _k = int(max(3, round(W * _ff))) | 1
             _b = (feat > 0.30).astype(np.uint8)
@@ -508,7 +509,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # not type, and overpower the words. A white top-hat isolates bright structures THINNER than the
     # kernel; replace those with a median (line-free) version so they dissolve into the coat. The
     # feature field is subtracted so eye catchlights (also small + bright) survive. PET_DEWHISKER scales it.
-    _dw = float(os.environ.get("PET_DEWHISKER", "0.85") or 0.0)
+    _dw = float(_settings.raw("PET_DEWHISKER") or 0.0)
     if _dw > 0.0:
         kk = int(max(3, round(W * 0.006))) | 1
         opened = cv2.morphologyEx(gray0.astype(np.uint8), cv2.MORPH_OPEN,
@@ -520,7 +521,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
 
     # LOCAL CONTRAST: lift local separation (CLAHE on L) so the darker muzzle / lower face doesn't go
     # muddy -- letters keep structure against the ground instead of smearing. PET_LOCAL_CONTRAST blends.
-    _lc = float(os.environ.get("PET_LOCAL_CONTRAST", "0.4") or 0.0)
+    _lc = float(_settings.raw("PET_LOCAL_CONTRAST") or 0.0)
     if _lc > 0.0:
         lab = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2LAB)
         Lc = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(lab[..., 0])
@@ -534,10 +535,10 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # 1) Four ink-coverage tiers, coarse -> micro. type_scale (<1 = finer type) sets the
     #    typography size the buyer picked (Small/Medium/Large -> ~0.30/0.42/0.56); when the
     #    caller doesn't pass one, fall back to the PET_TYPE_SCALE env default.
-    _tsc = float(type_scale) if type_scale is not None else float(os.environ.get("PET_TYPE_SCALE", "0.42") or 0.42)
+    _tsc = float(type_scale) if type_scale is not None else float(_settings.raw("PET_TYPE_SCALE") or 0.42)
     # Coarse tier size. 64 is the historic value; lowering it shrinks only the LARGEST
     # words (the ones flat areas get) without touching the fine end, so gradation is kept.
-    _tc = float(os.environ.get("PET_TIER_COARSE", "64") or 64.0)
+    _tc = float(_settings.raw("PET_TIER_COARSE") or 64.0)
     # PET_WORD_TIERS: importance becomes SIZE, not just repetition. _weighted_stream already
     # repeats the lead phrases more often, but every tier drew from the same stream -- so which
     # words came out large was an accident of where a row happened to land. Feeding the coarse
@@ -545,7 +546,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # first) makes the largest words in the portrait always the meaningful ones, and leaves the
     # adjectives as texture. Off (default) = every tier draws the full stream, as before.
     _hero, _mid = stream, stream
-    if os.environ.get("PET_WORD_TIERS", "").strip().lower() in ("1", "true", "on", "yes"):
+    if _settings.raw("PET_WORD_TIERS").strip().lower() in ("1", "true", "on", "yes"):
         _ph = _phrases(words)
         _n = len(_ph)
         if _n >= 3:
@@ -566,7 +567,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # nothing real to sample.
     #
     # Padding by the drape's maximum reach gives it real, varied rows to find.
-    _drape_max = float(os.environ.get("PET_DRAPE", "68") or 68.0) * sc
+    _drape_max = float(_settings.raw("PET_DRAPE") or 68.0) * sc
     _pad = int(round(_drape_max)) + int(round(_tc * sc * _tsc)) + 8
     tL = _rows(_hero, W, H, _tc * sc * _tsc, rng, pad=_pad)
     tM = _rows(_mid, W, H, 40 * sc * _tsc, rng, pad=_pad)
@@ -576,15 +577,15 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # 2) Drape: warp the rows VERTICALLY by smoothed luminance so they ride the form. Damp the
     #    warp on high-detail features (eyes/nose) so they stay crisp. PET_DRAPE tunes wrap depth;
     #    PET_DRAPE_SMOOTH smooths the field so type rides the broad form, not sharp local edges.
-    _dsm = float(os.environ.get("PET_DRAPE_SMOOTH", "0.045") or 0.045)
+    _dsm = float(_settings.raw("PET_DRAPE_SMOOTH") or 0.045)
     D = cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, W * _dsm))
     dn = np.tanh((D / 255.0 - 0.5) * 2.4) * 0.85            # soft-limit: no over-stretch on the darkest/brightest fur (kills the 'melt')
     xx, yy = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
     # Spread the detail edges inward, then UNION the feature field, so eye/nose interiors inherit
     # their rim's drape-protection and stay crisp instead of warping into a corrupted blob.
-    featdamp = np.clip(cv2.GaussianBlur(det, (0, 0), sigmaX=max(1.0, W * 0.010)) * float(os.environ.get("PET_DRAPE_DETAIL_DAMP","1.9") or 1.9), 0, 1)
+    featdamp = np.clip(cv2.GaussianBlur(det, (0, 0), sigmaX=max(1.0, W * 0.010)) * float(_settings.raw("PET_DRAPE_DETAIL_DAMP") or 1.9), 0, 1)
     featdamp = np.maximum(featdamp, feat * _fp)
-    amp = float(os.environ.get("PET_DRAPE", "68") or 68.0) * sc * (1.0 - float(os.environ.get("PET_DRAPE_DAMP","0.92") or 0.92) * featdamp)
+    amp = float(_settings.raw("PET_DRAPE") or 68.0) * sc * (1.0 - float(_settings.raw("PET_DRAPE_DAMP") or 0.92) * featdamp)
     my = (yy + amp * dn).astype(np.float32)
     mx = xx
 
@@ -609,7 +610,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # spans ~0.25-0.90 (p5-p95), which already crosses all three tier bands -- so the
     # default 1.0 is usually correct. Gamma < 1 compresses toward the FINE tiers and
     # REDUCES size range; > 1 shifts area toward COARSE. 1.0 = previous behavior.
-    _tg = float(os.environ.get("PET_TIER_GAMMA", "1.0") or 1.0)
+    _tg = float(_settings.raw("PET_TIER_GAMMA") or 1.0)
     df = np.clip(np.maximum(det, feat), 0, 1)
     if _tg > 0.0 and _tg != 1.0:
         df = np.power(df, _tg)
@@ -619,7 +620,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # the largest words stay on the head, where a hero word reads as an anchor rather than a
     # stray banner. Radius is normalized to the mask's own bounding box, so it follows the
     # animal rather than the canvas. 0 (default) = unchanged.
-    _hc = float(os.environ.get("PET_HERO_CENTRE", "0") or 0.0)
+    _hc = float(_settings.raw("PET_HERO_CENTRE") or 0.0)
     if _hc > 0.0:
         _ys, _xs = np.nonzero(mask > 0.5)
         if _ys.size > 32:
@@ -651,7 +652,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         # SHADOW LIFT: a dark ground swallows dark-fur words -- so a shadowed neck/chest reads as
         # an empty void (a "floating head"). Floor the word color to a dim WARM ink so shadowed
         # fur still shows readable type against the dark ground. PET_SHADOW_LIFT scales it (0 off).
-        _slift = float(os.environ.get("PET_SHADOW_LIFT", "1.0") or 1.0)
+        _slift = float(_settings.raw("PET_SHADOW_LIFT") or 1.0)
         if _slift > 0.0:
             col = np.maximum(col, np.array([50.0, 42.0, 34.0], np.float32) * _slift)
     # PET_NEGATIVE_SPACE: coverage is otherwise uniform across the whole subject -- every
@@ -659,7 +660,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # Thin the type as the photo goes dark, so the deepest shadows dissolve toward the ground
     # and read as depth rather than as texture. Highlights keep full density, so the lit
     # structure stays built from words. 0 (default) = uniform, exactly as before.
-    _ns = float(os.environ.get("PET_NEGATIVE_SPACE", "0") or 0.0)
+    _ns = float(_settings.raw("PET_NEGATIVE_SPACE") or 0.0)
     if _ns > 0.0:
         _lq = np.clip(gray / 255.0, 0.0, 1.0)
         _quiet = np.clip((0.45 - _lq) / 0.45, 0.0, 1.0)      # 1 at black -> 0 at mid-tone
@@ -674,9 +675,9 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # read on top of it), leaving the flat ground only BEHIND the subject. The glyphs
     # themselves are unchanged -- this only alters what sits behind them within the mask.
     # PET_SUBJECT_BASE=0 (default) is byte-identical to the original behavior.
-    _sb = float(os.environ.get("PET_SUBJECT_BASE", "0") or 0.0)
+    _sb = float(_settings.raw("PET_SUBJECT_BASE") or 0.0)
     if _sb > 0.0:
-        _dim = float(os.environ.get("PET_SUBJECT_DIM", "0.45") or 0.0)
+        _dim = float(_settings.raw("PET_SUBJECT_DIM") or 0.0)
         _pbase = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8),
                               cv2.COLOR_BGR2RGB).astype(np.float32) * (1.0 - _dim)
         _m3 = (mask * min(max(_sb, 0.0), 1.0))[..., None]
@@ -692,7 +693,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     #   alpha   glyph * dens * mask      -- what actually reaches the composite
     #   ink     the word COLOR's luma   -- near-white words on pale fur are invisible,
     #   base    what sits behind them       not absent, and only these two together say which
-    _pd = os.environ.get("PET_DUMP_FIELDS", "").strip()
+    _pd = _settings.raw("PET_DUMP_FIELDS").strip()
     if _pd:
         try:
             os.makedirs(_pd, exist_ok=True)
@@ -726,15 +727,15 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # 5) Feature edge-ink: darken along real internal edges so the face reads.
     edge = (_edge_ink(gray.astype(np.uint8)) * mask)[..., None]
     ink = np.array([28.0, 24.0, 20.0], np.float32)
-    k = float(os.environ.get("PET_EDGE_INK", "0.62") or 0.62)
+    k = float(_settings.raw("PET_EDGE_INK") or 0.62)
     out = out * (1.0 - k * edge) + ink * (k * edge)
 
     # 6) Photographic realism -- CONFINED to the features. The coat must read as WORDS, not a photo
     #    with type on top: general fur detail gets only a WHISPER of real photo (PET_PHOTO_FUR), while
     #    the eyes/nose keep the strong photographic blend that anchors the piece (feat field, scaled
     #    by PET_PHOTO). A uniform coat scores feat~0, so it is never over-photographed.
-    _pf = float(os.environ.get("PET_PHOTO", "0.45") or 0.0)          # eyes/nose photographic anchor
-    _pfur = float(os.environ.get("PET_PHOTO_FUR", "0.10") or 0.0)    # residual coat photo -- keep low
+    _pf = float(_settings.raw("PET_PHOTO") or 0.0)          # eyes/nose photographic anchor
+    _pfur = float(_settings.raw("PET_PHOTO_FUR") or 0.0)    # residual coat photo -- keep low
     if _pf > 0.0 or _pfur > 0.0:
         photo_rgb = cv2.cvtColor(np.clip(bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2RGB).astype(np.float32)
         wgt = cv2.GaussianBlur(np.clip(det * 1.6, 0, 1), (0, 0), sigmaX=max(1.0, W * 0.008)) * mask * _pfur
@@ -745,7 +746,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     # 7) Tonal depth: deepen shadows + lift highlights within the subject so black fur reads
     #    deep (not flat gray) and lit areas glow -- the pet analogue of the engine's 'breathe'.
     #    PET_TONAL scales it (0 = off).
-    _tone = float(os.environ.get("PET_TONAL", "1.0") or 1.0)
+    _tone = float(_settings.raw("PET_TONAL") or 1.0)
     if _tone > 0.0:
         m3 = mask[..., None]
         o = np.clip(out / 255.0, 0, 1)
@@ -754,7 +755,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         out = (o * (1.0 - m3) + o2 * m3) * 255.0
 
     # 8) Eye/feature crispness: a gentle unsharp within the subject so the eyes and nose snap.
-    _shp = float(os.environ.get("PET_SHARPEN", "0.5") or 0.5)
+    _shp = float(_settings.raw("PET_SHARPEN") or 0.5)
     if _shp > 0.0:
         m3 = mask[..., None]
         blur = cv2.GaussianBlur(out, (0, 0), sigmaX=1.2)
@@ -765,7 +766,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     #     catchlight/shine (the bright specular point already in the photo). Landmark-free: it
     #     rides the same feature field, so a uniform coat (field ~0) is untouched.
     #     PET_EYE_POP scales it (0 disables).
-    _pop = float(os.environ.get("PET_EYE_POP", "0.6") or 0.6)
+    _pop = float(_settings.raw("PET_EYE_POP") or 0.6)
     if _pop > 0.0 and _fp > 0.0 and float(feat.max()) > 0.05:
         g2 = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
         hp = g2 - cv2.GaussianBlur(g2, (0, 0), sigmaX=max(1.0, W * 0.006))   # high-freq detail
@@ -775,7 +776,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
         out = np.clip(out + spec * fpk * 95.0, 0, 255)                       # lift it -> a living glint
 
     # 9) Vibrance: boost less-saturated colors more so warm fur glows without going garish.
-    _vib = float(os.environ.get("PET_VIBRANCE", "0.35") or 0.35)
+    _vib = float(_settings.raw("PET_VIBRANCE") or 0.35)
     if _vib > 0.0 and not fade:
         hsv = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
         s = hsv[..., 1] / 255.0
@@ -784,7 +785,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
 
     # 10) Studio spotlight vignette: darken toward the canvas corners so the subject is lit like
     #     a gallery portrait. Applied to the whole canvas (ground included). PET_VIGNETTE tunes it.
-    _vg = float(os.environ.get("PET_VIGNETTE", "0.32") or 0.32)
+    _vg = float(_settings.raw("PET_VIGNETTE") or 0.32)
     if _vg > 0.0:
         cy0, cx0 = H * 0.46, W * 0.5
         r = np.sqrt(((xx - cx0) / (0.72 * W)) ** 2 + ((yy - cy0) / (0.72 * H)) ** 2)
@@ -795,7 +796,7 @@ def _render_word_portrait(bgr, mask, words, ground="dark", type_scale=None):
     #     bleed (the pale "halo/glow") sits exactly at the mask perimeter, so fading from ground at
     #     the very edge up to the full render a short way in erases it -- and reads as a tasteful
     #     soft gallery edge, not a hard cutout. PET_EDGE_TIGHTEN sets the band width (0 disables).
-    _et = float(os.environ.get("PET_EDGE_TIGHTEN", "0.18") or 0.0)
+    _et = float(_settings.raw("PET_EDGE_TIGHTEN") or 0.0)
     if _et > 0.0:
         dist = cv2.distanceTransform((mask > 0.35).astype(np.uint8), cv2.DIST_L2, 3)  # px inward from the edge
         bandw = max(2.0, W * 0.11 * _et)                                              # band width scales with the knob
@@ -849,7 +850,7 @@ def render_pet_portrait(image_bytes: bytes, words: str, ground: str = "dark", he
     # sees "preparing files" forever. Render at a capped height, then upscale the finished portrait
     # to the requested print height (the human engine uses the same render-then-upscale pattern).
     # PET_MAX_RENDER_PX tunes the cap; the preview (<=1600) is already below it and unaffected.
-    cap = int(os.environ.get("PET_MAX_RENDER_PX", "2400") or 2400)
+    cap = int(_settings.raw("PET_MAX_RENDER_PX") or 2400)
     work_h = min(height, cap) if height and height > 0 else height
     if bgr.shape[0] != work_h:
         bgr = cv2.resize(bgr, (max(1, int(bgr.shape[1] * work_h / bgr.shape[0])), work_h),
@@ -872,7 +873,7 @@ def render_pet_portrait_dispatch(*args, **kwargs):
     app.pet_v2 (streamline typography + tonal match, same signature, PNG bytes); anything else
     is the existing landmark-free engine above, unchanged. One env var flips staging per
     deploy, and back."""
-    if (os.environ.get("PET_ENGINE", "") or "").strip().lower() == "v2":
+    if (_settings.raw("PET_ENGINE") or "").strip().lower() == "v2":
         from .pet_v2.engine import render_pet_portrait_v2
         return render_pet_portrait_v2(*args, **kwargs)
     kwargs.pop("notices", None)   # v2 reports what it saw in the photo; this engine has nothing to say

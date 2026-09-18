@@ -25,6 +25,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from .analyze import Analysis
+from .. import settings as _settings
 
 # Ground (background + ink) options. BGR colors. ``tone`` selects whether the
 # ink follows the photo's highlights ("light" -> light ink on a dark ground) or
@@ -71,7 +72,7 @@ BACKDROPS = {
 _FLORAL_KEYS = ("wildflowers", "roses", "eucalyptus", "line")
 _CALL_N = 0                    # renders since start; stamps every diagnostic line
 _FLORAL_CREAM = (232.0, 240.0, 244.0)   # BGR, matches the Paper ground so the pad is seamless
-_FLORAL_DIR = (os.environ.get("TYPO_FLORAL_DIR", "").strip()
+_FLORAL_DIR = (_settings.raw("TYPO_FLORAL_DIR").strip()
                or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
                    os.path.abspath(__file__)))), "static", "florals"))
 _floral_cache: Dict[str, Optional[np.ndarray]] = {}
@@ -444,8 +445,8 @@ def render_displacement_portrait(
         # carry stray words: push the low end toward 0 while keeping the wisps. A soft
         # knee (below TYPO_MATTE_FLOOR -> 0) plus a gentle gamma. Only when a real matte
         # is present (the coarse fallback edge is already soft, no band to clean).
-        _mf = float(os.environ.get("TYPO_MATTE_FLOOR", "0.12") or 0.12)
-        _mgam = float(os.environ.get("TYPO_MATTE_GAMMA", "1.5") or 1.5)
+        _mf = float(_settings.raw("TYPO_MATTE_FLOOR") or 0.12)
+        _mgam = float(_settings.raw("TYPO_MATTE_GAMMA") or 1.5)
         if _mf > 0.0:
             soft01 = np.clip((soft01 - _mf) / max(1e-3, 1.0 - _mf), 0.0, 1.0)
         if _mgam != 1.0:
@@ -475,7 +476,7 @@ def render_displacement_portrait(
     # heuristics cannot separate a tinted lens from a real eye and kept mis-firing (black
     # holes on real eyes, or fabricated eyes on real sunglasses). TYPO_DARKLENS stays only
     # as a hard kill-switch that can force it off even if a caller passes True.
-    _darklens_ok = os.environ.get("TYPO_DARKLENS", "1").strip().lower() not in ("0", "false", "off", "no", "")
+    _darklens_ok = _settings.raw("TYPO_DARKLENS").strip().lower() not in ("0", "false", "off", "no", "")
     _dl_on = bool(sunglasses) and _darklens_ok
     # PER-SUBJECT sunglasses: the user tapped WHICH faces wear them (left-to-right indices). When
     # provided this is authoritative -- lens exactly those, never guess. Map each face to its
@@ -499,7 +500,7 @@ def render_displacement_portrait(
     # from a face that was never reached. Chasing dark circles on a three-person photograph,
     # that gap cost several rounds of inference over a missing log line. Every face now
     # reports which gate it took and the number that decided it.
-    _eyedbg = bool(os.environ.get("TYPO_EYE_DEBUG", "").strip())
+    _eyedbg = bool(_settings.raw("TYPO_EYE_DEBUG").strip())
 
     def _eyelog(_i, _what, _detail=""):
         if _eyedbg:
@@ -531,7 +532,7 @@ def render_displacement_portrait(
         # whole face if EITHER iris sits above its brow by more than TYPO_MISFIT_GAP of face
         # height (default 0.02 -- real faces are at +0.07, misfits at -0.04, so this separates
         # them with a wide margin and never touches a real eye).
-        _mgap = float(os.environ.get("TYPO_MISFIT_GAP", "0.02") or 0.02)
+        _mgap = float(_settings.raw("TYPO_MISFIT_GAP") or 0.02)
         if len(_gaps) == 2 and any(g < -_mgap * _fh for g in _gaps):
             _misfit_face_pts.append(_fp)
             _eyelog(_pi, "SKIP mesh-misfit",
@@ -552,12 +553,12 @@ def render_displacement_portrait(
             # face is skipped entirely and the legacy blob fallback takes over,
             # which paints a dark disc. Small faces in a group photo sit under
             # the original fixed 8.0. TYPO_IRIS_MIN_PX exposes it.
-            if ir >= float(os.environ.get("TYPO_IRIS_MIN_PX", "8.0") or 8.0) * _ssn:
+            if ir >= float(_settings.raw("TYPO_IRIS_MIN_PX") or 8.0) * _ssn:
                 _fi.append((icx, icy, ir))
         if len(_fi) < 2:
             _eyelog(_pi, "SKIP iris-too-small",
                     "resolved=%d/2 min_px=%.1f -- no real eyes for this face"
-                    % (len(_fi), float(os.environ.get("TYPO_IRIS_MIN_PX", "8.0") or 8.0) * _ssn))
+                    % (len(_fi), float(_settings.raw("TYPO_IRIS_MIN_PX") or 8.0) * _ssn))
             continue
         eye_centers.extend(_fi)
         # Openness gate (both eyes must read open) -- else plain words for this face.
@@ -574,7 +575,7 @@ def render_displacement_portrait(
         # cut, so this gate is the reason a whole group can end up with no eyes at all --
         # worth being able to move without a rebuild once there is data on where shut
         # really begins.
-        _open_ear = float(os.environ.get("TYPO_EYE_OPEN_EAR", "") or _EYE_OPEN_EAR)
+        _open_ear = float(_settings.raw("TYPO_EYE_OPEN_EAR") or _EYE_OPEN_EAR)
         if min(_ear_l, _ear_r) < _open_ear:
             _eyelog(_pi, "SKIP eyes-closed",
                     "ear=(%.3f, %.3f) < %.3f -- laughing/squinting reads as shut"
@@ -598,8 +599,8 @@ def render_displacement_portrait(
             # The flag is GLOBAL (the whole render), but it must pick WHICH faces actually wear
             # a tinted lens -- in a mixed group one subject may be bare-eyed, and blacking those
             # eyes out paints "dark circles" over a real face. Sample each eye region and decide.
-            _lens_max = float(os.environ.get("TYPO_LENS_DARK_MAX", "115") or 115)
-            _lens_med_max = float(os.environ.get("TYPO_LENS_DARK_MED", "105") or 105)
+            _lens_max = float(_settings.raw("TYPO_LENS_DARK_MAX") or 115)
+            _lens_med_max = float(_settings.raw("TYPO_LENS_DARK_MED") or 105)
             _sc = []      # per-eye p90     -> sclera / lens-glare brightness
             _md = []      # per-eye median  -> overall darkness of the eye region
             _pup = []     # per-eye pupil darkness   (p10 of the central disc)
@@ -625,7 +626,7 @@ def render_displacement_portrait(
             # skin) is what reliably keeps a BARE-EYED subject from being blacked out ("dark
             # circles") when the toggle is on for someone else. Both eyes must show it.
             # TYPO_LENS_REALEYE = how many times brighter the sclera ring must be than the pupil.
-            _realeye = float(os.environ.get("TYPO_LENS_REALEYE", "1.6") or 1.6)
+            _realeye = float(_settings.raw("TYPO_LENS_REALEYE") or 1.6)
             _real_eye = (len(_scl) >= 2 and min(_scl) >= 80.0
                          and all(_scl[i] >= _realeye * max(_pup[i], 1.0) for i in range(len(_scl))))
             # Apply the opaque lens to a single confirmed subject unconditionally (no group
@@ -674,10 +675,10 @@ def render_displacement_portrait(
         # also skips the eye anchor/rings (a plain skip left stray rings on the lens).
         # TYPO_DARKSCLERA gates it (default on); TYPO_LENS_DARKRATIO tunes the relative test.
         _cheek = float(np.median(cheek_meds)) if cheek_meds else 0.0
-        _lens_ratio = float(os.environ.get("TYPO_LENS_DARKRATIO", "0.62") or 0.62)
+        _lens_ratio = float(_settings.raw("TYPO_LENS_DARKRATIO") or 0.62)
         _abs_dark = len(scleras) >= 2 and max(scleras) < _EYE_SCLERA_MIN
         _rel_dark = (len(eye_meds) >= 2 and _cheek > 20.0 and max(eye_meds) < _lens_ratio * _cheek)
-        if os.environ.get("TYPO_EYE_DEBUG", "").strip():
+        if _settings.raw("TYPO_EYE_DEBUG").strip():
             import sys as _sys
             print(f"[eye] fh={_fh:.0f} scleras={[round(s) for s in scleras]} "
                   f"eye_meds={[round(m) for m in eye_meds]} cheek={_cheek:.0f} "
@@ -756,7 +757,7 @@ def render_displacement_portrait(
     # usually inset from the edge, so this may change little -- but the construction was the
     # same and the failure needs only a bright region touching the bottom, which a light shirt
     # is.
-    _row_pad = int(round(float(os.environ.get("TYPO_DRAPE", "64") or 64.0) * s * _ssn)) + 8
+    _row_pad = int(round(float(_settings.raw("TYPO_DRAPE") or 64.0) * s * _ssn)) + 8
 
     def rows(fs: float) -> np.ndarray:
         f = _font(fs)
@@ -771,7 +772,7 @@ def render_displacement_portrait(
             # built 6*fs wider than the canvas, so an offset never leaves a gap). Env-tunable
             # in units of the row font size -- TYPO_FLOW_JITTER=0 restores the old gentle,
             # near-aligned indent; higher scatters more. Seeded rng => preview == paid file.
-            _fjit = float(os.environ.get("TYPO_FLOW_JITTER", "3.0") or 3.0)
+            _fjit = float(_settings.raw("TYPO_FLOW_JITTER") or 3.0)
             adv = {w: float(d.textlength(w + " ", font=f)) for w in set(_vocab_stream)}
             space = max(1.0, float(d.textlength(" ", font=f)))
             n = max(1, len(_vocab_stream))
@@ -832,7 +833,7 @@ def render_displacement_portrait(
     #
     # With a single face these are identical to the old global values, so nothing changes on
     # a one-subject photograph. TYPO_PER_FACE=0 restores the previous behavior.
-    _perface = (os.environ.get("TYPO_PER_FACE", "1").strip().lower()
+    _perface = (_settings.raw("TYPO_PER_FACE").strip().lower()
                 not in ("0", "false", "no", "off"))
     # The PRIMARY face keeps exactly `fw`, and the others are scaled relative to it by
     # landmark-hull width. Measuring the primary face's hull directly would give a slightly
@@ -901,7 +902,7 @@ def render_displacement_portrait(
     # rather than merely nudged. Default 0.8; 0 reverts.
     # 0.95 to match docker-compose.yml, which is what every container actually runs.
     # The code said 0.8 and the measured field came back at 0.95 all day.
-    _fdt = float(os.environ.get("TYPO_FACE_DETAIL", "0.95") or 0.95)
+    _fdt = float(_settings.raw("TYPO_FACE_DETAIL") or 0.95)
     if _fdt > 0.0:
         # Detail mask = the TIGHT face interior (not the wide face_norm feather, so the chin/
         # jaw/cheekbones get the FULL lift right to the jawline) PLUS an estimated EAR region on
@@ -931,7 +932,7 @@ def render_displacement_portrait(
     # the hair render at the LARGEST tier (giant words). Ramp df UP with distance away from
     # the face -- below the chin and above the face-top -- so the body and hair step DOWN
     # continuously toward the hem/crown. Gated to OUTSIDE the face (the face is unchanged).
-    _grad_on = graduate and os.environ.get("TYPO_GRADUATE_BODY", "1").strip().lower() not in ("0", "false", "off", "no", "")
+    _grad_on = graduate and _settings.raw("TYPO_GRADUATE_BODY").strip().lower() not in ("0", "false", "off", "no", "")
     if _grad_on:
         _gyv = np.arange(H, dtype=np.float32)[:, None]
         _rows_on = np.where(mask01.max(axis=1) > 0)[0]
@@ -953,7 +954,7 @@ def render_displacement_portrait(
         #
         # TYPO_GROUP_UNIFORM=0 restores the old additive group ramp.
         _uniform = (len(all_pts) <= 1
-                    or os.environ.get("TYPO_GROUP_UNIFORM", "1").strip().lower()
+                    or _settings.raw("TYPO_GROUP_UNIFORM").strip().lower()
                     not in ("0", "false", "off", "no"))
         if _uniform:
             # Single subject (the memorial portrait). Hold the neck + body + hair AT LEAST as
@@ -972,7 +973,7 @@ def render_displacement_portrait(
             # so both read the same size); _notface fills the sides. Earlier masks (_notface's
             # wide blur, and a ramp that started at 0 AT the chin) both starved the UPPER neck
             # of the boost -> large type there. This applies it evenly from just under the jaw.
-            _neck_scale = float(os.environ.get("TYPO_NECK_FINE", "1.0") or 1.0)
+            _neck_scale = float(_settings.raw("TYPO_NECK_FINE") or 1.0)
             _neck_target = float(np.clip(_fdt * _neck_scale, 0.0, 1.0))
             # SHARP face-hull complement (tight fw*0.03 feather) so the boost reaches full
             # strength right under the JAWLINE. _notface's wide fw*0.22 blur and the chin-TIP
@@ -1040,7 +1041,7 @@ def render_displacement_portrait(
     # as a flat wash. Push df UP in the brightest ~30% of the face so the type there goes FINER
     # -- smaller, airier words let the highlight breathe instead of caking. Face only; strength
     # TYPO_HILIGHT_FINE (default 0.30; 0 disables).
-    _hf = float(os.environ.get("TYPO_HILIGHT_FINE", "0.30") or 0.30)
+    _hf = float(_settings.raw("TYPO_HILIGHT_FINE") or 0.30)
     if _hf > 0.0:
         _hib = np.clip((gray / 255.0 - 0.72) / 0.28, 0.0, 1.0) * face_norm
         _hib = cv2.GaussianBlur(_hib, (0, 0), sigmaX=max(1.0, fw * 0.03))
@@ -1053,7 +1054,7 @@ def render_displacement_portrait(
     # Drape amplitude: how far the rows ride the facial form (vertical remap by luminance).
     # Higher = more sculptural wrap around brow/nose/cheeks; too high distorts. Env-tunable
     # so it can be dialled on staging without a rebuild (default 64 = unchanged).
-    _drape = float(os.environ.get("TYPO_DRAPE", "64") or 64.0)
+    _drape = float(_settings.raw("TYPO_DRAPE") or 64.0)
     amp = _drape * s * _ssn * (1.0 - 0.85 * feat_damp)
     my = (yy + amp * dn).astype(np.float32)
     mx = xx.astype(np.float32)
@@ -1103,7 +1104,7 @@ def render_displacement_portrait(
     # smile lines out on the skin -- smooth away. Apply an even finer high-pass across the whole
     # face (face_norm) so those creases render as delicate darker type instead of flat skin.
     # Subject/face only; strength TYPO_CREASE (default 0.22; 0 disables).
-    _cr = float(os.environ.get("TYPO_CREASE", "0.22") or 0.22)
+    _cr = float(_settings.raw("TYPO_CREASE") or 0.22)
     if _cr > 0.0:
         _hpc = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.012))
         _hpc /= (np.std(_hpc[mask01 > 0]) + 1e-6)
@@ -1149,7 +1150,7 @@ def render_displacement_portrait(
     #
     # Numbered so they sort in execution order. Read them in pairs: the first frame where a
     # region goes dark names the pass that did it.
-    _sd = os.environ.get("TYPO_DUMP_STAGES", "").strip()
+    _sd = _settings.raw("TYPO_DUMP_STAGES").strip()
     _stage_n = [0]
 
     def _stage(_label, _arr):
@@ -1176,7 +1177,7 @@ def render_displacement_portrait(
     # face's own left/right + top/bottom brightness asymmetry, and confidence is that asymmetry's
     # magnitude, so FLAT lighting -> ~0 confidence -> no effect. Only the shadow-side edge band
     # fades; the lit edge stays crisp. TYPO_EDGE_FALLOFF (0 disables).
-    _ef = float(os.environ.get("TYPO_EDGE_FALLOFF", "0.45") or 0.45)
+    _ef = float(_settings.raw("TYPO_EDGE_FALLOFF") or 0.45)
     if _ef > 0.0 and int(np.count_nonzero(mask01 > 0.5)) > 200:
         _fm = mask01 > 0.5
         _xr = np.arange(W, dtype=np.float32)[None, :]
@@ -1207,7 +1208,7 @@ def render_displacement_portrait(
     # stays inside the subject mask, and it fills only the gaps (a += w*(1-a)) so glyph edges
     # keep their crispness. Default 0.0 -> byte-identical; TYPO_HILIGHT_WASH tunes the strength.
     if g["tone"] == "light":
-        _hw = float(os.environ.get("TYPO_HILIGHT_WASH", "0.5") or 0.5)   # default ON; 0 disables
+        _hw = float(_settings.raw("TYPO_HILIGHT_WASH") or 0.5)   # default ON; 0 disables
         if _hw > 0.0:
             _hi = np.clip((ink_field - 0.60) / 0.40, 0.0, 1.0)
             _mk = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0, 1)
@@ -1221,7 +1222,7 @@ def render_displacement_portrait(
     # pockets still read dark -- the shaded cheek/jaw keep MODELLED form instead of collapsing.
     # Default 0.0 -> byte-identical; TYPO_SHADOW_LIFT tunes the strength.
     if g["tone"] == "light":
-        _sl = float(os.environ.get("TYPO_SHADOW_LIFT", "0.18") or 0.18)   # default ON; 0 disables
+        _sl = float(_settings.raw("TYPO_SHADOW_LIFT") or 0.18)   # default ON; 0 disables
         if _sl > 0.0:
             _lo = np.clip((0.50 - ink_field) / 0.50, 0.0, 1.0)   # 1 at black -> 0 at mid(0.5)
             a = np.clip(a + _sl * _lo * np.clip(face_norm, 0, 1) * (1.0 - a), 0, 1)
@@ -1262,7 +1263,7 @@ def render_displacement_portrait(
     # since the rest of the face is typography anyway. Now the default agrees.
     #
     # TYPO_EYE_BLOB=1 restores it.
-    _eye_blob = os.environ.get("TYPO_EYE_BLOB", "0").strip().lower() \
+    _eye_blob = _settings.raw("TYPO_EYE_BLOB").strip().lower() \
         in ("1", "true", "on", "yes")
     if not irises and _eye_blob:
         # Legacy eye presence: an ink blob at the lid centroid. Only used when the
@@ -1356,7 +1357,7 @@ def render_displacement_portrait(
         # wider than tall (a lens, not a slit) and lifted a touch toward the brow (where glasses
         # actually sit). Two ellipses + the natural bridge gap read as a pair of lenses on any
         # frame style. TYPO_LENS_SIZE scales the whole lens (default 1.0) with no rebuild.
-        _lsz = float(os.environ.get("TYPO_LENS_SIZE", "1.0") or 1.0)
+        _lsz = float(_settings.raw("TYPO_LENS_SIZE") or 1.0)
         _lens = np.zeros((H, W), np.float32)
         for _fp in _dark_lens_face_pts:
             for k in ("Leye", "Reye"):
@@ -1385,9 +1386,9 @@ def render_displacement_portrait(
     # lip crease validate "open mouth" for every face in the photo -- two closed
     # mouths rendered as two pale blobs. Each face is now judged on its own
     # pixels and dropped before it can contribute to the union.
-    _tdark = float(os.environ.get("TYPO_TEETH_DARK", "60.0") or 60.0)
-    _tbright = float(os.environ.get("TYPO_TEETH_BRIGHT", "205.0") or 205.0)
-    _tdbg = os.environ.get("TYPO_TEETH_DEBUG", "").strip().lower() in ("1", "true", "on", "yes")
+    _tdark = float(_settings.raw("TYPO_TEETH_DARK") or 60.0)
+    _tbright = float(_settings.raw("TYPO_TEETH_BRIGHT") or 205.0)
+    _tdbg = _settings.raw("TYPO_TEETH_DEBUG").strip().lower() in ("1", "true", "on", "yes")
     teeth = None                       # union of the mouths that really are open
     for _fi, _fp in enumerate(all_pts):
         _tm = _teeth_mask(_fp, H, W)
@@ -1473,7 +1474,7 @@ def render_displacement_portrait(
     # the face so the likeness reads while the surrounding paper still breathes. TYPO_PAPER_FACE
     # (default 0.30; 0 disables). Paper ground only -- dark grounds are unaffected.
     if ground in PAPER_FAMILY:
-        _pf = float(os.environ.get("TYPO_PAPER_FACE", "0.30") or 0.30)
+        _pf = float(_settings.raw("TYPO_PAPER_FACE") or 0.30)
         if _pf > 0.0:
             a = np.maximum(a, w2 * _pf * np.clip(face_norm, 0, 1))
             _stage("15-paper-face", a)
@@ -1481,7 +1482,7 @@ def render_displacement_portrait(
         # silver-haired subject reads as a floating face. Give the HAIR region an ink-density
         # floor so light hair renders as delicate gray words instead of vanishing. Dark hair
         # already has density (max() leaves it untouched). TYPO_PAPER_HAIR (default 0.35; 0 off).
-        _ph = float(os.environ.get("TYPO_PAPER_HAIR", "0.35") or 0.35)
+        _ph = float(_settings.raw("TYPO_PAPER_HAIR") or 0.35)
         if _ph > 0.0:
             _yy2 = np.arange(H, dtype=np.float32)[:, None]
             _chin2 = max(float(_p[:, 1].max()) for _p in all_pts)
@@ -1514,7 +1515,7 @@ def render_displacement_portrait(
         # shut. Reading directly from that, at a small window around each real coordinate,
         # is exact -- not a guessed crop like ops/region-saturation.py used against the
         # raw source photo.
-        if os.environ.get("TYPO_DUMP_FIELDS", "").strip():
+        if _settings.raw("TYPO_DUMP_FIELDS").strip():
             try:
                 _eye_bits = []
                 for _ex, _ey, _er in eye_centers:
@@ -1583,12 +1584,12 @@ def render_displacement_portrait(
             hsv[..., 1] = np.clip(hsv[..., 1] * _PAPER_INK_SAT, 0, 255)
             hsv[..., 2] = np.minimum(hsv[..., 2], np.float32(_PAPER_INK_VALUE))
         else:
-            hsv[..., 1] = np.clip(hsv[..., 1] * float(os.environ.get("TYPO_INK_SAT", "1.02") or 1.02), 0, 255)  # step-3 color-fidelity knob (was fixed 1.02)
+            hsv[..., 1] = np.clip(hsv[..., 1] * float(_settings.raw("TYPO_INK_SAT") or 1.02), 0, 255)  # step-3 color-fidelity knob (was fixed 1.02)
             # On a dark ground the gaps between glyphs show GROUND, so the render reads
             # darker than the source photograph. This lifts the ink value to compensate.
             # Multiplier and offset were hardcoded at 1.14 / 14 -- both now tunable.
-            _ilm = float(os.environ.get("TYPO_INK_LIFT", "1.14") or 1.14)
-            _ila = float(os.environ.get("TYPO_INK_LIFT_ADD", "14") or 14.0)
+            _ilm = float(_settings.raw("TYPO_INK_LIFT") or 1.14)
+            _ila = float(_settings.raw("TYPO_INK_LIFT_ADD") or 14.0)
             hsv[..., 2] = np.clip(hsv[..., 2] * _ilm + _ila, 0, 255)     # lift value vs dark ground
         ink_col = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
         # SUBJECT BASE: the ground is painted across the whole canvas, so INSIDE the
@@ -1597,16 +1598,16 @@ def render_displacement_portrait(
         # TYPO_SUBJECT_BASE swaps the base inside the mask for the SOURCE PHOTO, dimmed by
         # TYPO_SUBJECT_DIM so the words still read on top of it. The flat ground stays
         # BEHIND the subject. 0 (default) is byte-identical to the previous behavior.
-        _sb = float(os.environ.get("TYPO_SUBJECT_BASE", "0") or 0.0)
+        _sb = float(_settings.raw("TYPO_SUBJECT_BASE") or 0.0)
         _base = np.zeros((H, W, 3), np.float32) + np.array(g["bg"], np.float32)
         if _sb > 0.0:
-            _dim = float(os.environ.get("TYPO_SUBJECT_DIM", "0.45") or 0.0)
+            _dim = float(_settings.raw("TYPO_SUBJECT_DIM") or 0.0)
             _m3 = (np.clip(mask01, 0, 1) * min(max(_sb, 0.0), 1.0))[..., None]
             _base = _base * (1.0 - _m3) + (bgr_full * (1.0 - _dim)) * _m3
         # Field dump (TYPO_DUMP_FIELDS=<dir>). The composite below is fully
         # determined by _base, al and ink_col, so when a render is wrong the
         # answer is in one of them -- no inference required.
-        _dd = os.environ.get("TYPO_DUMP_FIELDS", "").strip()
+        _dd = _settings.raw("TYPO_DUMP_FIELDS").strip()
         if _dd:
             try:
                 os.makedirs(_dd, exist_ok=True)
@@ -1703,16 +1704,16 @@ def render_displacement_portrait(
         # PNG does not, which cannot both be true of a single render. Printing the means of
         # the inputs AND of the result here, plus the mean of the final array at encode time,
         # localises the break to one side of the function.
-        if os.environ.get("TYPO_DUMP_FIELDS", "").strip():
+        if _settings.raw("TYPO_DUMP_FIELDS").strip():
             print("[trace %s w=%d m=%.3f] ink=%r sb=%.2f dim=%.2f  base.mean=%.2f "
                   "al.mean=%.3f ink_col.mean=%.2f -> out.mean=%.2f"
                   % (_cid, int(out_width), _mmean,
-                     ink, _sb, float(os.environ.get("TYPO_SUBJECT_DIM", "0.45") or 0.0),
+                     ink, _sb, float(_settings.raw("TYPO_SUBJECT_DIM") or 0.0),
                      float(np.asarray(_base).mean()), float(np.asarray(al).mean()),
                      float(np.asarray(ink_col).mean()), float(np.asarray(out).mean())))
         # Default 1, matching docker-compose.yml. It read "0" here while compose defaulted
         # it ON in every container, so this whole block ran while the code said it did not.
-        if os.environ.get("TYPO_POLARITY", "1").strip().lower() in ("1", "true", "on", "yes"):
+        if _settings.raw("TYPO_POLARITY").strip().lower() in ("1", "true", "on", "yes"):
             # Polarity model (the paper-grade shadow behavior, brought to the dark-ground
             # Lifelike look). Instead of "light ink whose COVERAGE follows brightness"
             # (shadow -> no ink -> ground shows -> absence), make the type present at HIGH
@@ -1721,8 +1722,8 @@ def render_displacement_portrait(
             # light letters in highlight. Two tuning knobs (env; iterate without a rebuild):
             #   TYPO_POLARITY_GAMMA (>1 drives deep shadow harder to black; default 1.35)
             #   TYPO_POLARITY_FLOOR (how black the shadow GAPS get; 0 = true black; default 0.18)
-            _pol_g = float(os.environ.get("TYPO_POLARITY_GAMMA", "1.35") or 1.35)
-            _pol_f = float(os.environ.get("TYPO_POLARITY_FLOOR", "0.18") or 0.18)
+            _pol_g = float(_settings.raw("TYPO_POLARITY_GAMMA") or 1.35)
+            _pol_f = float(_settings.raw("TYPO_POLARITY_FLOOR") or 0.18)
             _mkf = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0, 1)
             _tone = np.clip(lum, 0.0, 1.0)[..., None] ** _pol_g  # gamma>1 -> deep shadow drives to near-black
             _pc = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
@@ -1744,7 +1745,7 @@ def render_displacement_portrait(
             # dark render into an afternoon: compose defaults TYPO_POLARITY to 1 while the
             # code reads "0", so the polarity model was running in every container and
             # reading .env said otherwise.
-            _pol_i = float(os.environ.get("TYPO_POLARITY_INK_FLOOR", "40") or 40.0)
+            _pol_i = float(_settings.raw("TYPO_POLARITY_INK_FLOOR") or 40.0)
             # Hue comes from channel / luminance. In a deep shadow a JPEG pixel is (5, 0, 0):
             # luminance under 1, so the division turns four levels of compression noise
             # into pure blue at full strength -- the blue and green specks along the cheek
@@ -1754,7 +1755,7 @@ def render_displacement_portrait(
             # with no light in it come out neutral and leaves a lit one alone: at skin
             # luminance 140 the ratio moves by under 1%; on a navy blouse at 10 it keeps
             # three quarters of its colour. TYPO_POLARITY_PEDESTAL=0 restores the old math.
-            _pol_p = float(os.environ.get("TYPO_POLARITY_PEDESTAL", "8") or 0.0)
+            _pol_p = float(_settings.raw("TYPO_POLARITY_PEDESTAL") or 0.0)
             _ratio = (_pc + _pol_p) / (_pl + _pol_p)
             _ink = _ratio * (_pol_i + (253.0 - _pol_i) * _tone)   # keep the photo HUE, re-map brightness full-range
             _ink = np.minimum(_ink, np.float32([255, 255, 255])) # (hue*value can exceed 255 on saturated pixels)
@@ -1797,7 +1798,7 @@ def render_displacement_portrait(
     # it here disables the entire synthesis in one place. Nothing is drawn from landmark
     # geometry, so a badly fitted mesh cannot place a disc where no eye is. Teeth are
     # unaffected (their gate is `irises or teeth`).
-    if os.environ.get("TYPO_EYE_PLAIN", "").strip().lower() in ("1", "true", "on", "yes"):
+    if _settings.raw("TYPO_EYE_PLAIN").strip().lower() in ("1", "true", "on", "yes"):
         irises = []
         iris_m = None
     if irises and iris_m is not None and g["tone"] == "light" and ink in ("photo", "mono"):
@@ -1808,10 +1809,10 @@ def render_displacement_portrait(
             the source's own iris pixels lifted so a dark brown reads on the dark ground."""
             if _tint is not None:
                 _tp = np.array(_tint[1][::-1], np.float32)   # lifted RGB -> BGR
-                _iaa = float(os.environ.get("TYPO_IRIS_ALPHA", "0") or 0.0)
+                _iaa = float(_settings.raw("TYPO_IRIS_ALPHA") or 0.0)
                 _iall = np.maximum(al, _iaa) if _iaa > 0.0 else al
                 return np.array(g["bg"], np.float32) * (1 - _iall) + _tp * _iall
-            _ill = float(os.environ.get("TYPO_IRIS_LIFT", "1.35") or 1.35)
+            _ill = float(_settings.raw("TYPO_IRIS_LIFT") or 1.35)
             _bff = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
             _hvv = cv2.cvtColor(np.clip(_bff, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
             _hvv[..., 1] = np.clip(_hvv[..., 1] * 1.3, 0, 255)
@@ -1819,7 +1820,7 @@ def render_displacement_portrait(
             _icol = cv2.cvtColor(_hvv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
             return np.array(g["bg"], np.float32) * (1 - al) + _icol * al
 
-        if (os.environ.get("TYPO_IRIS_PER_FACE", "").strip().lower() in ("1", "true", "on", "yes")
+        if (_settings.raw("TYPO_IRIS_PER_FACE").strip().lower() in ("1", "true", "on", "yes")
                 and _iris_face_idx):
             # Each face gets ITS OWN sampled color on ITS OWN irises. Previously one tint
             # from faces[0] was painted onto every iris in the image, so a mixed-eye-color
@@ -1848,7 +1849,7 @@ def render_displacement_portrait(
             # ground (13,27,58 RGB -- a saturated dark blue) shows through and a correctly
             # sampled BROWN iris renders BLUE. TYPO_IRIS_ALPHA floors the alpha inside the
             # iris so the sampled color wins. 0 (default) keeps the previous behavior.
-            _ia = float(os.environ.get("TYPO_IRIS_ALPHA", "0") or 0.0)
+            _ia = float(_settings.raw("TYPO_IRIS_ALPHA") or 0.0)
             _ial = np.maximum(al, _ia) if _ia > 0.0 else al
             iout = np.array(g["bg"], np.float32) * (1 - _ial) + tip * _ial
             out = out * (1.0 - im3) + iout * im3
@@ -1858,7 +1859,7 @@ def render_displacement_portrait(
             # would otherwise fall through to the dark navy ground and read BLUE. Re-lay the
             # source's own iris pixels (saturation + a value lift so a dark brown reads on the
             # dark ground), so a brown eye renders brown -- not blue. TYPO_IRIS_LIFT tunes it.
-            _il = float(os.environ.get("TYPO_IRIS_LIFT", "1.35") or 1.35)
+            _il = float(_settings.raw("TYPO_IRIS_LIFT") or 1.35)
             bf = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
             hv = cv2.cvtColor(np.clip(bf, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
             hv[..., 1] = np.clip(hv[..., 1] * 1.3, 0, 255)
@@ -1929,7 +1930,7 @@ def render_displacement_portrait(
     # from the synthetic sclera + tinted-iris words + limbal ring + catchlight already laid
     # above -- so the eye reads as part of the typography, not a photo patch. Tinted inks
     # (Noir/Sepia/...) still get the photographic eye (they have no color clash to word-form).
-    _word_eyes = os.environ.get("TYPO_WORD_EYES", "0").strip().lower() in ("1", "true", "on", "yes")
+    _word_eyes = _settings.raw("TYPO_WORD_EYES").strip().lower() in ("1", "true", "on", "yes")
     if irises and g["tone"] == "light" and not (_word_eyes and ink in ("photo", "mono")):
         from .tonal import _photo_eye_overlay
         bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
@@ -1945,13 +1946,13 @@ def render_displacement_portrait(
         # 1.0 to match docker-compose.yml. Worth knowing what that means: the eye is an
         # OPAQUE paste of the photograph's own pixels, not typography blended over it. The
         # code claimed 0.5 -- half blended -- and no container has ever run that.
-        a3 = (eye_a * float(os.environ.get("TYPO_EYE_PHOTO", "1.0") or 1.0))[..., None]   # 1=opaque photo eye; lower blends the typography through so the eye reads as part of the words
+        a3 = (eye_a * float(_settings.raw("TYPO_EYE_PHOTO") or 1.0))[..., None]   # 1=opaque photo eye; lower blends the typography through so the eye reads as part of the words
         out = out * (1.0 - a3) + eye_bgr * a3
         # A NON-closeup source has small, soft eyes, so the pasted eye reads flat/muddy.
         # Sharpen + lift local contrast INSIDE the eye opening so the iris/pupil/catchlight
         # read crisp; scale the amount UP for smaller (more distant) eyes. TYPO_EYE_SHARPEN
         # (0 disables) sets the base strength.
-        _esh = float(os.environ.get("TYPO_EYE_SHARPEN", "0.6") or 0.6)
+        _esh = float(_settings.raw("TYPO_EYE_SHARPEN") or 0.6)
         if _esh > 0.0 and float(eye_a.max()) > 0.0:
             _em = np.clip(eye_a, 0.0, 1.0)[..., None]
             _amt = _esh * float(np.clip((0.16 * W) / max(1.0, fw), 0.6, 2.4))   # smaller face -> more
@@ -1963,7 +1964,7 @@ def render_displacement_portrait(
         # painting them back (like real portrait retouching) makes even a low-res eye read
         # alive and defined. Scaled UP for smaller eyes; TYPO_EYE_POP (0 disables). A faint
         # pupil-core darken adds depth. Runs before the mono desaturate so Noir gets it too.
-        _pop = float(os.environ.get("TYPO_EYE_POP", "0.8") or 0.8)
+        _pop = float(_settings.raw("TYPO_EYE_POP") or 0.8)
         if _pop > 0.0 and float(glint.max()) > 0.0:
             _psc = float(np.clip((0.16 * W) / max(1.0, fw), 0.7, 2.2))   # smaller face -> more pop
             _l3 = np.clip(limbal * (0.6 * _pop), 0.0, 1.0)[..., None]
@@ -1989,7 +1990,7 @@ def render_displacement_portrait(
     # gentle contrast lift so the grayscale is punchy, not muddy -- keeping the polarity
     # shadows, catchlight and living eyes intact. TYPO_NOIR_CONTRAST tunes the punch.
     if ink == "mono":
-        _nc = float(os.environ.get("TYPO_NOIR_CONTRAST", "1.08") or 1.08)
+        _nc = float(_settings.raw("TYPO_NOIR_CONTRAST") or 1.08)
         _lo = out[..., 0] * 0.114 + out[..., 1] * 0.587 + out[..., 2] * 0.299
         _lo = np.clip((_lo - 128.0) * _nc + 128.0, 0, 255)
         out = np.stack([_lo, _lo, _lo], axis=-1)
@@ -2001,7 +2002,7 @@ def render_displacement_portrait(
     # is dark -- so the flat regions regain smooth photographic gradation WITHOUT blurring the
     # glyph edges (only the LOW frequencies move, the type stays crisp). Subject only, light
     # ground only. Default 0 -> byte-identical; TYPO_DEPOSTERIZE tunes the strength.
-    _dp = float(os.environ.get("TYPO_DEPOSTERIZE", "0.6") or 0.6)   # default ON; 0 disables
+    _dp = float(_settings.raw("TYPO_DEPOSTERIZE") or 0.6)   # default ON; 0 disables
     if _dp > 0.0 and g["tone"] == "light":
         _plo = cv2.GaussianBlur(gray.astype(np.float32) / 255.0, (0, 0), sigmaX=max(2.0, fw * 0.11))
         _m = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.01), 0, 1)
@@ -2025,7 +2026,7 @@ def render_displacement_portrait(
     _transparent = (backdrop or "").strip().lower() == "transparent"
     _bd = None if _transparent else (BACKDROPS.get((backdrop or "").strip().lower()) if backdrop else None)
     try:
-        _bg_lift = float(os.environ.get("TYPO_BG_LIGHTEN", "0"))
+        _bg_lift = float(_settings.raw("TYPO_BG_LIGHTEN"))
     except ValueError:
         _bg_lift = 0.0
     _bg_lift = min(max(_bg_lift, 0.0), 1.0)
@@ -2066,13 +2067,13 @@ def render_displacement_portrait(
     _t("F-after-canvas")
     _cdump("F-after-canvas")
     from .preprocess import apply_vibrance
-    _vib = float(os.environ.get("TYPO_VIBRANCE", "0.22") or 0.22)   # step-3 color-fidelity knob (was fixed 0.34)
+    _vib = float(_settings.raw("TYPO_VIBRANCE") or 0.22)   # step-3 color-fidelity knob (was fixed 0.34)
     out = apply_vibrance(out, strength=_vib, bgr=True)   # gentle life (clarity); restrained so color stays natural and the sclera isn't glow-brightened
     # Color fidelity: soft-cap HSV saturation so the oversaturated extremes -- magenta lips,
     # orange-boosted skin highlights -- compress toward a natural ceiling while ordinary skin
     # keeps its color. Only saturation ABOVE the cap is compressed (35% slope), so nothing
     # below it is touched. TYPO_SAT_CAP=0 disables. Default 170 (gentle).
-    _scap = float(os.environ.get("TYPO_SAT_CAP", "150") or 150)
+    _scap = float(_settings.raw("TYPO_SAT_CAP") or 150)
     if _scap > 0:
         _hh = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
         _s = _hh[..., 1]
@@ -2104,7 +2105,7 @@ def render_displacement_portrait(
         ok, buf = cv2.imencode(".png", np.clip(out, 0, 255).astype(np.uint8))
     if not ok:
         raise ValueError("encode_failed")
-    if os.environ.get("TYPO_DUMP_FIELDS", "").strip():
+    if _settings.raw("TYPO_DUMP_FIELDS").strip():
         print("[trace %s w=%d m=%.3f] encode  out.mean=%.2f  bytes=%d"
               % (_cid, int(out_width), _mmean,
                  float(np.asarray(out).mean()), len(buf.tobytes())))
