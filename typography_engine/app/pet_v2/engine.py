@@ -1688,6 +1688,431 @@ def _landmark_string(faces, scale=1.0):
     return "|".join(groups)
 
 
+def _phase_likeness_test(photo_out, out_path, W, attractor_pts, base, bgr_source, canvas, extra_faces, mask, debug_dir, exposed, fillable, fp_cov, best_placements, coll, coll_core, cov_final, H, rep, _wisp_fr, wisp_alpha, whisker_ink_alpha, backdrop_rgb):
+    """Recommendation #14: automatic type-only likeness test. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Recommendation #14: automatic type-only likeness test ----------------------------
+    # Four panels: A (source), B (typography+color, already saved as photo_out), C (typography
+    # only, already saved as out_path -- render_word_bitmap already fills near-black on white,
+    # so it was monochrome by construction), D (typography-only blurred past legibility). Plus
+    # a single face-weighted number so a future change can be judged against this run instead
+    # of by eye. ~25px at this photo's resolution, per the recommendation's "~20-30px."
+    blur_sigma = max(8.0, W * 0.022)
+    score, blurred_type, blurred_source = type_only_likeness(
+        canvas, mask, bgr_source, attractor_pts, base, blur_sigma, extra_faces)
+    if debug_dir:
+        stem = out_path.rsplit(".", 1)[0]
+        Image.fromarray(np.clip(blurred_type, 0, 255).astype(np.uint8)).save(stem + "_D_blurred.jpg")
+        Image.fromarray(np.clip(blurred_source, 0, 255).astype(np.uint8)).save(stem + "_D_blurred_source.jpg")
+        cv2.imwrite(stem + "_A_source.jpg", bgr_source)
+        _log(f"wrote {out_path}; wrote {photo_out}; wrote {stem}_A_source.jpg, {stem}_D_blurred.jpg")
+    _log(f"type-only likeness score (face-weighted SSIM, blur sigma={blur_sigma:.1f}): {score:.4f}")
+    metrics = {
+        "footprint_coverage": fp_cov, "exposed_space": exposed, "fillable_unfilled": fillable,
+        "elements": len(best_placements), "collision_body": coll_core, "collision_any": coll,
+        "type_only_likeness": score, "zone_coverage": {k: v[0] for k, v in cov_final.items()},
+        "words_by_zone": rep, "attractor_pts": attractor_pts, "size": (W, H),
+        # How much of each final pixel is the OUTER ground (outside the animal, under no
+        # fringe hair): lets a later request swap the backdrop color by arithmetic instead of
+        # a re-render. Stored as uint8 to keep the render cache small.
+        "outside_w": np.clip(((1.0 - mask) if _wisp_fr is None else
+                              ((1.0 - np.clip(wisp_alpha, 0, 1)) * _wisp_fr + (1.0 - mask) * (1.0 - _wisp_fr)))
+                             * (1.0 - whisker_ink_alpha) * 255.0, 0, 255).astype(np.uint8),
+        "backdrop_rgb": tuple(float(v) for v in backdrop_rgb) if backdrop_rgb is not None else None,
+    }
+    return metrics
+
+
+def _phase_final_metrics(mask, ink_raw, m_in, letters_in, pcts, src_L_in, L_after, dark_mix, light_mix, dark_f, light_f, gap_scale, letter_scale, src_mean_L, nose_fit_final, H, W, region_map, best_placements, best_pass, best_stats, best_pass_stats, composited, debug_dir, out_path):
+    """_phase_final_metrics. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    photo_out = None
+    # Typography legibility in the delivered composite, as a number: mean L of letter pixels vs
+    # gap pixels inside the mask. If these converge, the words have disappeared into the photo.
+    gap_px = m_in & (ink_raw < 0.1)
+    if letters_in.any() and gap_px.any():
+        _log(f"letters-only L pct {pcts}: source={np.percentile(src_L_in, pcts).round(0)} "
+              f"letters={np.percentile(L_after[letters_in], pcts).round(0)}")
+        _log(f"letter/gap luminance: letters L={L_after[letters_in].mean():.0f}  gaps L={L_after[gap_px].mean():.0f}  "
+              f"(delta {L_after[letters_in].mean() - L_after[gap_px].mean():+.0f}; photo light_mix={light_mix:.2f} dark_mix={dark_mix:.2f}; "
+              f"local dark-mode share {float((dark_f[m_in] >= 0.5).mean()):.0%} light-mode share {float((light_f[m_in] >= 0.5).mean()):.0%}; "
+              f"gap_scale={float(gap_scale[m_in].mean()):.2f} letter_scale={float(letter_scale[m_in].mean()):.2f}; letters cover {letters_in.sum() / m_in.sum():.0%})")
+        _log(f"overall tone: composite mean L inside mask={L_after[m_in].mean():.0f} vs source {src_mean_L:.0f}")
+    # Final typography coverage by anatomical zone (the "areas not rendered with typography" number).
+    _extra = {}
+    if nose_fit_final is not None:
+        _nz = np.zeros((H, W), np.uint8)
+        (fncx, fncy), (fna, fnb), fnangle = nose_fit_final
+        cv2.ellipse(_nz, (int(round(fncx)), int(round(fncy))), (max(1, int(round(fna))), max(1, int(round(fnb)))),
+                   fnangle, 0, 360, 1, -1)
+        _extra["nose"] = _nz > 0
+    cov_final = region_coverage(ink_raw, mask, region_map, _extra)
+    _log("typography coverage by zone: " + "  ".join(f"{k} {v[0]:.0%}" for k, v in cov_final.items()))
+    # Letter/gap separation where it matters most -- per zone, not just the whole mask.
+    _zone_masks = {"eyes": (region_map == 1) | (region_map == 2), "rest": region_map == 3}
+    _zone_masks.update(_extra)
+    _parts = []
+    for _zn, _zm in _zone_masks.items():
+        _l, _g = m_in & _zm & (ink_raw > 0.5), m_in & _zm & (ink_raw < 0.1)
+        if _l.sum() > 50 and _g.sum() > 50:
+            _parts.append(f"{_zn} {L_after[_l].mean() - L_after[_g].mean():+.0f}")
+    _log("letter/gap delta by zone: " + "  ".join(_parts))
+    _TL.placements[:] = best_placements
+    _TL.pass_tags[:] = best_pass
+    rep = placement_report(region_map, mask, _extra)
+    _log("words placed by zone (count / median px / 10th-pct px): "
+          + "  ".join(f"{k} {v[0]} / {v[1]:.0f} / {v[2]:.0f}" for k, v in rep.items()))
+    fp_cov = footprint_coverage(best_placements, mask)
+    coll = best_stats["overlap_px"] / max(1, best_stats["glyph_px"])
+    coll_core = best_stats["core_overlap_px"] / max(1, best_stats["core_px"])
+    # "Exposed space": animal pixels farther than half a glyph (3px at the 6px floor) from any
+    # typography -- the direct measure of "every exposed space has typography."
+    # Free-space channel width via distance-to-ink: "exposed" = farther than half a glyph from any
+    # typography, scaled with the render (3px at 1x); "fillable-but-unfilled" = free channels
+    # wide enough for a glyph at the 6px floor (>=8px), the part of the deficit that's ours to fix.
+    _dist = cv2.distanceTransform((ink_raw <= 0.3).astype(np.uint8), cv2.DIST_L2, 5)
+    _thr = 3.0 * max(1.0, W / 1030.0)
+    exposed = float(((_dist > _thr) & m_in)[m_in].mean())
+    fillable = float(((_dist * 2 >= 8) & m_in)[m_in].mean())
+    _log(f"CLAIM METRICS: typography footprint covers {fp_cov:.1%} of the animal; exposed space "
+          f"(>{_thr:.0f}px from any glyph) {exposed:.1%}; glyph-fillable but unfilled {fillable:.1%}; "
+          f"{len(best_placements)} words; collisions: letter BODIES overlapping {coll_core:.2%}, "
+          f"any antialiased touch {coll:.2%}")
+    # Where the collisions come from, pass by pass: each pass's own body-overlap rate, and its
+    # share of every colliding pixel in the portrait.
+    _tot_ov = max(1, sum(v[1] for v in best_pass_stats.values()))
+    _log("collisions by pass: " + "  ".join(
+        f"{k} {v[1] / max(1, v[0]):.2%} ({v[1] / _tot_ov:.0%} of all)"
+        for k, v in sorted(best_pass_stats.items(), key=lambda kv: -kv[1][1])))
+
+    composited_u8 = np.clip(composited, 0, 255).astype(np.uint8)
+    if debug_dir:
+        photo_out = out_path.rsplit(".", 1)[0] + "_on_photo.jpg"
+        Image.fromarray(composited_u8).save(photo_out, quality=92)
+
+    return cov_final, rep, fp_cov, coll, coll_core, exposed, fillable, composited_u8, photo_out
+
+
+def _phase_coat_tone_match(base, mask, fine_blend, src_lab, src_mean_L, ink_raw, m_in, GAP_TONE, LETTER_TONE, human, _ref_in, ink_soft, letters_in, L_cur, _quantile_match, src_L_in, eye_reveal, attractor_pts, extra_faces, xx, yy, _es, _face_r, L_clahe, _local_std, target_ls, _dbg, _dbg_pt, clahe_clip, comp_lab, src_hsv, L_before, cur_ls):
+    """LOCAL coat mode. One mode per photo fails any two-tone or shadowed coat: on the. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- LOCAL coat mode. One mode per photo fails any two-tone or shadowed coat: on the
+    # border collie (staging baseline) the photo's mean landed in the middle, so the black
+    # half got the mid-coat treatment -- letters at the fur's own near-black tone, gaps pushed
+    # darker still -- and read as empty. The coat luminance is read per pixel (masked blur,
+    # 1.5 base, so a word-sized patch decides, not a hair), and the same ramps that pick the
+    # photo's mode pick each region's. The scalar solves below still set the layer scales
+    # from the photo's measured means; the per-pixel mixes only choose which layer carries
+    # the source tone at each spot.
+    # The eyes and nose are left OUT of the coat reading: an eye's own iris and glint lifted
+    # the blurred luminance around one eye above the mid-coat threshold and not the other, so
+    # the two eyes of a black lab were restyled in different modes (measured: L 95 vs L 27 with
+    # the same reveal). The coat mode at a feature is now its surrounding fur's.
+    _cw = (mask > 0.5).astype(np.float32) * fine_blend
+    _csig = max(4.0, base * 1.5)
+    _cnum = _gblur(src_lab[..., 0] * _cw, (0, 0), sigmaX=_csig)
+    _cden = _gblur(_cw, (0, 0), sigmaX=_csig)
+    coat_L = np.divide(_cnum, _cden, out=np.full_like(_cnum, src_mean_L), where=_cden > 1e-3)
+    light_f = np.clip((coat_L - 145.0) / 30.0, 0.0, 1.0).astype(np.float32)
+    dark_f = np.clip((120.0 - coat_L) / 30.0, 0.0, 1.0).astype(np.float32)
+    # Dark coats (chocolate/black; mean L under ~95): the mirror of the light-coat rule. Seen on
+    # staging with a chocolate Lab: letters at the coat's own dark tone with gaps pushed darker
+    # still is a dark photo with slightly-less-dark text on it. The honest typographic read on a
+    # dark coat is LIGHT words on the true dark fur -- gaps carry the source, letters are lifted.
+    # Ramp 120 -> 90: the staging chocolate Lab measured mean L 98 (dark_mix 0.73 here), the
+    # black Lab test photo 45 (1.0); the tan dog (147) and tabby (141) stay out of it (0.0).
+    dark_mix = float(np.clip((120.0 - src_mean_L) / 30.0, 0.0, 1.0))
+    gaps_in = m_in & (ink_raw < 0.1)
+    # Solve the two layer scales from two stated targets instead of fixed constants:
+    #   fidelity  -- composite mean L inside the mask = TONE_FIDELITY x source mean L
+    #                (measured cost of visible words; 0.66 fixed gave 0.76 on the dog, 0.85 on
+    #                the doodle -- the rule makes it the same everywhere), and
+    #   legibility -- |letter mean - gap mean| >= MIN_DELTA_L, which wins if the two conflict.
+    # The layer carrying the source tone stays at 1.0; the other is solved from the letter
+    # coverage; the two modes blend by light_mix. GAP_TONE/LETTER_TONE above are now the floors.
+    TONE_FIDELITY, MIN_DELTA_L = (1.0, 24.0) if human else (0.85, 40.0)   # delta 29 read too photographic on the dog; 73 too dark; skin keeps more of its own value
+    c_eff = float(ink_soft[_ref_in].mean())                            # soft letter coverage
+    # Solve from the MEASURED unscaled layer means (m_l, m_g), not from the assumption that a
+    # matched layer's mean equals the source's -- it doesn't (measured ~139 vs 147 on the dog,
+    # which left the delta at 31 against a 40 floor when solved analytically).
+    _let_ref, _gap_ref = letters_in & _ref_in, gaps_in & _ref_in     # the reference region's letters and gaps
+    _ref_l0 = L_cur[_let_ref] if _let_ref.sum() > 1000 else L_cur[_ref_in]
+    _ref_g0 = L_cur[_gap_ref] if _gap_ref.sum() > 1000 else L_cur[_ref_in]
+    m_l = float(_quantile_match(_ref_l0, src_L_in, L_cur)[_let_ref].mean()) if _let_ref.any() else src_mean_L
+    m_g = float(_quantile_match(_ref_g0, src_L_in, L_cur)[_gap_ref].mean()) if _gap_ref.any() else src_mean_L
+    target_mean = TONE_FIDELITY * src_mean_L
+    # dark mode: letters at 1.0, gaps scaled -- fidelity target, then legibility floor wins
+    g_dark = (target_mean - c_eff * m_l) / max(1e-6, (1.0 - c_eff) * m_g)
+    g_dark = float(np.clip(min(g_dark, (m_l - MIN_DELTA_L) / max(1.0, m_g)), GAP_TONE, 1.0))
+    # light mode: gaps at 1.0, letters scaled
+    l_light = (target_mean - (1.0 - c_eff) * m_g) / max(1e-6, c_eff * m_l)
+    l_light = float(np.clip(min(l_light, (m_g - MIN_DELTA_L) / max(1.0, m_l)), LETTER_TONE, 1.0))
+    gap_scale = (1.0 - light_f) * g_dark + light_f * 1.0
+    letter_scale = (1.0 - light_f) * 1.0 + light_f * l_light
+    # Dark-coat blend: gaps -> source tone, letters lifted to clear the floor (capped so a
+    # near-black coat can't turn its words white).
+    l_dark = float(np.clip((m_g + MIN_DELTA_L) / max(1.0, m_l), 1.0, 2.2))
+    gap_scale = (1.0 - dark_f) * gap_scale + dark_f * 1.0
+    letter_scale = (1.0 - dark_f) * letter_scale + dark_f * l_dark
+    # Enforce the legibility floor on the BLENDED scales (blending the two modes pulls the
+    # layers back toward each other -- measured delta 31 against a 40 floor). Push the offset
+    # layer of whichever mode dominates until the predicted delta meets the floor, per pixel.
+    pred_delta = m_l * letter_scale - m_g * gap_scale
+    _short = np.abs(pred_delta) < MIN_DELTA_L
+    _is_dark, _is_light = dark_f >= 0.5, light_f >= 0.5
+    letter_scale = np.where(_short & _is_dark, np.minimum(2.2, (m_g * gap_scale + MIN_DELTA_L) / max(1.0, m_l)), letter_scale)
+    gap_scale = np.where(_short & ~_is_dark & ~_is_light, np.maximum(GAP_TONE, (m_l * letter_scale - MIN_DELTA_L) / max(1.0, m_g)), gap_scale)
+    letter_scale = np.where(_short & ~_is_dark & _is_light, np.maximum(LETTER_TONE, (m_g * gap_scale - MIN_DELTA_L) / max(1.0, m_l)), letter_scale)
+    letter_scale = letter_scale.astype(np.float32); gap_scale = gap_scale.astype(np.float32)
+    # Soft per-pixel weights for the three local-floor rules below (a hard switch at 0.5 would
+    # draw a seam across a coat that grades from black to white).
+    w_dark = np.clip((dark_f - 0.25) / 0.5, 0, 1).astype(np.float32)
+    w_light = np.clip((light_f - 0.25) / 0.5, 0, 1).astype(np.float32)
+    w_mid = np.clip(1.0 - w_dark - w_light, 0, 1).astype(np.float32)
+
+    # Half photo, half restyled inside the eye: the photo's tone keeps the two eyes honest to
+    # each other, the restyled half keeps the iris rings and pupil legible as typography.
+    _eye_keep = (np.clip(eye_reveal, 0, 1) * 0.5).astype(np.float32)
+
+    # Per-animal tone. The letter, gap and saturation maps below are quantile maps from the
+    # composite's distribution to the source's, taken once over the whole silhouette. With
+    # two animals that is one coat: measured on the tabby beside the golden retriever, the
+    # cat rendered greyer and flatter than a tabby alone, because a map that has to serve a
+    # golden coat too cannot give a grey one its own range. With two or more faces, each
+    # face owns the part of the silhouette nearer to it (a Voronoi split on the eye
+    # midpoints), the maps are taken per region, and the results are blended by a soft
+    # weight over half an eye-separation so the seam between the two animals carries no
+    # step. With one face nothing here runs and the maps are exactly the ones they were.
+    _tone_regions = None
+    if extra_faces and len(attractor_pts) >= 2:
+        _ctrs = ([(0.5 * (attractor_pts[0][0] + attractor_pts[1][0]), 0.5 * (attractor_pts[0][1] + attractor_pts[1][1]))]
+                 + [(0.5 * (f["eyes"][0][0] + f["eyes"][1][0]), 0.5 * (f["eyes"][0][1] + f["eyes"][1][1])) for f in extra_faces])
+        _dst = np.stack([np.hypot(xx - cx, yy - cy) for (cx, cy) in _ctrs]).astype(np.float32)
+        _tau = 0.5 * float(np.mean([_es] + [f["es"] for f in extra_faces]))
+        _wgt = np.exp(-(_dst - _dst.min(axis=0, keepdims=True)) / max(1.0, _tau))
+        _wgt /= _wgt.sum(axis=0, keepdims=True)
+        _own = _dst.argmin(axis=0)
+        _tone_regions = [((_own == i) & m_in, _wgt[i]) for i in range(len(_ctrs))]
+    elif _face_r is not None:
+        # A person alone: the face against the rest (hair, clothes), blended over a third of
+        # an eye-separation past the face ellipse, so skin is matched to skin.
+        _wf = np.clip(1.0 - (_face_r - 1.0) / 0.3, 0.0, 1.0).astype(np.float32)
+        _tone_regions = [(m_in & (_face_r <= 1.0), _wf), (m_in & (_face_r > 1.0), (1.0 - _wf).astype(np.float32))]
+    _src_L2d = src_lab[..., 0]
+
+    def _qm_regional(sel, x, src2d, src_in):
+        """The quantile map of `x` onto the source, sampled from x[sel] (or the whole mask when
+        that is thin), per tonal region when there are two, blended by the region weights."""
+        if _tone_regions is None:
+            return _quantile_match(x[sel] if sel.sum() > 1000 else x[m_in], src_in, x)
+        out = np.zeros(x.shape, np.float32)
+        for _R, _w in _tone_regions:
+            _s = sel & _R
+            if _s.sum() <= 1000:
+                _s = m_in & _R
+            if _s.sum() < 50:
+                _s = sel if sel.sum() > 1000 else m_in     # a face with no silhouette of its own
+                _ref_src = src_in
+            else:
+                _ref_src = src2d[m_in & _R]
+            out += _w * _quantile_match(x[_s], _ref_src, x)
+        return out
+
+    def _chain(kk):
+        Lw = (L_cur + kk * (L_clahe - L_cur)) * mask + L_cur * (1.0 - mask)
+        # Each layer is matched to the source INDEPENDENTLY (a map built from gap pixels applied
+        # to letter pixels sent the letters above the source range -- measured: delta collapsed
+        # to +6 on the doodle). With both layers on the source's own range, the two scales set
+        # the separation exactly: delta = source mean x (letter_scale - gap_scale).
+        Lm_letters = _qm_regional(letters_in, Lw, _src_L2d, src_L_in) * letter_scale
+        Lm_gaps = _qm_regional(gaps_in, Lw, _src_L2d, src_L_in) * gap_scale
+        # Absolute local floor on top of the ratio: a x0.70 step is 18 L in an iris at L~60 --
+        # invisible -- which is exactly why eyes and nostrils still read as photo at 2x while the
+        # fur around them reads as words (measured on the crop). Words in shadow need a fixed
+        # minimum separation, not a proportional one.
+        # Compared against the tone of the NEARBY letters (normalized blur of the letter layer
+        # over a word-sized neighborhood), not the letter map evaluated at the gap pixel itself --
+        # that value is systematically low at gap pixels and made the floor bind everywhere
+        # (measured: whole-mask delta 37 -> 57, gaps L 98 -> 81), not just in shadow.
+        LOCAL_FLOOR = 24.0
+        _sig = max(2.0, base * 0.25)
+        _gw = 1.0 - ink_soft
+        _num = _gblur(Lm_gaps * _gw, (0, 0), sigmaX=_sig)
+        _den = _gblur(_gw, (0, 0), sigmaX=_sig)
+        local_gap_L = np.divide(_num, _den, out=Lm_gaps.copy(), where=_den > 1e-3)
+        _num = _gblur(Lm_letters * ink_soft, (0, 0), sigmaX=_sig)
+        _den = _gblur(ink_soft, (0, 0), sigmaX=_sig)
+        local_letter_L = np.divide(_num, _den, out=Lm_letters.copy(), where=_den > 1e-3)
+        # Dark coat: gaps hold the source; the floor lifts letters above the NEARBY gap tone.
+        letters_dark = np.maximum(Lm_letters, np.clip(local_gap_L + LOCAL_FLOOR, 0, 255))
+        # Mid coat: letters hold the source; gaps are held below the nearby letters.
+        gaps_mid = np.minimum(Lm_gaps, np.clip(local_letter_L - LOCAL_FLOOR, 0, 255))
+        # Light coat: gaps hold the source; letters are held below the nearby gaps.
+        letters_light = np.minimum(Lm_letters, np.clip(local_gap_L - LOCAL_FLOOR, 0, 255))
+        Lm_letters = w_dark * letters_dark + w_light * letters_light + w_mid * Lm_letters
+        Lm_gaps = w_mid * gaps_mid + (1.0 - w_mid) * Lm_gaps
+        Lm = ink_soft * Lm_letters + (1.0 - ink_soft) * Lm_gaps
+        # The revealed eye keeps the photo's own tone. The letter/gap restyling above chooses
+        # a coat mode from the blurred luminance around each pixel, and an eye's surroundings
+        # can put one eye in dark mode (letters lifted) and the other in mid mode (letters at
+        # their own dark tone): measured on the black lab, the two eyes came out at L 95 and
+        # L 27 with the same 0.96 reveal. Inside the eye reveal the composite's own L stands.
+        Lm = Lm * (1.0 - _eye_keep) + Lw * _eye_keep
+        Lm = Lm * mask + Lw * (1.0 - mask)
+        return Lw, Lm
+
+    lo, hi = 0.0, 1.0
+    _, Lm_hi = _chain(hi)
+    if _local_std(Lm_hi, m_in) <= target_ls:
+        k = hi
+    else:
+        for _ in range(7):
+            mid = 0.5 * (lo + hi)
+            _, Lm_mid = _chain(mid)
+            if _local_std(Lm_mid, m_in) < target_ls:
+                lo = mid
+            else:
+                hi = mid
+        k = 0.5 * (lo + hi)
+    L_work, L_matched = _chain(k)
+    if _dbg_pt is not None:
+        _log(f"  [probe {_dbg_pt[0]},{_dbg_pt[1]}] L before-CLAHE={L_cur[_dbg_pt[1], _dbg_pt[0]]:.0f} "
+              f"CLAHE(clip {clahe_clip})={L_clahe[_dbg_pt[1], _dbg_pt[0]]:.0f} blended(k={k:.2f})={L_work[_dbg_pt[1], _dbg_pt[0]]:.0f}")
+
+    # Step 2 -- luminance distribution match to the source (quantile map, monotonic), last so
+    # the delivered image's tonal range inside the mask is the source's by construction.
+    # (Already computed inside _chain above for the solved k.)
+    comp_lab = comp_lab.astype(np.float32)
+    comp_lab[..., 0] = L_matched * mask + L_work * (1.0 - mask)
+    comp_rgb = cv2.cvtColor(np.clip(comp_lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB)
+
+    # Step 3 -- saturation distribution match, same idea.
+    comp_hsv = cv2.cvtColor(comp_rgb, cv2.COLOR_RGB2HSV).astype(np.float32)
+    if human:
+        # A face: the quantile map over the whole silhouette (hair, clothes, skin as one
+        # distribution) left the skin more saturated than the photo (112 against 90 on the
+        # boy). Match the mean instead, a single gain, which keeps the photo's own relation
+        # between skin, lips and hair.
+        _sg = float(np.clip(float(src_hsv[..., 1][_ref_in].mean()) / max(1.0, float(comp_hsv[..., 1][_ref_in].mean())), 0.5, 1.5))
+        S_matched = comp_hsv[..., 1] * _sg
+    else:
+        S_matched = _qm_regional(m_in, comp_hsv[..., 1], src_hsv[..., 1], src_hsv[..., 1][m_in])
+    comp_hsv[..., 1] = S_matched * mask + comp_hsv[..., 1] * (1.0 - mask)
+    composited = cv2.cvtColor(np.clip(comp_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
+    _dbg("after L-match", comp_rgb.astype(np.float32))
+    _dbg("final (after S-match)", composited)
+    del comp_hsv, comp_rgb, comp_lab, S_matched, L_matched, L_work, L_clahe, src_hsv
+
+    L_after = cv2.cvtColor(np.clip(composited, 0, 255).astype(np.uint8), cv2.COLOR_RGB2LAB)[..., 0].astype(np.float32)
+    pcts = [5, 50, 95]
+    _log(f"tonal match (LAB L inside mask, pct {pcts}): source={np.percentile(src_lab[..., 0][m_in], pcts).round(0)} "
+          f"before={np.percentile(L_before, pcts).round(0)} after={np.percentile(L_after[m_in], pcts).round(0)}")
+    _log(f"local contrast (mean 32px-block L std): source={target_ls:.1f} before={cur_ls:.1f} "
+          f"after={_local_std(L_after, m_in):.1f}  (CLAHE clip={clahe_clip} blend k={k:.2f})")
+    del src_lab, L_before, L_cur
+    return light_f, dark_f, dark_mix, gap_scale, letter_scale, composited, L_after, pcts
+
+
+def _phase_tone_match(mask, human, attractor_pts, _es, xx, yy, bgr_source, composited, base, ink_raw, _dbg, _dbg_pt, extra_faces, eye_reveal, fine_blend):
+    """Tonal match: force the composite's luminance/saturation distribution INSIDE the mask. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Tonal match: force the composite's luminance/saturation distribution INSIDE the mask
+    # to equal the source photo's, by quantile mapping ------------------------------------------
+    # Every earlier haze fix tuned a constant toward the source and then eyeballed it. Measured
+    # afterward, the render was still a tonal compressor: (dog, LAB L inside mask) 5th pct 56 vs
+    # source 30, 95th pct 191 vs 209, median saturation 72 vs 102. Rather than keep guessing
+    # constants, enforce the target directly: map the composite's L (and HSV S) so that its
+    # quantiles inside the mask land exactly on the source's quantiles inside the mask. The map is
+    # monotonic, so nothing structural changes -- a letter that was darker than its gap is still
+    # darker than its gap -- but true blacks, true highlights, and the real saturation range come
+    # back by construction, and the result is verified by re-measuring, not by looking.
+    def _quantile_match(vals, ref_vals, x, n=256):
+        # 256 quantiles of a 2-3 million pixel layer, taken 21 times per render inside the
+        # bisection, were 3.4 s of a 47 s preview (profiled). A fixed-stride subsample of
+        # ~300k pixels gives the same 256 quantiles to well under 1 L unit, and stays
+        # deterministic.
+        q = np.linspace(0.0, 1.0, n)
+        sv = max(1, vals.size // 300000); sr = max(1, ref_vals.size // 300000)
+        return np.interp(x, np.quantile(vals[::sv], q), np.quantile(ref_vals[::sr], q))
+
+    def _local_std(L, m, blk=32):
+        Hh, Ww = L.shape
+        vals = [L[y:y + blk, x:x + blk].std()
+                for y in range(0, Hh - blk, blk) for x in range(0, Ww - blk, blk)
+                if m[y:y + blk, x:x + blk].mean() > 0.95]
+        return float(np.mean(vals)) if vals else 0.0
+
+    m_in = mask > 0.5
+    # A person: the FACE is the tonal reference, not the whole silhouette. The boy's mask is
+    # mostly a navy hoodie, so its mean L was 87 and the engine chose a dark-coat policy for a
+    # face at L 130 (measured: face rendered at L 92). For a human subject the reference
+    # samples, the coat-mode decision and the saturation gain come from an ellipse round the
+    # face, and the tonal maps run per region, face against the rest. For every animal
+    # `_ref_in` is `m_in` and nothing below changes.
+    _ref_in = m_in
+    _face_r = None
+    if human and len(attractor_pts) >= 2:
+        _fx = 0.5 * (attractor_pts[0][0] + attractor_pts[1][0])
+        _fy = 0.5 * (attractor_pts[0][1] + attractor_pts[1][1]) + 0.5 * _es
+        _face_r = np.sqrt(((xx - _fx) / (1.1 * _es)) ** 2 + ((yy - _fy) / (1.5 * _es)) ** 2).astype(np.float32)
+        _ref_in = m_in & (_face_r <= 1.0)
+        if int(_ref_in.sum()) < 500:
+            _ref_in, _face_r = m_in, None
+    src_lab = cv2.cvtColor(cv2.cvtColor(bgr_source, cv2.COLOR_BGR2RGB), cv2.COLOR_RGB2LAB).astype(np.float32)
+    src_hsv = cv2.cvtColor(bgr_source, cv2.COLOR_BGR2HSV).astype(np.float32)
+    comp_lab = cv2.cvtColor(np.clip(composited, 0, 255).astype(np.uint8), cv2.COLOR_RGB2LAB)
+    L_before = comp_lab[..., 0][m_in].astype(np.float32)
+
+    # Step 1 -- local (hair-scale) contrast, calibrated to the source's own measured value.
+    # Measured as the mean L std over 32px blocks inside the mask: source 19.9, render 11.8 once
+    # the raw photo colors are used. CLAHE recovers it but overshoots at any fixed setting (it
+    # amplifies the letter/gap alternation into harshness), so instead of picking a strength,
+    # blend toward a deliberately-strong CLAHE by exactly the fraction that lands the measured
+    # local std on the source's: k = (target - current) / (clahe - current), clamped to [0, 1].
+    # Runs BEFORE the distribution match so the match has the final say on the tonal range.
+    L_cur = comp_lab[..., 0].astype(np.float32)
+    target_ls = _local_std(src_lab[..., 0], m_in)
+    cur_ls = _local_std(L_cur, m_in)
+    # Escalate the CLAHE base until the target is actually reachable (a fixed base of 2.5 left
+    # the blend clamped at k=1.0 and still 4 points short), then solve for the exact blend.
+    clahe_clip, L_clahe, clahe_ls = None, L_cur, cur_ls
+    for clip in (2.5, 4.0, 6.0, 9.0, 14.0):
+        cand = cv2.createCLAHE(clipLimit=clip, tileGridSize=(8, 8)).apply(comp_lab[..., 0]).astype(np.float32)
+        cand_ls = _local_std(cand, m_in)
+        clahe_clip, L_clahe, clahe_ls = clip, cand, cand_ls
+        if cand_ls >= target_ls:
+            break
+    del cand
+    # Solve k against the POST-match result, not the pre-match blend: measured, calibrating
+    # pre-match landed at 19.9 and the quantile match then pulled it to 16.6 (the map compresses
+    # wherever the render's histogram is denser than the source's). Bisection on k over the
+    # full blend -> L-match chain, so the number that's checked is the number that ships.
+    src_L_in = src_lab[..., 0][_ref_in]
+    # The UNdilated ink: `ink_alpha` was widened in dark regions earlier (dark_gate), which is
+    # right for reveal but wrong for "is this pixel a letter" -- measured: with the dilated
+    # mask the letter/gap delta read +1 while an external check with the typography panel
+    # read +28. Use the canvas's own alpha for anything that means "letter vs gap."
+    # ink_raw (pre-modulation presence) was captured above, before the tone gain was applied.
+    # Presence, not opacity: any letter with alpha >= ~64 counts fully as a letter here, so the
+    # tone modulation applied to the canvas above (dim type where the photo is dark) can't
+    # weaken the letter/gap separation in the composite. Antialiased edges stay soft.
+    ink_soft = np.clip(ink_raw / 0.25, 0, 1)
+    letters_in = m_in & (ink_raw > 0.5)
+    # Design parameter, explicit: gaps sit at this fraction of the letter tone at the same
+    # spot. Letters are matched to the SOURCE (they carry its exact tonal range and color);
+    # gaps are the same picture pulled down by this factor so every letterform is brighter
+    # than its surroundings and the portrait is legibly made of words. A typographic portrait
+    # with visible words cannot share the photo's global histogram -- this is where the two
+    # goals are reconciled on purpose rather than fought over by a global match.
+    GAP_TONE = 0.66      # dark/mid coats: letters carry the source tone, gaps sit at this fraction
+    LETTER_TONE = 0.72   # light coats: gaps carry the source tone, letters sit at this fraction
+    # Coat-aware: a fixed GAP_TONE made a cream doodle read as a brown dog (69% of its area is
+    # gap). On a light coat the honest typographic look is dark words on the true light coat,
+    # not light words on a darkened one. `light_mix` moves continuously between the two by the
+    # source's own mean brightness inside the mask: ~0 for the dog/cat (mean L ~140-150),
+    # ~1 for the doodle (~185). Either way the letter/gap separation is guaranteed.
+    src_mean_L = float(src_L_in.mean())
+    light_mix = float(np.clip((src_mean_L - 145.0) / 30.0, 0.0, 1.0))
+    light_f, dark_f, dark_mix, gap_scale, letter_scale, composited, L_after, pcts = _phase_coat_tone_match(base, mask, fine_blend, src_lab, src_mean_L, ink_raw, m_in, GAP_TONE, LETTER_TONE, human, _ref_in, ink_soft, letters_in, L_cur, _quantile_match, src_L_in, eye_reveal, attractor_pts, extra_faces, xx, yy, _es, _face_r, L_clahe, _local_std, target_ls, _dbg, _dbg_pt, clahe_clip, comp_lab, src_hsv, L_before, cur_ls)
+    return m_in, composited, src_L_in, letters_in, light_mix, src_mean_L, L_after, dark_f, dark_mix, gap_scale, letter_scale, light_f, pcts
+
+
 def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None,
               landmarks=None, debug_dir=None, out_stem="render", verbose=False, backdrop_rgb=None,
               type_scale=None, auto_res=True, anatomy=None, human=False, wisp_alpha=None, max_px=None):
@@ -3242,409 +3667,9 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # now handled by the calibrated local-contrast step and the distribution match below.
     ek = 0.0
 
-    # ---- Tonal match: force the composite's luminance/saturation distribution INSIDE the mask
-    # to equal the source photo's, by quantile mapping ------------------------------------------
-    # Every earlier haze fix tuned a constant toward the source and then eyeballed it. Measured
-    # afterward, the render was still a tonal compressor: (dog, LAB L inside mask) 5th pct 56 vs
-    # source 30, 95th pct 191 vs 209, median saturation 72 vs 102. Rather than keep guessing
-    # constants, enforce the target directly: map the composite's L (and HSV S) so that its
-    # quantiles inside the mask land exactly on the source's quantiles inside the mask. The map is
-    # monotonic, so nothing structural changes -- a letter that was darker than its gap is still
-    # darker than its gap -- but true blacks, true highlights, and the real saturation range come
-    # back by construction, and the result is verified by re-measuring, not by looking.
-    def _quantile_match(vals, ref_vals, x, n=256):
-        # 256 quantiles of a 2-3 million pixel layer, taken 21 times per render inside the
-        # bisection, were 3.4 s of a 47 s preview (profiled). A fixed-stride subsample of
-        # ~300k pixels gives the same 256 quantiles to well under 1 L unit, and stays
-        # deterministic.
-        q = np.linspace(0.0, 1.0, n)
-        sv = max(1, vals.size // 300000); sr = max(1, ref_vals.size // 300000)
-        return np.interp(x, np.quantile(vals[::sv], q), np.quantile(ref_vals[::sr], q))
-
-    def _local_std(L, m, blk=32):
-        Hh, Ww = L.shape
-        vals = [L[y:y + blk, x:x + blk].std()
-                for y in range(0, Hh - blk, blk) for x in range(0, Ww - blk, blk)
-                if m[y:y + blk, x:x + blk].mean() > 0.95]
-        return float(np.mean(vals)) if vals else 0.0
-
-    m_in = mask > 0.5
-    # A person: the FACE is the tonal reference, not the whole silhouette. The boy's mask is
-    # mostly a navy hoodie, so its mean L was 87 and the engine chose a dark-coat policy for a
-    # face at L 130 (measured: face rendered at L 92). For a human subject the reference
-    # samples, the coat-mode decision and the saturation gain come from an ellipse round the
-    # face, and the tonal maps run per region, face against the rest. For every animal
-    # `_ref_in` is `m_in` and nothing below changes.
-    _ref_in = m_in
-    _face_r = None
-    if human and len(attractor_pts) >= 2:
-        _fx = 0.5 * (attractor_pts[0][0] + attractor_pts[1][0])
-        _fy = 0.5 * (attractor_pts[0][1] + attractor_pts[1][1]) + 0.5 * _es
-        _face_r = np.sqrt(((xx - _fx) / (1.1 * _es)) ** 2 + ((yy - _fy) / (1.5 * _es)) ** 2).astype(np.float32)
-        _ref_in = m_in & (_face_r <= 1.0)
-        if int(_ref_in.sum()) < 500:
-            _ref_in, _face_r = m_in, None
-    src_lab = cv2.cvtColor(cv2.cvtColor(bgr_source, cv2.COLOR_BGR2RGB), cv2.COLOR_RGB2LAB).astype(np.float32)
-    src_hsv = cv2.cvtColor(bgr_source, cv2.COLOR_BGR2HSV).astype(np.float32)
-    comp_lab = cv2.cvtColor(np.clip(composited, 0, 255).astype(np.uint8), cv2.COLOR_RGB2LAB)
-    L_before = comp_lab[..., 0][m_in].astype(np.float32)
-
-    # Step 1 -- local (hair-scale) contrast, calibrated to the source's own measured value.
-    # Measured as the mean L std over 32px blocks inside the mask: source 19.9, render 11.8 once
-    # the raw photo colors are used. CLAHE recovers it but overshoots at any fixed setting (it
-    # amplifies the letter/gap alternation into harshness), so instead of picking a strength,
-    # blend toward a deliberately-strong CLAHE by exactly the fraction that lands the measured
-    # local std on the source's: k = (target - current) / (clahe - current), clamped to [0, 1].
-    # Runs BEFORE the distribution match so the match has the final say on the tonal range.
-    L_cur = comp_lab[..., 0].astype(np.float32)
-    target_ls = _local_std(src_lab[..., 0], m_in)
-    cur_ls = _local_std(L_cur, m_in)
-    # Escalate the CLAHE base until the target is actually reachable (a fixed base of 2.5 left
-    # the blend clamped at k=1.0 and still 4 points short), then solve for the exact blend.
-    clahe_clip, L_clahe, clahe_ls = None, L_cur, cur_ls
-    for clip in (2.5, 4.0, 6.0, 9.0, 14.0):
-        cand = cv2.createCLAHE(clipLimit=clip, tileGridSize=(8, 8)).apply(comp_lab[..., 0]).astype(np.float32)
-        cand_ls = _local_std(cand, m_in)
-        clahe_clip, L_clahe, clahe_ls = clip, cand, cand_ls
-        if cand_ls >= target_ls:
-            break
-    del cand
-    # Solve k against the POST-match result, not the pre-match blend: measured, calibrating
-    # pre-match landed at 19.9 and the quantile match then pulled it to 16.6 (the map compresses
-    # wherever the render's histogram is denser than the source's). Bisection on k over the
-    # full blend -> L-match chain, so the number that's checked is the number that ships.
-    src_L_in = src_lab[..., 0][_ref_in]
-    # The UNdilated ink: `ink_alpha` was widened in dark regions earlier (dark_gate), which is
-    # right for reveal but wrong for "is this pixel a letter" -- measured: with the dilated
-    # mask the letter/gap delta read +1 while an external check with the typography panel
-    # read +28. Use the canvas's own alpha for anything that means "letter vs gap."
-    # ink_raw (pre-modulation presence) was captured above, before the tone gain was applied.
-    # Presence, not opacity: any letter with alpha >= ~64 counts fully as a letter here, so the
-    # tone modulation applied to the canvas above (dim type where the photo is dark) can't
-    # weaken the letter/gap separation in the composite. Antialiased edges stay soft.
-    ink_soft = np.clip(ink_raw / 0.25, 0, 1)
-    letters_in = m_in & (ink_raw > 0.5)
-    # Design parameter, explicit: gaps sit at this fraction of the letter tone at the same
-    # spot. Letters are matched to the SOURCE (they carry its exact tonal range and color);
-    # gaps are the same picture pulled down by this factor so every letterform is brighter
-    # than its surroundings and the portrait is legibly made of words. A typographic portrait
-    # with visible words cannot share the photo's global histogram -- this is where the two
-    # goals are reconciled on purpose rather than fought over by a global match.
-    GAP_TONE = 0.66      # dark/mid coats: letters carry the source tone, gaps sit at this fraction
-    LETTER_TONE = 0.72   # light coats: gaps carry the source tone, letters sit at this fraction
-    # Coat-aware: a fixed GAP_TONE made a cream doodle read as a brown dog (69% of its area is
-    # gap). On a light coat the honest typographic look is dark words on the true light coat,
-    # not light words on a darkened one. `light_mix` moves continuously between the two by the
-    # source's own mean brightness inside the mask: ~0 for the dog/cat (mean L ~140-150),
-    # ~1 for the doodle (~185). Either way the letter/gap separation is guaranteed.
-    src_mean_L = float(src_L_in.mean())
-    light_mix = float(np.clip((src_mean_L - 145.0) / 30.0, 0.0, 1.0))
-    # ---- LOCAL coat mode. One mode per photo fails any two-tone or shadowed coat: on the
-    # border collie (staging baseline) the photo's mean landed in the middle, so the black
-    # half got the mid-coat treatment -- letters at the fur's own near-black tone, gaps pushed
-    # darker still -- and read as empty. The coat luminance is read per pixel (masked blur,
-    # 1.5 base, so a word-sized patch decides, not a hair), and the same ramps that pick the
-    # photo's mode pick each region's. The scalar solves below still set the layer scales
-    # from the photo's measured means; the per-pixel mixes only choose which layer carries
-    # the source tone at each spot.
-    # The eyes and nose are left OUT of the coat reading: an eye's own iris and glint lifted
-    # the blurred luminance around one eye above the mid-coat threshold and not the other, so
-    # the two eyes of a black lab were restyled in different modes (measured: L 95 vs L 27 with
-    # the same reveal). The coat mode at a feature is now its surrounding fur's.
-    _cw = (mask > 0.5).astype(np.float32) * fine_blend
-    _csig = max(4.0, base * 1.5)
-    _cnum = _gblur(src_lab[..., 0] * _cw, (0, 0), sigmaX=_csig)
-    _cden = _gblur(_cw, (0, 0), sigmaX=_csig)
-    coat_L = np.divide(_cnum, _cden, out=np.full_like(_cnum, src_mean_L), where=_cden > 1e-3)
-    light_f = np.clip((coat_L - 145.0) / 30.0, 0.0, 1.0).astype(np.float32)
-    dark_f = np.clip((120.0 - coat_L) / 30.0, 0.0, 1.0).astype(np.float32)
-    # Dark coats (chocolate/black; mean L under ~95): the mirror of the light-coat rule. Seen on
-    # staging with a chocolate Lab: letters at the coat's own dark tone with gaps pushed darker
-    # still is a dark photo with slightly-less-dark text on it. The honest typographic read on a
-    # dark coat is LIGHT words on the true dark fur -- gaps carry the source, letters are lifted.
-    # Ramp 120 -> 90: the staging chocolate Lab measured mean L 98 (dark_mix 0.73 here), the
-    # black Lab test photo 45 (1.0); the tan dog (147) and tabby (141) stay out of it (0.0).
-    dark_mix = float(np.clip((120.0 - src_mean_L) / 30.0, 0.0, 1.0))
-    gaps_in = m_in & (ink_raw < 0.1)
-    # Solve the two layer scales from two stated targets instead of fixed constants:
-    #   fidelity  -- composite mean L inside the mask = TONE_FIDELITY x source mean L
-    #                (measured cost of visible words; 0.66 fixed gave 0.76 on the dog, 0.85 on
-    #                the doodle -- the rule makes it the same everywhere), and
-    #   legibility -- |letter mean - gap mean| >= MIN_DELTA_L, which wins if the two conflict.
-    # The layer carrying the source tone stays at 1.0; the other is solved from the letter
-    # coverage; the two modes blend by light_mix. GAP_TONE/LETTER_TONE above are now the floors.
-    TONE_FIDELITY, MIN_DELTA_L = (1.0, 24.0) if human else (0.85, 40.0)   # delta 29 read too photographic on the dog; 73 too dark; skin keeps more of its own value
-    c_eff = float(ink_soft[_ref_in].mean())                            # soft letter coverage
-    # Solve from the MEASURED unscaled layer means (m_l, m_g), not from the assumption that a
-    # matched layer's mean equals the source's -- it doesn't (measured ~139 vs 147 on the dog,
-    # which left the delta at 31 against a 40 floor when solved analytically).
-    _let_ref, _gap_ref = letters_in & _ref_in, gaps_in & _ref_in     # the reference region's letters and gaps
-    _ref_l0 = L_cur[_let_ref] if _let_ref.sum() > 1000 else L_cur[_ref_in]
-    _ref_g0 = L_cur[_gap_ref] if _gap_ref.sum() > 1000 else L_cur[_ref_in]
-    m_l = float(_quantile_match(_ref_l0, src_L_in, L_cur)[_let_ref].mean()) if _let_ref.any() else src_mean_L
-    m_g = float(_quantile_match(_ref_g0, src_L_in, L_cur)[_gap_ref].mean()) if _gap_ref.any() else src_mean_L
-    target_mean = TONE_FIDELITY * src_mean_L
-    # dark mode: letters at 1.0, gaps scaled -- fidelity target, then legibility floor wins
-    g_dark = (target_mean - c_eff * m_l) / max(1e-6, (1.0 - c_eff) * m_g)
-    g_dark = float(np.clip(min(g_dark, (m_l - MIN_DELTA_L) / max(1.0, m_g)), GAP_TONE, 1.0))
-    # light mode: gaps at 1.0, letters scaled
-    l_light = (target_mean - (1.0 - c_eff) * m_g) / max(1e-6, c_eff * m_l)
-    l_light = float(np.clip(min(l_light, (m_g - MIN_DELTA_L) / max(1.0, m_l)), LETTER_TONE, 1.0))
-    gap_scale = (1.0 - light_f) * g_dark + light_f * 1.0
-    letter_scale = (1.0 - light_f) * 1.0 + light_f * l_light
-    # Dark-coat blend: gaps -> source tone, letters lifted to clear the floor (capped so a
-    # near-black coat can't turn its words white).
-    l_dark = float(np.clip((m_g + MIN_DELTA_L) / max(1.0, m_l), 1.0, 2.2))
-    gap_scale = (1.0 - dark_f) * gap_scale + dark_f * 1.0
-    letter_scale = (1.0 - dark_f) * letter_scale + dark_f * l_dark
-    # Enforce the legibility floor on the BLENDED scales (blending the two modes pulls the
-    # layers back toward each other -- measured delta 31 against a 40 floor). Push the offset
-    # layer of whichever mode dominates until the predicted delta meets the floor, per pixel.
-    pred_delta = m_l * letter_scale - m_g * gap_scale
-    _short = np.abs(pred_delta) < MIN_DELTA_L
-    _is_dark, _is_light = dark_f >= 0.5, light_f >= 0.5
-    letter_scale = np.where(_short & _is_dark, np.minimum(2.2, (m_g * gap_scale + MIN_DELTA_L) / max(1.0, m_l)), letter_scale)
-    gap_scale = np.where(_short & ~_is_dark & ~_is_light, np.maximum(GAP_TONE, (m_l * letter_scale - MIN_DELTA_L) / max(1.0, m_g)), gap_scale)
-    letter_scale = np.where(_short & ~_is_dark & _is_light, np.maximum(LETTER_TONE, (m_g * gap_scale - MIN_DELTA_L) / max(1.0, m_l)), letter_scale)
-    letter_scale = letter_scale.astype(np.float32); gap_scale = gap_scale.astype(np.float32)
-    # Soft per-pixel weights for the three local-floor rules below (a hard switch at 0.5 would
-    # draw a seam across a coat that grades from black to white).
-    w_dark = np.clip((dark_f - 0.25) / 0.5, 0, 1).astype(np.float32)
-    w_light = np.clip((light_f - 0.25) / 0.5, 0, 1).astype(np.float32)
-    w_mid = np.clip(1.0 - w_dark - w_light, 0, 1).astype(np.float32)
-
-    # Half photo, half restyled inside the eye: the photo's tone keeps the two eyes honest to
-    # each other, the restyled half keeps the iris rings and pupil legible as typography.
-    _eye_keep = (np.clip(eye_reveal, 0, 1) * 0.5).astype(np.float32)
-
-    # Per-animal tone. The letter, gap and saturation maps below are quantile maps from the
-    # composite's distribution to the source's, taken once over the whole silhouette. With
-    # two animals that is one coat: measured on the tabby beside the golden retriever, the
-    # cat rendered greyer and flatter than a tabby alone, because a map that has to serve a
-    # golden coat too cannot give a grey one its own range. With two or more faces, each
-    # face owns the part of the silhouette nearer to it (a Voronoi split on the eye
-    # midpoints), the maps are taken per region, and the results are blended by a soft
-    # weight over half an eye-separation so the seam between the two animals carries no
-    # step. With one face nothing here runs and the maps are exactly the ones they were.
-    _tone_regions = None
-    if extra_faces and len(attractor_pts) >= 2:
-        _ctrs = ([(0.5 * (attractor_pts[0][0] + attractor_pts[1][0]), 0.5 * (attractor_pts[0][1] + attractor_pts[1][1]))]
-                 + [(0.5 * (f["eyes"][0][0] + f["eyes"][1][0]), 0.5 * (f["eyes"][0][1] + f["eyes"][1][1])) for f in extra_faces])
-        _dst = np.stack([np.hypot(xx - cx, yy - cy) for (cx, cy) in _ctrs]).astype(np.float32)
-        _tau = 0.5 * float(np.mean([_es] + [f["es"] for f in extra_faces]))
-        _wgt = np.exp(-(_dst - _dst.min(axis=0, keepdims=True)) / max(1.0, _tau))
-        _wgt /= _wgt.sum(axis=0, keepdims=True)
-        _own = _dst.argmin(axis=0)
-        _tone_regions = [((_own == i) & m_in, _wgt[i]) for i in range(len(_ctrs))]
-    elif _face_r is not None:
-        # A person alone: the face against the rest (hair, clothes), blended over a third of
-        # an eye-separation past the face ellipse, so skin is matched to skin.
-        _wf = np.clip(1.0 - (_face_r - 1.0) / 0.3, 0.0, 1.0).astype(np.float32)
-        _tone_regions = [(m_in & (_face_r <= 1.0), _wf), (m_in & (_face_r > 1.0), (1.0 - _wf).astype(np.float32))]
-    _src_L2d = src_lab[..., 0]
-
-    def _qm_regional(sel, x, src2d, src_in):
-        """The quantile map of `x` onto the source, sampled from x[sel] (or the whole mask when
-        that is thin), per tonal region when there are two, blended by the region weights."""
-        if _tone_regions is None:
-            return _quantile_match(x[sel] if sel.sum() > 1000 else x[m_in], src_in, x)
-        out = np.zeros(x.shape, np.float32)
-        for _R, _w in _tone_regions:
-            _s = sel & _R
-            if _s.sum() <= 1000:
-                _s = m_in & _R
-            if _s.sum() < 50:
-                _s = sel if sel.sum() > 1000 else m_in     # a face with no silhouette of its own
-                _ref_src = src_in
-            else:
-                _ref_src = src2d[m_in & _R]
-            out += _w * _quantile_match(x[_s], _ref_src, x)
-        return out
-
-    def _chain(kk):
-        Lw = (L_cur + kk * (L_clahe - L_cur)) * mask + L_cur * (1.0 - mask)
-        # Each layer is matched to the source INDEPENDENTLY (a map built from gap pixels applied
-        # to letter pixels sent the letters above the source range -- measured: delta collapsed
-        # to +6 on the doodle). With both layers on the source's own range, the two scales set
-        # the separation exactly: delta = source mean x (letter_scale - gap_scale).
-        Lm_letters = _qm_regional(letters_in, Lw, _src_L2d, src_L_in) * letter_scale
-        Lm_gaps = _qm_regional(gaps_in, Lw, _src_L2d, src_L_in) * gap_scale
-        # Absolute local floor on top of the ratio: a x0.70 step is 18 L in an iris at L~60 --
-        # invisible -- which is exactly why eyes and nostrils still read as photo at 2x while the
-        # fur around them reads as words (measured on the crop). Words in shadow need a fixed
-        # minimum separation, not a proportional one.
-        # Compared against the tone of the NEARBY letters (normalized blur of the letter layer
-        # over a word-sized neighborhood), not the letter map evaluated at the gap pixel itself --
-        # that value is systematically low at gap pixels and made the floor bind everywhere
-        # (measured: whole-mask delta 37 -> 57, gaps L 98 -> 81), not just in shadow.
-        LOCAL_FLOOR = 24.0
-        _sig = max(2.0, base * 0.25)
-        _gw = 1.0 - ink_soft
-        _num = _gblur(Lm_gaps * _gw, (0, 0), sigmaX=_sig)
-        _den = _gblur(_gw, (0, 0), sigmaX=_sig)
-        local_gap_L = np.divide(_num, _den, out=Lm_gaps.copy(), where=_den > 1e-3)
-        _num = _gblur(Lm_letters * ink_soft, (0, 0), sigmaX=_sig)
-        _den = _gblur(ink_soft, (0, 0), sigmaX=_sig)
-        local_letter_L = np.divide(_num, _den, out=Lm_letters.copy(), where=_den > 1e-3)
-        # Dark coat: gaps hold the source; the floor lifts letters above the NEARBY gap tone.
-        letters_dark = np.maximum(Lm_letters, np.clip(local_gap_L + LOCAL_FLOOR, 0, 255))
-        # Mid coat: letters hold the source; gaps are held below the nearby letters.
-        gaps_mid = np.minimum(Lm_gaps, np.clip(local_letter_L - LOCAL_FLOOR, 0, 255))
-        # Light coat: gaps hold the source; letters are held below the nearby gaps.
-        letters_light = np.minimum(Lm_letters, np.clip(local_gap_L - LOCAL_FLOOR, 0, 255))
-        Lm_letters = w_dark * letters_dark + w_light * letters_light + w_mid * Lm_letters
-        Lm_gaps = w_mid * gaps_mid + (1.0 - w_mid) * Lm_gaps
-        Lm = ink_soft * Lm_letters + (1.0 - ink_soft) * Lm_gaps
-        # The revealed eye keeps the photo's own tone. The letter/gap restyling above chooses
-        # a coat mode from the blurred luminance around each pixel, and an eye's surroundings
-        # can put one eye in dark mode (letters lifted) and the other in mid mode (letters at
-        # their own dark tone): measured on the black lab, the two eyes came out at L 95 and
-        # L 27 with the same 0.96 reveal. Inside the eye reveal the composite's own L stands.
-        Lm = Lm * (1.0 - _eye_keep) + Lw * _eye_keep
-        Lm = Lm * mask + Lw * (1.0 - mask)
-        return Lw, Lm
-
-    lo, hi = 0.0, 1.0
-    _, Lm_hi = _chain(hi)
-    if _local_std(Lm_hi, m_in) <= target_ls:
-        k = hi
-    else:
-        for _ in range(7):
-            mid = 0.5 * (lo + hi)
-            _, Lm_mid = _chain(mid)
-            if _local_std(Lm_mid, m_in) < target_ls:
-                lo = mid
-            else:
-                hi = mid
-        k = 0.5 * (lo + hi)
-    L_work, L_matched = _chain(k)
-    if _dbg_pt is not None:
-        _log(f"  [probe {_dbg_pt[0]},{_dbg_pt[1]}] L before-CLAHE={L_cur[_dbg_pt[1], _dbg_pt[0]]:.0f} "
-              f"CLAHE(clip {clahe_clip})={L_clahe[_dbg_pt[1], _dbg_pt[0]]:.0f} blended(k={k:.2f})={L_work[_dbg_pt[1], _dbg_pt[0]]:.0f}")
-
-    # Step 2 -- luminance distribution match to the source (quantile map, monotonic), last so
-    # the delivered image's tonal range inside the mask is the source's by construction.
-    # (Already computed inside _chain above for the solved k.)
-    comp_lab = comp_lab.astype(np.float32)
-    comp_lab[..., 0] = L_matched * mask + L_work * (1.0 - mask)
-    comp_rgb = cv2.cvtColor(np.clip(comp_lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB)
-
-    # Step 3 -- saturation distribution match, same idea.
-    comp_hsv = cv2.cvtColor(comp_rgb, cv2.COLOR_RGB2HSV).astype(np.float32)
-    if human:
-        # A face: the quantile map over the whole silhouette (hair, clothes, skin as one
-        # distribution) left the skin more saturated than the photo (112 against 90 on the
-        # boy). Match the mean instead, a single gain, which keeps the photo's own relation
-        # between skin, lips and hair.
-        _sg = float(np.clip(float(src_hsv[..., 1][_ref_in].mean()) / max(1.0, float(comp_hsv[..., 1][_ref_in].mean())), 0.5, 1.5))
-        S_matched = comp_hsv[..., 1] * _sg
-    else:
-        S_matched = _qm_regional(m_in, comp_hsv[..., 1], src_hsv[..., 1], src_hsv[..., 1][m_in])
-    comp_hsv[..., 1] = S_matched * mask + comp_hsv[..., 1] * (1.0 - mask)
-    composited = cv2.cvtColor(np.clip(comp_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
-    _dbg("after L-match", comp_rgb.astype(np.float32))
-    _dbg("final (after S-match)", composited)
-    del comp_hsv, comp_rgb, comp_lab, S_matched, L_matched, L_work, L_clahe, src_hsv
-
-    L_after = cv2.cvtColor(np.clip(composited, 0, 255).astype(np.uint8), cv2.COLOR_RGB2LAB)[..., 0].astype(np.float32)
-    pcts = [5, 50, 95]
-    _log(f"tonal match (LAB L inside mask, pct {pcts}): source={np.percentile(src_lab[..., 0][m_in], pcts).round(0)} "
-          f"before={np.percentile(L_before, pcts).round(0)} after={np.percentile(L_after[m_in], pcts).round(0)}")
-    _log(f"local contrast (mean 32px-block L std): source={target_ls:.1f} before={cur_ls:.1f} "
-          f"after={_local_std(L_after, m_in):.1f}  (CLAHE clip={clahe_clip} blend k={k:.2f})")
-    del src_lab, L_before, L_cur
-    # Typography legibility in the delivered composite, as a number: mean L of letter pixels vs
-    # gap pixels inside the mask. If these converge, the words have disappeared into the photo.
-    gap_px = m_in & (ink_raw < 0.1)
-    if letters_in.any() and gap_px.any():
-        _log(f"letters-only L pct {pcts}: source={np.percentile(src_L_in, pcts).round(0)} "
-              f"letters={np.percentile(L_after[letters_in], pcts).round(0)}")
-        _log(f"letter/gap luminance: letters L={L_after[letters_in].mean():.0f}  gaps L={L_after[gap_px].mean():.0f}  "
-              f"(delta {L_after[letters_in].mean() - L_after[gap_px].mean():+.0f}; photo light_mix={light_mix:.2f} dark_mix={dark_mix:.2f}; "
-              f"local dark-mode share {float((dark_f[m_in] >= 0.5).mean()):.0%} light-mode share {float((light_f[m_in] >= 0.5).mean()):.0%}; "
-              f"gap_scale={float(gap_scale[m_in].mean()):.2f} letter_scale={float(letter_scale[m_in].mean()):.2f}; letters cover {letters_in.sum() / m_in.sum():.0%})")
-        _log(f"overall tone: composite mean L inside mask={L_after[m_in].mean():.0f} vs source {src_mean_L:.0f}")
-    # Final typography coverage by anatomical zone (the "areas not rendered with typography" number).
-    _extra = {}
-    if nose_fit_final is not None:
-        _nz = np.zeros((H, W), np.uint8)
-        (fncx, fncy), (fna, fnb), fnangle = nose_fit_final
-        cv2.ellipse(_nz, (int(round(fncx)), int(round(fncy))), (max(1, int(round(fna))), max(1, int(round(fnb)))),
-                   fnangle, 0, 360, 1, -1)
-        _extra["nose"] = _nz > 0
-    cov_final = region_coverage(ink_raw, mask, region_map, _extra)
-    _log("typography coverage by zone: " + "  ".join(f"{k} {v[0]:.0%}" for k, v in cov_final.items()))
-    # Letter/gap separation where it matters most -- per zone, not just the whole mask.
-    _zone_masks = {"eyes": (region_map == 1) | (region_map == 2), "rest": region_map == 3}
-    _zone_masks.update(_extra)
-    _parts = []
-    for _zn, _zm in _zone_masks.items():
-        _l, _g = m_in & _zm & (ink_raw > 0.5), m_in & _zm & (ink_raw < 0.1)
-        if _l.sum() > 50 and _g.sum() > 50:
-            _parts.append(f"{_zn} {L_after[_l].mean() - L_after[_g].mean():+.0f}")
-    _log("letter/gap delta by zone: " + "  ".join(_parts))
-    _TL.placements[:] = best_placements
-    _TL.pass_tags[:] = best_pass
-    rep = placement_report(region_map, mask, _extra)
-    _log("words placed by zone (count / median px / 10th-pct px): "
-          + "  ".join(f"{k} {v[0]} / {v[1]:.0f} / {v[2]:.0f}" for k, v in rep.items()))
-    fp_cov = footprint_coverage(best_placements, mask)
-    coll = best_stats["overlap_px"] / max(1, best_stats["glyph_px"])
-    coll_core = best_stats["core_overlap_px"] / max(1, best_stats["core_px"])
-    # "Exposed space": animal pixels farther than half a glyph (3px at the 6px floor) from any
-    # typography -- the direct measure of "every exposed space has typography."
-    # Free-space channel width via distance-to-ink: "exposed" = farther than half a glyph from any
-    # typography, scaled with the render (3px at 1x); "fillable-but-unfilled" = free channels
-    # wide enough for a glyph at the 6px floor (>=8px), the part of the deficit that's ours to fix.
-    _dist = cv2.distanceTransform((ink_raw <= 0.3).astype(np.uint8), cv2.DIST_L2, 5)
-    _thr = 3.0 * max(1.0, W / 1030.0)
-    exposed = float(((_dist > _thr) & m_in)[m_in].mean())
-    fillable = float(((_dist * 2 >= 8) & m_in)[m_in].mean())
-    _log(f"CLAIM METRICS: typography footprint covers {fp_cov:.1%} of the animal; exposed space "
-          f"(>{_thr:.0f}px from any glyph) {exposed:.1%}; glyph-fillable but unfilled {fillable:.1%}; "
-          f"{len(best_placements)} words; collisions: letter BODIES overlapping {coll_core:.2%}, "
-          f"any antialiased touch {coll:.2%}")
-    # Where the collisions come from, pass by pass: each pass's own body-overlap rate, and its
-    # share of every colliding pixel in the portrait.
-    _tot_ov = max(1, sum(v[1] for v in best_pass_stats.values()))
-    _log("collisions by pass: " + "  ".join(
-        f"{k} {v[1] / max(1, v[0]):.2%} ({v[1] / _tot_ov:.0%} of all)"
-        for k, v in sorted(best_pass_stats.items(), key=lambda kv: -kv[1][1])))
-
-    composited_u8 = np.clip(composited, 0, 255).astype(np.uint8)
-    if debug_dir:
-        photo_out = out_path.rsplit(".", 1)[0] + "_on_photo.jpg"
-        Image.fromarray(composited_u8).save(photo_out, quality=92)
-
-    # ---- Recommendation #14: automatic type-only likeness test ----------------------------
-    # Four panels: A (source), B (typography+color, already saved as photo_out), C (typography
-    # only, already saved as out_path -- render_word_bitmap already fills near-black on white,
-    # so it was monochrome by construction), D (typography-only blurred past legibility). Plus
-    # a single face-weighted number so a future change can be judged against this run instead
-    # of by eye. ~25px at this photo's resolution, per the recommendation's "~20-30px."
-    blur_sigma = max(8.0, W * 0.022)
-    score, blurred_type, blurred_source = type_only_likeness(
-        canvas, mask, bgr_source, attractor_pts, base, blur_sigma, extra_faces)
-    if debug_dir:
-        stem = out_path.rsplit(".", 1)[0]
-        Image.fromarray(np.clip(blurred_type, 0, 255).astype(np.uint8)).save(stem + "_D_blurred.jpg")
-        Image.fromarray(np.clip(blurred_source, 0, 255).astype(np.uint8)).save(stem + "_D_blurred_source.jpg")
-        cv2.imwrite(stem + "_A_source.jpg", bgr_source)
-        _log(f"wrote {out_path}; wrote {photo_out}; wrote {stem}_A_source.jpg, {stem}_D_blurred.jpg")
-    _log(f"type-only likeness score (face-weighted SSIM, blur sigma={blur_sigma:.1f}): {score:.4f}")
-    metrics = {
-        "footprint_coverage": fp_cov, "exposed_space": exposed, "fillable_unfilled": fillable,
-        "elements": len(best_placements), "collision_body": coll_core, "collision_any": coll,
-        "type_only_likeness": score, "zone_coverage": {k: v[0] for k, v in cov_final.items()},
-        "words_by_zone": rep, "attractor_pts": attractor_pts, "size": (W, H),
-        # How much of each final pixel is the OUTER ground (outside the animal, under no
-        # fringe hair): lets a later request swap the backdrop color by arithmetic instead of
-        # a re-render. Stored as uint8 to keep the render cache small.
-        "outside_w": np.clip(((1.0 - mask) if _wisp_fr is None else
-                              ((1.0 - np.clip(wisp_alpha, 0, 1)) * _wisp_fr + (1.0 - mask) * (1.0 - _wisp_fr)))
-                             * (1.0 - whisker_ink_alpha) * 255.0, 0, 255).astype(np.uint8),
-        "backdrop_rgb": tuple(float(v) for v in backdrop_rgb) if backdrop_rgb is not None else None,
-    }
+    m_in, composited, src_L_in, letters_in, light_mix, src_mean_L, L_after, dark_f, dark_mix, gap_scale, letter_scale, light_f, pcts = _phase_tone_match(mask, human, attractor_pts, _es, xx, yy, bgr_source, composited, base, ink_raw, _dbg, _dbg_pt, extra_faces, eye_reveal, fine_blend)
+    cov_final, rep, fp_cov, coll, coll_core, exposed, fillable, composited_u8, photo_out = _phase_final_metrics(mask, ink_raw, m_in, letters_in, pcts, src_L_in, L_after, dark_mix, light_mix, dark_f, light_f, gap_scale, letter_scale, src_mean_L, nose_fit_final, H, W, region_map, best_placements, best_pass, best_stats, best_pass_stats, composited, debug_dir, out_path)
+    metrics = _phase_likeness_test(photo_out, out_path, W, attractor_pts, base, bgr_source, canvas, extra_faces, mask, debug_dir, exposed, fillable, fp_cov, best_placements, coll, coll_core, cov_final, H, rep, _wisp_fr, wisp_alpha, whisker_ink_alpha, backdrop_rgb)
     return composited_u8, metrics
 
 
