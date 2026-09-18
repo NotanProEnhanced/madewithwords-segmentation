@@ -2113,6 +2113,666 @@ def _phase_tone_match(mask, human, attractor_pts, _es, xx, yy, bgr_source, compo
     return m_in, composited, src_L_in, letters_in, light_mix, src_mean_L, L_after, dark_f, dark_mix, gap_scale, letter_scale, light_f, pcts
 
 
+def _phase_wisps(a, feat, wisp_alpha, _outer_keep, mask, photo_rgb, composited, ink_alpha, eye_reveal, sat_anomaly, wash, ground_rgb, bgr_clean, whisker_outside, whisker_zone, deep_fur_rgb, gray):
+    """Wisps: a person's flyaway hair, outside the solid silhouette. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Wisps: a person's flyaway hair, outside the solid silhouette -------------------
+    # Displacement feathers its silhouette with a guided filter that snaps the matte onto
+    # the hair's real edges, so a strand a few pixels wide keeps its own alpha and shows on
+    # the backdrop. This engine's matte is a solidified silhouette with a blurred outline
+    # (right for fur, where the letters carry the edge), and outside that outline the
+    # ground was painted flat -- the strands the customer sees in Displacement were gone.
+    # `wisp_alpha` is that same guided fringe matte, built by the entry point for a person;
+    # outside the solid silhouette the pixel is the outer ground with the photo over it at
+    # the fringe's own alpha, exactly as Displacement composites its edge. Inside nothing
+    # changes: the fringe weight is 0 wherever the matte is solid.
+    _wisp_fr = None
+    if _outer_keep is not None:
+        _wisp_fr = np.clip((0.52 - mask) / 0.06, 0, 1).astype(np.float32)   # 1 outside the solid silhouette
+        _al = np.clip(wisp_alpha, 0, 1).astype(np.float32)[..., None]
+        _strand = _outer_keep * (1.0 - _al) + photo_rgb * _al
+        composited = composited * (1.0 - _wisp_fr[..., None]) + _strand * _wisp_fr[..., None]
+        del _strand, _al
+    del _outer_keep
+
+    # Per-pixel stage probe: GOP_DEBUG_PT="x,y" prints each compositing stage's value at that
+    # pixel, so a lost detail (a catchlight, a highlight) can be traced to the exact stage that
+    # loses it instead of being guessed at from the final image.
+    _dbg_pt = _settings.raw("GOP_DEBUG_PT")
+    _dbg_pt = tuple(int(v) for v in _dbg_pt.split(",")) if _dbg_pt else None
+
+    def _dbg(label, rgb):
+        if _dbg_pt is None:
+            return
+        x, y = _dbg_pt
+        px = np.clip(rgb[y:y + 1, x:x + 1], 0, 255).astype(np.uint8)
+        Lv = int(cv2.cvtColor(px, cv2.COLOR_RGB2LAB)[0, 0, 0])
+        _log(f"  [probe {x},{y}] {label:<28s} L={Lv:3d}  rgb={tuple(int(v) for v in rgb[y, x])}")
+
+    if _dbg_pt is not None:
+        x, y = _dbg_pt
+        _log(f"  [probe {x},{y}] a={float(a[y, x, 0]):.3f} ink_alpha={float(ink_alpha[y, x]):.3f} "
+              f"eye_reveal={float(eye_reveal[y, x]):.3f} feat={float(feat[y, x]):.3f} "
+              f"wash={float(wash[y, x]):.3f} sat_anom={float(sat_anomaly[y, x]):.3f}")
+        _dbg("photo_rgb (source)", photo_rgb)
+        _dbg("ground_rgb", ground_rgb)
+        _dbg("composited (pre-match)", composited)
+    del ground_rgb, photo_rgb, bgr_clean, a, wash, sat_anomaly
+
+    # Reveal the whisker typography directly against a fixed pale "whisker" color rather than
+    # through the mask-gated photo-reveal machinery -- there's no real photo pixel to reveal for
+    # a hair drawn past the animal's own edge, so this gives it a color of its own instead.
+    whisker_ink_alpha = ink_alpha * whisker_outside
+    whisker_color = np.array([222.0, 218.0, 205.0], np.float32)
+    # Silhouette fringe hairs used the same fixed pale as the whiskers. Against a dark
+    # backdrop that reads as hair catching light; against Gallery Gray it read as a pale
+    # outline traced around the animal. The fringe takes the coat's own colour so a brown dog
+    # sheds brown hairs on any backdrop. Real whiskers (whisker_zone, cats) stay pale: they are.
+    # The colour comes from DEEP fur (the matte eroded by half a base), not the edge band:
+    # the edge average carried the background in, and the 10% lift on top of that made the
+    # hairs a glow on every dark backdrop. Hair is the coat's own colour, no brighter.
+    fur_edge_rgb = deep_fur_rgb
+    _wz = np.clip(whisker_zone, 0, 1)[..., None]
+    hair_color = whisker_color * _wz + fur_edge_rgb * (1.0 - _wz)
+    composited = composited * (1.0 - whisker_ink_alpha[..., None]) + hair_color * whisker_ink_alpha[..., None]
+    del _wz, hair_color, fur_edge_rgb, deep_fur_rgb   # whisker_ink_alpha feeds outside_w at the end
+
+    # edge_ink used to add a dark stroke at every strong internal edge -- a reasonable idea for a
+    # moody, dark-ground piece, but against a brightened subject it was one more thing pulling
+    # the average tone down. Lightened the color and roughly halved the blend strength.
+    edge = (_edge_ink(gray.astype(np.uint8)) * mask)[..., None]
+    edge_ink_color = np.array([70.0, 62.0, 52.0], np.float32)
+    del edge   # computed for the ek blend below, which is 0.0: nothing reads it
+    # Removed (ek was 0.30). Measured on the dog's eye: the catchlight is L=196 in the source and
+    # survives the color pipeline at ~185, but a bright glint inside a dark iris is the strongest
+    # internal edge in the image, so this blend pulled it 30% toward (70,62,52) -> predicted ~148,
+    # measured 150. It was doing the same to every bright fine detail. Its purpose (contrast) is
+    # now handled by the calibrated local-contrast step and the distribution match below.
+    ek = 0.0
+
+    return _wisp_fr, composited, _dbg, _dbg_pt, whisker_ink_alpha
+
+
+def _phase_edge_decontamination(a, base, mask, bgr_source, W, human, fur_weight2d, outer_ground_rgb, wisp_alpha):
+    """Edge decontamination: take the background back out of the silhouette band. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Edge decontamination: take the background back out of the silhouette band --------
+    # A matte is never exact. Along the outline the photo's pixels are part fur, part whatever
+    # was behind it: grass, sky, a sunlit rim. Revealed through the letters, and averaged into
+    # the gap colour, that band rendered as a glow traced round the whole animal, green on the
+    # collie, white-gold on the backlit shepherd (staging baseline dc242ea). Measured on a
+    # loosened matte of the tan dog: the inner ring's chroma sat 9.2 units off the deep fur,
+    # 40% of the way to the grass. Each pixel within 0.35 base of the edge is projected onto
+    # the line from the local deep-fur colour F to the local background colour B, and the
+    # background component is removed in proportion to how close to the edge it sits.
+    _hard = (mask > 0.5).astype(np.float32)
+    _d_in = cv2.distanceTransform(_hard.astype(np.uint8), cv2.DIST_L2, 5)
+    # "Deep" fur starts a full base inside the outline when the subject is large enough to
+    # allow it, half a base otherwise: the reference colour must not itself be contaminated.
+    _mask_deep = (_d_in > base * 1.0).astype(np.float32)
+    if float(_mask_deep.sum()) < 0.05 * float(_hard.sum()):
+        _mask_deep = (_d_in > base * 0.5).astype(np.float32)
+    if float(_mask_deep.sum()) < 100:          # a tiny subject: nothing deep enough to erode to
+        _mask_deep = _hard
+    _dec_sigma = max(4.0, base * 1.0)
+    _src_f = bgr_source.astype(np.float32)
+    _F = np.divide(_gblur(_src_f * _mask_deep[..., None], (0, 0), sigmaX=_dec_sigma),
+                   _gblur(_mask_deep, (0, 0), sigmaX=_dec_sigma)[..., None] + 1e-4)
+    _bgw = (mask <= 0.5).astype(np.float32)
+    _B = np.divide(_gblur(_src_f * _bgw[..., None], (0, 0), sigmaX=_dec_sigma),
+                   _gblur(_bgw, (0, 0), sigmaX=_dec_sigma)[..., None] + 1e-4)
+    _BF = _B - _F
+    # The background fraction is judged in a chroma-weighted LAB (L at 0.3): a plain RGB
+    # projection read every LIGHTER patch of fur -- the white chin, the lit chest -- as
+    # background, because backgrounds are usually brighter than deep fur (measured: 0.73
+    # "background" in the cat's outer band with a tight matte). Grass against tan, sky
+    # against white, are chroma differences; light fur against dark fur is not.
+    # ... and the correction is applied to chroma ONLY. Subtracting the background vector in
+    # RGB turned the collie's white paws violet: grass is brighter than white fur in green
+    # alone, so "white minus (grass minus fur)" loses green and keeps magenta (staging,
+    # 0322f32). Brightness is left as the photo has it; a sunlit rim stays a sunlit rim.
+    def _lab(a):
+        return cv2.cvtColor(np.clip(a, 0, 255).astype(np.uint8), cv2.COLOR_BGR2LAB).astype(np.float32)
+    _Pl, _Fl, _Bl = _lab(_src_f), _lab(_F), _lab(_B)
+    _BFab = _Bl[..., 1:] - _Fl[..., 1:]
+    _BF2 = np.maximum((_BFab * _BFab).sum(-1), 1e-6)
+    _t = np.clip(((_Pl[..., 1:] - _Fl[..., 1:]) * _BFab).sum(-1) / _BF2, 0, 1)
+    _t = np.where(np.sqrt(_BF2) < 6.0, 0.0, _t)       # background and fur alike here: nothing to remove
+    # How deep does the contamination reach? Walk inward in 2px shells until the mean
+    # background fraction falls under 0.12, then fade the correction out over that depth
+    # (never less than 0.35 base, never more than 1.2). A fixed 0.35 base left a loosened
+    # matte at 5.3 chroma units of drift; a matte twice as loose at 9.6 -- the band has to
+    # be as wide as the matte is wrong, which only the photo can say.
+    _depth = base * 0.35
+    _dmax = base * 1.2
+    _dd = 0.0
+    while _dd < _dmax:
+        _shell = (_d_in > _dd) & (_d_in <= _dd + 2.0)
+        if _shell.sum() < 50 or float(_t[_shell].mean()) < 0.12:
+            break
+        _dd += 2.0
+    _depth = float(np.clip(_dd + base * 0.15, base * 0.35, _dmax))
+    # Full strength through the measured depth, then a short fade: a fade across the whole
+    # band left the middle of it half-corrected (loose matte: 4.3 chroma units of drift).
+    _band = np.clip(1.0 - (_d_in - _dd) / max(1.0, base * 0.2), 0, 1) * _hard
+    _log(f"edge decontamination: background reaches {_dd:.0f}px in; band {_depth:.0f}px "
+         f"(mean bg fraction in outer 0.2 base: {float(_t[(_d_in > 0) & (_d_in <= base * 0.2)].mean()):.2f})")
+    # bgr_clean feeds the gap colour and the revealed photo. bgr_source stays the untouched
+    # photo for the likeness score, so the score keeps one reference across builds.
+    _Pl[..., 1:] -= (_band * _t)[..., None] * _BFab
+    bgr_clean = cv2.cvtColor(np.clip(_Pl, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR)
+    deep_fur_rgb = _F[..., ::-1].astype(np.float32)   # RGB, for the fringe hairs below
+    del _src_f, _F, _bgw, _B, _BF, _Pl, _Fl, _Bl, _BFab, _BF2, _t, _band, _mask_deep, _d_in, _hard
+
+    # The gap layer: a coat's rest tone is the photo blurred past letter-scale noise. A face
+    # wants its own detail between the letters, so a person's gap layer is barely blurred.
+    fur_sigma = max(1.0, W * 0.0012) if human else max(2.0, W * 0.006)
+    fur_num = _gblur(bgr_clean.astype(np.float32) * fur_weight2d[..., None], (0, 0), sigmaX=fur_sigma)
+    fur_den = _gblur(fur_weight2d, (0, 0), sigmaX=fur_sigma)[..., None]
+    fur_bgr = np.divide(fur_num, fur_den, out=np.full_like(fur_num, 120.0), where=fur_den > 1e-6)
+    fur_hsv = cv2.cvtColor(np.clip(fur_bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
+    # Measured (dog, inside mask, LAB L percentiles): source 5th pct = 30, render = 56; source
+    # 95th = 209, render = 191; median saturation 102 vs 72. Those two lines below were the direct
+    # cause: a hard clip to [60, 200] on a layer behind ~half of every pixel forbids true blacks
+    # and true whites outright, and sat*0.45 is the desaturation. Clamp removed, desaturation
+    # eased; the real enforcement of the source's tonal range is the distribution match at the
+    # end of the composite (see "tonal match" below), which this no longer fights.
+    # Skin is not fur. The gap layer at 0.40 of the source's value, with 0.85 of its
+    # saturation, is a coat's rest tone; on a face it read as dark orange (measured on the
+    # boy: face L 92 against a source of 130, saturation 112 against 90). A person keeps
+    # more of the face's own value in the gaps and a little less of its colour.
+    _gap_s, _gap_v = (0.80, 0.70) if human else (0.85, 0.40)
+    fur_hsv[..., 1] *= _gap_s
+    fur_hsv[..., 2] = np.clip(fur_hsv[..., 2] * _gap_v, 0, 255)   # same picture, well below the letters
+    inner_ground_bgr = cv2.cvtColor(np.clip(fur_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR)
+    inner_ground_rgb = cv2.cvtColor(inner_ground_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
+    ground_rgb = inner_ground_rgb * mask[..., None] + outer_ground_rgb * (1.0 - mask[..., None])
+    _outer_keep = outer_ground_rgb if (human and wisp_alpha is not None) else None   # the wisps sit on it
+    del fur_weight2d, fur_num, fur_den, fur_bgr, fur_hsv, inner_ground_bgr, inner_ground_rgb, outer_ground_rgb
+    # Vividness boost for the pet's own revealed colors -- flagged directly as "muted," and the
+    # side-by-side reference photos confirmed it again at a brightness level, not just
+    # saturation. Boost both explicitly, after all the tonal logic is settled, so this doesn't
+    # fight the density correction above -- it only changes color vividness, not how much
+    # ink/reveal there is. Brightness eased back from 1.38 (part of the same overshoot as the
+    # ground above) to keep real contrast in the fur rather than flattening it.
+    # Flagged directly: the doodle's nose leather (near-black with a faint warm undertone in the
+    # source) rendered RED, not dark brown. Root cause -- a flat 1.55x saturation multiplier
+    # applied everywhere, including near-black pixels where the nose_reveal fix above (added this
+    # session) now shows close to the FULL boosted color instead of a ground-diluted blend. A
+    # small saturation value on a near-zero-value pixel is barely visible normally, but boosted
+    # 1.55x and then shown at ~90% reveal, that faint warm undertone becomes a dominant, visibly
+    # red hue -- an artifact of the boost math, not a real color in the photo. Scale the
+    # saturation boost by the pixel's own brightness (matches the wash fix's reasoning below):
+    # bright fur gets the full 1.55x vividness push, while near-black leather/shadow/pupils keep
+    # close to their real, mostly-neutral saturation instead of having a boosted color invented.
+    # Measured directly against the doodle's actual nose pixels: the source averages S=97/255
+    # (a real but modest warm brown, V=105), while `1.0 + 0.55*V` still pushed it to S=168 at
+    # this V -- more than 1.7x -- because _enhance_contrast has ALREADY boosted saturation
+    # upstream, so this multiplier was compounding on top of that, not starting from the raw
+    # photo. A dark, desaturated warm hue reads as "brown"; the same hue boosted to high
+    # saturation reads as "red" even though the hue angle barely moved -- that compounding is
+    # exactly what turned the nose red. Steepened so dark pixels land near a NEUTRAL multiplier
+    # (~1.0, preserving whatever _enhance_contrast already did) instead of still gaining nearly
+    # 20%, while bright fur still reaches the full 1.55x vividness that fixed "muted" earlier.
+    # All of the per-pixel color hacks that used to live here (contrast-enhanced source,
+    # brightness-scaled saturation multiplier, V*1.22) are gone. Measured on the dog's iris:
+    # source saturation 110, this pipeline's output 73 -- the "don't over-saturate dark pixels"
+    # formula added for the doodle's nose was DESATURATING every dark saturated pixel, and an
+    # amber iris is exactly that. With the end-of-composite distribution match now forcing the
+    # output's luminance and saturation range onto the source's, there is no reason left to
+    # pre-distort the colors at all: use the real photo, and let the match enforce the range.
+    photo_rgb = cv2.cvtColor(bgr_clean, cv2.COLOR_BGR2RGB).astype(np.float32)
+    composited = ground_rgb * (1.0 - a) + photo_rgb * a
+    return bgr_clean, deep_fur_rgb, ground_rgb, _outer_keep, photo_rgb, composited
+
+
+def _phase_ground_colour(mask, H, W, bgr_source, backdrop_rgb):
+    """Ground color derived from the REAL photo background, not an arbitrary constant. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Ground color derived from the REAL photo background, not an arbitrary constant ----
+    # This was a fixed navy-purple (26, 20, 40) regardless of what was actually behind the pet
+    # -- grass, a wall, sky, whatever. "Truer colors" applies to the ground too: sample the
+    # actual background pixels (masked-average blur, same normalization trick as sat_anomaly
+    # above, so mask-interior pixels don't corrupt the average), then darken and desaturate so
+    # it stays a recessive backdrop rather than a literal sharp photo -- the point is the HUE
+    # now genuinely reflects the real scene (muted green for grass, muted warm gray for an
+    # indoor wall, etc.), not that the background becomes a competing photographic element.
+    # cv2.GaussianBlur silently squeezes a (H,W,1) array back down to (H,W) -- blur the 2D
+    # weight map and re-add the channel axis explicitly rather than relying on it surviving.
+    bg_weight2d = (mask <= 0.5).astype(np.float32)
+    bg_sigma = max(20.0, W * 0.25)
+    bg_num = _gblur(bgr_source.astype(np.float32) * bg_weight2d[..., None], (0, 0), sigmaX=bg_sigma)
+    bg_den = _gblur(bg_weight2d, (0, 0), sigmaX=bg_sigma)[..., None]
+    ground_bgr = np.divide(bg_num, bg_den, out=np.full_like(bg_num, 30.0), where=bg_den > 1e-6)
+    ground_hsv = cv2.cvtColor(np.clip(ground_bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
+    # Pushed much further -- the user supplied the actual source photos side by side with our
+    # renders and the gap was obvious: these are bright, evenly, naturally lit photos (a sunlit
+    # garden, a sunlit window, a light studio backdrop), and every version of this ground so far
+    # has been some shade of dim. Brightened past the raw sampled average, not just toward it --
+    # a blurred garden or a bright wall in real light reads brighter than its own pixel average
+    # once vignetting/shadow falloff is removed, which is exactly what a real print of these
+    # would look like.
+    ground_hsv[..., 1] *= 0.80
+    ground_hsv[..., 2] = np.clip(ground_hsv[..., 2] * 1.05, 0, 255)
+    ground_bgr = cv2.cvtColor(np.clip(ground_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR)
+    outer_ground_rgb = cv2.cvtColor(ground_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
+    if backdrop_rgb is not None:
+        # The customer chose a backdrop on the site. Honoring it here (and not in the gaps
+        # between letters, which stay coat-derived) is what makes the choice do anything on
+        # this engine: previously it was accepted and ignored, so switching to Gallery Gray
+        # re-rendered 40 s of identical pixels.
+        outer_ground_rgb = np.full((H, W, 3), np.asarray(backdrop_rgb, np.float32), np.float32)
+    del bg_weight2d, bg_num, bg_den, ground_bgr, ground_hsv
+    # SEGMENTATION FIX (still applies): one ground field can't serve both "outside the animal"
+    # and "the gap between two letters ON the animal" -- they need different colors. But the
+    # INNER one was set to a near-black tone for contrast, and with collision tolerances now
+    # tightened for legibility, MORE of the subject falls into that gap (measured: coverage
+    # dropped to 43-47%) -- so a large minority of the animal was rendering as near-black no
+    # matter how bright the revealed ink areas got. Against these bright reference photos, that
+    # reads as "too dark" overall even where the actual ink is vivid. Lightened substantially --
+    # still a warm, slightly-recessive neutral so ink strokes read as the darker, crisper
+    # element (the actual drawing), not the reverse, just nowhere near black.
+    # First pass at this (150,132,112) overshot -- the render came back readable but flat,
+    # washing out some of the eye/nose contrast the earlier eye-reveal fix had just recovered.
+    # Backed off toward a middle ground: bright enough that it doesn't read as "dark," but not
+    # so light that it competes with and flattens the actual revealed ink detail.
+    # Still flagged as a "gauzy haze over the majority of the image" even after tuning the wash
+    # floor. Root cause found by checking the actual pixel math: with ink coverage around 40-45%,
+    # this flat (108,92,76) grey-brown is the DOMINANT color of most of the image regardless of
+    # wash strength -- it's what's behind every gap. That's a fixed neutral, chosen once and used
+    # for every pet regardless of actual coloring, so on a light cream doodle (or any coat whose
+    # real color isn't already close to warm grey-brown) it reads as exactly what it is: a grey
+    # film sitting over the animal's real color instead of a rest color the pet's own coat is
+    # organically at rest. Fixed the same way outer_ground was fixed earlier -- derive it from the
+    # REAL subject instead of a constant: a masked, heavily blurred average of the pet's own fur
+    # (which also means it naturally varies across the coat -- lighter where the coat is lit,
+    # cooler in shadow -- instead of being one dead-flat tone everywhere), then desaturated and
+    # dimmed enough that ink strokes still read as the crisper, darker foreground element.
+    # Measured directly why the haze complaint persisted even after this fix and the alpha-
+    # ceiling fix: a generic fur patch's local grayscale contrast (std) was 18 in the render vs
+    # 38 in the source -- HALF the real tonal variation, gone. Root cause: fur_sigma here was
+    # W*0.12 (~120px on a 1000px-wide photo) -- far beyond "smooth away letter-level noise," it
+    # averaged out essentially ALL of the fur's own broad light/shadow structure (a lit cheek vs
+    # a shadowed ear) into one near-flat gradient, and that flat gradient is what shows in every
+    # gap between letters across roughly half the image. A single flat fill under half the
+    # picture reads as a haze/veil sitting over the real detail, regardless of how correct its hue
+    # is. Cut drastically so this base layer keeps the photo's own broad tonal structure instead
+    # of erasing it -- still blurred enough to hide letter-scale noise, not the whole face's shape.
+    # Design decision, made explicit after the tonal fixes landed: once the letters revealed the
+    # true photo AND the gaps showed a blurred near-copy of it, the composite converged on a
+    # soft-focus photograph with faint text -- correct tone, no typography. The gap fill must be
+    # the same picture at a clearly LOWER tone, so every letterform is brighter than its
+    # surroundings and the image is legibly built of words while still carrying the photo's
+    # structure in both layers. Lightly blurred only (letter-scale noise), not averaged away.
+    fur_weight2d = (mask > 0.5).astype(np.float32)
+    return outer_ground_rgb, fur_weight2d
+
+
+def _phase_suppress_photo_whiskers(a, gray, whisker_region_inside):
+    """Suppress REAL photographic whiskers within the mask. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Suppress REAL photographic whiskers within the mask ------------------------------
+    # "Whiskers should also be typography... a high-end portrait should eventually have no
+    # photographic whiskers." Even where mask=1, the wash/ink-reveal above naturally reveals
+    # whatever's genuinely in the photo there -- including a cat's actual whisker hairs, thin
+    # and high-contrast against duller surrounding fur. Confirmed directly: a render's cheek
+    # showed real smooth grey whisker strands sitting on top of the typography once wash was
+    # strong enough to reveal fur color at all. A median blur erases thin line structures like a
+    # whisker while leaving broader fur texture alone, so the residual (original minus
+    # median-blurred) isolates whisker-like anomalies specifically. Restricted to the muzzle/
+    # cheek band computed above so this can't accidentally suppress unrelated fine detail
+    # elsewhere on the animal.
+    median_local = cv2.medianBlur(gray, 9).astype(np.float32)
+    whisker_signal = np.abs(gray.astype(np.float32) - median_local)
+    whisker_suppress = np.clip(whisker_signal / 18.0, 0, 1) * whisker_region_inside
+    a = a * (1.0 - 0.92 * whisker_suppress)
+    a = a[..., None]
+    del median_local, whisker_signal, whisker_suppress
+    return a
+
+
+def _phase_hair_reveal(a, attractor_pts, human, _es, xx, yy, mask, sat_anomaly):
+    """A person's hair: the photo shows through, outside the face. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- A person's hair: the photo shows through, outside the face --------------------
+    # "Strands of wispy hair are not evident in the woven version." Traced on her photo:
+    # the hairline is smooth and every matte agrees on it, so the strands were never at the
+    # edge. They are the hair's own texture, strand by strand, which Displacement keeps
+    # because its letters are a warp of the photo and the photo is everywhere, and which
+    # this engine paints over: a letter reveals the photo, a gap is a darkened copy, and the
+    # letters' own edges are what the eye reads. Measured on the boy (high-pass L in the
+    # hair, correlation with the source's): Woven carried 0.33 of the strand structure.
+    # Outside the face ellipse the photo is revealed through everything at PET_V2_HAIR_REVEAL,
+    # so the hair is the photo with the words on it, as it is in Displacement; the face keeps
+    # the type-only recipe every judgment was made on. A floor, never a cut: dense ink still
+    # reveals more. On the boy, whose photo is 640px wide and upscaled, 0.7 raised the
+    # correlation only to 0.39; on her photo at the loupe it was the closest Woven came to
+    # Displacement's hair, and the blind test (3-0, 3-0) was run with it. 0.7 is the
+    # default; PET_V2_HAIR_REVEAL overrides it, 0 turns it off. Animals never enter this branch.
+    if human and len(attractor_pts) >= 2:
+        _hr = float(_settings.raw("PET_V2_HAIR_REVEAL") or 0.0)
+        if _hr > 0.0:
+            _fx0 = 0.5 * (attractor_pts[0][0] + attractor_pts[1][0])
+            _fy0 = 0.5 * (attractor_pts[0][1] + attractor_pts[1][1]) + 0.5 * _es
+            _fr0 = np.sqrt(((xx - _fx0) / (1.1 * _es)) ** 2 + ((yy - _fy0) / (1.5 * _es)) ** 2)
+            _hair_w = np.clip((_fr0 - 1.0) / 0.3, 0.0, 1.0).astype(np.float32)   # 0 on the face, 1 past 1.3
+            a = np.clip(np.maximum(a, _hr * mask * _hair_w * (1.0 - 0.95 * sat_anomaly)), 0, 1)
+            del _fr0, _hair_w
+    # (A person's flyaway hair at the edge is composited at the end, from the guided fringe
+    # matte: see "wisps" below.)
+
+    return a
+
+
+def _phase_photo_wash(a, mask, gray, sat_anomaly):
+    """Photo wash: continuous faint color in the negative space, not pure paper. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Photo wash: continuous faint color in the negative space, not pure paper -----------
+    # The real ceiling on "muted fur": this technique only ever reveals the photo through thin
+    # letter strokes, so even fully-saturated ink only covers ~40-45% of the silhouette at
+    # legible density -- the rest is pure ground color, and the eye averages that in regardless
+    # of how vivid the strokes themselves are. No amount of boosting the STROKE color fixes
+    # that; the gaps themselves need to carry some of the real photo's color. Guarantee a
+    # floor on `a` everywhere inside the mask (not an override -- `a` only goes UP where this
+    # floor exceeds it, so real ink-driven reveal in dense areas is untouched) rather than
+    # letting bare paper show at zero. Multiplied by the SAME anomaly suppression as the ink
+    # reveal above, so this can't reopen the tongue-color bleed that fix was for -- a continuous
+    # wash of a genuinely wrong color would be worse than the gap it's filling.
+    # A FLAT 0.30 floor everywhere was the actual cause of "washed out": it lifts genuinely dark
+    # regions -- the pupil, nostril, shadow creases -- toward showing SOME reveal even where the
+    # real photo is supposed to read as deep shadow, flattening exactly the contrast that gives
+    # a face its depth. Scaled by the photo's own brightness instead (dark photo -> little to no
+    # wash, preserving real shadow; bright/mid fur -> a healthy wash, keeping the color-
+    # continuity win) -- this fixes the mechanism, not just the symptom, so dropping the whole
+    # thing isn't necessary: dark areas were never the ones that looked muted in the first place.
+    # Flagged directly as a "gauzy haze over the majority of the image." Root cause: these
+    # reference photos are deliberately bright/high-key (per the user's own reference shots), so
+    # `brightness` is high across MOST of the silhouette, not just a few highlights -- meaning the
+    # 0.40 peak floor was landing at ~0.30-0.38 almost everywhere, not just where genuinely needed.
+    # With ink coverage around 40-45%, that means 60-70% of most pixels were the flat neutral
+    # ground color bleeding through as a near-uniform veil -- exactly a haze, and exactly why it
+    # didn't look like the "healthy wash in bright fur, little wash in shadow" it was designed to
+    # be: on a bright photo there's barely any shadow left to tell the two cases apart. Cut the
+    # peak substantially so the floor stays a light tint rather than a dominant blend -- letters
+    # and dense typographic areas still carry the real ink-driven reveal untouched (this is only
+    # a floor), but genuine gaps read as gaps again instead of a wash of ground color.
+    # Down from 0.40: with the gap fill now a darkened copy of the photo (structure already
+    # present in the gaps), a high wash floor only pulls gaps back up toward the letters and
+    # erases the letter/gap distinction the typography depends on to be seen.
+    wash_strength = 0.15
+    brightness = np.clip(gray.astype(np.float32) / 255.0, 0, 1)
+    wash = wash_strength * mask * brightness * (1.0 - 0.95 * sat_anomaly)
+    a = np.clip(np.maximum(a, wash), 0, 1)
+    del brightness
+    return a, wash
+
+
+def _phase_saturation_anomaly(ink_alpha, mask, W, bgr, base, feat, eye_reveal, nose_reveal):
+    """Saturation-anomaly dampening (the open-mouth/tongue fix). Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Saturation-anomaly dampening (the open-mouth/tongue fix) --------------------------
+    # A real defect found on the Border Collie render: a hero word happened to land right over
+    # the open mouth, and because this compositing model reveals MORE of the actual photo
+    # wherever ink is denser (a = ink_alpha * ..., composited = ground*(1-a) + photo*a), a
+    # solid hero word sitting on the tongue became a vividly pink cutout -- jarring against the
+    # otherwise muted, mostly-desaturated palette everywhere else on the animal. Fixed the same
+    # way the eye catchlight is protected: detect the anomaly (here, saturation spiking well
+    # above the LOCAL neighborhood's own saturation, not a fixed global threshold -- portable
+    # across light and dark subjects) and dampen how much of the photo shows through there,
+    # rather than special-casing "tongues." Any comparably saturated small anomaly gets the same
+    # treatment.
+    # Two real bugs found and fixed while tuning this against the ACTUAL tongue pixels, not
+    # assumed: (1) a plain (unmasked) Gaussian blur for the "neighborhood average" leaks in
+    # whatever is OUTSIDE the mask too (grass, background), and that leakage got WORSE, not
+    # better, as the blur radius grew -- background saturation crept into the reference,
+    # shrinking the measured anomaly right when a bigger radius was meant to fix it. Switched to
+    # a properly mask-normalized blur (blur the masked values AND the mask itself, divide) so the
+    # neighborhood average only ever reflects the subject's own fur. (2) The tongue itself has a
+    # saturation GRADIENT (a vivid core fading into blended edges), so even the mask-normalized
+    # version only averaged ~0.26-0.33 anomaly across the whole tongue despite peaking at 1.0 in
+    # its core -- the first threshold/divisor pair (0.10 / 0.22) left the softer edges barely
+    # dampened. Both tightened until the tongue's OWN measured average maps to a real reduction.
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV).astype(np.float32)
+    sat = hsv[..., 1] / 255.0
+    mf = (mask > 0.5).astype(np.float32)
+    sigma = max(1.0, W * 0.10)
+    num = _gblur(sat * mf, (0, 0), sigmaX=sigma)
+    den = _gblur(mf, (0, 0), sigmaX=sigma)
+    broad_sat = np.divide(num, den, out=np.zeros_like(num), where=den > 1e-6)
+    sat_anomaly = np.clip((sat - broad_sat - 0.05) / 0.10, 0, 1) * mf
+    sat_anomaly = _gblur(sat_anomaly, (0, 0), sigmaX=max(1.0, base * 0.05))
+    # Memory: this composite stage held two dozen full-frame colour arrays at once (1.2 GB at
+    # the 1600px preview, measured; the box ran out of memory and locked up). Every array is
+    # released the moment its last reader has run. None of these `del`s changes a value.
+    del hsv, sat, mf, num, den, broad_sat
+
+    # `feat` was already computed once, up front, and reused for the attractor field above --
+    # no need to recompute it here.
+    # Lowered from 0.45 -- flagged directly as "eyes look like black holes, dead." This dampens
+    # `a`, which controls how much of the ACTUAL photo shows through; suppressing it near the
+    # eyes was hiding the real iris/pupil color and detail, not just thinning typography over
+    # it (that protection belongs to the density fields elsewhere, not to hiding the photo).
+    a = np.clip(ink_alpha * mask * (1.0 - 0.15 * feat) * (1.0 - 0.95 * sat_anomaly), 0, 1)
+    # Boost reveal toward 1 within the real eye disk found above, so the actual iris color and
+    # any natural catchlight show clearly regardless of how much ink happens to land there --
+    # additive toward full reveal, not an override, so it still respects genuinely dense ink.
+    a = np.clip(a + eye_reveal * (1.0 - a) * 0.92, 0, 1)
+    # Same treatment for the nose leather -- slightly less than full reveal (0.85 vs 0.92) so a
+    # trace of typographic texture still reads on top of it, unlike the eye where the priority
+    # was eliminating a literal black hole.
+    a = np.clip(a + nose_reveal * (1.0 - a) * 0.85, 0, 1)
+    return a, sat_anomaly
+
+
+def _phase_whisker_zone(W, mask, H, attractor_pts, extra_faces, nose_fit_final, base, yy, fringe_points, theta_s):
+    """Whisker zone -- makes the typographic whiskers from render_muzzle_topology actually. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Whisker zone -- makes the typographic whiskers from render_muzzle_topology actually
+    # visible in the FINAL composite, not just the typography-only panel ------------------------
+    # render_muzzle_topology draws its whisker spokes straight into `canvas`, deliberately
+    # extending PAST the silhouette the way real whiskers do. But the whole compositing model is
+    # `a = ink_alpha * mask * ...` -- outside the mask, `mask` is 0, so that ink's alpha never
+    # translates into any visible reveal in the actual delivered image (photo_out), only in the
+    # typography-only debug panel. Checked directly: without this fix the whisker spokes are
+    # real, structured typography that's completely invisible in the piece anyone would actually
+    # look at. Fixed by tracing the SAME spoke geometry into its own zone mask and, below, giving
+    # ink there its own reveal against a fixed pale "whisker" color instead of trying to reveal
+    # actual photo pixels that don't meaningfully exist for a hair drawn past the animal's edge.
+    whisker_zone = np.zeros((H, W), np.float32)
+    whisker_region_inside = np.zeros((H, W), np.float32)
+    _whisker_faces = [(nose_fit_final, attractor_pts)] + [(f["nose_fit"], f["eyes"]) for f in extra_faces if f["kind"] != "h"]
+    for _wfit, _weyes in _whisker_faces:
+        if _wfit is None or len(_weyes) < 2:
+            continue
+        (wncx, wncy), (wna, wnb), _ = _wfit
+        (wx1, wy1), (wx2, wy2) = _weyes[0], _weyes[1]
+        w_eye_sep = max(1.0, math.hypot(wx2 - wx1, wy2 - wy1))
+        pad_offset = wna * 0.55
+        pad_y = wncy + wnb * 0.6
+        whisker_len = w_eye_sep * 1.5
+        for side in (-1, 1):
+            pad_x = wncx + side * pad_offset
+            base_angle = 0 if side > 0 else 180
+            for offset_deg in (-28, -16, -6, 6, 16, 28):
+                angle_deg = base_angle + offset_deg * (1 if side > 0 else -1)
+                theta = math.radians(angle_deg)
+                ex = int(round(pad_x + math.cos(theta) * whisker_len))
+                ey = int(round(pad_y + math.sin(theta) * whisker_len))
+                cv2.line(whisker_zone, (int(round(pad_x)), int(round(pad_y))), (ex, ey),
+                        1.0, thickness=max(2, int(round(base * 0.05))))
+            # A wider band covering where REAL whiskers physically emerge, for the suppression
+            # pass below -- broader than the thin spoke lines above, since a real whisker's base
+            # and first stretch is well within the solid mask before it ever crosses the edge.
+            # First pass at 0.9x/0.55x eye_sep was measured too small directly: the actual visible
+            # whisker strands on the cat photo sweep out much farther than that (confirmed by
+            # visualizing the detector's own signal against the source -- real whiskers extend
+            # roughly 1.5-2x eye separation from the pad), so most of a whisker's visible length
+            # fell outside the suppression band and remained fully visible.
+            _wreg = np.zeros((H, W), np.float32)
+            cv2.ellipse(_wreg, (int(round(pad_x)), int(round(pad_y))),
+                       (int(round(w_eye_sep * 1.8)), int(round(w_eye_sep * 0.9))),
+                       0, 0, 360, 1.0, -1)
+            # Probed at the dog's iris catchlight: source L=157, ink_alpha 0.86, but a=0.051 --
+            # this region (scaled by eye separation, 545px on the dog -> a 980x490 ellipse)
+            # reached the eyes, and a glint against a dark iris is precisely the thin-line signal
+            # the suppression kills. Whiskers grow from the muzzle, below the eyes: clip the
+            # region to strictly below THIS face's eye line so it can never touch an eye again,
+            # whatever the photo's proportions -- per face, so a second pet's eyes are judged
+            # against its own eye line, not the first pet's.
+            _wreg *= (yy > 0.5 * (wy1 + wy2) + 0.18 * w_eye_sep).astype(np.float32)
+            whisker_region_inside = np.maximum(whisker_region_inside, _wreg)
+    # Silhouette fringe hairs share the exact same problem as the whisker spokes -- ink drawn
+    # past mask=0 that the standard compositing would otherwise drop -- so they share the same
+    # fix: a reveal zone computed deterministically (build_fringe_zone) and merged into the same
+    # outside-mask reveal pass below rather than building a second parallel mechanism.
+    fringe_zone = build_fringe_zone(mask, theta_s, base, fringe_points)
+    whisker_outside = np.maximum(whisker_zone, fringe_zone) * (mask <= 0.5)
+    whisker_region_inside = _gblur(whisker_region_inside, (0, 0), sigmaX=max(1.0, base * 0.1)) * mask
+
+    return whisker_zone, whisker_region_inside, whisker_outside
+
+
+def _phase_nose_reveal(H, W, attractor_pts, gray, mask, primary_kind, extra_faces, base):
+    """Real nose reveal -- same idea as eye_reveal, a real gap in the render's fidelity. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Real nose reveal -- same idea as eye_reveal, a real gap in the render's fidelity ----
+    # The dedicated nose renderer above only claims the outline/groove/nostrils in `occupancy`;
+    # the leather's own interior is left to the generic density pass, which doesn't specifically
+    # boost reveal there. Checked directly against a render: the cat's actual coral-pink nose
+    # leather came through as a flat, nearly colorless patch -- exactly what you'd expect, since
+    # nothing was telling the compositor to reveal MORE photo there specifically. Fit the same
+    # nose ellipse used by the dedicated renderer and reveal the real leather color within it.
+    nose_reveal = np.zeros((H, W), np.float32)
+    nose_fit_final = None if primary_kind == "h" else locate_nose(gray, mask, attractor_pts)
+    for _nfit in [nose_fit_final] + [f["nose_fit"] for f in extra_faces if f["kind"] != "h"]:
+        if _nfit is None:
+            continue
+        (fncx, fncy), (fna, fnb), fnangle = _nfit
+        cv2.ellipse(nose_reveal, (int(round(fncx)), int(round(fncy))),
+                   (max(1, int(round(fna * 0.95))), max(1, int(round(fnb * 0.95)))),
+                   fnangle, 0, 360, 1.0, -1)
+    nose_reveal = _gblur(nose_reveal, (0, 0), sigmaX=max(1.0, base * 0.06))
+
+    return nose_reveal, nose_fit_final
+
+
+def _phase_eye_reveal(H, W, base, _es, _lm_env, attractor_pts, extra_faces, gray, mask):
+    """Real eye reveal, not a synthetic catchlight (recommendation #12, reworked). Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Real eye reveal, not a synthetic catchlight (recommendation #12, reworked) --------
+    # Original approach: find the BRIGHTEST small spot near each attractor point (a proxy
+    # catchlight) and hard-zero typography there. Flagged directly as "eyes look like black
+    # holes, dead" -- checked against the actual source pixels and found two real bugs: (1) the
+    # attractor point sits NEAR the eye but not precisely on the pupil (confirmed by drawing it
+    # on the render), so a narrow search box often missed the eye and landed on cheek fur
+    # instead; (2) "brightest pixel" is the wrong thing to search for in the first place -- a
+    # small specular glint inside a dark iris is often dimmer in raw terms than ordinary sunlit
+    # fur nearby, so that search reliably found fur, not the eye, even widened. The real fix
+    # doesn't need to locate the catchlight precisely at all: find the pupil instead (the
+    # DARKEST compact region near the attractor -- a much more reliable target, since an eye is
+    # reliably darker than surrounding fur) and reveal the ACTUAL photo there directly --
+    # whatever warm iris color and natural catchlight the source photo genuinely has (confirmed
+    # directly: this dog's eye has real amber iris color and a visible glint) -- rather than
+    # trying to synthesize a highlight from scratch.
+    # Reveal the WHOLE eye, not an 11px disk at its darkest point. Probed at the dog's iris
+    # catchlight with correct landmarks: eye_reveal was 0.000 there -- the disk (radius
+    # base*0.22) covered the pupil center only, so the iris and glint got whatever reveal the
+    # ink happened to give them, and the amber read as near-black. Use the same fitted ellipse
+    # render_eye_feature builds the lid from, with the old disk as the fallback when no
+    # plausible ellipse is found.
+    eye_reveal = np.zeros((H, W), np.float32)
+    _every_eye = ([(p, _es, bool(_lm_env)) for p in attractor_pts]
+                  + [(p, f["es"], True) for f in extra_faces for p in f["eyes"]])
+    for (ax, ay), _es_f, _tr_f in _every_eye:
+        geo = eye_geometry(gray, mask, base, (ax, ay), eye_sep=_es_f, trusted=_tr_f)
+        if geo is not None:
+            (ecx, ecy), (a_ax, b_ax), ang, _how = geo
+            cv2.ellipse(eye_reveal, (int(round(ecx)), int(round(ecy))),
+                       (max(2, int(round(a_ax * 1.05))), max(2, int(round(b_ax * 1.05)))),
+                       ang, 0, 360, 1.0, -1)
+            continue
+        r = int(round(base * 0.55))
+        px0, px1 = max(0, int(ax) - r), min(W, int(ax) + r)
+        py0, py1 = max(0, int(ay) - r), min(H, int(ay) + r)
+        if px1 <= px0 or py1 <= py0:
+            continue
+        patch = gray[py0:py1, px0:px1].astype(np.float32)
+        patch_blur = _gblur(patch, (0, 0), sigmaX=max(1.0, base * 0.03))
+        by, bx = np.unravel_index(int(np.argmin(patch_blur)), patch_blur.shape)
+        rad = max(3, int(round(base * 0.22)))
+        cv2.circle(eye_reveal, (px0 + bx, py0 + by), rad, 1.0, -1)
+    eye_reveal = _gblur(eye_reveal, (0, 0), sigmaX=max(1.0, base * 0.06))
+    if _KEEP_FIELDS:
+        _TL.fields["eye_reveal"] = eye_reveal
+
+    return eye_reveal
+
+
+def _phase_opacity_tone(canvas, base, gray, debug_dir, H, W, out_path, mask):
+    """Opacity carries tone, over ALL placed type. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Opacity carries tone, over ALL placed type ---------------------------------------
+    # Measured on the black Lab: in the body zone (47% of the likeness weight) the typography
+    # panel's tone had r = -0.02 with the photo -- the lanes are sparse there on purpose (dark
+    # fur wants little ink) but the residual/channel fills then closed every gap at near-full
+    # alpha, leaving uniform texture with no value structure. Scale the finished canvas's alpha
+    # by the local photo value (blurred past letter scale) so density AND opacity follow tone.
+    # Applied once, after the density loop, which keeps its own error signal unchanged; the
+    # composite reads letter presence separately (see ink_soft), so legibility is unaffected.
+    tone_blur = _gblur(gray.astype(np.float32) / 255.0, (0, 0), sigmaX=max(2.0, base * 0.15))
+    tone_gain = (0.35 + 0.65 * np.clip(tone_blur, 0, 1)).astype(np.float32)
+    _r, _g, _b, _a = canvas.split()
+    # Letter PRESENCE, captured before the tone modulation: every measurement that means "is
+    # there a letter here" (coverage, exposed space, letters-vs-gaps) reads this, not the dimmed
+    # alpha -- otherwise a dark-fur letter at 35% opacity counts as empty space (measured: the
+    # exposed-space figure jumped to 15.8% on the black Lab the moment tone modulation landed).
+    ink_raw = np.asarray(_a, np.float32) / 255.0
+    if _KEEP_FIELDS:
+        _TL.fields["ink_raw"] = ink_raw
+    _a = Image.fromarray(np.clip(np.asarray(_a, np.float32) * tone_gain, 0, 255).astype(np.uint8))
+    canvas = Image.merge("RGBA", (_r, _g, _b, _a))
+
+    if debug_dir:
+        out = Image.alpha_composite(Image.new("RGBA", (W, H), (255, 255, 255, 255)), canvas).convert("RGB")
+        out.save(out_path, quality=92)
+
+    ink_alpha = np.asarray(canvas.split()[3], np.float32) / 255.0
+    coverage = float((ink_alpha[mask > 0.5] > 0.12).mean())
+    _log(f"ink coverage inside mask: {coverage:.1%}")
+
+    dark_gate = np.clip((0.55 - np.clip(gray.astype(np.float32) / 255.0, 0, 1)) / 0.55, 0, 1)
+    dark_gate = _gblur(dark_gate, (0, 0), sigmaX=max(1.0, W * 0.01))
+    dk = max(3, int(round(W * 0.006))) | 1
+    ink_dilated = cv2.dilate(ink_alpha, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dk, dk)))
+    ink_alpha = ink_alpha * (1.0 - dark_gate) + np.maximum(ink_alpha, ink_dilated) * dark_gate
+
+    return canvas, ink_raw, ink_alpha
+
+
+def _phase_final_fills(canvas, best_placements, best_pass, best_stats, best_pass_stats, base, coherence_s, get_font, mask, micro_px_area, occupancy, rng, theta_s, short_tokens, size_px_field, letter_tokens, gray, fill_px_area, hero_px_area, struct_px_area):
+    """Final fills, once, on the winning canvas. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    # ---- Final fills, once, on the winning canvas -------------------------------------------
+    # Residual (short tokens in every free region a word fits) then channel (single letters
+    # along the medial axis of the leading corridors). Placement log/stats are rewound to the
+    # winning iteration first so the claim metrics describe exactly this canvas.
+    _TL.placements[:] = best_placements
+    _TL.pass_tags[:] = best_pass
+    _TL.stats.update(best_stats)
+    _TL.pass_stats.clear()
+    _TL.pass_stats.update({k: list(v) for k, v in best_pass_stats.items()})
+    _TL.pass_name = "residual"
+    micro_px_area += render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
+                                          tokens=short_tokens, size_field_px=size_px_field)
+    _TL.pass_name = "channel"
+    ch_n, ch_px = render_channel_fill(canvas, occupancy, theta_s, mask, get_font, letters=letter_tokens,
+                                      tone=gray.astype(np.float32) / 255.0, size_cap=size_px_field)
+    micro_px_area += ch_px
+    _log(f"final fills: channel fill placed {ch_n} letters ({ch_px}px)")
+    best_placements = list(_TL.placements)
+    best_pass = list(_TL.pass_tags)
+    best_stats = dict(_TL.stats)
+    best_pass_stats = {k: list(v) for k, v in _TL.pass_stats.items()}
+
+    # Gap-fill text is fine detail closing bare patches -- counts toward the micro share, same
+    # spirit as the micro tier itself ("texture, fine tonal modeling, transitions").
+    micro_px_area += fill_px_area
+    total_tiered = max(1, micro_px_area + struct_px_area + hero_px_area)
+    _log(f"type-scale proportions -- micro: {micro_px_area/total_tiered:.1%}  "
+          f"structural: {struct_px_area/total_tiered:.1%}  hero: {hero_px_area/total_tiered:.1%}  "
+          f"(targets: 20-30% / 60-70% / 3-7%)")
+
+    return best_placements, best_pass, best_stats, best_pass_stats
+
+
 def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None,
               landmarks=None, debug_dir=None, out_stem="render", verbose=False, backdrop_rgb=None,
               type_scale=None, auto_res=True, anatomy=None, human=False, wisp_alpha=None, max_px=None):
@@ -3067,606 +3727,18 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     micro_px_area, struct_px_area, hero_px_area, fill_px_area = best_tier_stats
     _log(f"using iteration with best likeness ({best_score:.4f})")
 
-    # ---- Final fills, once, on the winning canvas -------------------------------------------
-    # Residual (short tokens in every free region a word fits) then channel (single letters
-    # along the medial axis of the leading corridors). Placement log/stats are rewound to the
-    # winning iteration first so the claim metrics describe exactly this canvas.
-    _TL.placements[:] = best_placements
-    _TL.pass_tags[:] = best_pass
-    _TL.stats.update(best_stats)
-    _TL.pass_stats.clear()
-    _TL.pass_stats.update({k: list(v) for k, v in best_pass_stats.items()})
-    _TL.pass_name = "residual"
-    micro_px_area += render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
-                                          tokens=short_tokens, size_field_px=size_px_field)
-    _TL.pass_name = "channel"
-    ch_n, ch_px = render_channel_fill(canvas, occupancy, theta_s, mask, get_font, letters=letter_tokens,
-                                      tone=gray.astype(np.float32) / 255.0, size_cap=size_px_field)
-    micro_px_area += ch_px
-    _log(f"final fills: channel fill placed {ch_n} letters ({ch_px}px)")
-    best_placements = list(_TL.placements)
-    best_pass = list(_TL.pass_tags)
-    best_stats = dict(_TL.stats)
-    best_pass_stats = {k: list(v) for k, v in _TL.pass_stats.items()}
-
-    # Gap-fill text is fine detail closing bare patches -- counts toward the micro share, same
-    # spirit as the micro tier itself ("texture, fine tonal modeling, transitions").
-    micro_px_area += fill_px_area
-    total_tiered = max(1, micro_px_area + struct_px_area + hero_px_area)
-    _log(f"type-scale proportions -- micro: {micro_px_area/total_tiered:.1%}  "
-          f"structural: {struct_px_area/total_tiered:.1%}  hero: {hero_px_area/total_tiered:.1%}  "
-          f"(targets: 20-30% / 60-70% / 3-7%)")
-
-    # ---- Opacity carries tone, over ALL placed type ---------------------------------------
-    # Measured on the black Lab: in the body zone (47% of the likeness weight) the typography
-    # panel's tone had r = -0.02 with the photo -- the lanes are sparse there on purpose (dark
-    # fur wants little ink) but the residual/channel fills then closed every gap at near-full
-    # alpha, leaving uniform texture with no value structure. Scale the finished canvas's alpha
-    # by the local photo value (blurred past letter scale) so density AND opacity follow tone.
-    # Applied once, after the density loop, which keeps its own error signal unchanged; the
-    # composite reads letter presence separately (see ink_soft), so legibility is unaffected.
-    tone_blur = _gblur(gray.astype(np.float32) / 255.0, (0, 0), sigmaX=max(2.0, base * 0.15))
-    tone_gain = (0.35 + 0.65 * np.clip(tone_blur, 0, 1)).astype(np.float32)
-    _r, _g, _b, _a = canvas.split()
-    # Letter PRESENCE, captured before the tone modulation: every measurement that means "is
-    # there a letter here" (coverage, exposed space, letters-vs-gaps) reads this, not the dimmed
-    # alpha -- otherwise a dark-fur letter at 35% opacity counts as empty space (measured: the
-    # exposed-space figure jumped to 15.8% on the black Lab the moment tone modulation landed).
-    ink_raw = np.asarray(_a, np.float32) / 255.0
-    if _KEEP_FIELDS:
-        _TL.fields["ink_raw"] = ink_raw
-    _a = Image.fromarray(np.clip(np.asarray(_a, np.float32) * tone_gain, 0, 255).astype(np.uint8))
-    canvas = Image.merge("RGBA", (_r, _g, _b, _a))
-
-    if debug_dir:
-        out = Image.alpha_composite(Image.new("RGBA", (W, H), (255, 255, 255, 255)), canvas).convert("RGB")
-        out.save(out_path, quality=92)
-
-    ink_alpha = np.asarray(canvas.split()[3], np.float32) / 255.0
-    coverage = float((ink_alpha[mask > 0.5] > 0.12).mean())
-    _log(f"ink coverage inside mask: {coverage:.1%}")
-
-    dark_gate = np.clip((0.55 - np.clip(gray.astype(np.float32) / 255.0, 0, 1)) / 0.55, 0, 1)
-    dark_gate = _gblur(dark_gate, (0, 0), sigmaX=max(1.0, W * 0.01))
-    dk = max(3, int(round(W * 0.006))) | 1
-    ink_dilated = cv2.dilate(ink_alpha, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dk, dk)))
-    ink_alpha = ink_alpha * (1.0 - dark_gate) + np.maximum(ink_alpha, ink_dilated) * dark_gate
-
-    # ---- Real eye reveal, not a synthetic catchlight (recommendation #12, reworked) --------
-    # Original approach: find the BRIGHTEST small spot near each attractor point (a proxy
-    # catchlight) and hard-zero typography there. Flagged directly as "eyes look like black
-    # holes, dead" -- checked against the actual source pixels and found two real bugs: (1) the
-    # attractor point sits NEAR the eye but not precisely on the pupil (confirmed by drawing it
-    # on the render), so a narrow search box often missed the eye and landed on cheek fur
-    # instead; (2) "brightest pixel" is the wrong thing to search for in the first place -- a
-    # small specular glint inside a dark iris is often dimmer in raw terms than ordinary sunlit
-    # fur nearby, so that search reliably found fur, not the eye, even widened. The real fix
-    # doesn't need to locate the catchlight precisely at all: find the pupil instead (the
-    # DARKEST compact region near the attractor -- a much more reliable target, since an eye is
-    # reliably darker than surrounding fur) and reveal the ACTUAL photo there directly --
-    # whatever warm iris color and natural catchlight the source photo genuinely has (confirmed
-    # directly: this dog's eye has real amber iris color and a visible glint) -- rather than
-    # trying to synthesize a highlight from scratch.
-    # Reveal the WHOLE eye, not an 11px disk at its darkest point. Probed at the dog's iris
-    # catchlight with correct landmarks: eye_reveal was 0.000 there -- the disk (radius
-    # base*0.22) covered the pupil center only, so the iris and glint got whatever reveal the
-    # ink happened to give them, and the amber read as near-black. Use the same fitted ellipse
-    # render_eye_feature builds the lid from, with the old disk as the fallback when no
-    # plausible ellipse is found.
-    eye_reveal = np.zeros((H, W), np.float32)
-    _every_eye = ([(p, _es, bool(_lm_env)) for p in attractor_pts]
-                  + [(p, f["es"], True) for f in extra_faces for p in f["eyes"]])
-    for (ax, ay), _es_f, _tr_f in _every_eye:
-        geo = eye_geometry(gray, mask, base, (ax, ay), eye_sep=_es_f, trusted=_tr_f)
-        if geo is not None:
-            (ecx, ecy), (a_ax, b_ax), ang, _how = geo
-            cv2.ellipse(eye_reveal, (int(round(ecx)), int(round(ecy))),
-                       (max(2, int(round(a_ax * 1.05))), max(2, int(round(b_ax * 1.05)))),
-                       ang, 0, 360, 1.0, -1)
-            continue
-        r = int(round(base * 0.55))
-        px0, px1 = max(0, int(ax) - r), min(W, int(ax) + r)
-        py0, py1 = max(0, int(ay) - r), min(H, int(ay) + r)
-        if px1 <= px0 or py1 <= py0:
-            continue
-        patch = gray[py0:py1, px0:px1].astype(np.float32)
-        patch_blur = _gblur(patch, (0, 0), sigmaX=max(1.0, base * 0.03))
-        by, bx = np.unravel_index(int(np.argmin(patch_blur)), patch_blur.shape)
-        rad = max(3, int(round(base * 0.22)))
-        cv2.circle(eye_reveal, (px0 + bx, py0 + by), rad, 1.0, -1)
-    eye_reveal = _gblur(eye_reveal, (0, 0), sigmaX=max(1.0, base * 0.06))
-    if _KEEP_FIELDS:
-        _TL.fields["eye_reveal"] = eye_reveal
-
-    # ---- Real nose reveal -- same idea as eye_reveal, a real gap in the render's fidelity ----
-    # The dedicated nose renderer above only claims the outline/groove/nostrils in `occupancy`;
-    # the leather's own interior is left to the generic density pass, which doesn't specifically
-    # boost reveal there. Checked directly against a render: the cat's actual coral-pink nose
-    # leather came through as a flat, nearly colorless patch -- exactly what you'd expect, since
-    # nothing was telling the compositor to reveal MORE photo there specifically. Fit the same
-    # nose ellipse used by the dedicated renderer and reveal the real leather color within it.
-    nose_reveal = np.zeros((H, W), np.float32)
-    nose_fit_final = None if primary_kind == "h" else locate_nose(gray, mask, attractor_pts)
-    for _nfit in [nose_fit_final] + [f["nose_fit"] for f in extra_faces if f["kind"] != "h"]:
-        if _nfit is None:
-            continue
-        (fncx, fncy), (fna, fnb), fnangle = _nfit
-        cv2.ellipse(nose_reveal, (int(round(fncx)), int(round(fncy))),
-                   (max(1, int(round(fna * 0.95))), max(1, int(round(fnb * 0.95)))),
-                   fnangle, 0, 360, 1.0, -1)
-    nose_reveal = _gblur(nose_reveal, (0, 0), sigmaX=max(1.0, base * 0.06))
-
-    # ---- Whisker zone -- makes the typographic whiskers from render_muzzle_topology actually
-    # visible in the FINAL composite, not just the typography-only panel ------------------------
-    # render_muzzle_topology draws its whisker spokes straight into `canvas`, deliberately
-    # extending PAST the silhouette the way real whiskers do. But the whole compositing model is
-    # `a = ink_alpha * mask * ...` -- outside the mask, `mask` is 0, so that ink's alpha never
-    # translates into any visible reveal in the actual delivered image (photo_out), only in the
-    # typography-only debug panel. Checked directly: without this fix the whisker spokes are
-    # real, structured typography that's completely invisible in the piece anyone would actually
-    # look at. Fixed by tracing the SAME spoke geometry into its own zone mask and, below, giving
-    # ink there its own reveal against a fixed pale "whisker" color instead of trying to reveal
-    # actual photo pixels that don't meaningfully exist for a hair drawn past the animal's edge.
-    whisker_zone = np.zeros((H, W), np.float32)
-    whisker_region_inside = np.zeros((H, W), np.float32)
-    _whisker_faces = [(nose_fit_final, attractor_pts)] + [(f["nose_fit"], f["eyes"]) for f in extra_faces if f["kind"] != "h"]
-    for _wfit, _weyes in _whisker_faces:
-        if _wfit is None or len(_weyes) < 2:
-            continue
-        (wncx, wncy), (wna, wnb), _ = _wfit
-        (wx1, wy1), (wx2, wy2) = _weyes[0], _weyes[1]
-        w_eye_sep = max(1.0, math.hypot(wx2 - wx1, wy2 - wy1))
-        pad_offset = wna * 0.55
-        pad_y = wncy + wnb * 0.6
-        whisker_len = w_eye_sep * 1.5
-        for side in (-1, 1):
-            pad_x = wncx + side * pad_offset
-            base_angle = 0 if side > 0 else 180
-            for offset_deg in (-28, -16, -6, 6, 16, 28):
-                angle_deg = base_angle + offset_deg * (1 if side > 0 else -1)
-                theta = math.radians(angle_deg)
-                ex = int(round(pad_x + math.cos(theta) * whisker_len))
-                ey = int(round(pad_y + math.sin(theta) * whisker_len))
-                cv2.line(whisker_zone, (int(round(pad_x)), int(round(pad_y))), (ex, ey),
-                        1.0, thickness=max(2, int(round(base * 0.05))))
-            # A wider band covering where REAL whiskers physically emerge, for the suppression
-            # pass below -- broader than the thin spoke lines above, since a real whisker's base
-            # and first stretch is well within the solid mask before it ever crosses the edge.
-            # First pass at 0.9x/0.55x eye_sep was measured too small directly: the actual visible
-            # whisker strands on the cat photo sweep out much farther than that (confirmed by
-            # visualizing the detector's own signal against the source -- real whiskers extend
-            # roughly 1.5-2x eye separation from the pad), so most of a whisker's visible length
-            # fell outside the suppression band and remained fully visible.
-            _wreg = np.zeros((H, W), np.float32)
-            cv2.ellipse(_wreg, (int(round(pad_x)), int(round(pad_y))),
-                       (int(round(w_eye_sep * 1.8)), int(round(w_eye_sep * 0.9))),
-                       0, 0, 360, 1.0, -1)
-            # Probed at the dog's iris catchlight: source L=157, ink_alpha 0.86, but a=0.051 --
-            # this region (scaled by eye separation, 545px on the dog -> a 980x490 ellipse)
-            # reached the eyes, and a glint against a dark iris is precisely the thin-line signal
-            # the suppression kills. Whiskers grow from the muzzle, below the eyes: clip the
-            # region to strictly below THIS face's eye line so it can never touch an eye again,
-            # whatever the photo's proportions -- per face, so a second pet's eyes are judged
-            # against its own eye line, not the first pet's.
-            _wreg *= (yy > 0.5 * (wy1 + wy2) + 0.18 * w_eye_sep).astype(np.float32)
-            whisker_region_inside = np.maximum(whisker_region_inside, _wreg)
-    # Silhouette fringe hairs share the exact same problem as the whisker spokes -- ink drawn
-    # past mask=0 that the standard compositing would otherwise drop -- so they share the same
-    # fix: a reveal zone computed deterministically (build_fringe_zone) and merged into the same
-    # outside-mask reveal pass below rather than building a second parallel mechanism.
-    fringe_zone = build_fringe_zone(mask, theta_s, base, fringe_points)
-    whisker_outside = np.maximum(whisker_zone, fringe_zone) * (mask <= 0.5)
-    whisker_region_inside = _gblur(whisker_region_inside, (0, 0), sigmaX=max(1.0, base * 0.1)) * mask
-
-    # ---- Saturation-anomaly dampening (the open-mouth/tongue fix) --------------------------
-    # A real defect found on the Border Collie render: a hero word happened to land right over
-    # the open mouth, and because this compositing model reveals MORE of the actual photo
-    # wherever ink is denser (a = ink_alpha * ..., composited = ground*(1-a) + photo*a), a
-    # solid hero word sitting on the tongue became a vividly pink cutout -- jarring against the
-    # otherwise muted, mostly-desaturated palette everywhere else on the animal. Fixed the same
-    # way the eye catchlight is protected: detect the anomaly (here, saturation spiking well
-    # above the LOCAL neighborhood's own saturation, not a fixed global threshold -- portable
-    # across light and dark subjects) and dampen how much of the photo shows through there,
-    # rather than special-casing "tongues." Any comparably saturated small anomaly gets the same
-    # treatment.
-    # Two real bugs found and fixed while tuning this against the ACTUAL tongue pixels, not
-    # assumed: (1) a plain (unmasked) Gaussian blur for the "neighborhood average" leaks in
-    # whatever is OUTSIDE the mask too (grass, background), and that leakage got WORSE, not
-    # better, as the blur radius grew -- background saturation crept into the reference,
-    # shrinking the measured anomaly right when a bigger radius was meant to fix it. Switched to
-    # a properly mask-normalized blur (blur the masked values AND the mask itself, divide) so the
-    # neighborhood average only ever reflects the subject's own fur. (2) The tongue itself has a
-    # saturation GRADIENT (a vivid core fading into blended edges), so even the mask-normalized
-    # version only averaged ~0.26-0.33 anomaly across the whole tongue despite peaking at 1.0 in
-    # its core -- the first threshold/divisor pair (0.10 / 0.22) left the softer edges barely
-    # dampened. Both tightened until the tongue's OWN measured average maps to a real reduction.
-    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV).astype(np.float32)
-    sat = hsv[..., 1] / 255.0
-    mf = (mask > 0.5).astype(np.float32)
-    sigma = max(1.0, W * 0.10)
-    num = _gblur(sat * mf, (0, 0), sigmaX=sigma)
-    den = _gblur(mf, (0, 0), sigmaX=sigma)
-    broad_sat = np.divide(num, den, out=np.zeros_like(num), where=den > 1e-6)
-    sat_anomaly = np.clip((sat - broad_sat - 0.05) / 0.10, 0, 1) * mf
-    sat_anomaly = _gblur(sat_anomaly, (0, 0), sigmaX=max(1.0, base * 0.05))
-    # Memory: this composite stage held two dozen full-frame colour arrays at once (1.2 GB at
-    # the 1600px preview, measured; the box ran out of memory and locked up). Every array is
-    # released the moment its last reader has run. None of these `del`s changes a value.
-    del hsv, sat, mf, num, den, broad_sat
-
-    # `feat` was already computed once, up front, and reused for the attractor field above --
-    # no need to recompute it here.
-    # Lowered from 0.45 -- flagged directly as "eyes look like black holes, dead." This dampens
-    # `a`, which controls how much of the ACTUAL photo shows through; suppressing it near the
-    # eyes was hiding the real iris/pupil color and detail, not just thinning typography over
-    # it (that protection belongs to the density fields elsewhere, not to hiding the photo).
-    a = np.clip(ink_alpha * mask * (1.0 - 0.15 * feat) * (1.0 - 0.95 * sat_anomaly), 0, 1)
-    # Boost reveal toward 1 within the real eye disk found above, so the actual iris color and
-    # any natural catchlight show clearly regardless of how much ink happens to land there --
-    # additive toward full reveal, not an override, so it still respects genuinely dense ink.
-    a = np.clip(a + eye_reveal * (1.0 - a) * 0.92, 0, 1)
-    # Same treatment for the nose leather -- slightly less than full reveal (0.85 vs 0.92) so a
-    # trace of typographic texture still reads on top of it, unlike the eye where the priority
-    # was eliminating a literal black hole.
-    a = np.clip(a + nose_reveal * (1.0 - a) * 0.85, 0, 1)
-    # ---- Photo wash: continuous faint color in the negative space, not pure paper -----------
-    # The real ceiling on "muted fur": this technique only ever reveals the photo through thin
-    # letter strokes, so even fully-saturated ink only covers ~40-45% of the silhouette at
-    # legible density -- the rest is pure ground color, and the eye averages that in regardless
-    # of how vivid the strokes themselves are. No amount of boosting the STROKE color fixes
-    # that; the gaps themselves need to carry some of the real photo's color. Guarantee a
-    # floor on `a` everywhere inside the mask (not an override -- `a` only goes UP where this
-    # floor exceeds it, so real ink-driven reveal in dense areas is untouched) rather than
-    # letting bare paper show at zero. Multiplied by the SAME anomaly suppression as the ink
-    # reveal above, so this can't reopen the tongue-color bleed that fix was for -- a continuous
-    # wash of a genuinely wrong color would be worse than the gap it's filling.
-    # A FLAT 0.30 floor everywhere was the actual cause of "washed out": it lifts genuinely dark
-    # regions -- the pupil, nostril, shadow creases -- toward showing SOME reveal even where the
-    # real photo is supposed to read as deep shadow, flattening exactly the contrast that gives
-    # a face its depth. Scaled by the photo's own brightness instead (dark photo -> little to no
-    # wash, preserving real shadow; bright/mid fur -> a healthy wash, keeping the color-
-    # continuity win) -- this fixes the mechanism, not just the symptom, so dropping the whole
-    # thing isn't necessary: dark areas were never the ones that looked muted in the first place.
-    # Flagged directly as a "gauzy haze over the majority of the image." Root cause: these
-    # reference photos are deliberately bright/high-key (per the user's own reference shots), so
-    # `brightness` is high across MOST of the silhouette, not just a few highlights -- meaning the
-    # 0.40 peak floor was landing at ~0.30-0.38 almost everywhere, not just where genuinely needed.
-    # With ink coverage around 40-45%, that means 60-70% of most pixels were the flat neutral
-    # ground color bleeding through as a near-uniform veil -- exactly a haze, and exactly why it
-    # didn't look like the "healthy wash in bright fur, little wash in shadow" it was designed to
-    # be: on a bright photo there's barely any shadow left to tell the two cases apart. Cut the
-    # peak substantially so the floor stays a light tint rather than a dominant blend -- letters
-    # and dense typographic areas still carry the real ink-driven reveal untouched (this is only
-    # a floor), but genuine gaps read as gaps again instead of a wash of ground color.
-    # Down from 0.40: with the gap fill now a darkened copy of the photo (structure already
-    # present in the gaps), a high wash floor only pulls gaps back up toward the letters and
-    # erases the letter/gap distinction the typography depends on to be seen.
-    wash_strength = 0.15
-    brightness = np.clip(gray.astype(np.float32) / 255.0, 0, 1)
-    wash = wash_strength * mask * brightness * (1.0 - 0.95 * sat_anomaly)
-    a = np.clip(np.maximum(a, wash), 0, 1)
-    del brightness
-    # ---- A person's hair: the photo shows through, outside the face --------------------
-    # "Strands of wispy hair are not evident in the woven version." Traced on her photo:
-    # the hairline is smooth and every matte agrees on it, so the strands were never at the
-    # edge. They are the hair's own texture, strand by strand, which Displacement keeps
-    # because its letters are a warp of the photo and the photo is everywhere, and which
-    # this engine paints over: a letter reveals the photo, a gap is a darkened copy, and the
-    # letters' own edges are what the eye reads. Measured on the boy (high-pass L in the
-    # hair, correlation with the source's): Woven carried 0.33 of the strand structure.
-    # Outside the face ellipse the photo is revealed through everything at PET_V2_HAIR_REVEAL,
-    # so the hair is the photo with the words on it, as it is in Displacement; the face keeps
-    # the type-only recipe every judgment was made on. A floor, never a cut: dense ink still
-    # reveals more. On the boy, whose photo is 640px wide and upscaled, 0.7 raised the
-    # correlation only to 0.39; on her photo at the loupe it was the closest Woven came to
-    # Displacement's hair, and the blind test (3-0, 3-0) was run with it. 0.7 is the
-    # default; PET_V2_HAIR_REVEAL overrides it, 0 turns it off. Animals never enter this branch.
-    if human and len(attractor_pts) >= 2:
-        _hr = float(_settings.raw("PET_V2_HAIR_REVEAL") or 0.0)
-        if _hr > 0.0:
-            _fx0 = 0.5 * (attractor_pts[0][0] + attractor_pts[1][0])
-            _fy0 = 0.5 * (attractor_pts[0][1] + attractor_pts[1][1]) + 0.5 * _es
-            _fr0 = np.sqrt(((xx - _fx0) / (1.1 * _es)) ** 2 + ((yy - _fy0) / (1.5 * _es)) ** 2)
-            _hair_w = np.clip((_fr0 - 1.0) / 0.3, 0.0, 1.0).astype(np.float32)   # 0 on the face, 1 past 1.3
-            a = np.clip(np.maximum(a, _hr * mask * _hair_w * (1.0 - 0.95 * sat_anomaly)), 0, 1)
-            del _fr0, _hair_w
-    # (A person's flyaway hair at the edge is composited at the end, from the guided fringe
-    # matte: see "wisps" below.)
-
-    # ---- Suppress REAL photographic whiskers within the mask ------------------------------
-    # "Whiskers should also be typography... a high-end portrait should eventually have no
-    # photographic whiskers." Even where mask=1, the wash/ink-reveal above naturally reveals
-    # whatever's genuinely in the photo there -- including a cat's actual whisker hairs, thin
-    # and high-contrast against duller surrounding fur. Confirmed directly: a render's cheek
-    # showed real smooth grey whisker strands sitting on top of the typography once wash was
-    # strong enough to reveal fur color at all. A median blur erases thin line structures like a
-    # whisker while leaving broader fur texture alone, so the residual (original minus
-    # median-blurred) isolates whisker-like anomalies specifically. Restricted to the muzzle/
-    # cheek band computed above so this can't accidentally suppress unrelated fine detail
-    # elsewhere on the animal.
-    median_local = cv2.medianBlur(gray, 9).astype(np.float32)
-    whisker_signal = np.abs(gray.astype(np.float32) - median_local)
-    whisker_suppress = np.clip(whisker_signal / 18.0, 0, 1) * whisker_region_inside
-    a = a * (1.0 - 0.92 * whisker_suppress)
-    a = a[..., None]
-    del median_local, whisker_signal, whisker_suppress
-    # ---- Ground color derived from the REAL photo background, not an arbitrary constant ----
-    # This was a fixed navy-purple (26, 20, 40) regardless of what was actually behind the pet
-    # -- grass, a wall, sky, whatever. "Truer colors" applies to the ground too: sample the
-    # actual background pixels (masked-average blur, same normalization trick as sat_anomaly
-    # above, so mask-interior pixels don't corrupt the average), then darken and desaturate so
-    # it stays a recessive backdrop rather than a literal sharp photo -- the point is the HUE
-    # now genuinely reflects the real scene (muted green for grass, muted warm gray for an
-    # indoor wall, etc.), not that the background becomes a competing photographic element.
-    # cv2.GaussianBlur silently squeezes a (H,W,1) array back down to (H,W) -- blur the 2D
-    # weight map and re-add the channel axis explicitly rather than relying on it surviving.
-    bg_weight2d = (mask <= 0.5).astype(np.float32)
-    bg_sigma = max(20.0, W * 0.25)
-    bg_num = _gblur(bgr_source.astype(np.float32) * bg_weight2d[..., None], (0, 0), sigmaX=bg_sigma)
-    bg_den = _gblur(bg_weight2d, (0, 0), sigmaX=bg_sigma)[..., None]
-    ground_bgr = np.divide(bg_num, bg_den, out=np.full_like(bg_num, 30.0), where=bg_den > 1e-6)
-    ground_hsv = cv2.cvtColor(np.clip(ground_bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
-    # Pushed much further -- the user supplied the actual source photos side by side with our
-    # renders and the gap was obvious: these are bright, evenly, naturally lit photos (a sunlit
-    # garden, a sunlit window, a light studio backdrop), and every version of this ground so far
-    # has been some shade of dim. Brightened past the raw sampled average, not just toward it --
-    # a blurred garden or a bright wall in real light reads brighter than its own pixel average
-    # once vignetting/shadow falloff is removed, which is exactly what a real print of these
-    # would look like.
-    ground_hsv[..., 1] *= 0.80
-    ground_hsv[..., 2] = np.clip(ground_hsv[..., 2] * 1.05, 0, 255)
-    ground_bgr = cv2.cvtColor(np.clip(ground_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR)
-    outer_ground_rgb = cv2.cvtColor(ground_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
-    if backdrop_rgb is not None:
-        # The customer chose a backdrop on the site. Honoring it here (and not in the gaps
-        # between letters, which stay coat-derived) is what makes the choice do anything on
-        # this engine: previously it was accepted and ignored, so switching to Gallery Gray
-        # re-rendered 40 s of identical pixels.
-        outer_ground_rgb = np.full((H, W, 3), np.asarray(backdrop_rgb, np.float32), np.float32)
-    del bg_weight2d, bg_num, bg_den, ground_bgr, ground_hsv
-    # SEGMENTATION FIX (still applies): one ground field can't serve both "outside the animal"
-    # and "the gap between two letters ON the animal" -- they need different colors. But the
-    # INNER one was set to a near-black tone for contrast, and with collision tolerances now
-    # tightened for legibility, MORE of the subject falls into that gap (measured: coverage
-    # dropped to 43-47%) -- so a large minority of the animal was rendering as near-black no
-    # matter how bright the revealed ink areas got. Against these bright reference photos, that
-    # reads as "too dark" overall even where the actual ink is vivid. Lightened substantially --
-    # still a warm, slightly-recessive neutral so ink strokes read as the darker, crisper
-    # element (the actual drawing), not the reverse, just nowhere near black.
-    # First pass at this (150,132,112) overshot -- the render came back readable but flat,
-    # washing out some of the eye/nose contrast the earlier eye-reveal fix had just recovered.
-    # Backed off toward a middle ground: bright enough that it doesn't read as "dark," but not
-    # so light that it competes with and flattens the actual revealed ink detail.
-    # Still flagged as a "gauzy haze over the majority of the image" even after tuning the wash
-    # floor. Root cause found by checking the actual pixel math: with ink coverage around 40-45%,
-    # this flat (108,92,76) grey-brown is the DOMINANT color of most of the image regardless of
-    # wash strength -- it's what's behind every gap. That's a fixed neutral, chosen once and used
-    # for every pet regardless of actual coloring, so on a light cream doodle (or any coat whose
-    # real color isn't already close to warm grey-brown) it reads as exactly what it is: a grey
-    # film sitting over the animal's real color instead of a rest color the pet's own coat is
-    # organically at rest. Fixed the same way outer_ground was fixed earlier -- derive it from the
-    # REAL subject instead of a constant: a masked, heavily blurred average of the pet's own fur
-    # (which also means it naturally varies across the coat -- lighter where the coat is lit,
-    # cooler in shadow -- instead of being one dead-flat tone everywhere), then desaturated and
-    # dimmed enough that ink strokes still read as the crisper, darker foreground element.
-    # Measured directly why the haze complaint persisted even after this fix and the alpha-
-    # ceiling fix: a generic fur patch's local grayscale contrast (std) was 18 in the render vs
-    # 38 in the source -- HALF the real tonal variation, gone. Root cause: fur_sigma here was
-    # W*0.12 (~120px on a 1000px-wide photo) -- far beyond "smooth away letter-level noise," it
-    # averaged out essentially ALL of the fur's own broad light/shadow structure (a lit cheek vs
-    # a shadowed ear) into one near-flat gradient, and that flat gradient is what shows in every
-    # gap between letters across roughly half the image. A single flat fill under half the
-    # picture reads as a haze/veil sitting over the real detail, regardless of how correct its hue
-    # is. Cut drastically so this base layer keeps the photo's own broad tonal structure instead
-    # of erasing it -- still blurred enough to hide letter-scale noise, not the whole face's shape.
-    # Design decision, made explicit after the tonal fixes landed: once the letters revealed the
-    # true photo AND the gaps showed a blurred near-copy of it, the composite converged on a
-    # soft-focus photograph with faint text -- correct tone, no typography. The gap fill must be
-    # the same picture at a clearly LOWER tone, so every letterform is brighter than its
-    # surroundings and the image is legibly built of words while still carrying the photo's
-    # structure in both layers. Lightly blurred only (letter-scale noise), not averaged away.
-    fur_weight2d = (mask > 0.5).astype(np.float32)
-    # ---- Edge decontamination: take the background back out of the silhouette band --------
-    # A matte is never exact. Along the outline the photo's pixels are part fur, part whatever
-    # was behind it: grass, sky, a sunlit rim. Revealed through the letters, and averaged into
-    # the gap colour, that band rendered as a glow traced round the whole animal, green on the
-    # collie, white-gold on the backlit shepherd (staging baseline dc242ea). Measured on a
-    # loosened matte of the tan dog: the inner ring's chroma sat 9.2 units off the deep fur,
-    # 40% of the way to the grass. Each pixel within 0.35 base of the edge is projected onto
-    # the line from the local deep-fur colour F to the local background colour B, and the
-    # background component is removed in proportion to how close to the edge it sits.
-    _hard = (mask > 0.5).astype(np.float32)
-    _d_in = cv2.distanceTransform(_hard.astype(np.uint8), cv2.DIST_L2, 5)
-    # "Deep" fur starts a full base inside the outline when the subject is large enough to
-    # allow it, half a base otherwise: the reference colour must not itself be contaminated.
-    _mask_deep = (_d_in > base * 1.0).astype(np.float32)
-    if float(_mask_deep.sum()) < 0.05 * float(_hard.sum()):
-        _mask_deep = (_d_in > base * 0.5).astype(np.float32)
-    if float(_mask_deep.sum()) < 100:          # a tiny subject: nothing deep enough to erode to
-        _mask_deep = _hard
-    _dec_sigma = max(4.0, base * 1.0)
-    _src_f = bgr_source.astype(np.float32)
-    _F = np.divide(_gblur(_src_f * _mask_deep[..., None], (0, 0), sigmaX=_dec_sigma),
-                   _gblur(_mask_deep, (0, 0), sigmaX=_dec_sigma)[..., None] + 1e-4)
-    _bgw = (mask <= 0.5).astype(np.float32)
-    _B = np.divide(_gblur(_src_f * _bgw[..., None], (0, 0), sigmaX=_dec_sigma),
-                   _gblur(_bgw, (0, 0), sigmaX=_dec_sigma)[..., None] + 1e-4)
-    _BF = _B - _F
-    # The background fraction is judged in a chroma-weighted LAB (L at 0.3): a plain RGB
-    # projection read every LIGHTER patch of fur -- the white chin, the lit chest -- as
-    # background, because backgrounds are usually brighter than deep fur (measured: 0.73
-    # "background" in the cat's outer band with a tight matte). Grass against tan, sky
-    # against white, are chroma differences; light fur against dark fur is not.
-    # ... and the correction is applied to chroma ONLY. Subtracting the background vector in
-    # RGB turned the collie's white paws violet: grass is brighter than white fur in green
-    # alone, so "white minus (grass minus fur)" loses green and keeps magenta (staging,
-    # 0322f32). Brightness is left as the photo has it; a sunlit rim stays a sunlit rim.
-    def _lab(a):
-        return cv2.cvtColor(np.clip(a, 0, 255).astype(np.uint8), cv2.COLOR_BGR2LAB).astype(np.float32)
-    _Pl, _Fl, _Bl = _lab(_src_f), _lab(_F), _lab(_B)
-    _BFab = _Bl[..., 1:] - _Fl[..., 1:]
-    _BF2 = np.maximum((_BFab * _BFab).sum(-1), 1e-6)
-    _t = np.clip(((_Pl[..., 1:] - _Fl[..., 1:]) * _BFab).sum(-1) / _BF2, 0, 1)
-    _t = np.where(np.sqrt(_BF2) < 6.0, 0.0, _t)       # background and fur alike here: nothing to remove
-    # How deep does the contamination reach? Walk inward in 2px shells until the mean
-    # background fraction falls under 0.12, then fade the correction out over that depth
-    # (never less than 0.35 base, never more than 1.2). A fixed 0.35 base left a loosened
-    # matte at 5.3 chroma units of drift; a matte twice as loose at 9.6 -- the band has to
-    # be as wide as the matte is wrong, which only the photo can say.
-    _depth = base * 0.35
-    _dmax = base * 1.2
-    _dd = 0.0
-    while _dd < _dmax:
-        _shell = (_d_in > _dd) & (_d_in <= _dd + 2.0)
-        if _shell.sum() < 50 or float(_t[_shell].mean()) < 0.12:
-            break
-        _dd += 2.0
-    _depth = float(np.clip(_dd + base * 0.15, base * 0.35, _dmax))
-    # Full strength through the measured depth, then a short fade: a fade across the whole
-    # band left the middle of it half-corrected (loose matte: 4.3 chroma units of drift).
-    _band = np.clip(1.0 - (_d_in - _dd) / max(1.0, base * 0.2), 0, 1) * _hard
-    _log(f"edge decontamination: background reaches {_dd:.0f}px in; band {_depth:.0f}px "
-         f"(mean bg fraction in outer 0.2 base: {float(_t[(_d_in > 0) & (_d_in <= base * 0.2)].mean()):.2f})")
-    # bgr_clean feeds the gap colour and the revealed photo. bgr_source stays the untouched
-    # photo for the likeness score, so the score keeps one reference across builds.
-    _Pl[..., 1:] -= (_band * _t)[..., None] * _BFab
-    bgr_clean = cv2.cvtColor(np.clip(_Pl, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR)
-    deep_fur_rgb = _F[..., ::-1].astype(np.float32)   # RGB, for the fringe hairs below
-    del _src_f, _F, _bgw, _B, _BF, _Pl, _Fl, _Bl, _BFab, _BF2, _t, _band, _mask_deep, _d_in, _hard
-
-    # The gap layer: a coat's rest tone is the photo blurred past letter-scale noise. A face
-    # wants its own detail between the letters, so a person's gap layer is barely blurred.
-    fur_sigma = max(1.0, W * 0.0012) if human else max(2.0, W * 0.006)
-    fur_num = _gblur(bgr_clean.astype(np.float32) * fur_weight2d[..., None], (0, 0), sigmaX=fur_sigma)
-    fur_den = _gblur(fur_weight2d, (0, 0), sigmaX=fur_sigma)[..., None]
-    fur_bgr = np.divide(fur_num, fur_den, out=np.full_like(fur_num, 120.0), where=fur_den > 1e-6)
-    fur_hsv = cv2.cvtColor(np.clip(fur_bgr, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
-    # Measured (dog, inside mask, LAB L percentiles): source 5th pct = 30, render = 56; source
-    # 95th = 209, render = 191; median saturation 102 vs 72. Those two lines below were the direct
-    # cause: a hard clip to [60, 200] on a layer behind ~half of every pixel forbids true blacks
-    # and true whites outright, and sat*0.45 is the desaturation. Clamp removed, desaturation
-    # eased; the real enforcement of the source's tonal range is the distribution match at the
-    # end of the composite (see "tonal match" below), which this no longer fights.
-    # Skin is not fur. The gap layer at 0.40 of the source's value, with 0.85 of its
-    # saturation, is a coat's rest tone; on a face it read as dark orange (measured on the
-    # boy: face L 92 against a source of 130, saturation 112 against 90). A person keeps
-    # more of the face's own value in the gaps and a little less of its colour.
-    _gap_s, _gap_v = (0.80, 0.70) if human else (0.85, 0.40)
-    fur_hsv[..., 1] *= _gap_s
-    fur_hsv[..., 2] = np.clip(fur_hsv[..., 2] * _gap_v, 0, 255)   # same picture, well below the letters
-    inner_ground_bgr = cv2.cvtColor(np.clip(fur_hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR)
-    inner_ground_rgb = cv2.cvtColor(inner_ground_bgr, cv2.COLOR_BGR2RGB).astype(np.float32)
-    ground_rgb = inner_ground_rgb * mask[..., None] + outer_ground_rgb * (1.0 - mask[..., None])
-    _outer_keep = outer_ground_rgb if (human and wisp_alpha is not None) else None   # the wisps sit on it
-    del fur_weight2d, fur_num, fur_den, fur_bgr, fur_hsv, inner_ground_bgr, inner_ground_rgb, outer_ground_rgb
-    # Vividness boost for the pet's own revealed colors -- flagged directly as "muted," and the
-    # side-by-side reference photos confirmed it again at a brightness level, not just
-    # saturation. Boost both explicitly, after all the tonal logic is settled, so this doesn't
-    # fight the density correction above -- it only changes color vividness, not how much
-    # ink/reveal there is. Brightness eased back from 1.38 (part of the same overshoot as the
-    # ground above) to keep real contrast in the fur rather than flattening it.
-    # Flagged directly: the doodle's nose leather (near-black with a faint warm undertone in the
-    # source) rendered RED, not dark brown. Root cause -- a flat 1.55x saturation multiplier
-    # applied everywhere, including near-black pixels where the nose_reveal fix above (added this
-    # session) now shows close to the FULL boosted color instead of a ground-diluted blend. A
-    # small saturation value on a near-zero-value pixel is barely visible normally, but boosted
-    # 1.55x and then shown at ~90% reveal, that faint warm undertone becomes a dominant, visibly
-    # red hue -- an artifact of the boost math, not a real color in the photo. Scale the
-    # saturation boost by the pixel's own brightness (matches the wash fix's reasoning below):
-    # bright fur gets the full 1.55x vividness push, while near-black leather/shadow/pupils keep
-    # close to their real, mostly-neutral saturation instead of having a boosted color invented.
-    # Measured directly against the doodle's actual nose pixels: the source averages S=97/255
-    # (a real but modest warm brown, V=105), while `1.0 + 0.55*V` still pushed it to S=168 at
-    # this V -- more than 1.7x -- because _enhance_contrast has ALREADY boosted saturation
-    # upstream, so this multiplier was compounding on top of that, not starting from the raw
-    # photo. A dark, desaturated warm hue reads as "brown"; the same hue boosted to high
-    # saturation reads as "red" even though the hue angle barely moved -- that compounding is
-    # exactly what turned the nose red. Steepened so dark pixels land near a NEUTRAL multiplier
-    # (~1.0, preserving whatever _enhance_contrast already did) instead of still gaining nearly
-    # 20%, while bright fur still reaches the full 1.55x vividness that fixed "muted" earlier.
-    # All of the per-pixel color hacks that used to live here (contrast-enhanced source,
-    # brightness-scaled saturation multiplier, V*1.22) are gone. Measured on the dog's iris:
-    # source saturation 110, this pipeline's output 73 -- the "don't over-saturate dark pixels"
-    # formula added for the doodle's nose was DESATURATING every dark saturated pixel, and an
-    # amber iris is exactly that. With the end-of-composite distribution match now forcing the
-    # output's luminance and saturation range onto the source's, there is no reason left to
-    # pre-distort the colors at all: use the real photo, and let the match enforce the range.
-    photo_rgb = cv2.cvtColor(bgr_clean, cv2.COLOR_BGR2RGB).astype(np.float32)
-    composited = ground_rgb * (1.0 - a) + photo_rgb * a
-    # ---- Wisps: a person's flyaway hair, outside the solid silhouette -------------------
-    # Displacement feathers its silhouette with a guided filter that snaps the matte onto
-    # the hair's real edges, so a strand a few pixels wide keeps its own alpha and shows on
-    # the backdrop. This engine's matte is a solidified silhouette with a blurred outline
-    # (right for fur, where the letters carry the edge), and outside that outline the
-    # ground was painted flat -- the strands the customer sees in Displacement were gone.
-    # `wisp_alpha` is that same guided fringe matte, built by the entry point for a person;
-    # outside the solid silhouette the pixel is the outer ground with the photo over it at
-    # the fringe's own alpha, exactly as Displacement composites its edge. Inside nothing
-    # changes: the fringe weight is 0 wherever the matte is solid.
-    _wisp_fr = None
-    if _outer_keep is not None:
-        _wisp_fr = np.clip((0.52 - mask) / 0.06, 0, 1).astype(np.float32)   # 1 outside the solid silhouette
-        _al = np.clip(wisp_alpha, 0, 1).astype(np.float32)[..., None]
-        _strand = _outer_keep * (1.0 - _al) + photo_rgb * _al
-        composited = composited * (1.0 - _wisp_fr[..., None]) + _strand * _wisp_fr[..., None]
-        del _strand, _al
-    del _outer_keep
-
-    # Per-pixel stage probe: GOP_DEBUG_PT="x,y" prints each compositing stage's value at that
-    # pixel, so a lost detail (a catchlight, a highlight) can be traced to the exact stage that
-    # loses it instead of being guessed at from the final image.
-    _dbg_pt = _settings.raw("GOP_DEBUG_PT")
-    _dbg_pt = tuple(int(v) for v in _dbg_pt.split(",")) if _dbg_pt else None
-
-    def _dbg(label, rgb):
-        if _dbg_pt is None:
-            return
-        x, y = _dbg_pt
-        px = np.clip(rgb[y:y + 1, x:x + 1], 0, 255).astype(np.uint8)
-        Lv = int(cv2.cvtColor(px, cv2.COLOR_RGB2LAB)[0, 0, 0])
-        _log(f"  [probe {x},{y}] {label:<28s} L={Lv:3d}  rgb={tuple(int(v) for v in rgb[y, x])}")
-
-    if _dbg_pt is not None:
-        x, y = _dbg_pt
-        _log(f"  [probe {x},{y}] a={float(a[y, x, 0]):.3f} ink_alpha={float(ink_alpha[y, x]):.3f} "
-              f"eye_reveal={float(eye_reveal[y, x]):.3f} feat={float(feat[y, x]):.3f} "
-              f"wash={float(wash[y, x]):.3f} sat_anom={float(sat_anomaly[y, x]):.3f}")
-        _dbg("photo_rgb (source)", photo_rgb)
-        _dbg("ground_rgb", ground_rgb)
-        _dbg("composited (pre-match)", composited)
-    del ground_rgb, photo_rgb, bgr_clean, a, wash, sat_anomaly
-
-    # Reveal the whisker typography directly against a fixed pale "whisker" color rather than
-    # through the mask-gated photo-reveal machinery -- there's no real photo pixel to reveal for
-    # a hair drawn past the animal's own edge, so this gives it a color of its own instead.
-    whisker_ink_alpha = ink_alpha * whisker_outside
-    whisker_color = np.array([222.0, 218.0, 205.0], np.float32)
-    # Silhouette fringe hairs used the same fixed pale as the whiskers. Against a dark
-    # backdrop that reads as hair catching light; against Gallery Gray it read as a pale
-    # outline traced around the animal. The fringe takes the coat's own colour so a brown dog
-    # sheds brown hairs on any backdrop. Real whiskers (whisker_zone, cats) stay pale: they are.
-    # The colour comes from DEEP fur (the matte eroded by half a base), not the edge band:
-    # the edge average carried the background in, and the 10% lift on top of that made the
-    # hairs a glow on every dark backdrop. Hair is the coat's own colour, no brighter.
-    fur_edge_rgb = deep_fur_rgb
-    _wz = np.clip(whisker_zone, 0, 1)[..., None]
-    hair_color = whisker_color * _wz + fur_edge_rgb * (1.0 - _wz)
-    composited = composited * (1.0 - whisker_ink_alpha[..., None]) + hair_color * whisker_ink_alpha[..., None]
-    del _wz, hair_color, fur_edge_rgb, deep_fur_rgb   # whisker_ink_alpha feeds outside_w at the end
-
-    # edge_ink used to add a dark stroke at every strong internal edge -- a reasonable idea for a
-    # moody, dark-ground piece, but against a brightened subject it was one more thing pulling
-    # the average tone down. Lightened the color and roughly halved the blend strength.
-    edge = (_edge_ink(gray.astype(np.uint8)) * mask)[..., None]
-    edge_ink_color = np.array([70.0, 62.0, 52.0], np.float32)
-    del edge   # computed for the ek blend below, which is 0.0: nothing reads it
-    # Removed (ek was 0.30). Measured on the dog's eye: the catchlight is L=196 in the source and
-    # survives the color pipeline at ~185, but a bright glint inside a dark iris is the strongest
-    # internal edge in the image, so this blend pulled it 30% toward (70,62,52) -> predicted ~148,
-    # measured 150. It was doing the same to every bright fine detail. Its purpose (contrast) is
-    # now handled by the calibrated local-contrast step and the distribution match below.
-    ek = 0.0
-
+    best_placements, best_pass, best_stats, best_pass_stats = _phase_final_fills(canvas, best_placements, best_pass, best_stats, best_pass_stats, base, coherence_s, get_font, mask, micro_px_area, occupancy, rng, theta_s, short_tokens, size_px_field, letter_tokens, gray, fill_px_area, hero_px_area, struct_px_area)
+    canvas, ink_raw, ink_alpha = _phase_opacity_tone(canvas, base, gray, debug_dir, H, W, out_path, mask)
+    eye_reveal = _phase_eye_reveal(H, W, base, _es, _lm_env, attractor_pts, extra_faces, gray, mask)
+    nose_reveal, nose_fit_final = _phase_nose_reveal(H, W, attractor_pts, gray, mask, primary_kind, extra_faces, base)
+    whisker_zone, whisker_region_inside, whisker_outside = _phase_whisker_zone(W, mask, H, attractor_pts, extra_faces, nose_fit_final, base, yy, fringe_points, theta_s)
+    a, sat_anomaly = _phase_saturation_anomaly(ink_alpha, mask, W, bgr, base, feat, eye_reveal, nose_reveal)
+    a, wash = _phase_photo_wash(a, mask, gray, sat_anomaly)
+    a = _phase_hair_reveal(a, attractor_pts, human, _es, xx, yy, mask, sat_anomaly)
+    a = _phase_suppress_photo_whiskers(a, gray, whisker_region_inside)
+    outer_ground_rgb, fur_weight2d = _phase_ground_colour(mask, H, W, bgr_source, backdrop_rgb)
+    bgr_clean, deep_fur_rgb, ground_rgb, _outer_keep, photo_rgb, composited = _phase_edge_decontamination(a, base, mask, bgr_source, W, human, fur_weight2d, outer_ground_rgb, wisp_alpha)
+    _wisp_fr, composited, _dbg, _dbg_pt, whisker_ink_alpha = _phase_wisps(a, feat, wisp_alpha, _outer_keep, mask, photo_rgb, composited, ink_alpha, eye_reveal, sat_anomaly, wash, ground_rgb, bgr_clean, whisker_outside, whisker_zone, deep_fur_rgb, gray)
     m_in, composited, src_L_in, letters_in, light_mix, src_mean_L, L_after, dark_f, dark_mix, gap_scale, letter_scale, light_f, pcts = _phase_tone_match(mask, human, attractor_pts, _es, xx, yy, bgr_source, composited, base, ink_raw, _dbg, _dbg_pt, extra_faces, eye_reveal, fine_blend)
     cov_final, rep, fp_cov, coll, coll_core, exposed, fillable, composited_u8, photo_out = _phase_final_metrics(mask, ink_raw, m_in, letters_in, pcts, src_L_in, L_after, dark_mix, light_mix, dark_f, light_f, gap_scale, letter_scale, src_mean_L, nose_fit_final, H, W, region_map, best_placements, best_pass, best_stats, best_pass_stats, composited, debug_dir, out_path)
     metrics = _phase_likeness_test(photo_out, out_path, W, attractor_pts, base, bgr_source, canvas, extra_faces, mask, debug_dir, exposed, fillable, fp_cov, best_placements, coll, coll_core, cov_final, H, rep, _wisp_fr, wisp_alpha, whisker_ink_alpha, backdrop_rgb)
