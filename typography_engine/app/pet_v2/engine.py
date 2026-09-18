@@ -1688,8 +1688,14 @@ def _landmark_string(faces, scale=1.0):
     return "|".join(groups)
 
 
-def _phase_likeness_test(photo_out, out_path, W, attractor_pts, base, bgr_source, canvas, extra_faces, mask, debug_dir, exposed, fillable, fp_cov, best_placements, coll, coll_core, cov_final, H, rep, _wisp_fr, wisp_alpha, whisker_ink_alpha, backdrop_rgb):
-    """Recommendation #14: automatic type-only likeness test. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+def _phase_likeness_test(photo_out, out_path, W, attractor_pts, base, bgr_source, canvas,
+                         extra_faces, mask, debug_dir, exposed, fillable, fp_cov,
+                         best_placements, coll, coll_core, cov_final, H, rep, _wisp_fr,
+                         wisp_alpha, whisker_ink_alpha, backdrop_rgb):
+    """Recommendation #14: automatic type-only likeness test.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Recommendation #14: automatic type-only likeness test ----------------------------
     # Four panels: A (source), B (typography+color, already saved as photo_out), C (typography
     # only, already saved as out_path -- render_word_bitmap already fills near-black on white,
@@ -1722,8 +1728,14 @@ def _phase_likeness_test(photo_out, out_path, W, attractor_pts, base, bgr_source
     return metrics
 
 
-def _phase_final_metrics(mask, ink_raw, m_in, letters_in, pcts, src_L_in, L_after, dark_mix, light_mix, dark_f, light_f, gap_scale, letter_scale, src_mean_L, nose_fit_final, H, W, region_map, best_placements, best_pass, best_stats, best_pass_stats, composited, debug_dir, out_path):
-    """_phase_final_metrics. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+def _phase_final_metrics(mask, ink_raw, m_in, letters_in, pcts, src_L_in, L_after, dark_mix,
+                         light_mix, dark_f, light_f, gap_scale, letter_scale, src_mean_L,
+                         nose_fit_final, H, W, region_map, best_placements, best_pass,
+                         best_stats, best_pass_stats, composited, debug_dir, out_path):
+    """Final metrics.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     photo_out = None
     # Typography legibility in the delivered composite, as a number: mean L of letter pixels vs
     # gap pixels inside the mask. If these converge, the words have disappeared into the photo.
@@ -1791,8 +1803,26 @@ def _phase_final_metrics(mask, ink_raw, m_in, letters_in, pcts, src_L_in, L_afte
     return cov_final, rep, fp_cov, coll, coll_core, exposed, fillable, composited_u8, photo_out
 
 
-def _phase_coat_tone_match(base, mask, fine_blend, src_lab, src_mean_L, ink_raw, m_in, GAP_TONE, LETTER_TONE, human, _ref_in, ink_soft, letters_in, L_cur, _quantile_match, src_L_in, eye_reveal, attractor_pts, extra_faces, xx, yy, _es, _face_r, L_clahe, _local_std, target_ls, _dbg, _dbg_pt, clahe_clip, comp_lab, src_hsv, L_before, cur_ls):
-    """LOCAL coat mode. One mode per photo fails any two-tone or shadowed coat: on the. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+def _phase_coat_tone_match(base, mask, fine_blend, src_lab, src_mean_L, ink_raw, m_in, GAP_TONE,
+                           LETTER_TONE, human, _ref_in, ink_soft, letters_in, L_cur,
+                           _quantile_match, src_L_in, eye_reveal, attractor_pts, extra_faces,
+                           xx, yy, _es, _face_r, L_clahe, _local_std, target_ls, _dbg, _dbg_pt,
+                           clahe_clip, comp_lab, src_hsv, L_before, cur_ls):
+    """LOCAL coat mode. One mode per photo fails any two-tone or shadowed coat: on the border
+    collie (staging baseline) the photo's mean landed in the middle, so the black half got
+    the mid-coat treatment -- letters at the fur's own near-black tone, gaps pushed darker
+    still -- and read as empty. The coat luminance is read per pixel (masked blur, 1.5 base,
+    so a word-sized patch decides, not a hair), and the same ramps that pick the photo's
+    mode pick each region's. The scalar solves below still set the layer scales from the
+    photo's measured means; the per-pixel mixes only choose which layer carries the source
+    tone at each spot. The eyes and nose are left OUT of the coat reading: an eye's own iris
+    and glint lifted the blurred luminance around one eye above the mid-coat threshold and
+    not the other, so the two eyes of a black lab were restyled in different modes
+    (measured: L 95 vs L 27 with the same reveal). The coat mode at a feature is now its
+    surrounding fur's.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- LOCAL coat mode. One mode per photo fails any two-tone or shadowed coat: on the
     # border collie (staging baseline) the photo's mean landed in the middle, so the black
     # half got the mid-coat treatment -- letters at the fur's own near-black tone, gaps pushed
@@ -2010,8 +2040,13 @@ def _phase_coat_tone_match(base, mask, fine_blend, src_lab, src_mean_L, ink_raw,
     return light_f, dark_f, dark_mix, gap_scale, letter_scale, composited, L_after, pcts
 
 
-def _phase_tone_match(mask, human, attractor_pts, _es, xx, yy, bgr_source, composited, base, ink_raw, _dbg, _dbg_pt, extra_faces, eye_reveal, fine_blend):
-    """Tonal match: force the composite's luminance/saturation distribution INSIDE the mask. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+def _phase_tone_match(mask, human, attractor_pts, _es, xx, yy, bgr_source, composited, base,
+                      ink_raw, _dbg, _dbg_pt, extra_faces, eye_reveal, fine_blend):
+    """Tonal match: force the composite's luminance/saturation distribution INSIDE the mask to
+    equal the source photo's, by quantile mapping.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Tonal match: force the composite's luminance/saturation distribution INSIDE the mask
     # to equal the source photo's, by quantile mapping ------------------------------------------
     # Every earlier haze fix tuned a constant toward the source and then eyeballed it. Measured
@@ -2109,12 +2144,21 @@ def _phase_tone_match(mask, human, attractor_pts, _es, xx, yy, bgr_source, compo
     # ~1 for the doodle (~185). Either way the letter/gap separation is guaranteed.
     src_mean_L = float(src_L_in.mean())
     light_mix = float(np.clip((src_mean_L - 145.0) / 30.0, 0.0, 1.0))
-    light_f, dark_f, dark_mix, gap_scale, letter_scale, composited, L_after, pcts = _phase_coat_tone_match(base, mask, fine_blend, src_lab, src_mean_L, ink_raw, m_in, GAP_TONE, LETTER_TONE, human, _ref_in, ink_soft, letters_in, L_cur, _quantile_match, src_L_in, eye_reveal, attractor_pts, extra_faces, xx, yy, _es, _face_r, L_clahe, _local_std, target_ls, _dbg, _dbg_pt, clahe_clip, comp_lab, src_hsv, L_before, cur_ls)
+    (light_f, dark_f, dark_mix, gap_scale, letter_scale, composited, L_after, pcts) = _phase_coat_tone_match(base,
+        mask, fine_blend, src_lab, src_mean_L, ink_raw, m_in, GAP_TONE, LETTER_TONE, human,
+        _ref_in, ink_soft, letters_in, L_cur, _quantile_match, src_L_in, eye_reveal,
+        attractor_pts, extra_faces, xx, yy, _es, _face_r, L_clahe, _local_std, target_ls, _dbg,
+        _dbg_pt, clahe_clip, comp_lab, src_hsv, L_before, cur_ls)
     return m_in, composited, src_L_in, letters_in, light_mix, src_mean_L, L_after, dark_f, dark_mix, gap_scale, letter_scale, light_f, pcts
 
 
-def _phase_wisps(a, feat, wisp_alpha, _outer_keep, mask, photo_rgb, composited, ink_alpha, eye_reveal, sat_anomaly, wash, ground_rgb, bgr_clean, whisker_outside, whisker_zone, deep_fur_rgb, gray):
-    """Wisps: a person's flyaway hair, outside the solid silhouette. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+def _phase_wisps(a, feat, wisp_alpha, _outer_keep, mask, photo_rgb, composited, ink_alpha,
+                 eye_reveal, sat_anomaly, wash, ground_rgb, bgr_clean, whisker_outside,
+                 whisker_zone, deep_fur_rgb, gray):
+    """Wisps: a person's flyaway hair, outside the solid silhouette.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Wisps: a person's flyaway hair, outside the solid silhouette -------------------
     # Displacement feathers its silhouette with a guided filter that snaps the matte onto
     # the hair's real edges, so a strand a few pixels wide keeps its own alpha and shows on
@@ -2192,8 +2236,12 @@ def _phase_wisps(a, feat, wisp_alpha, _outer_keep, mask, photo_rgb, composited, 
     return _wisp_fr, composited, _dbg, _dbg_pt, whisker_ink_alpha
 
 
-def _phase_edge_decontamination(a, base, mask, bgr_source, W, human, fur_weight2d, outer_ground_rgb, wisp_alpha):
-    """Edge decontamination: take the background back out of the silhouette band. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+def _phase_edge_decontamination(a, base, mask, bgr_source, W, human, fur_weight2d,
+                                outer_ground_rgb, wisp_alpha):
+    """Edge decontamination: take the background back out of the silhouette band.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Edge decontamination: take the background back out of the silhouette band --------
     # A matte is never exact. Along the outline the photo's pixels are part fur, part whatever
     # was behind it: grass, sky, a sunlit rim. Revealed through the letters, and averaged into
@@ -2325,7 +2373,10 @@ def _phase_edge_decontamination(a, base, mask, bgr_source, W, human, fur_weight2
 
 
 def _phase_ground_colour(mask, H, W, bgr_source, backdrop_rgb):
-    """Ground color derived from the REAL photo background, not an arbitrary constant. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    """Ground color derived from the REAL photo background, not an arbitrary constant.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Ground color derived from the REAL photo background, not an arbitrary constant ----
     # This was a fixed navy-purple (26, 20, 40) regardless of what was actually behind the pet
     # -- grass, a wall, sky, whatever. "Truer colors" applies to the ground too: sample the
@@ -2406,7 +2457,10 @@ def _phase_ground_colour(mask, H, W, bgr_source, backdrop_rgb):
 
 
 def _phase_suppress_photo_whiskers(a, gray, whisker_region_inside):
-    """Suppress REAL photographic whiskers within the mask. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    """Suppress REAL photographic whiskers within the mask.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Suppress REAL photographic whiskers within the mask ------------------------------
     # "Whiskers should also be typography... a high-end portrait should eventually have no
     # photographic whiskers." Even where mask=1, the wash/ink-reveal above naturally reveals
@@ -2428,7 +2482,10 @@ def _phase_suppress_photo_whiskers(a, gray, whisker_region_inside):
 
 
 def _phase_hair_reveal(a, attractor_pts, human, _es, xx, yy, mask, sat_anomaly):
-    """A person's hair: the photo shows through, outside the face. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    """A person's hair: the photo shows through, outside the face.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- A person's hair: the photo shows through, outside the face --------------------
     # "Strands of wispy hair are not evident in the woven version." Traced on her photo:
     # the hairline is smooth and every matte agrees on it, so the strands were never at the
@@ -2460,7 +2517,10 @@ def _phase_hair_reveal(a, attractor_pts, human, _es, xx, yy, mask, sat_anomaly):
 
 
 def _phase_photo_wash(a, mask, gray, sat_anomaly):
-    """Photo wash: continuous faint color in the negative space, not pure paper. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    """Photo wash: continuous faint color in the negative space, not pure paper.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Photo wash: continuous faint color in the negative space, not pure paper -----------
     # The real ceiling on "muted fur": this technique only ever reveals the photo through thin
     # letter strokes, so even fully-saturated ink only covers ~40-45% of the silhouette at
@@ -2502,7 +2562,10 @@ def _phase_photo_wash(a, mask, gray, sat_anomaly):
 
 
 def _phase_saturation_anomaly(ink_alpha, mask, W, bgr, base, feat, eye_reveal, nose_reveal):
-    """Saturation-anomaly dampening (the open-mouth/tongue fix). Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    """Saturation-anomaly dampening (the open-mouth/tongue fix).
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Saturation-anomaly dampening (the open-mouth/tongue fix) --------------------------
     # A real defect found on the Border Collie render: a hero word happened to land right over
     # the open mouth, and because this compositing model reveals MORE of the actual photo
@@ -2557,8 +2620,13 @@ def _phase_saturation_anomaly(ink_alpha, mask, W, bgr, base, feat, eye_reveal, n
     return a, sat_anomaly
 
 
-def _phase_whisker_zone(W, mask, H, attractor_pts, extra_faces, nose_fit_final, base, yy, fringe_points, theta_s):
-    """Whisker zone -- makes the typographic whiskers from render_muzzle_topology actually. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+def _phase_whisker_zone(W, mask, H, attractor_pts, extra_faces, nose_fit_final, base, yy,
+                        fringe_points, theta_s):
+    """Whisker zone -- makes the typographic whiskers from render_muzzle_topology actually
+    visible in the FINAL composite, not just the typography-only panel.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Whisker zone -- makes the typographic whiskers from render_muzzle_topology actually
     # visible in the FINAL composite, not just the typography-only panel ------------------------
     # render_muzzle_topology draws its whisker spokes straight into `canvas`, deliberately
@@ -2625,7 +2693,10 @@ def _phase_whisker_zone(W, mask, H, attractor_pts, extra_faces, nose_fit_final, 
 
 
 def _phase_nose_reveal(H, W, attractor_pts, gray, mask, primary_kind, extra_faces, base):
-    """Real nose reveal -- same idea as eye_reveal, a real gap in the render's fidelity. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    """Real nose reveal -- same idea as eye_reveal, a real gap in the render's fidelity.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Real nose reveal -- same idea as eye_reveal, a real gap in the render's fidelity ----
     # The dedicated nose renderer above only claims the outline/groove/nostrils in `occupancy`;
     # the leather's own interior is left to the generic density pass, which doesn't specifically
@@ -2648,7 +2719,10 @@ def _phase_nose_reveal(H, W, attractor_pts, gray, mask, primary_kind, extra_face
 
 
 def _phase_eye_reveal(H, W, base, _es, _lm_env, attractor_pts, extra_faces, gray, mask):
-    """Real eye reveal, not a synthetic catchlight (recommendation #12, reworked). Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    """Real eye reveal, not a synthetic catchlight (recommendation #12, reworked).
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Real eye reveal, not a synthetic catchlight (recommendation #12, reworked) --------
     # Original approach: find the BRIGHTEST small spot near each attractor point (a proxy
     # catchlight) and hard-zero typography there. Flagged directly as "eyes look like black
@@ -2699,7 +2773,10 @@ def _phase_eye_reveal(H, W, base, _es, _lm_env, attractor_pts, extra_faces, gray
 
 
 def _phase_opacity_tone(canvas, base, gray, debug_dir, H, W, out_path, mask):
-    """Opacity carries tone, over ALL placed type. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    """Opacity carries tone, over ALL placed type.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Opacity carries tone, over ALL placed type ---------------------------------------
     # Measured on the black Lab: in the body zone (47% of the likeness weight) the typography
     # panel's tone had r = -0.02 with the photo -- the lanes are sparse there on purpose (dark
@@ -2738,8 +2815,14 @@ def _phase_opacity_tone(canvas, base, gray, debug_dir, H, W, out_path, mask):
     return canvas, ink_raw, ink_alpha
 
 
-def _phase_final_fills(canvas, best_placements, best_pass, best_stats, best_pass_stats, base, coherence_s, get_font, mask, micro_px_area, occupancy, rng, theta_s, short_tokens, size_px_field, letter_tokens, gray, fill_px_area, hero_px_area, struct_px_area):
-    """Final fills, once, on the winning canvas. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+def _phase_final_fills(canvas, best_placements, best_pass, best_stats, best_pass_stats, base,
+                       coherence_s, get_font, mask, micro_px_area, occupancy, rng, theta_s,
+                       short_tokens, size_px_field, letter_tokens, gray, fill_px_area,
+                       hero_px_area, struct_px_area):
+    """Final fills, once, on the winning canvas.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Final fills, once, on the winning canvas -------------------------------------------
     # Residual (short tokens in every free region a word fits) then channel (single letters
     # along the medial axis of the leading corridors). Placement log/stats are rewound to the
@@ -2773,8 +2856,18 @@ def _phase_final_fills(canvas, best_placements, best_pass, best_stats, best_pass
     return best_placements, best_pass, best_stats, best_pass_stats
 
 
-def _phase_iterative_loop(stream, N_ITERS, base, sep_correction, sep_field_base, sep_px, W, size_px_field, coherence_s, mask, theta_s, edge_zone, region_map, H, mean_coherence, min_dist_to_attractor, dist_to_edge, STRUCT_PX, attractor_radius, line_importance, FILL_PX, attractor_pts, get_font, gray, rng, _es, _lm_env, primary_kind, extra_faces, _with_nose_hint, fringe_points, feat_close_radius, line_feat_dist, size_field, line_size_t, MICRO_PX, fine_blend, importance_norm, human, hero_words, corr_sigma, target_density_blur, bgr_source, lr_map):
-    """The iterative loop: regrow geometry, rasterize, compare, correct DENSITY, regrow. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+def _phase_iterative_loop(stream, N_ITERS, base, sep_correction, sep_field_base, sep_px, W,
+                          size_px_field, coherence_s, mask, theta_s, edge_zone, region_map, H,
+                          mean_coherence, min_dist_to_attractor, dist_to_edge, STRUCT_PX,
+                          attractor_radius, line_importance, FILL_PX, attractor_pts, get_font,
+                          gray, rng, _es, _lm_env, primary_kind, extra_faces, _with_nose_hint,
+                          fringe_points, feat_close_radius, line_feat_dist, size_field,
+                          line_size_t, MICRO_PX, fine_blend, importance_norm, human, hero_words,
+                          corr_sigma, target_density_blur, bgr_source, lr_map):
+    """The iterative loop: regrow geometry, rasterize, compare, correct DENSITY, regrow.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- The iterative loop: regrow geometry, rasterize, compare, correct DENSITY, regrow -----
     # This is the follow-up to the fixed-geometry version (which corrected only word size/alpha
     # and plateaued because collision-avoidance caps how much ink an EXISTING lane can hold).
@@ -3130,8 +3223,13 @@ def _phase_iterative_loop(stream, N_ITERS, base, sep_correction, sep_field_base,
     return canvas, occupancy, best_placements, best_pass, best_stats, best_pass_stats, fill_px_area, hero_px_area, micro_px_area, struct_px_area
 
 
-def _phase_features(primary_kind, _es, attractor_pts, gray, mask, extra_faces, H, W, importance_norm, primary_mouth, xx, yy, head_center, human, detail_field, MICRO_PX, STRUCT_PX, _energy, _gx, _gy):
-    """The features: both eyes and the nose, as points and as a fine zone. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+def _phase_features(primary_kind, _es, attractor_pts, gray, mask, extra_faces, H, W,
+                    importance_norm, primary_mouth, xx, yy, head_center, human, detail_field,
+                    MICRO_PX, STRUCT_PX, _energy, _gx, _gy):
+    """The features: both eyes and the nose, as points and as a fine zone.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- The features: both eyes and the nose, as points and as a fine zone ------------------
     # locate_nose reads only the photo, so this is computed once here rather than per iteration.
     if primary_kind == "h":
@@ -3279,7 +3377,11 @@ def _phase_features(primary_kind, _es, attractor_pts, gray, mask, extra_faces, H
 
 
 def _phase_size_rule(gray, base, mask, attractor_pts):
-    """Size rule for everything outside the features (a continuous field, one rule for every. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    """Size rule for everything outside the features (a continuous field, one rule for every
+    photo).
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Size rule for everything outside the features (a continuous field, one rule for every
     # photo) -----------------------------------------------------------------------------------
     # At preview size every zone measured a 6px median: outside the eyes/nose the whole animal
@@ -3302,8 +3404,12 @@ def _phase_size_rule(gray, base, mask, attractor_pts):
     return _gx, _gy, _energy, detail_field, _es
 
 
-def _phase_size_gradation(base, type_scale, human, attractor_radius, attractor_pts, line_mean_xy, all_eye_pts):
-    """Continuous size gradation, tone still carried by density (recommendations #5, #6). Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+def _phase_size_gradation(base, type_scale, human, attractor_radius, attractor_pts,
+                          line_mean_xy, all_eye_pts):
+    """Continuous size gradation, tone still carried by density (recommendations #5, #6).
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Continuous size gradation, tone still carried by density (recommendations #5, #6) --
     # An earlier version of this used two hard-switched sizes (MICRO / STRUCTURAL) based on a
     # single distance threshold -- fixed the old word-cloud problem, but the user flagged the
@@ -3348,7 +3454,10 @@ def _phase_size_gradation(base, type_scale, human, attractor_radius, attractor_p
 
 
 def _phase_target_tone(H, gray, W, attractor_pts, base, mask):
-    """Target tonal map for iterative error-correction. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    """Target tonal map for iterative error-correction.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Target tonal map for iterative error-correction ------------------------------------
     # The missing piece, diagnosed via the type-only likeness test: nothing before this point
     # ties ink density to the photo's actual LIGHT/DARK pattern -- density was driven by
@@ -3407,7 +3516,10 @@ def _phase_target_tone(H, gray, W, attractor_pts, base, mask):
 
 
 def _phase_importance_map(attractor_pts, base, extra_faces, mask, H, W, coherence_s, all_eye_pts):
-    """Anatomical importance map, reused as a RENDERING control, not just a scoring metric. Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    """Anatomical importance map, reused as a RENDERING control, not just a scoring metric.
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Anatomical importance map, reused as a RENDERING control, not just a scoring metric --
     # build_likeness_weight_map already encodes the right hierarchy (eyes=4, nose+muzzle=6,
     # silhouette=2, rest=1) because it was built to match how a viewer actually reads a face --
@@ -3453,8 +3565,12 @@ def _phase_importance_map(attractor_pts, base, extra_faces, mask, H, W, coherenc
     return importance_norm, line_importance, rng, get_font, mean_coherence, min_dist_to_attractor
 
 
-def _phase_separation(H, W, all_eye_pts, attractor_radius, base, dist_to_edge, head_center, sep_px, attractor_pts, mask):
-    """Spatially variable separation (recommendation #4). Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+def _phase_separation(H, W, all_eye_pts, attractor_radius, base, dist_to_edge, head_center,
+                      sep_px, attractor_pts, mask):
+    """Spatially variable separation (recommendation #4).
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Spatially variable separation (recommendation #4) --------------------------------
     # A charcoal portrait doesn't put the same number of marks per square inch everywhere;
     # neither should this. Denser (smaller separation -> more streamlines -> more typographic
@@ -3491,7 +3607,10 @@ def _phase_separation(H, W, all_eye_pts, attractor_radius, base, dist_to_edge, h
 
 
 def _phase_tangent_field(mask, W, base, theta_s, coherence_s, landmarks, H, gray):
-    """Silhouette-tangent field near the boundary (recommendation #13). Extracted verbatim from render_v2; inputs and outputs are the block's own."""
+    """Silhouette-tangent field near the boundary (recommendation #13).
+
+    Moved verbatim out of render_v2; the parameters are what the block read and the
+    return values what later phases use."""
     # ---- Silhouette-tangent field near the boundary (recommendation #13) ------------------
     # As a streamline nears the silhouette, blend its direction toward the boundary's own
     # tangent -- the level sets of the mask's distance transform run parallel to the edge
@@ -3634,7 +3753,19 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     the fine face and the far body is the same at every setting; 0.30, the slider's default
     and what every staging judgment was made at, is 1.0x. `auto_res`: when the detected eyes
     are close together (a full-body photo), re-render at a working resolution that gives the
-    face enough pixels, up to PET_V2_MAX_RENDER_PX; the caller receives the larger image."""
+    face enough pixels, up to PET_V2_MAX_RENDER_PX; the caller receives the larger image.
+
+    Structure (2026-09-18): this function is the orchestrator. It prepares the photo, the
+    orientation field and the word stream, decides the working resolution (the one early
+    return, a re-render at a larger size), then calls the phases in order, each a module
+    function named _phase_*: tangent field, separation, importance map, target tone, size
+    gradation, size rule, features, the iterative loop, final fills, opacity, eye and nose
+    reveal, whisker zone, saturation anomaly, photo wash, hair reveal, whisker
+    suppression, ground colour, edge decontamination, wisps, tone match, final metrics,
+    likeness test. Every phase was moved out verbatim with the names it read as
+    parameters and the names later phases use as return values; the pet gate was
+    byte-identical at every step. A phase's long parameter list is the honest picture
+    of what that stage depends on, and the place to start when shortening it."""
     _TL.verbose = bool(verbose)
     _TL.nose_hint = None
     _TL.max_overlap_cap = float(max_overlap) if max_overlap is not None else \
@@ -3686,7 +3817,9 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
 
     base = max(16, int(round(W * 0.048)))
 
-    dist_to_edge, theta_s, coherence_s, feat, fringe_points, attractor_radius, attractor_pts, _lm_env, extra_faces, primary_kind, primary_mouth = _phase_tangent_field(mask, W, base, theta_s, coherence_s, landmarks, H, gray)
+    (dist_to_edge, theta_s, coherence_s, feat, fringe_points, attractor_radius,
+     attractor_pts, _lm_env, extra_faces, primary_kind, primary_mouth) = _phase_tangent_field(mask,
+        W, base, theta_s, coherence_s, landmarks, H, gray)
     # ---- Resolution follows face size ------------------------------------------------------
     # Every feature pass and the fine zone are sized by eye separation, but the font floor is
     # 6px whatever the photo. On a full-body photo the eyes are 50-80px apart at preview size,
@@ -3768,28 +3901,61 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     # sparse" -- more streamlines everywhere, not just in the feature/edge zones.
     sep_px = max(6, int(round(base * 0.28)))
 
-    xx, yy, edge_zone, sep_field_base, region_map = _phase_separation(H, W, all_eye_pts, attractor_radius, base, dist_to_edge, head_center, sep_px, attractor_pts, mask)
-    importance_norm, line_importance, rng, get_font, mean_coherence, min_dist_to_attractor = _phase_importance_map(attractor_pts, base, extra_faces, mask, H, W, coherence_s, all_eye_pts)
-    corr_sigma, target_density_blur, lr_map, sep_correction, N_ITERS, line_mean_xy = _phase_target_tone(H, gray, W, attractor_pts, base, mask)
-    MICRO_PX, STRUCT_PX, feat_close_radius, line_feat_dist, FILL_PX = _phase_size_gradation(base, type_scale, human, attractor_radius, attractor_pts, line_mean_xy, all_eye_pts)
+    xx, yy, edge_zone, sep_field_base, region_map = _phase_separation(H, W, all_eye_pts,
+        attractor_radius, base, dist_to_edge, head_center, sep_px, attractor_pts, mask)
+    (importance_norm, line_importance, rng, get_font, mean_coherence,
+     min_dist_to_attractor) = _phase_importance_map(attractor_pts,
+        base, extra_faces, mask, H, W, coherence_s, all_eye_pts)
+    (corr_sigma, target_density_blur, lr_map, sep_correction, N_ITERS, line_mean_xy) = _phase_target_tone(H,
+        gray, W, attractor_pts, base, mask)
+    MICRO_PX, STRUCT_PX, feat_close_radius, line_feat_dist, FILL_PX = _phase_size_gradation(base,
+        type_scale, human, attractor_radius, attractor_pts, line_mean_xy, all_eye_pts)
     _gx, _gy, _energy, detail_field, _es = _phase_size_rule(gray, base, mask, attractor_pts)
-    _with_nose_hint, fine_blend, size_field, line_size_t, size_px_field = _phase_features(primary_kind, _es, attractor_pts, gray, mask, extra_faces, H, W, importance_norm, primary_mouth, xx, yy, head_center, human, detail_field, MICRO_PX, STRUCT_PX, _energy, _gx, _gy)
-    canvas, occupancy, best_placements, best_pass, best_stats, best_pass_stats, fill_px_area, hero_px_area, micro_px_area, struct_px_area = _phase_iterative_loop(stream, N_ITERS, base, sep_correction, sep_field_base, sep_px, W, size_px_field, coherence_s, mask, theta_s, edge_zone, region_map, H, mean_coherence, min_dist_to_attractor, dist_to_edge, STRUCT_PX, attractor_radius, line_importance, FILL_PX, attractor_pts, get_font, gray, rng, _es, _lm_env, primary_kind, extra_faces, _with_nose_hint, fringe_points, feat_close_radius, line_feat_dist, size_field, line_size_t, MICRO_PX, fine_blend, importance_norm, human, hero_words, corr_sigma, target_density_blur, bgr_source, lr_map)
-    best_placements, best_pass, best_stats, best_pass_stats = _phase_final_fills(canvas, best_placements, best_pass, best_stats, best_pass_stats, base, coherence_s, get_font, mask, micro_px_area, occupancy, rng, theta_s, short_tokens, size_px_field, letter_tokens, gray, fill_px_area, hero_px_area, struct_px_area)
-    canvas, ink_raw, ink_alpha = _phase_opacity_tone(canvas, base, gray, debug_dir, H, W, out_path, mask)
+    (_with_nose_hint, fine_blend, size_field, line_size_t, size_px_field) = _phase_features(primary_kind,
+        _es, attractor_pts, gray, mask, extra_faces, H, W, importance_norm, primary_mouth, xx,
+        yy, head_center, human, detail_field, MICRO_PX, STRUCT_PX, _energy, _gx, _gy)
+    (canvas, occupancy, best_placements, best_pass, best_stats, best_pass_stats,
+     fill_px_area, hero_px_area, micro_px_area, struct_px_area) = _phase_iterative_loop(stream,
+        N_ITERS, base, sep_correction, sep_field_base, sep_px, W, size_px_field, coherence_s,
+        mask, theta_s, edge_zone, region_map, H, mean_coherence, min_dist_to_attractor,
+        dist_to_edge, STRUCT_PX, attractor_radius, line_importance, FILL_PX, attractor_pts,
+        get_font, gray, rng, _es, _lm_env, primary_kind, extra_faces, _with_nose_hint,
+        fringe_points, feat_close_radius, line_feat_dist, size_field, line_size_t, MICRO_PX,
+        fine_blend, importance_norm, human, hero_words, corr_sigma, target_density_blur,
+        bgr_source, lr_map)
+    best_placements, best_pass, best_stats, best_pass_stats = _phase_final_fills(canvas,
+        best_placements, best_pass, best_stats, best_pass_stats, base, coherence_s, get_font,
+        mask, micro_px_area, occupancy, rng, theta_s, short_tokens, size_px_field,
+        letter_tokens, gray, fill_px_area, hero_px_area, struct_px_area)
+    canvas, ink_raw, ink_alpha = _phase_opacity_tone(canvas, base, gray, debug_dir, H, W,
+        out_path, mask)
     eye_reveal = _phase_eye_reveal(H, W, base, _es, _lm_env, attractor_pts, extra_faces, gray, mask)
-    nose_reveal, nose_fit_final = _phase_nose_reveal(H, W, attractor_pts, gray, mask, primary_kind, extra_faces, base)
-    whisker_zone, whisker_region_inside, whisker_outside = _phase_whisker_zone(W, mask, H, attractor_pts, extra_faces, nose_fit_final, base, yy, fringe_points, theta_s)
-    a, sat_anomaly = _phase_saturation_anomaly(ink_alpha, mask, W, bgr, base, feat, eye_reveal, nose_reveal)
+    nose_reveal, nose_fit_final = _phase_nose_reveal(H, W, attractor_pts, gray, mask,
+        primary_kind, extra_faces, base)
+    whisker_zone, whisker_region_inside, whisker_outside = _phase_whisker_zone(W, mask, H,
+        attractor_pts, extra_faces, nose_fit_final, base, yy, fringe_points, theta_s)
+    a, sat_anomaly = _phase_saturation_anomaly(ink_alpha, mask, W, bgr, base, feat, eye_reveal,
+        nose_reveal)
     a, wash = _phase_photo_wash(a, mask, gray, sat_anomaly)
     a = _phase_hair_reveal(a, attractor_pts, human, _es, xx, yy, mask, sat_anomaly)
     a = _phase_suppress_photo_whiskers(a, gray, whisker_region_inside)
     outer_ground_rgb, fur_weight2d = _phase_ground_colour(mask, H, W, bgr_source, backdrop_rgb)
-    bgr_clean, deep_fur_rgb, ground_rgb, _outer_keep, photo_rgb, composited = _phase_edge_decontamination(a, base, mask, bgr_source, W, human, fur_weight2d, outer_ground_rgb, wisp_alpha)
-    _wisp_fr, composited, _dbg, _dbg_pt, whisker_ink_alpha = _phase_wisps(a, feat, wisp_alpha, _outer_keep, mask, photo_rgb, composited, ink_alpha, eye_reveal, sat_anomaly, wash, ground_rgb, bgr_clean, whisker_outside, whisker_zone, deep_fur_rgb, gray)
-    m_in, composited, src_L_in, letters_in, light_mix, src_mean_L, L_after, dark_f, dark_mix, gap_scale, letter_scale, light_f, pcts = _phase_tone_match(mask, human, attractor_pts, _es, xx, yy, bgr_source, composited, base, ink_raw, _dbg, _dbg_pt, extra_faces, eye_reveal, fine_blend)
-    cov_final, rep, fp_cov, coll, coll_core, exposed, fillable, composited_u8, photo_out = _phase_final_metrics(mask, ink_raw, m_in, letters_in, pcts, src_L_in, L_after, dark_mix, light_mix, dark_f, light_f, gap_scale, letter_scale, src_mean_L, nose_fit_final, H, W, region_map, best_placements, best_pass, best_stats, best_pass_stats, composited, debug_dir, out_path)
-    metrics = _phase_likeness_test(photo_out, out_path, W, attractor_pts, base, bgr_source, canvas, extra_faces, mask, debug_dir, exposed, fillable, fp_cov, best_placements, coll, coll_core, cov_final, H, rep, _wisp_fr, wisp_alpha, whisker_ink_alpha, backdrop_rgb)
+    (bgr_clean, deep_fur_rgb, ground_rgb, _outer_keep, photo_rgb, composited) = _phase_edge_decontamination(a,
+        base, mask, bgr_source, W, human, fur_weight2d, outer_ground_rgb, wisp_alpha)
+    _wisp_fr, composited, _dbg, _dbg_pt, whisker_ink_alpha = _phase_wisps(a, feat, wisp_alpha,
+        _outer_keep, mask, photo_rgb, composited, ink_alpha, eye_reveal, sat_anomaly, wash,
+        ground_rgb, bgr_clean, whisker_outside, whisker_zone, deep_fur_rgb, gray)
+    (m_in, composited, src_L_in, letters_in, light_mix, src_mean_L, L_after, dark_f,
+     dark_mix, gap_scale, letter_scale, light_f, pcts) = _phase_tone_match(mask,
+        human, attractor_pts, _es, xx, yy, bgr_source, composited, base, ink_raw, _dbg, _dbg_pt,
+        extra_faces, eye_reveal, fine_blend)
+    (cov_final, rep, fp_cov, coll, coll_core, exposed, fillable, composited_u8, photo_out) = _phase_final_metrics(mask,
+        ink_raw, m_in, letters_in, pcts, src_L_in, L_after, dark_mix, light_mix, dark_f,
+        light_f, gap_scale, letter_scale, src_mean_L, nose_fit_final, H, W, region_map,
+        best_placements, best_pass, best_stats, best_pass_stats, composited, debug_dir, out_path)
+    metrics = _phase_likeness_test(photo_out, out_path, W, attractor_pts, base, bgr_source,
+        canvas, extra_faces, mask, debug_dir, exposed, fillable, fp_cov, best_placements, coll,
+        coll_core, cov_final, H, rep, _wisp_fr, wisp_alpha, whisker_ink_alpha, backdrop_rgb)
     return composited_u8, metrics
 
 
