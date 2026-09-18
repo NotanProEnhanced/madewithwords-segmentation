@@ -56,7 +56,7 @@ PET="${PET:-}"                 # PET=1 to exercise the landmark-free engine inst
 WORDS="$(tr -d '\r\n' < "$SET/words.txt")"
 
 COMMIT="$(git -C "$TREE" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-DIRTY="$(git -C "$TREE" status --porcelain 2>/dev/null | wc -l)"
+DIRTY="$(git -C "$TREE" status --porcelain --untracked-files=no 2>/dev/null | wc -l)"   # tracked edits only, as render-petset.sh: a tree's .env and showcase images are not code
 # A run at non-default parameters is NOT comparable with the baseline, so it must not be
 # filed on top of it. Rendering the download size into out/<commit>/ would overwrite the
 # preview-size files the baseline is made of, and nothing would say it had happened.
