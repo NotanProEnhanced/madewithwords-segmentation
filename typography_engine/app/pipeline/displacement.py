@@ -1745,7 +1745,18 @@ def render_displacement_portrait(
             # code reads "0", so the polarity model was running in every container and
             # reading .env said otherwise.
             _pol_i = float(os.environ.get("TYPO_POLARITY_INK_FLOOR", "40") or 40.0)
-            _ink = _pc / _pl * (_pol_i + (253.0 - _pol_i) * _tone)   # keep the photo HUE, re-map brightness full-range
+            # Hue comes from channel / luminance. In a deep shadow a JPEG pixel is (5, 0, 0):
+            # luminance under 1, so the division turns four levels of compression noise
+            # into pure blue at full strength -- the blue and green specks along the cheek
+            # of 10-smile and the magenta over the shadowed eye of 06-sidelight (measured
+            # 2026-09-18: the wild pixels had source luminance p50 1.3, p90 4.2, and four
+            # levels of chroma). A pedestal on both sides of the division makes a pixel
+            # with no light in it come out neutral and leaves a lit one alone: at skin
+            # luminance 140 the ratio moves by under 1%; on a navy blouse at 10 it keeps
+            # three quarters of its colour. TYPO_POLARITY_PEDESTAL=0 restores the old math.
+            _pol_p = float(os.environ.get("TYPO_POLARITY_PEDESTAL", "8") or 0.0)
+            _ratio = (_pc + _pol_p) / (_pl + _pol_p)
+            _ink = _ratio * (_pol_i + (253.0 - _pol_i) * _tone)   # keep the photo HUE, re-map brightness full-range
             _ink = np.minimum(_ink, np.float32([255, 255, 255])) # (hue*value can exceed 255 on saturated pixels)
             # Coverage rises INTO the shadows (heavier, denser type there) and eases in highlights, and
             # the glyph field w2 keeps the letterforms visible. Deep shadow = a dense near-black letter
