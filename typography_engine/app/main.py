@@ -133,9 +133,27 @@ def _gallery_art_override(item_id: str):
     return FileResponse(str(target), media_type="image/png")
 
 
+class _RevalidatingStatic(StaticFiles):
+    """StaticFiles, with every page told to revalidate before reuse.
+
+    Plain StaticFiles sends no Cache-Control, so a browser keeps index.html for a
+    heuristic tenth of its age and shows the OLD studio after a deploy until someone
+    presses Ctrl+F5. Twice in September a new style card "was missing" on staging for
+    exactly that reason. `no-cache` means "ask first": the browser still sends the
+    ETag it holds, and an unchanged page answers 304 in a few bytes. Images, fonts and
+    the rest keep the default: they are large, rarely change, and are versioned by name.
+    """
+
+    async def get_response(self, path: str, scope):  # type: ignore[override]
+        resp = await super().get_response(path, scope)
+        if path.endswith((".html", ".js", ".css")):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
 if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    app.mount("/static", _RevalidatingStatic(directory=str(STATIC_DIR)), name="static")
 
 
 def _not_found_page(request: Request) -> str:
@@ -598,7 +616,8 @@ def index(request: Request) -> Response:
     if "pawsinwords" in host or brand_q == "pawsinwords":
         _paws = STATIC_DIR / "pawsinwords" / "index.html"
         if _paws.exists():
-            return FileResponse(str(_paws), media_type="text/html")
+            return FileResponse(str(_paws), media_type="text/html",
+                                headers={"Cache-Control": "no-cache"})
     q = request.url.query
     return RedirectResponse(url="/static/index.html" + (f"?{q}" if q else ""))
 
