@@ -89,6 +89,28 @@ _MATTE_PATH = os.path.join(os.environ.get("PET_MATTE_DIR", tempfile.gettempdir()
 _MATTE_MIN_BYTES = 100_000_000
 _U2_SESSION = None
 _U2_LOCK = Lock()
+
+
+def _idle_touch():
+    try:
+        from . import idle as _idle
+        _idle.touch()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _unload_matte_session():
+    """Idle unloader (app/idle.py): drop the ISNet session; the next render reopens it."""
+    global _U2_SESSION
+    with _U2_LOCK:
+        _U2_SESSION = None
+
+
+try:
+    from . import idle as _idle_reg
+    _idle_reg.register("pet_isnet", _unload_matte_session)
+except Exception:  # noqa: BLE001
+    pass
 _U2_FAILED_AT = 0.0        # monotonic time of the last failed attempt; 0 = none
 _U2_RETRY_AFTER = 300.0    # seconds to wait before trying again
 
@@ -143,6 +165,7 @@ def _u2net_session():
     transient fault costs one render rather than all of them.
     """
     global _U2_SESSION, _U2_FAILED_AT
+    _idle_touch()
     with _U2_LOCK:
         if _U2_SESSION is not None:
             return _U2_SESSION

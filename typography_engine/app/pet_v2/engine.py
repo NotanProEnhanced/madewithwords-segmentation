@@ -316,6 +316,22 @@ _BITMAP_CACHE = {}
 _TEXT_CACHE = {}     # (word, font px, alpha bin) -> unrotated RGBA text, shared across angle bins
 
 
+def _unload_glyph_caches():
+    """Idle unloader (app/idle.py). Both dicts are rebuilt on demand; a miss rasterises the
+    word again and produces the same bitmap, so the pixels cannot change. The render cache
+    (_RENDER_CACHE, below) is deliberately kept: a customer who returns after ten minutes
+    and changes the backdrop gets the swap from it instead of a full render."""
+    _BITMAP_CACHE.clear()
+    _TEXT_CACHE.clear()
+
+
+try:
+    from .. import idle as _idle_mod
+    _idle_mod.register("pet_glyph_caches", _unload_glyph_caches)
+except Exception:  # noqa: BLE001
+    _idle_mod = None
+
+
 def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
                         letters=("L", "S", "K", "J", "H", "G", "P", "W"), min_px=6, max_overlap=0.08,
                         size_cap=None):
@@ -4010,6 +4026,8 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
             _RENDER_INFLIGHT.pop(key, None)
         ev.set()
         _trim_heap()
+        if _idle_mod is not None:
+            _idle_mod.touch()   # the idle clock starts when the render ends, not when it began
         _box.release()     # the box is free for the next heavy render once this one's memory is back
     return _finish(entry)
 

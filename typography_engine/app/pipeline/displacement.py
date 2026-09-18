@@ -2108,4 +2108,16 @@ def render_displacement_portrait(
         print("[trace %s w=%d m=%.3f] encode  out.mean=%.2f  bytes=%d"
               % (_cid, int(out_width), _mmean,
                  float(np.asarray(out).mean()), len(buf.tobytes())))
-    return buf.tobytes()
+    _png = buf.tobytes()
+    del out, buf
+    # Same as the pet engine's end-of-render trim: glibc keeps what a render freed unless
+    # asked (measured 2026-09-18 through the app: 1430 MB held after a pet and a Lifelike
+    # render, 813 MB after this call, nothing the render produced touched). The idle
+    # clock (app/idle.py) starts here too, so the models go after ten quiet minutes.
+    try:
+        from .. import idle as _idle
+        _idle.touch()
+        _idle.trim()
+    except Exception:  # noqa: BLE001
+        pass
+    return _png

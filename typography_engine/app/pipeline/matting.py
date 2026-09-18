@@ -59,6 +59,23 @@ _ISNET_SESSION = None
 _ISNET_ERROR: Optional[str] = None
 
 
+def _unload_sessions():
+    """Idle unloader (app/idle.py): drop both sessions; the next matte reopens the one
+    it needs. The error markers are left alone: a model that failed stays failed."""
+    global _SESSION, _ISNET_SESSION
+    with _LOCK:
+        _SESSION = None
+    with _ISNET_LOCK:
+        _ISNET_SESSION = None
+
+
+try:
+    from .. import idle as _idle
+    _idle.register("human_matte", _unload_sessions)
+except Exception:  # noqa: BLE001
+    _idle = None
+
+
 def _model_name() -> str:
     """'rvm', 'isnet', or '' for off. The legacy truthy values keep meaning RVM, so
     existing .env files that say TYPO_MATTE_MODEL=1 are unaffected."""
@@ -185,6 +202,8 @@ def matte(img_bgr: np.ndarray, warns: WarningCollector) -> Optional[np.ndarray]:
     which = _model_name()
     if not which:
         return None
+    if _idle is not None:
+        _idle.touch()
     if which == "isnet":
         return _matte_isnet(img_bgr, warns)
     sess = _get_session(warns)

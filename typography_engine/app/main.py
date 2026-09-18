@@ -730,6 +730,28 @@ def _render_lock_status() -> dict:
         return {"enabled": False, "error": repr(e)}
 
 
+def _idle_unload_status() -> dict:
+    try:
+        from . import idle
+        return idle.status()
+    except Exception as e:  # noqa: BLE001 -- a health field, never a failed health check
+        return {"enabled": False, "error": repr(e)}
+
+
+@app.on_event("startup")
+def _start_idle_unloader() -> None:
+    """Models and caches are handed back after TYPO_IDLE_UNLOAD_S of no rendering
+    (app/idle.py). The modules that hold them registered their unloaders at import;
+    importing them here makes sure that happened even on a tree that has not rendered."""
+    try:
+        from . import idle, pet_proto  # noqa: F401  -- registers pet_isnet
+        from .pipeline import matting  # noqa: F401  -- registers human_matte
+        from .pet_v2 import engine  # noqa: F401  -- registers pet_glyph_caches
+        idle.start()
+    except Exception as e:  # noqa: BLE001
+        print(f"[idle] not started: {e}")
+
+
 @app.get("/health")
 def health() -> JSONResponse:
     caps = probe()
@@ -751,6 +773,7 @@ def health() -> JSONResponse:
             # One heavy render at a time across the box (app/render_lock.py): on/off, how
             # many of this process's renders are waiting or holding, and the longest wait.
             "heavy_lock": _render_lock_status(),
+            "idle_unload": _idle_unload_status(),
         }
     )
 
