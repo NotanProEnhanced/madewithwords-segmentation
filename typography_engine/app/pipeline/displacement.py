@@ -1167,6 +1167,291 @@ def _lf_feature_passes(a, an, g, H, W, fw, irises, _dark_lens_face_pts, _misfit_
     return a, anchor, glint, scl, limbal, teeth, _hl
 
 
+def _lf_density(warped, ink_field):
+    """_lf_density. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    # Progressive density: thicken text where ink is strongest.
+    b1 = cv2.dilate(warped, np.ones((2, 2), np.uint8), 1)
+    b2 = cv2.dilate(warped, np.ones((3, 3), np.uint8), 1)
+    gd1 = np.clip((ink_field - 0.40) / 0.60, 0, 1)
+    gd2 = np.clip((ink_field - 0.70) / 0.30, 0, 1)
+    w2 = np.clip(warped + (b1 - warped) * gd1 + (b2 - b1) * gd2, 0, 1)
+
+    return w2
+
+
+def _lf_tonal_field(g, gray, mask01, fw, face_w, feat_norm, face_norm, _grad_on, all_pts, yy):
+    """_lf_tonal_field. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    # Tonal field: percentile-stretch within the subject.
+    vals = gray[mask01 > 0]
+    if vals.size == 0:
+        vals = gray.reshape(-1)
+    lo, hi = np.percentile(vals, [4, 96])
+    lum = np.clip((gray - lo) / (hi - lo + 1e-6), 0, 1)
+    ink_field = lum if g["tone"] == "light" else (1.0 - lum)
+
+    # Local-contrast boost so flat-lit features separate.
+    hp = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=fw * 0.06)
+    hp /= (np.std(hp[mask01 > 0]) + 1e-6)
+    sign = 1.0 if g["tone"] == "light" else -1.0
+    ink_field = np.clip(ink_field + 0.40 * sign * np.clip(hp, -2, 2) * face_w, 0, 1)
+    # #2/#3 Finer-scale contrast AT the features so the nose (bridge/tip/sides), the
+    # smile lines and cheek transitions MODEL instead of reading flat.
+    hp2 = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.022))
+    hp2 /= (np.std(hp2[mask01 > 0]) + 1e-6)
+    ink_field = np.clip(ink_field + 0.32 * sign * np.clip(hp2, -2.0, 2.0) * feat_norm, 0, 1)
+    # #7 Micro-expression: the fine-scale contrast above is gated to the eyes/nose/mouth, so
+    # the CREASES that make a face recognisable -- nasolabial folds, crow's feet, forehead and
+    # smile lines out on the skin -- smooth away. Apply an even finer high-pass across the whole
+    # face (face_norm) so those creases render as delicate darker type instead of flat skin.
+    # Subject/face only; strength TYPO_CREASE (default 0.22; 0 disables).
+    _cr = float(_settings.raw("TYPO_CREASE") or 0.22)
+    if _cr > 0.0:
+        _hpc = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.012))
+        _hpc /= (np.std(_hpc[mask01 > 0]) + 1e-6)
+        ink_field = np.clip(ink_field + _cr * sign * np.clip(_hpc, -2.0, 2.0) * face_norm, 0, 1)
+    # Sculpt the hair (same TYPO_GRADUATE_BODY gate): boost mid-scale local contrast in the
+    # hair region (subject, above the chin, outside the face) so strand clumps, volume and
+    # highlights MODEL instead of reading as a flat text field.
+    if _grad_on:
+        _hph = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.030))
+        _hph /= (np.std(_hph[mask01 > 0]) + 1e-6)
+        _hair_reg = ((mask01 > 0) & (yy < max(float(_p[:, 1].max()) for _p in all_pts))).astype(np.float32) * (1.0 - face_norm)
+        _hair_reg = cv2.GaussianBlur(_hair_reg, (0, 0), sigmaX=max(2.0, fw * 0.03))
+        ink_field = np.clip(ink_field + 0.60 * sign * np.clip(_hph, -2.0, 2.0) * _hair_reg, 0, 1)
+    # #4 Quiet the clothing: below the chin, compress contrast toward the local mean
+    # so patterned clothes stop competing with the face (hair untouched).
+    chin_y = max(float(_p[:, 1].max()) for _p in all_pts)
+    cloth = ((mask01 > 0) & (yy > chin_y)).astype(np.float32)
+    cloth = cv2.GaussianBlur(cloth, (0, 0), sigmaX=max(2.0, fw * 0.05))
+    # When graduating (same gate), quiet the clothing a bit LESS so some drape shows,
+    # then add a gentle fold-scale sculpt -> plain garments gain fold depth while
+    # patterned clothes are only mildly livelier (they stay quieter than the face).
+    _cq = 0.40 if _grad_on else 0.55
+    cm = ink_field[cloth > 0.5]
+    if cm.size > 50:
+        ink_field = ink_field * (1.0 - _cq * cloth) + float(cm.mean()) * (_cq * cloth)
+    if _grad_on:
+        _hpc = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.045))
+        _hpc /= (np.std(_hpc[mask01 > 0]) + 1e-6)
+        ink_field = np.clip(ink_field + 0.30 * sign * np.clip(_hpc, -2.0, 2.0) * cloth, 0, 1)
+
+    return lum, ink_field
+
+
+def _lf_iris_circles(irises, t_iris, H, W, R, warped):
+    """_lf_iris_circles. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    # Iris circles take the eye-scaled tier (feathered edge); iris_m is reused
+    # below for the color blend.
+    iris_m = None
+    if irises and t_iris is not None:
+        iris_m = np.zeros((H, W), np.float32)
+        ir_mean = float(np.mean([r for _, _, r in irises]))
+        for icx, icy, ir in irises:
+            cv2.circle(iris_m, (int(round(icx)), int(round(icy))), int(round(ir)), 1.0, -1, cv2.LINE_AA)
+        iris_m = np.clip(cv2.GaussianBlur(iris_m, (0, 0), sigmaX=max(1.0, ir_mean * 0.18)), 0, 1)
+        warped = warped * (1.0 - iris_m) + R(t_iris) * iris_m
+
+    return warped
+
+
+def _lf_drape(s, W, gray, H, _ssn, feat_damp, t_fine, t_large, t_micro, t_mid, df):
+    """_lf_drape. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    # Clean vertical drape, dampened in the feature band (keeps features crisp).
+    D = cv2.GaussianBlur(gray, (0, 0), sigmaX=W * 0.020)
+    dn = (D / 255.0 - 0.5) * 2.0
+    xx, yy = np.meshgrid(np.arange(W).astype(np.float32), np.arange(H).astype(np.float32))
+    # Drape amplitude: how far the rows ride the facial form (vertical remap by luminance).
+    # Higher = more sculptural wrap around brow/nose/cheeks; too high distorts. Env-tunable
+    # so it can be dialled on staging without a rebuild (default 64 = unchanged).
+    _drape = float(_settings.raw("TYPO_DRAPE") or 64.0)
+    amp = _drape * s * _ssn * (1.0 - 0.85 * feat_damp)
+    my = (yy + amp * dn).astype(np.float32)
+    mx = xx.astype(np.float32)
+
+    def R(t):
+        return cv2.remap(t, mx, my, cv2.INTER_LINEAR, borderValue=0.0)
+
+    # Continuous bracket-blend across the 4 tiers -> smooth large -> mid -> small.
+    wL, wM, wF, wMi = R(t_large), R(t_mid), R(t_fine), R(t_micro)
+    warped = wL.copy()
+    for a, b, ia, ib in ((0.0, 0.45, wL, wM), (0.45, 0.75, wM, wF), (0.75, 1.0001, wF, wMi)):
+        bt = np.clip((df - a) / (b - a), 0, 1)
+        warped = np.where((df >= a) & (df < b), ia * (1 - bt) + ib * bt, warped)
+    warped = np.where(df >= 1.0, wMi, warped)
+
+    return yy, R, warped
+
+
+def _lf_detail_field(H, face_w, W, mask_of, mask01, fmh, fw, all_pts, graduate, _fws, gray):
+    """_lf_detail_field. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    # Smooth "detail field" df in [0,1] that drives a CONTINUOUS size gradient:
+    # ~0 on the body (large text) -> ~0.45 on the broad face (mid) -> ~1 at the
+    # features (small). Heavily feathered so the size transition is gradual.
+    face_norm = np.clip(face_w / (face_w.max() + 1e-6), 0, 1)
+    # Wide feature feathering -> feat_norm DECAYS smoothly outward from the eyes/
+    # nose/mouth, so the type grows continuously (small at features -> mid -> large)
+    # instead of snapping at a hard feature boundary.
+    feat_union = mask_of(_GROUPS.keys(), 0.04, 0.24)
+    feat_norm = np.clip(feat_union / (feat_union.max() + 1e-6), 0, 1)
+    df = np.clip(0.52 * face_norm + 0.70 * feat_norm, 0, 1)
+    # Face-detail floor: the chin, jaw, cheekbones and ears sit INSIDE the face but FAR from
+    # the eyes/nose/mouth, so feat_norm ~ 0 there and they render at the same mid size as the
+    # neck -- no distinction, and the chin/jaw read too large. Lift df across the whole face
+    # (scaled by face_norm) so every facial region reads as FINE detail, clearly finer than
+    # the neck below it. Falls off with face_norm, so the neck/body are barely touched.
+    # TYPO_FACE_DETAIL is the TARGET fineness FLOOR for the face+ears (0..1): a floor, not an
+    # add, so the ear (which starts at df~0 = the LARGEST tier) is forced straight to fine
+    # rather than merely nudged. Default 0.8; 0 reverts.
+    # 0.95 to match docker-compose.yml, which is what every container actually runs.
+    # The code said 0.8 and the measured field came back at 0.95 all day.
+    _fdt = float(_settings.raw("TYPO_FACE_DETAIL") or 0.95)
+    if _fdt > 0.0:
+        # Detail mask = the TIGHT face interior (not the wide face_norm feather, so the chin/
+        # jaw/cheekbones get the FULL lift right to the jawline) PLUS an estimated EAR region on
+        # each side. MediaPipe has no ear landmarks, so anchor small ellipses just outside the
+        # face's lateral extremes at eye level, kept on the subject via mask01. Lifting df here
+        # makes chin/jaw/cheeks/ears read as FINE type, clearly finer than the neck below.
+        # Tight feather so the floor stays SOLID right to the jawline/chin (a wider feather
+        # tapered the floor at the chin edge, so the chin read larger than the mid-face).
+        _detail = np.clip(cv2.GaussianBlur(fmh.astype(np.float32), (0, 0), sigmaX=max(1.0, fw * 0.025)), 0, 1)
+        _ears = np.zeros((H, W), np.float32)
+        for _fp in all_pts:
+            _x0, _x1 = float(_fp[:, 0].min()), float(_fp[:, 0].max())
+            _y0, _y1 = float(_fp[:, 1].min()), float(_fp[:, 1].max())
+            _fwi, _fhi = (_x1 - _x0), (_y1 - _y0)
+            _ey = _y0 + _fhi * 0.42                                   # ~eye level
+            for _ex in (_x0 - _fwi * 0.03, _x1 + _fwi * 0.03):
+                cv2.ellipse(_ears, (int(round(_ex)), int(round(_ey))),
+                            (int(round(_fwi * 0.14)), int(round(_fhi * 0.24))), 0, 0, 360, 1.0, -1)
+        _ears = np.clip(cv2.GaussianBlur(_ears, (0, 0), sigmaX=max(1.0, fw * 0.04)), 0, 1) * mask01
+        _detail = np.clip(np.maximum(_detail, _ears), 0, 1)
+        # FLOOR: raise df to at least _fdt across the face+ears (feathered by _detail), so the
+        # ear/chin/cheeks are forced to fine no matter their starting size, while the features
+        # (already ~1) and the neck (_detail~0) are untouched.
+        df = np.maximum(df, _fdt * _detail)
+    # === Graduate body + hair type (default ON; TYPO_GRADUATE_BODY=0 reverts) =========
+    # Beyond the face the detail field falls to ~0, so the neck/clothing AND the crown of
+    # the hair render at the LARGEST tier (giant words). Ramp df UP with distance away from
+    # the face -- below the chin and above the face-top -- so the body and hair step DOWN
+    # continuously toward the hem/crown. Gated to OUTSIDE the face (the face is unchanged).
+    _grad_on = graduate and _settings.raw("TYPO_GRADUATE_BODY").strip().lower() not in ("0", "false", "off", "no", "")
+    if _grad_on:
+        _gyv = np.arange(H, dtype=np.float32)[:, None]
+        _rows_on = np.where(mask01.max(axis=1) > 0)[0]
+        _notface = 1.0 - face_norm
+        _bottom_y = float(_rows_on.max()) if _rows_on.size else float(H)
+        _top_y = float(_rows_on.min()) if _rows_on.size else 0.0
+        # One subject or several, the treatment is now the SAME: a floor off every face's
+        # hull. Measured on the test set, the two branches below were not two tunings of one
+        # idea -- they were two different products:
+        #
+        #     01-hat   df mean 0.948   L=0%   M=0%   F=96%  Mi=4%
+        #     05-couple df mean 0.661  L=15%  M=50%  F=24%  Mi=11%
+        #
+        # The single portrait sits almost entirely in ONE tier. The group spreads across all
+        # four, and WHICH tier a region lands in depends on its distance from that person's
+        # own chin -- so the taller subject's collar and the shorter subject's hair size
+        # differently in the same photograph. That is the inconsistency reported on the
+        # couple, and it is not about hair or necks: it is this branch.
+        #
+        # TYPO_GROUP_UNIFORM=0 restores the old additive group ramp.
+        _uniform = (len(all_pts) <= 1
+                    or _settings.raw("TYPO_GROUP_UNIFORM").strip().lower()
+                    not in ("0", "false", "off", "no"))
+        if _uniform:
+            # Single subject (the memorial portrait). Hold the neck + body + hair AT LEAST as
+            # fine as the FACE'S OWN detail floor (_fdt), so they read proportional to the jaw
+            # -- uniform, never coarser than the face, no bulge. (The prior fixed target 0.65
+            # sat BELOW _fdt=0.8, so the neck rendered COARSER than the jaw -> "still too
+            # large".) TYPO_NECK_FINE scales that floor: 1.0 = match the face; >1 = finer than
+            # the face; 0 = legacy large body.
+            # Use a TIGHT ramp off the chin/face-top (reaches full strength within ~0.15 face-
+            # heights) -- NOT _notface, whose big fw*0.22 blur under-boosts the upper neck and
+            # leaves large type there. maximum() only raises df, so overlapping the face is safe
+            # (the face floor already holds it). TYPO_NECK_FINE scales the floor: 1.0 = match the
+            # face; >1 = finer; 0 = legacy large body.
+            # FULL-strength boost across the ENTIRE region below the chin-bottom / above the
+            # face-top (hard horizontal cut, seamless because the neck target == the face floor
+            # so both read the same size); _notface fills the sides. Earlier masks (_notface's
+            # wide blur, and a ramp that started at 0 AT the chin) both starved the UPPER neck
+            # of the boost -> large type there. This applies it evenly from just under the jaw.
+            _neck_scale = float(_settings.raw("TYPO_NECK_FINE") or 1.0)
+            _neck_target = float(np.clip(_fdt * _neck_scale, 0.0, 1.0))
+            # SHARP face-hull complement (tight fw*0.03 feather) so the boost reaches full
+            # strength right under the JAWLINE. _notface's wide fw*0.22 blur and the chin-TIP
+            # cut both left the under-jaw neck un-boosted -> large type there. Seamless because
+            # the neck target == the face floor; df is smoothed downstream.
+            # Feathered PER FACE, for the same reason mask_of and _face_w_pf are: a smaller
+            # face needs a smaller feather, or the primary's blur bleeds across the second
+            # subject's jaw. With one face this is the single hull blurred by fw * 0.03 --
+            # arithmetically the previous expression, so single portraits stay identical.
+            _hullf = np.zeros((H, W), np.float32)
+            for _fp, _fwi in zip(all_pts, _fws):
+                _hm = np.zeros((H, W), np.uint8)
+                cv2.fillConvexPoly(_hm, cv2.convexHull(_fp.astype(np.int32)), 1)
+                _hullf = np.maximum(_hullf, cv2.GaussianBlur(
+                    _hm.astype(np.float32), (0, 0), sigmaX=max(1.0, _fwi * 0.03)))
+            _offmask = 1.0 - np.clip(_hullf, 0, 1)
+            df = np.clip(np.maximum(df, _neck_target * _offmask), 0, 1)
+        else:
+            # Group: each subject's neck/chest (and hair/crown) must graduate from THEIR OWN
+            # chin, not one group-wide line -- otherwise a taller person's chest sizes
+            # differently from a shorter one's and the type jumps between people. Build a
+            # smooth per-COLUMN chin / face-top / face-height by weighting every face's value
+            # by horizontal proximity (Gaussian on |x - face_centre|, sigma ~ face width), so
+            # the reference blends seamlessly across neighbors with no seam. Then, instead of
+            # a hard step at the chin (which snaps small->large), hold df up right under the
+            # chin and DECAY it over ~0.9 face-heights: the neck/upper-chest eases through a
+            # medium band before the long ramp grows the type toward the hem -- small (face) ->
+            # medium (neck) -> large (chest), identically for every subject.
+            _cx = np.array([0.5 * (float(_p[:, 0].min()) + float(_p[:, 0].max())) for _p in all_pts], np.float32)
+            _chin_a = np.array([float(_p[:, 1].max()) for _p in all_pts], np.float32)
+            _topa = np.array([float(_p[:, 1].min()) for _p in all_pts], np.float32)
+            _fwa = np.array([max(1.0, float(_p[:, 0].max() - _p[:, 0].min())) for _p in all_pts], np.float32)
+            _fha = np.array([max(1.0, float(_p[:, 1].max() - _p[:, 1].min())) for _p in all_pts], np.float32)
+            _xs = np.arange(W, dtype=np.float32)
+            _wt = np.exp(-0.5 * ((_xs[None, :] - _cx[:, None]) / (_fwa[:, None] * 1.1)) ** 2)
+            _wt /= (_wt.sum(0, keepdims=True) + 1e-6)
+            _chin_col = (_wt * _chin_a[:, None]).sum(0)[None, :]
+            _top_col = (_wt * _topa[:, None]).sum(0)[None, :]
+            _fh_col = (_wt * _fha[:, None]).sum(0)[None, :]
+            _belowm = (_gyv > _chin_col).astype(np.float32) * _notface
+            _below = np.clip((_gyv - _chin_col) / np.maximum(1.0, (_bottom_y - _chin_col)), 0.0, 1.0)
+            _neck = np.clip(1.0 - (_gyv - _chin_col) / np.maximum(1.0, 0.9 * _fh_col), 0.0, 1.0) * _belowm
+            df = np.clip(df + 0.40 * _neck + 0.55 * _below * _notface, 0, 1)
+            _abovem = (_gyv < _top_col).astype(np.float32) * _notface
+            _above = np.clip((_top_col - _gyv) / np.maximum(1.0, (_top_col - _top_y)), 0.0, 1.0)
+            _crown = np.clip(1.0 - (_top_col - _gyv) / np.maximum(1.0, 0.9 * _fh_col), 0.0, 1.0) * _abovem
+            df = np.clip(df + 0.40 * _crown + 0.55 * _above * _notface, 0, 1)
+    # =================================================================================
+    # #1 Forehead is a big smooth plane that large letters dominate -> push the type
+    # finer above the brow line so it stops shouting.
+    brows = [_p[i] for _p in all_pts for grp in ("Lbrow", "Rbrow") for i in _GROUPS[grp] if i < len(_p)]
+    if brows:
+        brow_y = float(np.mean([b[1] for b in brows]))
+        _yy = np.arange(H, dtype=np.float32)[:, None]
+        fh = ((fmh > 0) & (_yy < brow_y)).astype(np.float32)
+        df = np.clip(df + 0.26 * cv2.GaussianBlur(fh, (0, 0), sigmaX=max(2.0, fw * 0.05)), 0, 1)
+    df = cv2.GaussianBlur(df, (0, 0), sigmaX=max(2.0, fw * 0.06))   # ease the size steps further
+    # Re-assert the face-detail FLOOR after the smoothing: the blur above pulls the chin's
+    # LOWER edge down toward the larger neck (so the chin bottom read bigger than the forehead).
+    # Locking the floor here keeps the whole face -- chin bottom + ears included -- at the fine
+    # tier, with the size step to the neck happening right at the jaw, not inside the chin.
+    if _fdt > 0.0:
+        df = np.maximum(df, _fdt * _detail)
+    # #4 Highlights breathe: the brightest skin otherwise keeps full-size, dense type and reads
+    # as a flat wash. Push df UP in the brightest ~30% of the face so the type there goes FINER
+    # -- smaller, airier words let the highlight breathe instead of caking. Face only; strength
+    # TYPO_HILIGHT_FINE (default 0.30; 0 disables).
+    _hf = float(_settings.raw("TYPO_HILIGHT_FINE") or 0.30)
+    if _hf > 0.0:
+        _hib = np.clip((gray / 255.0 - 0.72) / 0.28, 0.0, 1.0) * face_norm
+        _hib = cv2.GaussianBlur(_hib, (0, 0), sigmaX=max(1.0, fw * 0.03))
+        df = np.clip(df + _hf * _hib, 0, 1)
+
+    return df, face_norm, feat_norm, _grad_on
+
+
 def render_displacement_portrait(
     an: Analysis,
     words: Sequence[str],
@@ -1731,266 +2016,11 @@ def render_displacement_portrait(
     # gradient gradual across the forehead/cheeks at any crop tightness.
     face_w = _face_w_pf
 
-    # Smooth "detail field" df in [0,1] that drives a CONTINUOUS size gradient:
-    # ~0 on the body (large text) -> ~0.45 on the broad face (mid) -> ~1 at the
-    # features (small). Heavily feathered so the size transition is gradual.
-    face_norm = np.clip(face_w / (face_w.max() + 1e-6), 0, 1)
-    # Wide feature feathering -> feat_norm DECAYS smoothly outward from the eyes/
-    # nose/mouth, so the type grows continuously (small at features -> mid -> large)
-    # instead of snapping at a hard feature boundary.
-    feat_union = mask_of(_GROUPS.keys(), 0.04, 0.24)
-    feat_norm = np.clip(feat_union / (feat_union.max() + 1e-6), 0, 1)
-    df = np.clip(0.52 * face_norm + 0.70 * feat_norm, 0, 1)
-    # Face-detail floor: the chin, jaw, cheekbones and ears sit INSIDE the face but FAR from
-    # the eyes/nose/mouth, so feat_norm ~ 0 there and they render at the same mid size as the
-    # neck -- no distinction, and the chin/jaw read too large. Lift df across the whole face
-    # (scaled by face_norm) so every facial region reads as FINE detail, clearly finer than
-    # the neck below it. Falls off with face_norm, so the neck/body are barely touched.
-    # TYPO_FACE_DETAIL is the TARGET fineness FLOOR for the face+ears (0..1): a floor, not an
-    # add, so the ear (which starts at df~0 = the LARGEST tier) is forced straight to fine
-    # rather than merely nudged. Default 0.8; 0 reverts.
-    # 0.95 to match docker-compose.yml, which is what every container actually runs.
-    # The code said 0.8 and the measured field came back at 0.95 all day.
-    _fdt = float(_settings.raw("TYPO_FACE_DETAIL") or 0.95)
-    if _fdt > 0.0:
-        # Detail mask = the TIGHT face interior (not the wide face_norm feather, so the chin/
-        # jaw/cheekbones get the FULL lift right to the jawline) PLUS an estimated EAR region on
-        # each side. MediaPipe has no ear landmarks, so anchor small ellipses just outside the
-        # face's lateral extremes at eye level, kept on the subject via mask01. Lifting df here
-        # makes chin/jaw/cheeks/ears read as FINE type, clearly finer than the neck below.
-        # Tight feather so the floor stays SOLID right to the jawline/chin (a wider feather
-        # tapered the floor at the chin edge, so the chin read larger than the mid-face).
-        _detail = np.clip(cv2.GaussianBlur(fmh.astype(np.float32), (0, 0), sigmaX=max(1.0, fw * 0.025)), 0, 1)
-        _ears = np.zeros((H, W), np.float32)
-        for _fp in all_pts:
-            _x0, _x1 = float(_fp[:, 0].min()), float(_fp[:, 0].max())
-            _y0, _y1 = float(_fp[:, 1].min()), float(_fp[:, 1].max())
-            _fwi, _fhi = (_x1 - _x0), (_y1 - _y0)
-            _ey = _y0 + _fhi * 0.42                                   # ~eye level
-            for _ex in (_x0 - _fwi * 0.03, _x1 + _fwi * 0.03):
-                cv2.ellipse(_ears, (int(round(_ex)), int(round(_ey))),
-                            (int(round(_fwi * 0.14)), int(round(_fhi * 0.24))), 0, 0, 360, 1.0, -1)
-        _ears = np.clip(cv2.GaussianBlur(_ears, (0, 0), sigmaX=max(1.0, fw * 0.04)), 0, 1) * mask01
-        _detail = np.clip(np.maximum(_detail, _ears), 0, 1)
-        # FLOOR: raise df to at least _fdt across the face+ears (feathered by _detail), so the
-        # ear/chin/cheeks are forced to fine no matter their starting size, while the features
-        # (already ~1) and the neck (_detail~0) are untouched.
-        df = np.maximum(df, _fdt * _detail)
-    # === Graduate body + hair type (default ON; TYPO_GRADUATE_BODY=0 reverts) =========
-    # Beyond the face the detail field falls to ~0, so the neck/clothing AND the crown of
-    # the hair render at the LARGEST tier (giant words). Ramp df UP with distance away from
-    # the face -- below the chin and above the face-top -- so the body and hair step DOWN
-    # continuously toward the hem/crown. Gated to OUTSIDE the face (the face is unchanged).
-    _grad_on = graduate and _settings.raw("TYPO_GRADUATE_BODY").strip().lower() not in ("0", "false", "off", "no", "")
-    if _grad_on:
-        _gyv = np.arange(H, dtype=np.float32)[:, None]
-        _rows_on = np.where(mask01.max(axis=1) > 0)[0]
-        _notface = 1.0 - face_norm
-        _bottom_y = float(_rows_on.max()) if _rows_on.size else float(H)
-        _top_y = float(_rows_on.min()) if _rows_on.size else 0.0
-        # One subject or several, the treatment is now the SAME: a floor off every face's
-        # hull. Measured on the test set, the two branches below were not two tunings of one
-        # idea -- they were two different products:
-        #
-        #     01-hat   df mean 0.948   L=0%   M=0%   F=96%  Mi=4%
-        #     05-couple df mean 0.661  L=15%  M=50%  F=24%  Mi=11%
-        #
-        # The single portrait sits almost entirely in ONE tier. The group spreads across all
-        # four, and WHICH tier a region lands in depends on its distance from that person's
-        # own chin -- so the taller subject's collar and the shorter subject's hair size
-        # differently in the same photograph. That is the inconsistency reported on the
-        # couple, and it is not about hair or necks: it is this branch.
-        #
-        # TYPO_GROUP_UNIFORM=0 restores the old additive group ramp.
-        _uniform = (len(all_pts) <= 1
-                    or _settings.raw("TYPO_GROUP_UNIFORM").strip().lower()
-                    not in ("0", "false", "off", "no"))
-        if _uniform:
-            # Single subject (the memorial portrait). Hold the neck + body + hair AT LEAST as
-            # fine as the FACE'S OWN detail floor (_fdt), so they read proportional to the jaw
-            # -- uniform, never coarser than the face, no bulge. (The prior fixed target 0.65
-            # sat BELOW _fdt=0.8, so the neck rendered COARSER than the jaw -> "still too
-            # large".) TYPO_NECK_FINE scales that floor: 1.0 = match the face; >1 = finer than
-            # the face; 0 = legacy large body.
-            # Use a TIGHT ramp off the chin/face-top (reaches full strength within ~0.15 face-
-            # heights) -- NOT _notface, whose big fw*0.22 blur under-boosts the upper neck and
-            # leaves large type there. maximum() only raises df, so overlapping the face is safe
-            # (the face floor already holds it). TYPO_NECK_FINE scales the floor: 1.0 = match the
-            # face; >1 = finer; 0 = legacy large body.
-            # FULL-strength boost across the ENTIRE region below the chin-bottom / above the
-            # face-top (hard horizontal cut, seamless because the neck target == the face floor
-            # so both read the same size); _notface fills the sides. Earlier masks (_notface's
-            # wide blur, and a ramp that started at 0 AT the chin) both starved the UPPER neck
-            # of the boost -> large type there. This applies it evenly from just under the jaw.
-            _neck_scale = float(_settings.raw("TYPO_NECK_FINE") or 1.0)
-            _neck_target = float(np.clip(_fdt * _neck_scale, 0.0, 1.0))
-            # SHARP face-hull complement (tight fw*0.03 feather) so the boost reaches full
-            # strength right under the JAWLINE. _notface's wide fw*0.22 blur and the chin-TIP
-            # cut both left the under-jaw neck un-boosted -> large type there. Seamless because
-            # the neck target == the face floor; df is smoothed downstream.
-            # Feathered PER FACE, for the same reason mask_of and _face_w_pf are: a smaller
-            # face needs a smaller feather, or the primary's blur bleeds across the second
-            # subject's jaw. With one face this is the single hull blurred by fw * 0.03 --
-            # arithmetically the previous expression, so single portraits stay identical.
-            _hullf = np.zeros((H, W), np.float32)
-            for _fp, _fwi in zip(all_pts, _fws):
-                _hm = np.zeros((H, W), np.uint8)
-                cv2.fillConvexPoly(_hm, cv2.convexHull(_fp.astype(np.int32)), 1)
-                _hullf = np.maximum(_hullf, cv2.GaussianBlur(
-                    _hm.astype(np.float32), (0, 0), sigmaX=max(1.0, _fwi * 0.03)))
-            _offmask = 1.0 - np.clip(_hullf, 0, 1)
-            df = np.clip(np.maximum(df, _neck_target * _offmask), 0, 1)
-        else:
-            # Group: each subject's neck/chest (and hair/crown) must graduate from THEIR OWN
-            # chin, not one group-wide line -- otherwise a taller person's chest sizes
-            # differently from a shorter one's and the type jumps between people. Build a
-            # smooth per-COLUMN chin / face-top / face-height by weighting every face's value
-            # by horizontal proximity (Gaussian on |x - face_centre|, sigma ~ face width), so
-            # the reference blends seamlessly across neighbors with no seam. Then, instead of
-            # a hard step at the chin (which snaps small->large), hold df up right under the
-            # chin and DECAY it over ~0.9 face-heights: the neck/upper-chest eases through a
-            # medium band before the long ramp grows the type toward the hem -- small (face) ->
-            # medium (neck) -> large (chest), identically for every subject.
-            _cx = np.array([0.5 * (float(_p[:, 0].min()) + float(_p[:, 0].max())) for _p in all_pts], np.float32)
-            _chin_a = np.array([float(_p[:, 1].max()) for _p in all_pts], np.float32)
-            _topa = np.array([float(_p[:, 1].min()) for _p in all_pts], np.float32)
-            _fwa = np.array([max(1.0, float(_p[:, 0].max() - _p[:, 0].min())) for _p in all_pts], np.float32)
-            _fha = np.array([max(1.0, float(_p[:, 1].max() - _p[:, 1].min())) for _p in all_pts], np.float32)
-            _xs = np.arange(W, dtype=np.float32)
-            _wt = np.exp(-0.5 * ((_xs[None, :] - _cx[:, None]) / (_fwa[:, None] * 1.1)) ** 2)
-            _wt /= (_wt.sum(0, keepdims=True) + 1e-6)
-            _chin_col = (_wt * _chin_a[:, None]).sum(0)[None, :]
-            _top_col = (_wt * _topa[:, None]).sum(0)[None, :]
-            _fh_col = (_wt * _fha[:, None]).sum(0)[None, :]
-            _belowm = (_gyv > _chin_col).astype(np.float32) * _notface
-            _below = np.clip((_gyv - _chin_col) / np.maximum(1.0, (_bottom_y - _chin_col)), 0.0, 1.0)
-            _neck = np.clip(1.0 - (_gyv - _chin_col) / np.maximum(1.0, 0.9 * _fh_col), 0.0, 1.0) * _belowm
-            df = np.clip(df + 0.40 * _neck + 0.55 * _below * _notface, 0, 1)
-            _abovem = (_gyv < _top_col).astype(np.float32) * _notface
-            _above = np.clip((_top_col - _gyv) / np.maximum(1.0, (_top_col - _top_y)), 0.0, 1.0)
-            _crown = np.clip(1.0 - (_top_col - _gyv) / np.maximum(1.0, 0.9 * _fh_col), 0.0, 1.0) * _abovem
-            df = np.clip(df + 0.40 * _crown + 0.55 * _above * _notface, 0, 1)
-    # =================================================================================
-    # #1 Forehead is a big smooth plane that large letters dominate -> push the type
-    # finer above the brow line so it stops shouting.
-    brows = [_p[i] for _p in all_pts for grp in ("Lbrow", "Rbrow") for i in _GROUPS[grp] if i < len(_p)]
-    if brows:
-        brow_y = float(np.mean([b[1] for b in brows]))
-        _yy = np.arange(H, dtype=np.float32)[:, None]
-        fh = ((fmh > 0) & (_yy < brow_y)).astype(np.float32)
-        df = np.clip(df + 0.26 * cv2.GaussianBlur(fh, (0, 0), sigmaX=max(2.0, fw * 0.05)), 0, 1)
-    df = cv2.GaussianBlur(df, (0, 0), sigmaX=max(2.0, fw * 0.06))   # ease the size steps further
-    # Re-assert the face-detail FLOOR after the smoothing: the blur above pulls the chin's
-    # LOWER edge down toward the larger neck (so the chin bottom read bigger than the forehead).
-    # Locking the floor here keeps the whole face -- chin bottom + ears included -- at the fine
-    # tier, with the size step to the neck happening right at the jaw, not inside the chin.
-    if _fdt > 0.0:
-        df = np.maximum(df, _fdt * _detail)
-    # #4 Highlights breathe: the brightest skin otherwise keeps full-size, dense type and reads
-    # as a flat wash. Push df UP in the brightest ~30% of the face so the type there goes FINER
-    # -- smaller, airier words let the highlight breathe instead of caking. Face only; strength
-    # TYPO_HILIGHT_FINE (default 0.30; 0 disables).
-    _hf = float(_settings.raw("TYPO_HILIGHT_FINE") or 0.30)
-    if _hf > 0.0:
-        _hib = np.clip((gray / 255.0 - 0.72) / 0.28, 0.0, 1.0) * face_norm
-        _hib = cv2.GaussianBlur(_hib, (0, 0), sigmaX=max(1.0, fw * 0.03))
-        df = np.clip(df + _hf * _hib, 0, 1)
-
-    # Clean vertical drape, dampened in the feature band (keeps features crisp).
-    D = cv2.GaussianBlur(gray, (0, 0), sigmaX=W * 0.020)
-    dn = (D / 255.0 - 0.5) * 2.0
-    xx, yy = np.meshgrid(np.arange(W).astype(np.float32), np.arange(H).astype(np.float32))
-    # Drape amplitude: how far the rows ride the facial form (vertical remap by luminance).
-    # Higher = more sculptural wrap around brow/nose/cheeks; too high distorts. Env-tunable
-    # so it can be dialled on staging without a rebuild (default 64 = unchanged).
-    _drape = float(_settings.raw("TYPO_DRAPE") or 64.0)
-    amp = _drape * s * _ssn * (1.0 - 0.85 * feat_damp)
-    my = (yy + amp * dn).astype(np.float32)
-    mx = xx.astype(np.float32)
-
-    def R(t):
-        return cv2.remap(t, mx, my, cv2.INTER_LINEAR, borderValue=0.0)
-
-    # Continuous bracket-blend across the 4 tiers -> smooth large -> mid -> small.
-    wL, wM, wF, wMi = R(t_large), R(t_mid), R(t_fine), R(t_micro)
-    warped = wL.copy()
-    for a, b, ia, ib in ((0.0, 0.45, wL, wM), (0.45, 0.75, wM, wF), (0.75, 1.0001, wF, wMi)):
-        bt = np.clip((df - a) / (b - a), 0, 1)
-        warped = np.where((df >= a) & (df < b), ia * (1 - bt) + ib * bt, warped)
-    warped = np.where(df >= 1.0, wMi, warped)
-
-    # Iris circles take the eye-scaled tier (feathered edge); iris_m is reused
-    # below for the color blend.
-    iris_m = None
-    if irises and t_iris is not None:
-        iris_m = np.zeros((H, W), np.float32)
-        ir_mean = float(np.mean([r for _, _, r in irises]))
-        for icx, icy, ir in irises:
-            cv2.circle(iris_m, (int(round(icx)), int(round(icy))), int(round(ir)), 1.0, -1, cv2.LINE_AA)
-        iris_m = np.clip(cv2.GaussianBlur(iris_m, (0, 0), sigmaX=max(1.0, ir_mean * 0.18)), 0, 1)
-        warped = warped * (1.0 - iris_m) + R(t_iris) * iris_m
-
-    # Tonal field: percentile-stretch within the subject.
-    vals = gray[mask01 > 0]
-    if vals.size == 0:
-        vals = gray.reshape(-1)
-    lo, hi = np.percentile(vals, [4, 96])
-    lum = np.clip((gray - lo) / (hi - lo + 1e-6), 0, 1)
-    ink_field = lum if g["tone"] == "light" else (1.0 - lum)
-
-    # Local-contrast boost so flat-lit features separate.
-    hp = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=fw * 0.06)
-    hp /= (np.std(hp[mask01 > 0]) + 1e-6)
-    sign = 1.0 if g["tone"] == "light" else -1.0
-    ink_field = np.clip(ink_field + 0.40 * sign * np.clip(hp, -2, 2) * face_w, 0, 1)
-    # #2/#3 Finer-scale contrast AT the features so the nose (bridge/tip/sides), the
-    # smile lines and cheek transitions MODEL instead of reading flat.
-    hp2 = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.022))
-    hp2 /= (np.std(hp2[mask01 > 0]) + 1e-6)
-    ink_field = np.clip(ink_field + 0.32 * sign * np.clip(hp2, -2.0, 2.0) * feat_norm, 0, 1)
-    # #7 Micro-expression: the fine-scale contrast above is gated to the eyes/nose/mouth, so
-    # the CREASES that make a face recognisable -- nasolabial folds, crow's feet, forehead and
-    # smile lines out on the skin -- smooth away. Apply an even finer high-pass across the whole
-    # face (face_norm) so those creases render as delicate darker type instead of flat skin.
-    # Subject/face only; strength TYPO_CREASE (default 0.22; 0 disables).
-    _cr = float(_settings.raw("TYPO_CREASE") or 0.22)
-    if _cr > 0.0:
-        _hpc = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.012))
-        _hpc /= (np.std(_hpc[mask01 > 0]) + 1e-6)
-        ink_field = np.clip(ink_field + _cr * sign * np.clip(_hpc, -2.0, 2.0) * face_norm, 0, 1)
-    # Sculpt the hair (same TYPO_GRADUATE_BODY gate): boost mid-scale local contrast in the
-    # hair region (subject, above the chin, outside the face) so strand clumps, volume and
-    # highlights MODEL instead of reading as a flat text field.
-    if _grad_on:
-        _hph = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.030))
-        _hph /= (np.std(_hph[mask01 > 0]) + 1e-6)
-        _hair_reg = ((mask01 > 0) & (yy < max(float(_p[:, 1].max()) for _p in all_pts))).astype(np.float32) * (1.0 - face_norm)
-        _hair_reg = cv2.GaussianBlur(_hair_reg, (0, 0), sigmaX=max(2.0, fw * 0.03))
-        ink_field = np.clip(ink_field + 0.60 * sign * np.clip(_hph, -2.0, 2.0) * _hair_reg, 0, 1)
-    # #4 Quiet the clothing: below the chin, compress contrast toward the local mean
-    # so patterned clothes stop competing with the face (hair untouched).
-    chin_y = max(float(_p[:, 1].max()) for _p in all_pts)
-    cloth = ((mask01 > 0) & (yy > chin_y)).astype(np.float32)
-    cloth = cv2.GaussianBlur(cloth, (0, 0), sigmaX=max(2.0, fw * 0.05))
-    # When graduating (same gate), quiet the clothing a bit LESS so some drape shows,
-    # then add a gentle fold-scale sculpt -> plain garments gain fold depth while
-    # patterned clothes are only mildly livelier (they stay quieter than the face).
-    _cq = 0.40 if _grad_on else 0.55
-    cm = ink_field[cloth > 0.5]
-    if cm.size > 50:
-        ink_field = ink_field * (1.0 - _cq * cloth) + float(cm.mean()) * (_cq * cloth)
-    if _grad_on:
-        _hpc = gray - cv2.GaussianBlur(gray, (0, 0), sigmaX=max(1.0, fw * 0.045))
-        _hpc /= (np.std(_hpc[mask01 > 0]) + 1e-6)
-        ink_field = np.clip(ink_field + 0.30 * sign * np.clip(_hpc, -2.0, 2.0) * cloth, 0, 1)
-
-    # Progressive density: thicken text where ink is strongest.
-    b1 = cv2.dilate(warped, np.ones((2, 2), np.uint8), 1)
-    b2 = cv2.dilate(warped, np.ones((3, 3), np.uint8), 1)
-    gd1 = np.clip((ink_field - 0.40) / 0.60, 0, 1)
-    gd2 = np.clip((ink_field - 0.70) / 0.30, 0, 1)
-    w2 = np.clip(warped + (b1 - warped) * gd1 + (b2 - b1) * gd2, 0, 1)
-
+    df, face_norm, feat_norm, _grad_on = _lf_detail_field(H, face_w, W, mask_of, mask01, fmh, fw, all_pts, graduate, _fws, gray)
+    yy, R, warped = _lf_drape(s, W, gray, H, _ssn, feat_damp, t_fine, t_large, t_micro, t_mid, df)
+    warped = _lf_iris_circles(irises, t_iris, H, W, R, warped)
+    lum, ink_field = _lf_tonal_field(g, gray, mask01, fw, face_w, feat_norm, face_norm, _grad_on, all_pts, yy)
+    w2 = _lf_density(warped, ink_field)
     # STAGED INK DUMP (TYPO_DUMP_STAGES=<dir>). The ink field is rewritten by sixteen
     # passes in sequence, and any of them can drive a region to bare ground. Reasoning from
     # the code about which one did it failed four times on a single defect -- each wrong
