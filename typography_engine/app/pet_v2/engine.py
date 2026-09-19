@@ -85,6 +85,10 @@ class _RenderState(threading.local):
         # fills outnumber the structural words several to one, so a count-median hides what
         # the structural pass did.
         self.pass_tags = []
+        # Parallel to placements, for drawing the type again at another scale (the sharp
+        # print path): (word, font_px, alpha_q, deg_q, x, y), exactly the key the bitmap was
+        # rendered from and the centre it was pasted at.
+        self.glyphs = []
         self.pass_name = "feature"
         self.stats = {"glyph_px": 0, "overlap_px": 0, "core_px": 0, "core_overlap_px": 0}
         self.pass_stats = {}   # pass name -> [core_px, core_overlap_px]: which pass the collisions come from
@@ -300,6 +304,7 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
         placed_count += 1
         _TL.placements.append((x, y, float(getattr(font, "size", 0)), len(word), angle, bmp_w, bmp_h))
         _TL.pass_tags.append(_TL.pass_name)
+        _TL.glyphs.append((word, key[1], _alpha_q_of(key), float(key[3]), x, y))
         _TL.stats["glyph_px"] += int(glyph_mask.sum())
         _TL.stats["overlap_px"] += overlap_px     # this word's stroke pixels landing on prior ink
         _TL.stats["core_px"] += int(core.sum())
@@ -314,6 +319,51 @@ _KEEP_FIELDS = _settings.raw("PET_V2_KEEP_FIELDS").strip().lower() not in ("", "
 # (word, font px, alpha, angle deg) -> (w, h, rotated RGBA, its alpha array). Shared across
 # threads on purpose: entries are immutable once built, and dict get/set are atomic in CPython.
 _BITMAP_CACHE = {}
+
+
+def rasterise_glyphs(glyphs, W, H, scale=1.0, font_path=None):
+    """Draw a render's logged words again on a blank RGBA canvas of (W*scale, H*scale).
+
+    Each entry is (word, font_px, alpha_q, deg_q, x, y): the exact key the bitmap was made
+    from and the centre it was pasted at (see place_words_collision_aware). At scale 1 the
+    result is byte-identical to the render's own type layer before tone modulation
+    (checked by ops/print-check). At a larger scale the type is drawn by the font engine at
+    that size, so every letter edge is sharp at print resolution instead of being an
+    enlarged bitmap. Positions scale exactly; a bitmap's own size at the larger scale
+    differs from the small one by the font's hinting, which is sub-pixel at the small scale.
+    Words are composited in log order, so overlaps resolve as they did in the render."""
+    k = float(scale)
+    Wk, Hk = int(round(W * k)), int(round(H * k))
+    canvas = Image.new("RGBA", (Wk, Hk), (0, 0, 0, 0))
+    fp = font_path or _FONT
+    fonts, texts, rots = {}, {}, {}
+    for word, px, alpha_q, deg_q, x, y in glyphs:
+        pk = max(6, int(round(px * k)))
+        f = fonts.get(pk)
+        if f is None:
+            f = ImageFont.truetype(fp, pk) if fp else ImageFont.load_default()
+            fonts[pk] = f
+        tkey = (word, pk, alpha_q)
+        bmp = texts.get(tkey)
+        if bmp is None:
+            bmp = render_word_bitmap(word, f, alpha=alpha_q)
+            texts[tkey] = bmp
+        rkey = (word, pk, alpha_q, deg_q)
+        rot = rots.get(rkey)
+        if rot is None:
+            rot = bmp.rotate(-deg_q, expand=True, resample=Image.BICUBIC)
+            rots[rkey] = rot
+        px_, py_ = int(round(x * k - rot.width / 2)), int(round(y * k - rot.height / 2))
+        if px_ + rot.width <= 0 or py_ + rot.height <= 0 or px_ >= Wk or py_ >= Hk:
+            continue
+        canvas.alpha_composite(rot, (px_, py_))
+    return canvas
+
+
+def _alpha_q_of(key):
+    """The opacity a cached bitmap was rendered at: the key's 16-level bin plus 8."""
+    return min(255, key[2] + 8)
+
 _TEXT_CACHE = {}     # (word, font px, alpha bin) -> unrotated RGBA text, shared across angle bins
 
 
@@ -2818,7 +2868,7 @@ def _phase_opacity_tone(canvas, base, gray, debug_dir, H, W, out_path, mask):
 def _phase_final_fills(canvas, best_placements, best_pass, best_stats, best_pass_stats, base,
                        coherence_s, get_font, mask, micro_px_area, occupancy, rng, theta_s,
                        short_tokens, size_px_field, letter_tokens, gray, fill_px_area,
-                       hero_px_area, struct_px_area):
+                       hero_px_area, struct_px_area, best_glyphs):
     """Final fills, once, on the winning canvas.
 
     Moved verbatim out of render_v2; the parameters are what the block read and the
@@ -2829,6 +2879,7 @@ def _phase_final_fills(canvas, best_placements, best_pass, best_stats, best_pass
     # winning iteration first so the claim metrics describe exactly this canvas.
     _TL.placements[:] = best_placements
     _TL.pass_tags[:] = best_pass
+    _TL.glyphs[:] = best_glyphs
     _TL.stats.update(best_stats)
     _TL.pass_stats.clear()
     _TL.pass_stats.update({k: list(v) for k, v in best_pass_stats.items()})
@@ -2842,6 +2893,7 @@ def _phase_final_fills(canvas, best_placements, best_pass, best_stats, best_pass
     _log(f"final fills: channel fill placed {ch_n} letters ({ch_px}px)")
     best_placements = list(_TL.placements)
     best_pass = list(_TL.pass_tags)
+    best_glyphs = list(_TL.glyphs)
     best_stats = dict(_TL.stats)
     best_pass_stats = {k: list(v) for k, v in _TL.pass_stats.items()}
 
@@ -2853,7 +2905,7 @@ def _phase_final_fills(canvas, best_placements, best_pass, best_stats, best_pass
           f"structural: {struct_px_area/total_tiered:.1%}  hero: {hero_px_area/total_tiered:.1%}  "
           f"(targets: 20-30% / 60-70% / 3-7%)")
 
-    return best_placements, best_pass, best_stats, best_pass_stats
+    return best_placements, best_pass, best_stats, best_pass_stats, best_glyphs
 
 
 def _phase_iterative_loop(stream, N_ITERS, base, sep_correction, sep_field_base, sep_px, W,
@@ -2879,6 +2931,7 @@ def _phase_iterative_loop(stream, N_ITERS, base, sep_correction, sep_field_base,
     best_score, best_canvas, best_tier_stats = -1.0, None, None
     best_placements = []
     best_pass = []
+    best_glyphs = []
     best_stats = dict(_TL.stats)
     best_pass_stats = {}
     down_streak = 0
@@ -3003,6 +3056,7 @@ def _phase_iterative_loop(stream, N_ITERS, base, sep_correction, sep_field_base,
         occupancy = np.zeros((H, W), np.float32)   # shared collision map for this iteration
         _TL.placements.clear()                        # per-iteration word placement log
         _TL.pass_tags.clear()
+        _TL.glyphs.clear()
         _TL.pass_name = "feature"
         for _k in _TL.stats:
             _TL.stats[_k] = 0
@@ -3194,6 +3248,7 @@ def _phase_iterative_loop(stream, N_ITERS, base, sep_correction, sep_field_base,
             best_occupancy = occupancy.copy()
             best_placements = list(_TL.placements)
             best_pass = list(_TL.pass_tags)
+            best_glyphs = list(_TL.glyphs)
             best_stats = dict(_TL.stats)
             best_pass_stats = {k: list(v) for k, v in _TL.pass_stats.items()}
             best_tier_stats = (micro_px_area, struct_px_area, hero_px_area, fill_px_area)
@@ -3220,7 +3275,7 @@ def _phase_iterative_loop(stream, N_ITERS, base, sep_correction, sep_field_base,
     micro_px_area, struct_px_area, hero_px_area, fill_px_area = best_tier_stats
     _log(f"using iteration with best likeness ({best_score:.4f})")
 
-    return canvas, occupancy, best_placements, best_pass, best_stats, best_pass_stats, fill_px_area, hero_px_area, micro_px_area, struct_px_area
+    return canvas, occupancy, best_placements, best_pass, best_stats, best_pass_stats, fill_px_area, hero_px_area, micro_px_area, struct_px_area, best_glyphs
 
 
 def _phase_features(primary_kind, _es, attractor_pts, gray, mask, extra_faces, H, W,
@@ -3915,7 +3970,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         _es, attractor_pts, gray, mask, extra_faces, H, W, importance_norm, primary_mouth, xx,
         yy, head_center, human, detail_field, MICRO_PX, STRUCT_PX, _energy, _gx, _gy)
     (canvas, occupancy, best_placements, best_pass, best_stats, best_pass_stats,
-     fill_px_area, hero_px_area, micro_px_area, struct_px_area) = _phase_iterative_loop(stream,
+     fill_px_area, hero_px_area, micro_px_area, struct_px_area, best_glyphs) = _phase_iterative_loop(stream,
         N_ITERS, base, sep_correction, sep_field_base, sep_px, W, size_px_field, coherence_s,
         mask, theta_s, edge_zone, region_map, H, mean_coherence, min_dist_to_attractor,
         dist_to_edge, STRUCT_PX, attractor_radius, line_importance, FILL_PX, attractor_pts,
@@ -3923,10 +3978,10 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         fringe_points, feat_close_radius, line_feat_dist, size_field, line_size_t, MICRO_PX,
         fine_blend, importance_norm, human, hero_words, corr_sigma, target_density_blur,
         bgr_source, lr_map)
-    best_placements, best_pass, best_stats, best_pass_stats = _phase_final_fills(canvas,
+    best_placements, best_pass, best_stats, best_pass_stats, best_glyphs = _phase_final_fills(canvas,
         best_placements, best_pass, best_stats, best_pass_stats, base, coherence_s, get_font,
         mask, micro_px_area, occupancy, rng, theta_s, short_tokens, size_px_field,
-        letter_tokens, gray, fill_px_area, hero_px_area, struct_px_area)
+        letter_tokens, gray, fill_px_area, hero_px_area, struct_px_area, best_glyphs)
     canvas, ink_raw, ink_alpha = _phase_opacity_tone(canvas, base, gray, debug_dir, H, W,
         out_path, mask)
     eye_reveal = _phase_eye_reveal(H, W, base, _es, _lm_env, attractor_pts, extra_faces, gray, mask)
