@@ -318,6 +318,855 @@ def _add_discovery(out, pts, fw, H, W, marks):
     return out * (1.0 - al) + col * al
 
 
+def _lf_finish(an, g, W, ground, fw, gray, mask01, out, _t, _cdump, h0, out_width, w0, backdrop, _floral_key, soft01, print_aspect, _cid, _mmean):
+    """_lf_finish. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    buf = None
+    # De-posterize: the tonal floors (highlight wash / shadow lift) and the discrete text-
+    # density steps flatten the face into bands. Add the photo's OWN low-frequency light->dark
+    # falloff back as a gentle multiply -- brighter where the photo is bright, darker where it
+    # is dark -- so the flat regions regain smooth photographic gradation WITHOUT blurring the
+    # glyph edges (only the LOW frequencies move, the type stays crisp). Subject only, light
+    # ground only. Default 0 -> byte-identical; TYPO_DEPOSTERIZE tunes the strength.
+    _dp = float(_settings.raw("TYPO_DEPOSTERIZE") or 0.6)   # default ON; 0 disables
+    if _dp > 0.0 and g["tone"] == "light":
+        _plo = cv2.GaussianBlur(gray.astype(np.float32) / 255.0, (0, 0), sigmaX=max(2.0, fw * 0.11))
+        _m = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.01), 0, 1)
+        _mid = float(np.mean(_plo[mask01 > 0])) if np.any(mask01 > 0) else 0.5
+        _mod = 1.0 + _dp * np.clip(_plo - _mid, -0.5, 0.5) * _m
+        out = np.clip(out * _mod[..., None], 0, 255)
+        _t("D-after-deposterize")
+        _cdump("D-after-deposterize")
+
+    oh = max(1, int(out_width * h0 / w0))
+    out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
+    _t("E-after-resize")
+    _cdump("E-after-resize")
+    # Background fill: recolor the region OUTSIDE the subject silhouette. The subject
+    # (on its own ground -- e.g. the navy Lifelike sculpt) is NEVER touched; only pixels
+    # outside the silhouette move. Two sources, in priority order:
+    #   1. An explicit `backdrop` swatch (the "match your space" wall color) -- fills
+    #      with that color regardless of ground. This is the user-facing feature.
+    #   2. Else the legacy env TYPO_BG_LIGHTEN lift (navy sculpt on a lighter gray),
+    #      dark grounds only (the light "paper" ground is already bright -> skipped).
+    _transparent = (backdrop or "").strip().lower() == "transparent"
+    _bd = None if _transparent else (BACKDROPS.get((backdrop or "").strip().lower()) if backdrop else None)
+    try:
+        _bg_lift = float(_settings.raw("TYPO_BG_LIGHTEN"))
+    except ValueError:
+        _bg_lift = 0.0
+    _bg_lift = min(max(_bg_lift, 0.0), 1.0)
+    _pad_bg = g["bg"]
+    _fill = None
+    _alpha = None
+    _floral_inside = None
+    if _floral_key and getattr(an, "silhouette", None) is not None:
+        # Floral frame: capture the subject's soft alpha now; the frame itself is composited
+        # over the padded canvas below (so the blooms sit on the true edges). Pad with the
+        # art's cream so any pad the frame doesn't cover stays seamless.
+        _ow = int(out_width)
+        _floral_inside = np.clip(cv2.resize(soft01, (_ow, oh), interpolation=cv2.INTER_LINEAR), 0.0, 1.0)
+        _pad_bg = _FLORAL_CREAM
+    elif _transparent and getattr(an, "silhouette", None) is not None:
+        # Transparent cutout (digital PNG only): alpha = the soft matte (hair-preserving),
+        # so wispy hair feathers into transparency instead of a hard cut. Everything outside
+        # -- and the print-canvas padding -- becomes fully transparent, portrait floats free.
+        _ow = int(out_width)
+        _alpha = np.clip(cv2.resize(soft01, (_ow, oh), interpolation=cv2.INTER_LINEAR), 0.0, 1.0)
+        _pad_bg = (0.0, 0.0, 0.0)
+    elif _bd is not None:
+        _fill = np.array(_bd, np.float32)
+    elif _bg_lift > 0.0 and ground not in PAPER_FAMILY:
+        _bgc = np.array(g["bg"], np.float32)
+        _fill = _bgc + (255.0 - _bgc) * _bg_lift
+    if _fill is not None and getattr(an, "silhouette", None) is not None:
+        _ow = int(out_width)
+        # Soft matte edge so the backdrop blends into hair instead of a hard cardboard cut.
+        _inside = np.clip(cv2.resize(soft01, (_ow, oh), interpolation=cv2.INTER_LINEAR), 0.0, 1.0)
+        _outside = (1.0 - _inside)[..., None]
+        out = out.astype(np.float32) * (1.0 - _outside) + _fill * _outside
+        _pad_bg = tuple(float(c) for c in _fill)
+    # Standard print canvas (4:5 = 16x20), padded with the ground BEFORE vibrance
+    # so the band is processed identically to the interior ground (no seam).
+    from .tonal import _fit_print_canvas
+    out = _fit_print_canvas(out, _pad_bg, print_aspect)
+    _t("F-after-canvas")
+    _cdump("F-after-canvas")
+    from .preprocess import apply_vibrance
+    _vib = float(_settings.raw("TYPO_VIBRANCE") or 0.22)   # step-3 color-fidelity knob (was fixed 0.34)
+    out = apply_vibrance(out, strength=_vib, bgr=True)   # gentle life (clarity); restrained so color stays natural and the sclera isn't glow-brightened
+    # Color fidelity: soft-cap HSV saturation so the oversaturated extremes -- magenta lips,
+    # orange-boosted skin highlights -- compress toward a natural ceiling while ordinary skin
+    # keeps its color. Only saturation ABOVE the cap is compressed (35% slope), so nothing
+    # below it is touched. TYPO_SAT_CAP=0 disables. Default 170 (gentle).
+    _scap = float(_settings.raw("TYPO_SAT_CAP") or 150)
+    if _scap > 0:
+        _hh = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
+        _s = _hh[..., 1]
+        _hh[..., 1] = np.where(_s > _scap, _scap + (_s - _scap) * 0.35, _s)
+        out = cv2.cvtColor(_hh.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
+    if _floral_key and _floral_inside is not None:
+        # Floral frame: composite the watercolor frame everywhere OUTSIDE the subject, on the
+        # padded canvas (blooms land on the true edges). Pad the subject alpha to the SAME canvas
+        # (0 outside) so hair feathers into the frame; a missing art file -> a plain cream mat.
+        _fl = _load_floral(_floral_key)
+        _hc, _wc = out.shape[:2]
+        _fa = _fit_print_canvas(np.repeat(_floral_inside[..., None], 3, axis=2).astype(np.float32),
+                                (0.0, 0.0, 0.0), print_aspect)
+        _fai = np.clip(_fa[..., 0:1], 0.0, 1.0)
+        if _fl is None:
+            _fl = np.full((_hc, _wc, 3), _FLORAL_CREAM, np.float32)
+        else:
+            _fl = cv2.resize(_fl, (_wc, _hc), interpolation=cv2.INTER_AREA).astype(np.float32)
+        out = np.clip(out, 0, 255).astype(np.float32) * _fai + _fl * (1.0 - _fai)
+    if _transparent and _alpha is not None:
+        # Pad the alpha to the SAME canvas as `out` (transparent border), then emit BGRA.
+        _a3 = _fit_print_canvas(np.repeat(_alpha[..., None], 3, axis=2).astype(np.float32),
+                                (0.0, 0.0, 0.0), print_aspect)
+        _alpha_c = np.clip(_a3[..., 0], 0.0, 1.0)
+        bgra = np.dstack([np.clip(out, 0, 255).astype(np.uint8),
+                          (_alpha_c * 255.0).astype(np.uint8)])
+        ok, buf = cv2.imencode(".png", bgra)
+    else:
+        ok, buf = cv2.imencode(".png", np.clip(out, 0, 255).astype(np.uint8))
+    if not ok:
+        raise ValueError("encode_failed")
+    if _settings.raw("TYPO_DUMP_FIELDS").strip():
+        print("[trace %s w=%d m=%.3f] encode  out.mean=%.2f  bytes=%d"
+              % (_cid, int(out_width), _mmean,
+                 float(np.asarray(out).mean()), len(buf.tobytes())))
+    return out, buf
+
+
+def _lf_noir(ink, out, _t):
+    """_lf_noir. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    # Noir = the finished Lifelike render in black & white. Desaturate to luminance with a
+    # gentle contrast lift so the grayscale is punchy, not muddy -- keeping the polarity
+    # shadows, catchlight and living eyes intact. TYPO_NOIR_CONTRAST tunes the punch.
+    if ink == "mono":
+        _nc = float(_settings.raw("TYPO_NOIR_CONTRAST") or 1.08)
+        _lo = out[..., 0] * 0.114 + out[..., 1] * 0.587 + out[..., 2] * 0.299
+        _lo = np.clip((_lo - 128.0) * _nc + 128.0, 0, 255)
+        out = np.stack([_lo, _lo, _lo], axis=-1)
+        _t("C-after-mono")
+
+    return out
+
+
+def _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W, _iris_face_idx, out, gray, _eye_face_pts, pts, glint, fw, discovery, _hl, breathe):
+    """_lf_eye_colour. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    # Living eyes, color: glyphs inside the iris carry the person's TRUE eye
+    _t("A-after-ink-branch")
+    _cdump("A-after-ink-branch")
+    # color -- sampled by the shared gated helper (both irises saturated and
+    # hue-consistent, else no tint; sampled, never invented). Dark grounds only:
+    # the lifted tint is designed for light-ink-on-dark.
+    # TYPO_EYE_PLAIN: render the eye as TYPE and nothing else. The iris tint, limbal
+    # ring, sclera paint and photographic paste are all gated on `irises`, so emptying
+    # it here disables the entire synthesis in one place. Nothing is drawn from landmark
+    # geometry, so a badly fitted mesh cannot place a disc where no eye is. Teeth are
+    # unaffected (their gate is `irises or teeth`).
+    if _settings.raw("TYPO_EYE_PLAIN").strip().lower() in ("1", "true", "on", "yes"):
+        irises = []
+        iris_m = None
+    if irises and iris_m is not None and g["tone"] == "light" and ink in ("photo", "mono"):
+        from .tonal import _iris_tint, _iris_tint_face
+
+        def _iris_layer(_tint):
+            """The color laid inside an iris: the sampled tint when the gate passed, else
+            the source's own iris pixels lifted so a dark brown reads on the dark ground."""
+            if _tint is not None:
+                _tp = np.array(_tint[1][::-1], np.float32)   # lifted RGB -> BGR
+                _iaa = float(_settings.raw("TYPO_IRIS_ALPHA") or 0.0)
+                _iall = np.maximum(al, _iaa) if _iaa > 0.0 else al
+                return np.array(g["bg"], np.float32) * (1 - _iall) + _tp * _iall
+            _ill = float(_settings.raw("TYPO_IRIS_LIFT") or 1.35)
+            _bff = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+            _hvv = cv2.cvtColor(np.clip(_bff, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
+            _hvv[..., 1] = np.clip(_hvv[..., 1] * 1.3, 0, 255)
+            _hvv[..., 2] = np.clip(_hvv[..., 2] * _ill + 40, 0, 255)
+            _icol = cv2.cvtColor(_hvv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
+            return np.array(g["bg"], np.float32) * (1 - al) + _icol * al
+
+        if (_settings.raw("TYPO_IRIS_PER_FACE").strip().lower() in ("1", "true", "on", "yes")
+                and _iris_face_idx):
+            # Each face gets ITS OWN sampled color on ITS OWN irises. Previously one tint
+            # from faces[0] was painted onto every iris in the image, so a mixed-eye-color
+            # group inherited the primary face's eyes. A face whose gate rejects now falls
+            # back alone rather than forcing the fallback on everyone.
+            for _fx in sorted(set(_iris_face_idx)):
+                _sel = [_c for _c, _fi2 in zip(irises, _iris_face_idx) if _fi2 == _fx]
+                if not _sel:
+                    continue
+                _fm = np.zeros((H, W), np.float32)
+                for (_ccx, _ccy, _rr) in _sel:
+                    cv2.circle(_fm, (int(round(_ccx)), int(round(_ccy))), int(round(_rr)),
+                               1.0, -1, cv2.LINE_AA)
+                _rmean = float(np.mean([_c[2] for _c in _sel]))
+                _fm = np.clip(cv2.GaussianBlur(_fm, (0, 0), sigmaX=max(1.0, _rmean * 0.18)), 0, 1)
+                _fm3 = _fm[..., None]
+                out = out * (1.0 - _fm3) + _iris_layer(_iris_tint_face(an, _fx)) * _fm3
+            tint = None
+            im3 = None
+        else:
+            tint = _iris_tint(an)
+            im3 = iris_m[..., None]
+        if im3 is not None and tint is not None:
+            tip = np.array(tint[1][::-1], np.float32)        # lifted RGB -> BGR
+            # The iris is composited over the GROUND, so wherever ink alpha is low the navy
+            # ground (13,27,58 RGB -- a saturated dark blue) shows through and a correctly
+            # sampled BROWN iris renders BLUE. TYPO_IRIS_ALPHA floors the alpha inside the
+            # iris so the sampled color wins. 0 (default) keeps the previous behavior.
+            _ia = float(_settings.raw("TYPO_IRIS_ALPHA") or 0.0)
+            _ial = np.maximum(al, _ia) if _ia > 0.0 else al
+            iout = np.array(g["bg"], np.float32) * (1 - _ial) + tip * _ial
+            out = out * (1.0 - im3) + iout * im3
+        elif im3 is not None:
+            # The tint gate rejected the sample -- most often a low-saturation BROWN iris in
+            # shadow. Without word-eyes the photo paste covered this; with word-eyes the iris
+            # would otherwise fall through to the dark navy ground and read BLUE. Re-lay the
+            # source's own iris pixels (saturation + a value lift so a dark brown reads on the
+            # dark ground), so a brown eye renders brown -- not blue. TYPO_IRIS_LIFT tunes it.
+            _il = float(_settings.raw("TYPO_IRIS_LIFT") or 1.35)
+            bf = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+            hv = cv2.cvtColor(np.clip(bf, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
+            hv[..., 1] = np.clip(hv[..., 1] * 1.3, 0, 255)
+            hv[..., 2] = np.clip(hv[..., 2] * _il + 40, 0, 255)
+            iris_col = cv2.cvtColor(hv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
+            iout = np.array(g["bg"], np.float32) * (1 - al) + iris_col * al
+            out = out * (1.0 - im3) + iout * im3
+    elif irises and iris_m is not None and ground in PAPER_FAMILY and ink == "photo":
+        # Paper: keep the iris its TRUE source color. The Keep-Paper-Light lift
+        # mutes everything toward the paper, which would wash the eye color out --
+        # so re-lay the source's own iris pixels here, saturated but NOT lifted, so
+        # the real hue (her green/hazel/blue) pops against the airy face.
+        bf = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+        hv = cv2.cvtColor(np.clip(bf, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
+        hv[..., 1] = np.clip(hv[..., 1] * _PAPER_IRIS_SAT, 0, 255)   # true hue, balanced with the face
+        iris_col = cv2.cvtColor(hv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
+        iout = np.array(g["bg"], np.float32) * (1 - al) + iris_col * al
+        im3 = iris_m[..., None]
+        out = out * (1.0 - im3) + iout * im3
+    # Limbal ring: a dark rim at the iris edge -- the single strongest cue that
+    # reads as a real iris rather than a flat tinted disc. Darken toward the
+    # ground in that thin annulus.
+    if irises and g["tone"] == "light":
+        lim = limbal[..., None]
+        out = out * (1.0 - 0.60 * lim) + np.array(g["bg"], np.float32) * (0.60 * lim)
+    # Eye-white + teeth (dark ground): neither carries typography. A neutral, dim
+    # light tone shaded by the photo's OWN luminance (so it keeps the real bright/
+    # shadow gradient, not a flat disc) -- the SAME treatment in every ink. Using
+    # the photo's actual pixels in Photo mode read too bright/warm (the whites
+    # glowed and picked up the render's cast); the neutral tone never glows and
+    # never takes the ink's color. The iris still carries the subject's real eye
+    # color in Photo mode (handled separately above).
+    if (g["tone"] == "light" or ground in PAPER_FAMILY) and (irises or teeth is not None):
+        gshade = np.clip((gray / 255.0 - 0.20) / 0.55, 0.0, 1.0)
+        # On the mid greige paper ground the sclera/teeth must be painted brighter
+        # and stronger than on a dark ground, or they read as dirty greige instead
+        # of white -- this is what makes the eyes/smile come alive on paper.
+        paper_feat = ground in PAPER_FAMILY
+        s_str, t_str = (0.90, 0.92) if paper_feat else (0.70, 0.66)
+        s_col = (236, 238, 240) if paper_feat else (198, 200, 202)
+        t_col = (238, 240, 242) if paper_feat else (200, 202, 204)
+        if irises:
+            # Natural sclera shading from each eye's OWN luminance, stretched PER EYE:
+            # the real upper-lid shadow and corner falloff come through as a GRADIENT
+            # instead of a flat gray disc, while per-eye normalization keeps even a
+            # shaded eye bright (preserving the dark-merge fix without the uniform,
+            # artificial look). A faint warm-neutral tint reads more like sclera than
+            # a cool gray.
+            scl_val = _sclera_value(gray, _eye_face_pts, scl, floor=(0.70 if paper_feat else 0.58))
+            sw = (scl * scl_val * s_str)[..., None]
+            out = out * (1.0 - sw) + np.array(s_col, np.float32) * sw
+        if teeth is not None:
+            tw = (teeth * gshade * t_str)[..., None]
+            out = out * (1.0 - tw) + np.array(t_col, np.float32) * tw
+    # Catchlight is a SPECULAR highlight: always white (the lightest thing on the
+    # face), never ink- or iris-colored -- painted over the color composite.
+    if irises and (g["tone"] == "light" or ground in PAPER_FAMILY):
+        gl3 = glint[..., None]
+        out = out * (1.0 - gl3) + np.float32(238.0) * gl3   # bright glint, below blow-out so vibrance doesn't bloom it
+    # Realistic eyes: composite the photo's OWN eye openings, tone-normalized, OVER the
+    # synthetic fill -- the real eye never glows (the synthetic bright sclera/catchlight
+    # does). Applied for EVERY ink on a dark ground; the Photo ink keeps it full color,
+    # the tinted/monochrome inks (Noir/Sepia/Navy/Sage) then DESATURATE it into the ink's
+    # palette so a full-color eye doesn't clash with the tinted face. Gated by the
+    # openness check (closed eyes skipped); paper keeps its words-form-the-eye treatment.
+    # Word-formed eyes (paper's treatment, brought to the dark ground): when TYPO_WORD_EYES
+    # is on, the Photo Lifelike look SKIPS this photographic paste and lets the eye be built
+    # from the synthetic sclera + tinted-iris words + limbal ring + catchlight already laid
+    # above -- so the eye reads as part of the typography, not a photo patch. Tinted inks
+    # (Noir/Sepia/...) still get the photographic eye (they have no color clash to word-form).
+    _word_eyes = _settings.raw("TYPO_WORD_EYES").strip().lower() in ("1", "true", "on", "yes")
+    if irises and g["tone"] == "light" and not (_word_eyes and ink in ("photo", "mono")):
+        from .tonal import _photo_eye_overlay
+        bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
+        # Composite the REAL photo eye for EVERY subject's eyes (this is what makes an
+        # eye read as real vs. a synthetic dark disc) -- not just the primary face.
+        eye_bgr = bgr_eye.copy()
+        eye_a = np.zeros((H, W), np.float32)
+        for _fp in _eye_face_pts:
+            _eb, _ea = _photo_eye_overlay(bgr_eye, _fp, (_GROUPS["Leye"], _GROUPS["Reye"]), H, W)
+            _tk = _ea > eye_a
+            eye_a = np.where(_tk, _ea, eye_a)
+            eye_bgr[_tk] = _eb[_tk]
+        # 1.0 to match docker-compose.yml. Worth knowing what that means: the eye is an
+        # OPAQUE paste of the photograph's own pixels, not typography blended over it. The
+        # code claimed 0.5 -- half blended -- and no container has ever run that.
+        a3 = (eye_a * float(_settings.raw("TYPO_EYE_PHOTO") or 1.0))[..., None]   # 1=opaque photo eye; lower blends the typography through so the eye reads as part of the words
+        out = out * (1.0 - a3) + eye_bgr * a3
+        # A NON-closeup source has small, soft eyes, so the pasted eye reads flat/muddy.
+        # Sharpen + lift local contrast INSIDE the eye opening so the iris/pupil/catchlight
+        # read crisp; scale the amount UP for smaller (more distant) eyes. TYPO_EYE_SHARPEN
+        # (0 disables) sets the base strength.
+        _esh = float(_settings.raw("TYPO_EYE_SHARPEN") or 0.6)
+        if _esh > 0.0 and float(eye_a.max()) > 0.0:
+            _em = np.clip(eye_a, 0.0, 1.0)[..., None]
+            _amt = _esh * float(np.clip((0.16 * W) / max(1.0, fw), 0.6, 2.4))   # smaller face -> more
+            _blur = cv2.GaussianBlur(out, (0, 0), sigmaX=max(1.0, fw * 0.010))
+            _enh = np.clip((out - 128.0) * 1.12 + 128.0 + _amt * (out - _blur), 0.0, 255.0)
+            out = out * (1.0 - _em) + _enh * _em
+        # Eye "pop": re-assert a crisp specular CATCHLIGHT + a dark LIMBAL rim ON TOP of the
+        # photo eye. "Flat and muddy" = a soft source lost its key-light glint and iris rim;
+        # painting them back (like real portrait retouching) makes even a low-res eye read
+        # alive and defined. Scaled UP for smaller eyes; TYPO_EYE_POP (0 disables). A faint
+        # pupil-core darken adds depth. Runs before the mono desaturate so Noir gets it too.
+        _pop = float(_settings.raw("TYPO_EYE_POP") or 0.8)
+        if _pop > 0.0 and float(glint.max()) > 0.0:
+            _psc = float(np.clip((0.16 * W) / max(1.0, fw), 0.7, 2.2))   # smaller face -> more pop
+            _l3 = np.clip(limbal * (0.6 * _pop), 0.0, 1.0)[..., None]
+            out = out * (1.0 - _l3) + (out * 0.32) * _l3                 # dark iris rim (definition)
+            _g3 = np.clip(glint * (_pop * _psc), 0.0, 1.0)[..., None]
+            out = out * (1.0 - _g3) + np.float32(246.0) * _g3           # bright specular catchlight
+        if ink not in ("photo", "mono"):             # mono desaturates the WHOLE subject below
+            lum = (out[..., 0] * 0.114 + out[..., 1] * 0.587 + out[..., 2] * 0.299)[..., None]
+            grayed = out * 0.22 + lum * 0.78         # pull the eye toward the ink's monochrome
+            em3 = eye_a[..., None]
+            out = out * (1.0 - em3) + grayed * em3
+    # === Phase-1 (opt-in): highlight glaze + discovery layer ===============
+    if breathe and _hl is not None:
+        _glz = (0.34 * _hl)[..., None]                          # crisp specular relief, not fog
+        _bright = np.array((232.0, 236.0, 240.0), np.float32)   # warm near-white (BGR)
+        out = out * (1.0 - _glz) + _bright * _glz
+    if discovery:
+        out = _add_discovery(out, pts, fw, H, W, discovery)
+        _t("B-after-discovery")
+    # =======================================================================
+
+    return out
+
+
+def _lf_ink_branch(ink, al, an, g, W, ground, H, _eye_deglare, mask01, soft01, lum, anchor, df, _cid, _mmean, out_width, w2, ink_hex):
+    """_lf_ink_branch. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    out = None
+    if ink == "photo" or ink == "mono":
+        # Photo Lifelike composite. Noir (mono) shares this exact path -- full tonal range,
+        # polarity shadows, living eyes -- and is desaturated to black & white at the end,
+        # so it's a B&W Lifelike, not the old flat single-ink sculpt.
+        # Words take the photo's OWN colors, draped over the form, on the ground.
+        bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+        if _eye_deglare is not None:        # tone the suppressed-eye glare out of the color too
+            gm, skin = _eye_deglare
+            bgr_full = bgr_full * (1.0 - gm[..., None]) + np.float32(skin) * gm[..., None]
+        hsv = cv2.cvtColor(np.clip(bgr_full, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
+        if ground in PAPER_FAMILY:
+            # Ink-drawing with COLORED glyphs: the words keep the photo's hue at high
+            # saturation but a capped dark value, so each word reads as colored TYPE on
+            # ivory (skin/lips/eyes show) -- color from the glyphs, not a photo overlay.
+            # Tone is the ink DENSITY applied above; minimum() keeps deep shadows deep.
+            hsv[..., 1] = np.clip(hsv[..., 1] * _PAPER_INK_SAT, 0, 255)
+            hsv[..., 2] = np.minimum(hsv[..., 2], np.float32(_PAPER_INK_VALUE))
+        else:
+            hsv[..., 1] = np.clip(hsv[..., 1] * float(_settings.raw("TYPO_INK_SAT") or 1.02), 0, 255)  # step-3 color-fidelity knob (was fixed 1.02)
+            # On a dark ground the gaps between glyphs show GROUND, so the render reads
+            # darker than the source photograph. This lifts the ink value to compensate.
+            # Multiplier and offset were hardcoded at 1.14 / 14 -- both now tunable.
+            _ilm = float(_settings.raw("TYPO_INK_LIFT") or 1.14)
+            _ila = float(_settings.raw("TYPO_INK_LIFT_ADD") or 14.0)
+            hsv[..., 2] = np.clip(hsv[..., 2] * _ilm + _ila, 0, 255)     # lift value vs dark ground
+        ink_col = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
+        # SUBJECT BASE: the ground is painted across the whole canvas, so INSIDE the
+        # silhouette it shows through every gap between glyphs -- the face reads as ground
+        # color rather than skin, and the portrait comes out far darker than the source.
+        # TYPO_SUBJECT_BASE swaps the base inside the mask for the SOURCE PHOTO, dimmed by
+        # TYPO_SUBJECT_DIM so the words still read on top of it. The flat ground stays
+        # BEHIND the subject. 0 (default) is byte-identical to the previous behavior.
+        _sb = float(_settings.raw("TYPO_SUBJECT_BASE") or 0.0)
+        _base = np.zeros((H, W, 3), np.float32) + np.array(g["bg"], np.float32)
+        if _sb > 0.0:
+            _dim = float(_settings.raw("TYPO_SUBJECT_DIM") or 0.0)
+            _m3 = (np.clip(mask01, 0, 1) * min(max(_sb, 0.0), 1.0))[..., None]
+            _base = _base * (1.0 - _m3) + (bgr_full * (1.0 - _dim)) * _m3
+        # Field dump (TYPO_DUMP_FIELDS=<dir>). The composite below is fully
+        # determined by _base, al and ink_col, so when a render is wrong the
+        # answer is in one of them -- no inference required.
+        _dd = _settings.raw("TYPO_DUMP_FIELDS").strip()
+        if _dd:
+            try:
+                os.makedirs(_dd, exist_ok=True)
+
+                def _dump(_nm, _arr):
+                    _a = np.asarray(_arr, np.float32)
+                    if _a.ndim == 3 and _a.shape[2] == 1:
+                        _a = _a[..., 0]
+                    if float(_a.max()) <= 1.001:
+                        _a = _a * 255.0
+                    cv2.imwrite(os.path.join(_dd, _nm + ".png"),
+                                np.clip(_a, 0, 255).astype(np.uint8))
+
+                _dump("mask01", mask01)
+                _dump("soft01", soft01)
+                _dump("alpha", al)
+                _dump("base", _base)
+                # The COLOR the glyphs are painted in. Where alpha is near 1 the output is
+                # essentially this layer alone, so a portrait that reads too dark with the
+                # photographic base making no difference is a statement about ink_col and
+                # nothing else. Dumped with its own statistics because a picture of a color
+                # layer is easy to misjudge by eye.
+                try:
+                    _ic = np.asarray(ink_col, np.float32)
+                    _dump("ink_col", _ic)
+                    _icl = (_ic[..., 0] * 0.114 + _ic[..., 1] * 0.587 + _ic[..., 2] * 0.299)
+                    _mk = np.asarray(mask01, np.float32) > 0.5
+                    _src = cv2.resize(np.asarray(an.img.bgr, np.float32), (W, H),
+                                      interpolation=cv2.INTER_AREA)
+                    _sl2 = (_src[..., 0] * 0.114 + _src[..., 1] * 0.587 + _src[..., 2] * 0.299)
+                    if _mk.any():
+                        print("[dump] on subject  source luma mean=%.1f p10=%.1f p90=%.1f   "
+                              "ink_col luma mean=%.1f p10=%.1f p90=%.1f"
+                              % (float(_sl2[_mk].mean()), float(np.percentile(_sl2[_mk], 10)),
+                                 float(np.percentile(_sl2[_mk], 90)),
+                                 float(_icl[_mk].mean()), float(np.percentile(_icl[_mk], 10)),
+                                 float(np.percentile(_icl[_mk], 90))))
+                except Exception as _e:  # noqa: BLE001
+                    print("[dump] ink_col failed: %s" % _e)
+                # anchor carries EVERY deliberate facial mark: lip and eye outlines, the
+                # nostril dots, the legacy eye blob. When something dark appears over an eye
+                # and the code paths that could draw it have been excluded one by one, this
+                # is the layer that settles it -- either the mark is here and the engine drew
+                # it, or it is not and the darkness comes from the tone field instead.
+                try:
+                    _dump("anchor", anchor)
+                    _an = np.asarray(anchor, np.float32)
+                    print("[dump] anchor mean=%.4f max=%.3f  pixels>0.5: %d"
+                          % (float(_an.mean()), float(_an.max()), int((_an > 0.5).sum())))
+                except NameError:
+                    pass
+                # df is the ONLY thing that decides word SIZE, so a complaint about type
+                # being too coarse in one region is a statement about df there. Dumped as
+                # a picture (bright = fine type) plus the tier the blend actually lands on,
+                # because df alone is hard to read against four discrete tiers: banding at
+                # 0.45 / 0.75 is where the visible size step happens.
+                _dfa = np.asarray(df, np.float32)
+                _dump("df", _dfa)
+                _tier = np.digitize(_dfa, [0.45, 0.75, 1.0]).astype(np.float32)  # 0..3
+                _dump("tier", _tier / 3.0)
+                # The same tiers painted over the photograph. A gray ramp cannot be read
+                # against a face -- "is her hair the same tier as his?" is answerable at a
+                # glance here and nowhere else. Red = largest words, blue = smallest.
+                _tc = np.array([(60, 60, 220), (60, 190, 240),
+                                (120, 200, 90), (230, 140, 60)], np.float32)  # BGR, L->Mi
+                _ov = _tc[np.clip(_tier, 0, 3).astype(np.int32)]
+                _ph = np.asarray(bgr_full, np.float32)
+                _ov = _ph * 0.45 + _ov * 0.55
+                _ov = np.where((np.asarray(mask01, np.float32) > 0.5)[..., None], _ov, _ph * 0.35)
+                cv2.imwrite(os.path.join(_dd, "tier_overlay.png"),
+                            np.clip(_ov, 0, 255).astype(np.uint8))
+                _msk = np.asarray(mask01, np.float32) > 0.5
+                if _msk.any():
+                    _ds = _dfa[_msk]
+                    print("[dump] df on subject  mean=%.3f  p05=%.3f p50=%.3f p95=%.3f   "
+                          "tier share  L=%.0f%% M=%.0f%% F=%.0f%% Mi=%.0f%%"
+                          % (float(_ds.mean()), float(np.percentile(_ds, 5)),
+                             float(np.percentile(_ds, 50)), float(np.percentile(_ds, 95)),
+                             *[100.0 * float((np.digitize(_ds, [0.45, 0.75, 1.0]) == _k).mean())
+                               for _k in range(4)]))
+                _a1 = np.asarray(al, np.float32)
+                if _a1.ndim == 3:
+                    _a1 = _a1[..., 0]
+                print("[dump] %s  alpha mean=%.3f p95=%.3f   soft01 mean=%.3f   "
+                      "base mean=%.1f" % (_dd, float(_a1.mean()),
+                                          float(np.percentile(_a1, 95)),
+                                          float(np.asarray(soft01, np.float32).mean()),
+                                          float(np.asarray(_base, np.float32).mean())))
+            except Exception as _e:  # noqa: BLE001
+                print("[dump] failed: %s" % _e)
+        out = _base * (1 - al) + ink_col * al
+        # One line that settles whether this composite is the image the caller receives.
+        # _base provably changes with TYPO_SUBJECT_DIM (the dumps differ) while the returned
+        # PNG does not, which cannot both be true of a single render. Printing the means of
+        # the inputs AND of the result here, plus the mean of the final array at encode time,
+        # localises the break to one side of the function.
+        if _settings.raw("TYPO_DUMP_FIELDS").strip():
+            print("[trace %s w=%d m=%.3f] ink=%r sb=%.2f dim=%.2f  base.mean=%.2f "
+                  "al.mean=%.3f ink_col.mean=%.2f -> out.mean=%.2f"
+                  % (_cid, int(out_width), _mmean,
+                     ink, _sb, float(_settings.raw("TYPO_SUBJECT_DIM") or 0.0),
+                     float(np.asarray(_base).mean()), float(np.asarray(al).mean()),
+                     float(np.asarray(ink_col).mean()), float(np.asarray(out).mean())))
+        # Default 1, matching docker-compose.yml. It read "0" here while compose defaulted
+        # it ON in every container, so this whole block ran while the code said it did not.
+        if _settings.raw("TYPO_POLARITY").strip().lower() in ("1", "true", "on", "yes"):
+            # Polarity model (the paper-grade shadow behavior, brought to the dark-ground
+            # Lifelike look). Instead of "light ink whose COVERAGE follows brightness"
+            # (shadow -> no ink -> ground shows -> absence), make the type present at HIGH
+            # coverage everywhere and carry the tone in the LETTER COLOR across the full
+            # range: near-black letters in deep shadow (a heavy dark mass to lean into),
+            # light letters in highlight. Two tuning knobs (env; iterate without a rebuild):
+            #   TYPO_POLARITY_GAMMA (>1 drives deep shadow harder to black; default 1.35)
+            #   TYPO_POLARITY_FLOOR (how black the shadow GAPS get; 0 = true black; default 0.18)
+            _pol_g = float(_settings.raw("TYPO_POLARITY_GAMMA") or 1.35)
+            _pol_f = float(_settings.raw("TYPO_POLARITY_FLOOR") or 0.18)
+            _mkf = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0, 1)
+            _tone = np.clip(lum, 0.0, 1.0)[..., None] ** _pol_g  # gamma>1 -> deep shadow drives to near-black
+            _pc = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
+            _pl = (_pc[..., 0] * 0.114 + _pc[..., 1] * 0.587 + _pc[..., 2] * 0.299)[..., None] + 1e-3
+            # The INK's own black point. At _tone -> 0 the letters were painted at value 3 --
+            # essentially black -- and neither POLARITY_GAMMA nor POLARITY_FLOOR touches it:
+            # gamma sets how fast tone falls, the floor lifts the GROUND between glyphs. On a
+            # fair face whose only deep shadow is the eye socket, near-black letters packed at
+            # rising coverage read as a hole rather than an eye. Measured on 08-white-hair,
+            # both existing knobs at their limits moved near-black pixels from 13.2% to 8.4%
+            # of the frame -- real, and far below noticeable.
+            #
+            # 40 chosen by sweep on 08-white-hair, a fair white-haired subject on a light
+            # ground -- the case where this failed worst. Near-black pixels: 13.2% of the
+            # frame at 3, 7.3% at 40, 1.0% at 80. 80 removed the black the model exists to
+            # provide; 3 rendered the eyes as holes.
+            #
+            # This default MATCHES docker-compose.yml. The two disagreeing is what turned a
+            # dark render into an afternoon: compose defaults TYPO_POLARITY to 1 while the
+            # code reads "0", so the polarity model was running in every container and
+            # reading .env said otherwise.
+            _pol_i = float(_settings.raw("TYPO_POLARITY_INK_FLOOR") or 40.0)
+            # Hue comes from channel / luminance. In a deep shadow a JPEG pixel is (5, 0, 0):
+            # luminance under 1, so the division turns four levels of compression noise
+            # into pure blue at full strength -- the blue and green specks along the cheek
+            # of 10-smile and the magenta over the shadowed eye of 06-sidelight (measured
+            # 2026-09-18: the wild pixels had source luminance p50 1.3, p90 4.2, and four
+            # levels of chroma). A pedestal on both sides of the division makes a pixel
+            # with no light in it come out neutral and leaves a lit one alone: at skin
+            # luminance 140 the ratio moves by under 1%; on a navy blouse at 10 it keeps
+            # three quarters of its colour. TYPO_POLARITY_PEDESTAL=0 restores the old math.
+            _pol_p = float(_settings.raw("TYPO_POLARITY_PEDESTAL") or 0.0)
+            _ratio = (_pc + _pol_p) / (_pl + _pol_p)
+            _ink = _ratio * (_pol_i + (253.0 - _pol_i) * _tone)   # keep the photo HUE, re-map brightness full-range
+            _ink = np.minimum(_ink, np.float32([255, 255, 255])) # (hue*value can exceed 255 on saturated pixels)
+            # Coverage rises INTO the shadows (heavier, denser type there) and eases in highlights, and
+            # the glyph field w2 keeps the letterforms visible. Deep shadow = a dense near-black letter
+            # mass ("black to lean into"); highlight = lighter, airier letters. Ground shows in the gaps
+            # so it still reads as words, not a photo.
+            _dark = 1.0 - _tone[..., 0]
+            _cov = np.clip((0.28 + 0.22 * _dark) + 0.55 * w2, 0.0, 1.0) * _mkf
+            # Darken the LOCAL ground (the gaps) toward black in deep shadow too, so the shadow
+            # reads as true black -- not the mid navy -- giving the piece a black to lean into.
+            _bg_local = np.array(g["bg"], np.float32) * np.clip(_pol_f + (1.0 - _pol_f) * _tone, 0.0, 1.0)
+            out = _bg_local * (1 - _cov[..., None]) + np.clip(_ink, 0, 255) * _cov[..., None]
+    elif ink in _SCULPT_INK:
+        word = np.array(_SCULPT_INK[ink], np.float32)
+        out = np.array(g["bg"], np.float32) * (1 - al) + word * al
+    elif ink == "custom" and ink_hex:
+        # A user-picked color, sculpted as a single light tint. Reuse the poster
+        # helper's dark-color lift (hue preserved, brightened if it's too dark to
+        # read on the dark ground), then drape it like any other sculpt ink.
+        from .tonal import custom_poster
+        _cp = custom_poster(ink_hex)
+        if _cp:
+            _h = _cp[1].lstrip("#")
+            word = np.array((int(_h[4:6], 16), int(_h[2:4], 16), int(_h[0:2], 16)), np.float32)  # RGB hex -> BGR
+        else:
+            word = np.array(g["ink"], np.float32)
+        out = np.array(g["bg"], np.float32) * (1 - al) + word * al
+    else:
+        out = np.array(g["bg"], np.float32) * (1 - al) + np.array(g["ink"], np.float32) * al
+
+    return out
+
+
+def _lf_paper_ground(a, ground, face_norm, w2, _stage, H, all_pts, mask01, fw):
+    """_lf_paper_ground. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    # Paper/ink ground: on light skin the whole face is highlight, so the density falls away
+    # and the features wash out (worst on fair, older subjects). Keep a gentle ink floor inside
+    # the face so the likeness reads while the surrounding paper still breathes. TYPO_PAPER_FACE
+    # (default 0.30; 0 disables). Paper ground only -- dark grounds are unaffected.
+    if ground in PAPER_FAMILY:
+        _pf = float(_settings.raw("TYPO_PAPER_FACE") or 0.30)
+        if _pf > 0.0:
+            a = np.maximum(a, w2 * _pf * np.clip(face_norm, 0, 1))
+            _stage("15-paper-face", a)
+        # Light-hair floor: silver/blonde hair on the ivory washes out (light on light), so a
+        # silver-haired subject reads as a floating face. Give the HAIR region an ink-density
+        # floor so light hair renders as delicate gray words instead of vanishing. Dark hair
+        # already has density (max() leaves it untouched). TYPO_PAPER_HAIR (default 0.35; 0 off).
+        _ph = float(_settings.raw("TYPO_PAPER_HAIR") or 0.35)
+        if _ph > 0.0:
+            _yy2 = np.arange(H, dtype=np.float32)[:, None]
+            _chin2 = max(float(_p[:, 1].max()) for _p in all_pts)
+            _hairm = ((mask01 > 0) & (_yy2 < _chin2)).astype(np.float32) * (1.0 - np.clip(face_norm, 0, 1))
+            _hairm = np.clip(cv2.GaussianBlur(_hairm, (0, 0), sigmaX=max(2.0, fw * 0.03)), 0, 1)
+            a = np.maximum(a, w2 * _ph * _hairm)
+            _stage("16-paper-hair", a)
+
+    al = a[..., None]
+    # Every diagnostic line carries the same call id, because this engine runs MORE THAN
+    # ONCE per request and reading one call's composite against another call's result is
+    # what turned a one-line question into an afternoon. out_width and the mask coverage
+    # identify which call is which.
+    # A real counter. id(an) was used first and is unsound: CPython reuses addresses, so
+    # two sequential calls can report the same "id" and a two-call sequence reads as one --
+    # which is exactly the impossible arithmetic this was meant to resolve.
+    return al
+
+
+def _lf_feature_passes(a, an, g, H, W, fw, irises, _dark_lens_face_pts, _misfit_face_pts, all_pts, ground, _stage, SS, _eye_face_pts, _dark_lens_active, gray, _ssn, breathe, face_norm, _fws, lum):
+    """_lf_feature_passes. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    glint = None
+    limbal = None
+    scl = None
+    # Feature anchoring: eye rings + lip seam + pupils + nostrils.
+    anchor = np.zeros((H, W), np.float32)
+    th = max(1, int(fw * 0.006))
+    # Lips seam is drawn for every face; the eye rings + legacy eye blob are skipped on
+    # SHADED (sunglasses) faces only. Drawing an eye ring/blob over an opaque lens stamps
+    # a dark outline onto it ("black dots"), so a shaded face gets a lips anchor but no eye
+    # anchor. Every other face (real eyes, closed eyes, low-res faces whose irises never
+    # resolved) keeps its eye rings exactly as before.
+    _no_eye_ids = {id(_fp) for _fp in _dark_lens_face_pts} | {id(_fp) for _fp in _misfit_face_pts}
+    _eye_anchor_pts = [_fp for _fp in all_pts if id(_fp) not in _no_eye_ids]
+    for _fp in all_pts:
+        p = np.array([_fp[i] for i in _GROUPS["lips"] if i < len(_fp)], np.int32)
+        if len(p) >= 3:
+            cv2.polylines(anchor, [cv2.convexHull(p)], True, 1.0, th, cv2.LINE_AA)
+    for _fp in _eye_anchor_pts:
+        for k in ["Leye", "Reye"]:
+            p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
+            if len(p) >= 3:
+                cv2.polylines(anchor, [cv2.convexHull(p)], True, 1.0, th, cv2.LINE_AA)
+    # Legacy blob fallback: when NO iris resolved anywhere, draw an ink disc at each lid
+    # centroid. Now OFF by default, because measured on a real photograph it is the
+    # "dark circles over the eyes" defect itself.
+    #
+    # Three people laughing. Every face was skipped -- one for an unresolved iris, all
+    # three for the openness gate, which reads narrowed eyes as shut:
+    #
+    #     face=0 ear=(0.172, 0.128)   face=1 ear=(0.151, 0.120)   face=2 ear=(0.245, 0.101)
+    #     _EYE_OPEN_EAR = 0.15
+    #
+    # With `irises` empty this painted a filled disc on all three. The two turned away had
+    # theirs land on already-dark creases; the one facing the camera got what read as
+    # sunglasses. The original comment here already said it: worse than drawing nothing,
+    # since the rest of the face is typography anyway. Now the default agrees.
+    #
+    # TYPO_EYE_BLOB=1 restores it.
+    _eye_blob = _settings.raw("TYPO_EYE_BLOB").strip().lower() \
+        in ("1", "true", "on", "yes")
+    if not irises and _eye_blob:
+        # Legacy eye presence: an ink blob at the lid centroid. Only used when the
+        # iris landmarks can't resolve -- with real irises the round pupil and
+        # catchlight below model the eye properly instead. Skipped on shaded faces so a
+        # lens never gets a dark blob.
+        for _fp in _eye_anchor_pts:
+            for k in ["Leye", "Reye"]:
+                c = np.mean([_fp[i] for i in _GROUPS[k]], 0).astype(int)
+                cv2.circle(anchor, tuple(c), max(2, int(fw * 0.020)), 1.0, -1, cv2.LINE_AA)
+    for _fp in all_pts:
+        for i in (98, 327, 2):
+            if i < len(_fp):
+                cv2.circle(anchor, (int(_fp[i][0]), int(_fp[i][1])), max(1, int(fw * 0.012)), 1.0, -1, cv2.LINE_AA)
+    anchor = cv2.GaussianBlur(anchor, (0, 0), sigmaX=max(1.0, fw * 0.004))
+    anchor = np.clip(anchor, 0, 1)
+    if g["tone"] == "light":
+        a = a * (1.0 - 0.65 * anchor)          # dark feature lines = less light ink (ground shows)
+        _stage("05-anchor-light", a)
+    else:
+        a = np.clip(a + 0.70 * anchor, 0, 1)    # dark feature lines = more dark ink on paper
+        _stage("06-anchor-dark", a)
+
+    # Round pupil + catchlight from the true iris geometry. The pupil is a
+    # feathered DISC at the iris center (not the blocky gap the text rows happen
+    # to leave), and the catchlight sits at the eye's real brightest pixel inside
+    # the iris -- the glint that makes the portrait look back at you.
+    if irises:
+        pup = np.zeros((H, W), np.float32)
+        glint = np.zeros((H, W), np.float32)
+        for icx, icy, ir in irises:
+            cv2.circle(pup, (int(round(icx)), int(round(icy))),
+                       max(2, int(round(ir * 0.42))), 1.0, -1, cv2.LINE_AA)
+        # Catchlight: deterministic, consistent between both eyes (the classic
+        # upper diagonal on the lit side) -- shared helper, working coords -> xSS.
+        from .tonal import _catchlight_points
+        # _catchlight_points covers EVERY detected face independently, but the eyes of some
+        # faces are suppressed here (sunglasses, no dark pupil, closed). Only paint a glint
+        # on a face whose eyes are ACTUALLY rendered (_eye_face_pts); otherwise a stray white
+        # dot lands on an opaque lens / occluded eye.
+        _eye_boxes = [(_p[:, 0].min(), _p[:, 1].min(), _p[:, 0].max(), _p[:, 1].max())
+                      for _p in _eye_face_pts]
+        for gx, gy, gr in _catchlight_points(an):
+            _gx, _gy = gx * SS, gy * SS
+            if not any(_a <= _gx <= _c and _b <= _gy <= _d for (_a, _b, _c, _d) in _eye_boxes):
+                continue
+            cv2.circle(glint, (int(round(_gx)), int(round(_gy))),
+                       max(1, int(round(gr * SS))), 1.0, -1, cv2.LINE_AA)
+        ir_mean = float(np.mean([r for _, _, r in irises]))
+        pup = np.clip(cv2.GaussianBlur(pup, (0, 0), sigmaX=max(1.0, ir_mean * 0.10)), 0, 1)
+        glint = np.clip(cv2.GaussianBlur(glint, (0, 0), sigmaX=max(1.0, ir_mean * 0.10)), 0, 1)
+        # No typography in the sclera: inside the eyelid hull but outside the
+        # iris, ink is suppressed entirely -- the eye reads as anatomy (clean
+        # sclera, typed iris, round pupil, glint), not as text.
+        scl = np.zeros((H, W), np.float32)
+        for _fp in _eye_face_pts:
+            for k in ("Leye", "Reye"):
+                p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
+                if len(p) >= 3:
+                    cv2.fillConvexPoly(scl, cv2.convexHull(p), 1.0)
+        iris_full = np.zeros((H, W), np.float32)
+        limbal = np.zeros((H, W), np.float32)      # dark rim at the iris edge
+        for icx, icy, ir in irises:
+            ci = (int(round(icx)), int(round(icy)))
+            cv2.circle(iris_full, ci, int(round(ir)), 1.0, -1, cv2.LINE_AA)
+            cv2.circle(limbal, ci, int(round(ir)), 1.0, -1, cv2.LINE_AA)
+            cv2.circle(limbal, ci, int(round(ir * 0.80)), 0.0, -1, cv2.LINE_AA)
+        limbal = cv2.GaussianBlur(limbal, (0, 0), sigmaX=max(1.0, ir_mean * 0.05))
+        scl = np.clip(scl - iris_full, 0, 1)
+        scl = cv2.GaussianBlur(scl, (0, 0), sigmaX=max(1.0, fw * 0.004))
+        a = a * (1.0 - 0.92 * scl)
+        _stage("07-sclera", a)
+        if g["tone"] == "light":                  # light ink on a dark ground
+            a = a * (1.0 - 0.88 * pup)            # pupil: round, dark (ground shows)
+            a = np.clip(a + 0.55 * glint, 0, 1)   # catchlight: a tight glint, not a bloom
+            _stage("08-pupil-glint-dark", a)
+        else:                                     # dark ink on light paper
+            a = np.clip(a + 0.80 * pup, 0, 1)     # pupil: round dark ink
+            a = a * (1.0 - 0.85 * glint)          # catchlight: paper shows
+            _stage("09-pupil-glint-light", a)
+
+    # Opaque dark lens: clear the typography inside a detected tinted lens (eyelid hull,
+    # dilated to the lens where reflections sit) so it reads as a solid dark lens instead
+    # of a see-through eye. The fabricated-eye pass (iris/catchlight/sclera) is already
+    # suppressed above; this removes the words too.
+    if _dark_lens_active:
+        # Shape the opaque lens like real EYEWEAR, not a circular dilation of the narrow eye
+        # slit. The old fill (eyelid hull + a uniform circular dilation) made a round disc that
+        # happens to match ROUND frames but reads as "dark circles" on cat-eye / rectangular
+        # frames. Instead draw a filled ellipse per eye, sized from the eyelid landmarks --
+        # wider than tall (a lens, not a slit) and lifted a touch toward the brow (where glasses
+        # actually sit). Two ellipses + the natural bridge gap read as a pair of lenses on any
+        # frame style. TYPO_LENS_SIZE scales the whole lens (default 1.0) with no rebuild.
+        _lsz = float(_settings.raw("TYPO_LENS_SIZE") or 1.0)
+        _lens = np.zeros((H, W), np.float32)
+        for _fp in _dark_lens_face_pts:
+            for k in ("Leye", "Reye"):
+                _idx = [i for i in _GROUPS[k] if i < len(_fp)]
+                if len(_idx) < 3:
+                    continue
+                _p = np.array([_fp[i] for i in _idx], np.float32)
+                _cx = float(_p[:, 0].mean())
+                _cy = float(_p[:, 1].mean())
+                _ew = float(_p[:, 0].max() - _p[:, 0].min())     # eye-slit width
+                _eh = float(_p[:, 1].max() - _p[:, 1].min())     # eye-slit height (small)
+                _ax = max(4, int(round(_ew * 0.80 * _lsz)))                       # half-width  (~1.6x the slit)
+                _ay = max(4, int(round(max(_eh * 1.15, _ew * 0.52) * _lsz)))      # half-height (a real lens, not a slit)
+                _ecy = int(round(_cy - _eh * 0.25))                              # sit a touch high (toward the brow)
+                cv2.ellipse(_lens, (int(round(_cx)), _ecy), (_ax, _ay), 0, 0, 360, 1.0, -1, cv2.LINE_AA)
+        _lensf = np.clip(cv2.GaussianBlur(_lens, (0, 0), sigmaX=max(1.0, fw * 0.012)), 0, 1)
+        a = a * (1.0 - 0.97 * _lensf)
+        _stage("10-dark-lens", a)
+
+    # Teeth carry NO typography. Where the mouth is open, suppress ink across the
+    # inner mouth (both tones); on a dark ground the cleared teeth get a soft
+    # light wash below, on light paper the paper already reads as teeth. A closed
+    # mouth yields no mask and is left untouched.
+    from .tonal import _teeth_mask
+    # Per-face gate. Merging first and testing the union let one subject's dark
+    # lip crease validate "open mouth" for every face in the photo -- two closed
+    # mouths rendered as two pale blobs. Each face is now judged on its own
+    # pixels and dropped before it can contribute to the union.
+    _tdark = float(_settings.raw("TYPO_TEETH_DARK") or 60.0)
+    _tbright = float(_settings.raw("TYPO_TEETH_BRIGHT") or 205.0)
+    _tdbg = _settings.raw("TYPO_TEETH_DEBUG").strip().lower() in ("1", "true", "on", "yes")
+    teeth = None                       # union of the mouths that really are open
+    for _fi, _fp in enumerate(all_pts):
+        _tm = _teeth_mask(_fp, H, W)
+        if _tm is None:
+            continue
+        # A REAL open mouth has a dark cavity OR genuinely bright teeth; a
+        # falsely-detected one is uniform lip tone.
+        _tpx = gray[_tm > 0.5]
+        if _tpx.size > 10:
+            _p10 = float(np.percentile(_tpx, 10))
+            _p90 = float(np.percentile(_tpx, 90))
+            _closed = (_p10 > _tdark and _p90 < _tbright)
+            if _tdbg:
+                try:
+                    print("[teeth] face=%d p10=%.1f p90=%.1f dark<=%.1f bright>=%.1f -> %s"
+                          % (_fi, _p10, _p90, _tdark, _tbright,
+                             "closed" if _closed else "KEPT"))
+                except Exception:
+                    pass
+            if _closed:
+                continue
+        teeth = _tm if teeth is None else np.maximum(teeth, _tm)
+    if teeth is not None:
+        a = a * (1.0 - 0.92 * teeth)
+        _stage("11-teeth", a)
+    if ground in PAPER_FAMILY:
+        # INK-DRAWING density: tone is how much ink lands, not its color. Heavy ink
+        # where the photo is dark; fade to paper where it's light; an edge boost draws
+        # contours/hair strands so light hair isn't erased on the ivory.
+        valn = gray / 255.0
+        dark = np.clip(1.0 - valn, 0.0, 1.0) ** _PAPER_DARK_GAMMA
+        gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        edge = np.hypot(gx, gy)
+        edge = np.clip(edge / (float(np.percentile(edge, 99.0)) + 1e-6), 0.0, 1.0)
+        edge = cv2.GaussianBlur(edge, (0, 0), max(0.6, 0.8 * _ssn))
+        ink_amt = np.clip(dark * _PAPER_DARK_GAIN + edge * _PAPER_EDGE_GAIN + _PAPER_INK_FLOOR, 0.0, 1.0)
+        a = a * ink_amt
+        _stage("12-paper-ink", a)
+    # === Phase-1 (opt-in): tonal breathing =================================
+    # Compress the typography into the MIDTONES so the tonal extremes rest, the way a
+    # charcoal portrait reads as 3-D: let the ground show through the deepest facial
+    # shadows (negative space), and give the brightest specular skin clean relief.
+    # Restricted to the face plane (hair/robe untouched); eyes+lips excluded so the
+    # catchlight/anchors are preserved. Default OFF -> when ``breathe`` is False this
+    # block is skipped and the output is byte-identical to before.
+    _hl = None
+    if breathe:
+        _face_reg = np.clip(face_norm, 0.0, 1.0)
+        # EVERY face, not just the primary. This protection was built from `pts` -- one
+        # face -- while _skin below is built from face_norm, which covers all of them. So in
+        # a group the primary subject's eyes were spared the shadow cut and everyone else's
+        # were not: their eye sockets are the deepest shadow on the face, lost two thirds of
+        # their ink, and the ground showed through as a dark disc. It reads as sunglasses on
+        # a person who is not wearing any.
+        #
+        # Feathered per face for the same reason as mask_of and _face_w_pf: a smaller face
+        # needs a smaller feather. With one face this is the previous expression exactly, so
+        # single portraits are unchanged.
+        _eyeblock = np.zeros((H, W), np.float32)
+        for _fp_eb, _fwi_eb in zip(all_pts, _fws):
+            _eb = np.zeros((H, W), np.float32)
+            for _k in ("Leye", "Reye", "lips"):
+                _p = np.array([_fp_eb[i] for i in _GROUPS[_k] if i < len(_fp_eb)], np.int32)
+                if len(_p) >= 3:
+                    cv2.fillConvexPoly(_eb, cv2.convexHull(_p), 1.0)
+            _eb = cv2.dilate(_eb, np.ones((9, 9), np.uint8), 1)
+            _eb = np.clip(cv2.GaussianBlur(_eb, (0, 0), sigmaX=max(1.0, _fwi_eb * 0.02)), 0, 1)
+            _eyeblock = np.maximum(_eyeblock, _eb)
+        _skin = _face_reg * (1.0 - _eyeblock)
+        _shadow = np.clip((0.33 - lum) / 0.33, 0.0, 1.0) * _skin      # deepest facial shadow
+        a = a * (1.0 - 0.66 * _shadow)
+        _stage("13-breathe-shadow", a)
+        _hl = np.clip((lum - 0.88) / 0.12, 0.0, 1.0) * _skin          # brightest specular skin
+        _hl = np.power(_hl, 1.4)                                       # roll off -> only true peaks
+        _hl = cv2.GaussianBlur(_hl, (0, 0), sigmaX=max(1.0, fw * 0.009))
+        a = a * (1.0 - 0.32 * _hl)
+        _stage("14-breathe-highlight", a)
+    # =======================================================================
+
+    return a, anchor, glint, scl, limbal, teeth, _hl
+
+
 def render_displacement_portrait(
     an: Analysis,
     words: Sequence[str],
@@ -1228,277 +2077,8 @@ def render_displacement_portrait(
             a = np.clip(a + _sl * _lo * np.clip(face_norm, 0, 1) * (1.0 - a), 0, 1)
             _stage("04-shadow-lift", a)
 
-    # Feature anchoring: eye rings + lip seam + pupils + nostrils.
-    anchor = np.zeros((H, W), np.float32)
-    th = max(1, int(fw * 0.006))
-    # Lips seam is drawn for every face; the eye rings + legacy eye blob are skipped on
-    # SHADED (sunglasses) faces only. Drawing an eye ring/blob over an opaque lens stamps
-    # a dark outline onto it ("black dots"), so a shaded face gets a lips anchor but no eye
-    # anchor. Every other face (real eyes, closed eyes, low-res faces whose irises never
-    # resolved) keeps its eye rings exactly as before.
-    _no_eye_ids = {id(_fp) for _fp in _dark_lens_face_pts} | {id(_fp) for _fp in _misfit_face_pts}
-    _eye_anchor_pts = [_fp for _fp in all_pts if id(_fp) not in _no_eye_ids]
-    for _fp in all_pts:
-        p = np.array([_fp[i] for i in _GROUPS["lips"] if i < len(_fp)], np.int32)
-        if len(p) >= 3:
-            cv2.polylines(anchor, [cv2.convexHull(p)], True, 1.0, th, cv2.LINE_AA)
-    for _fp in _eye_anchor_pts:
-        for k in ["Leye", "Reye"]:
-            p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
-            if len(p) >= 3:
-                cv2.polylines(anchor, [cv2.convexHull(p)], True, 1.0, th, cv2.LINE_AA)
-    # Legacy blob fallback: when NO iris resolved anywhere, draw an ink disc at each lid
-    # centroid. Now OFF by default, because measured on a real photograph it is the
-    # "dark circles over the eyes" defect itself.
-    #
-    # Three people laughing. Every face was skipped -- one for an unresolved iris, all
-    # three for the openness gate, which reads narrowed eyes as shut:
-    #
-    #     face=0 ear=(0.172, 0.128)   face=1 ear=(0.151, 0.120)   face=2 ear=(0.245, 0.101)
-    #     _EYE_OPEN_EAR = 0.15
-    #
-    # With `irises` empty this painted a filled disc on all three. The two turned away had
-    # theirs land on already-dark creases; the one facing the camera got what read as
-    # sunglasses. The original comment here already said it: worse than drawing nothing,
-    # since the rest of the face is typography anyway. Now the default agrees.
-    #
-    # TYPO_EYE_BLOB=1 restores it.
-    _eye_blob = _settings.raw("TYPO_EYE_BLOB").strip().lower() \
-        in ("1", "true", "on", "yes")
-    if not irises and _eye_blob:
-        # Legacy eye presence: an ink blob at the lid centroid. Only used when the
-        # iris landmarks can't resolve -- with real irises the round pupil and
-        # catchlight below model the eye properly instead. Skipped on shaded faces so a
-        # lens never gets a dark blob.
-        for _fp in _eye_anchor_pts:
-            for k in ["Leye", "Reye"]:
-                c = np.mean([_fp[i] for i in _GROUPS[k]], 0).astype(int)
-                cv2.circle(anchor, tuple(c), max(2, int(fw * 0.020)), 1.0, -1, cv2.LINE_AA)
-    for _fp in all_pts:
-        for i in (98, 327, 2):
-            if i < len(_fp):
-                cv2.circle(anchor, (int(_fp[i][0]), int(_fp[i][1])), max(1, int(fw * 0.012)), 1.0, -1, cv2.LINE_AA)
-    anchor = cv2.GaussianBlur(anchor, (0, 0), sigmaX=max(1.0, fw * 0.004))
-    anchor = np.clip(anchor, 0, 1)
-    if g["tone"] == "light":
-        a = a * (1.0 - 0.65 * anchor)          # dark feature lines = less light ink (ground shows)
-        _stage("05-anchor-light", a)
-    else:
-        a = np.clip(a + 0.70 * anchor, 0, 1)    # dark feature lines = more dark ink on paper
-        _stage("06-anchor-dark", a)
-
-    # Round pupil + catchlight from the true iris geometry. The pupil is a
-    # feathered DISC at the iris center (not the blocky gap the text rows happen
-    # to leave), and the catchlight sits at the eye's real brightest pixel inside
-    # the iris -- the glint that makes the portrait look back at you.
-    if irises:
-        pup = np.zeros((H, W), np.float32)
-        glint = np.zeros((H, W), np.float32)
-        for icx, icy, ir in irises:
-            cv2.circle(pup, (int(round(icx)), int(round(icy))),
-                       max(2, int(round(ir * 0.42))), 1.0, -1, cv2.LINE_AA)
-        # Catchlight: deterministic, consistent between both eyes (the classic
-        # upper diagonal on the lit side) -- shared helper, working coords -> xSS.
-        from .tonal import _catchlight_points
-        # _catchlight_points covers EVERY detected face independently, but the eyes of some
-        # faces are suppressed here (sunglasses, no dark pupil, closed). Only paint a glint
-        # on a face whose eyes are ACTUALLY rendered (_eye_face_pts); otherwise a stray white
-        # dot lands on an opaque lens / occluded eye.
-        _eye_boxes = [(_p[:, 0].min(), _p[:, 1].min(), _p[:, 0].max(), _p[:, 1].max())
-                      for _p in _eye_face_pts]
-        for gx, gy, gr in _catchlight_points(an):
-            _gx, _gy = gx * SS, gy * SS
-            if not any(_a <= _gx <= _c and _b <= _gy <= _d for (_a, _b, _c, _d) in _eye_boxes):
-                continue
-            cv2.circle(glint, (int(round(_gx)), int(round(_gy))),
-                       max(1, int(round(gr * SS))), 1.0, -1, cv2.LINE_AA)
-        ir_mean = float(np.mean([r for _, _, r in irises]))
-        pup = np.clip(cv2.GaussianBlur(pup, (0, 0), sigmaX=max(1.0, ir_mean * 0.10)), 0, 1)
-        glint = np.clip(cv2.GaussianBlur(glint, (0, 0), sigmaX=max(1.0, ir_mean * 0.10)), 0, 1)
-        # No typography in the sclera: inside the eyelid hull but outside the
-        # iris, ink is suppressed entirely -- the eye reads as anatomy (clean
-        # sclera, typed iris, round pupil, glint), not as text.
-        scl = np.zeros((H, W), np.float32)
-        for _fp in _eye_face_pts:
-            for k in ("Leye", "Reye"):
-                p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
-                if len(p) >= 3:
-                    cv2.fillConvexPoly(scl, cv2.convexHull(p), 1.0)
-        iris_full = np.zeros((H, W), np.float32)
-        limbal = np.zeros((H, W), np.float32)      # dark rim at the iris edge
-        for icx, icy, ir in irises:
-            ci = (int(round(icx)), int(round(icy)))
-            cv2.circle(iris_full, ci, int(round(ir)), 1.0, -1, cv2.LINE_AA)
-            cv2.circle(limbal, ci, int(round(ir)), 1.0, -1, cv2.LINE_AA)
-            cv2.circle(limbal, ci, int(round(ir * 0.80)), 0.0, -1, cv2.LINE_AA)
-        limbal = cv2.GaussianBlur(limbal, (0, 0), sigmaX=max(1.0, ir_mean * 0.05))
-        scl = np.clip(scl - iris_full, 0, 1)
-        scl = cv2.GaussianBlur(scl, (0, 0), sigmaX=max(1.0, fw * 0.004))
-        a = a * (1.0 - 0.92 * scl)
-        _stage("07-sclera", a)
-        if g["tone"] == "light":                  # light ink on a dark ground
-            a = a * (1.0 - 0.88 * pup)            # pupil: round, dark (ground shows)
-            a = np.clip(a + 0.55 * glint, 0, 1)   # catchlight: a tight glint, not a bloom
-            _stage("08-pupil-glint-dark", a)
-        else:                                     # dark ink on light paper
-            a = np.clip(a + 0.80 * pup, 0, 1)     # pupil: round dark ink
-            a = a * (1.0 - 0.85 * glint)          # catchlight: paper shows
-            _stage("09-pupil-glint-light", a)
-
-    # Opaque dark lens: clear the typography inside a detected tinted lens (eyelid hull,
-    # dilated to the lens where reflections sit) so it reads as a solid dark lens instead
-    # of a see-through eye. The fabricated-eye pass (iris/catchlight/sclera) is already
-    # suppressed above; this removes the words too.
-    if _dark_lens_active:
-        # Shape the opaque lens like real EYEWEAR, not a circular dilation of the narrow eye
-        # slit. The old fill (eyelid hull + a uniform circular dilation) made a round disc that
-        # happens to match ROUND frames but reads as "dark circles" on cat-eye / rectangular
-        # frames. Instead draw a filled ellipse per eye, sized from the eyelid landmarks --
-        # wider than tall (a lens, not a slit) and lifted a touch toward the brow (where glasses
-        # actually sit). Two ellipses + the natural bridge gap read as a pair of lenses on any
-        # frame style. TYPO_LENS_SIZE scales the whole lens (default 1.0) with no rebuild.
-        _lsz = float(_settings.raw("TYPO_LENS_SIZE") or 1.0)
-        _lens = np.zeros((H, W), np.float32)
-        for _fp in _dark_lens_face_pts:
-            for k in ("Leye", "Reye"):
-                _idx = [i for i in _GROUPS[k] if i < len(_fp)]
-                if len(_idx) < 3:
-                    continue
-                _p = np.array([_fp[i] for i in _idx], np.float32)
-                _cx = float(_p[:, 0].mean())
-                _cy = float(_p[:, 1].mean())
-                _ew = float(_p[:, 0].max() - _p[:, 0].min())     # eye-slit width
-                _eh = float(_p[:, 1].max() - _p[:, 1].min())     # eye-slit height (small)
-                _ax = max(4, int(round(_ew * 0.80 * _lsz)))                       # half-width  (~1.6x the slit)
-                _ay = max(4, int(round(max(_eh * 1.15, _ew * 0.52) * _lsz)))      # half-height (a real lens, not a slit)
-                _ecy = int(round(_cy - _eh * 0.25))                              # sit a touch high (toward the brow)
-                cv2.ellipse(_lens, (int(round(_cx)), _ecy), (_ax, _ay), 0, 0, 360, 1.0, -1, cv2.LINE_AA)
-        _lensf = np.clip(cv2.GaussianBlur(_lens, (0, 0), sigmaX=max(1.0, fw * 0.012)), 0, 1)
-        a = a * (1.0 - 0.97 * _lensf)
-        _stage("10-dark-lens", a)
-
-    # Teeth carry NO typography. Where the mouth is open, suppress ink across the
-    # inner mouth (both tones); on a dark ground the cleared teeth get a soft
-    # light wash below, on light paper the paper already reads as teeth. A closed
-    # mouth yields no mask and is left untouched.
-    from .tonal import _teeth_mask
-    # Per-face gate. Merging first and testing the union let one subject's dark
-    # lip crease validate "open mouth" for every face in the photo -- two closed
-    # mouths rendered as two pale blobs. Each face is now judged on its own
-    # pixels and dropped before it can contribute to the union.
-    _tdark = float(_settings.raw("TYPO_TEETH_DARK") or 60.0)
-    _tbright = float(_settings.raw("TYPO_TEETH_BRIGHT") or 205.0)
-    _tdbg = _settings.raw("TYPO_TEETH_DEBUG").strip().lower() in ("1", "true", "on", "yes")
-    teeth = None                       # union of the mouths that really are open
-    for _fi, _fp in enumerate(all_pts):
-        _tm = _teeth_mask(_fp, H, W)
-        if _tm is None:
-            continue
-        # A REAL open mouth has a dark cavity OR genuinely bright teeth; a
-        # falsely-detected one is uniform lip tone.
-        _tpx = gray[_tm > 0.5]
-        if _tpx.size > 10:
-            _p10 = float(np.percentile(_tpx, 10))
-            _p90 = float(np.percentile(_tpx, 90))
-            _closed = (_p10 > _tdark and _p90 < _tbright)
-            if _tdbg:
-                try:
-                    print("[teeth] face=%d p10=%.1f p90=%.1f dark<=%.1f bright>=%.1f -> %s"
-                          % (_fi, _p10, _p90, _tdark, _tbright,
-                             "closed" if _closed else "KEPT"))
-                except Exception:
-                    pass
-            if _closed:
-                continue
-        teeth = _tm if teeth is None else np.maximum(teeth, _tm)
-    if teeth is not None:
-        a = a * (1.0 - 0.92 * teeth)
-        _stage("11-teeth", a)
-    if ground in PAPER_FAMILY:
-        # INK-DRAWING density: tone is how much ink lands, not its color. Heavy ink
-        # where the photo is dark; fade to paper where it's light; an edge boost draws
-        # contours/hair strands so light hair isn't erased on the ivory.
-        valn = gray / 255.0
-        dark = np.clip(1.0 - valn, 0.0, 1.0) ** _PAPER_DARK_GAMMA
-        gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
-        gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
-        edge = np.hypot(gx, gy)
-        edge = np.clip(edge / (float(np.percentile(edge, 99.0)) + 1e-6), 0.0, 1.0)
-        edge = cv2.GaussianBlur(edge, (0, 0), max(0.6, 0.8 * _ssn))
-        ink_amt = np.clip(dark * _PAPER_DARK_GAIN + edge * _PAPER_EDGE_GAIN + _PAPER_INK_FLOOR, 0.0, 1.0)
-        a = a * ink_amt
-        _stage("12-paper-ink", a)
-    # === Phase-1 (opt-in): tonal breathing =================================
-    # Compress the typography into the MIDTONES so the tonal extremes rest, the way a
-    # charcoal portrait reads as 3-D: let the ground show through the deepest facial
-    # shadows (negative space), and give the brightest specular skin clean relief.
-    # Restricted to the face plane (hair/robe untouched); eyes+lips excluded so the
-    # catchlight/anchors are preserved. Default OFF -> when ``breathe`` is False this
-    # block is skipped and the output is byte-identical to before.
-    _hl = None
-    if breathe:
-        _face_reg = np.clip(face_norm, 0.0, 1.0)
-        # EVERY face, not just the primary. This protection was built from `pts` -- one
-        # face -- while _skin below is built from face_norm, which covers all of them. So in
-        # a group the primary subject's eyes were spared the shadow cut and everyone else's
-        # were not: their eye sockets are the deepest shadow on the face, lost two thirds of
-        # their ink, and the ground showed through as a dark disc. It reads as sunglasses on
-        # a person who is not wearing any.
-        #
-        # Feathered per face for the same reason as mask_of and _face_w_pf: a smaller face
-        # needs a smaller feather. With one face this is the previous expression exactly, so
-        # single portraits are unchanged.
-        _eyeblock = np.zeros((H, W), np.float32)
-        for _fp_eb, _fwi_eb in zip(all_pts, _fws):
-            _eb = np.zeros((H, W), np.float32)
-            for _k in ("Leye", "Reye", "lips"):
-                _p = np.array([_fp_eb[i] for i in _GROUPS[_k] if i < len(_fp_eb)], np.int32)
-                if len(_p) >= 3:
-                    cv2.fillConvexPoly(_eb, cv2.convexHull(_p), 1.0)
-            _eb = cv2.dilate(_eb, np.ones((9, 9), np.uint8), 1)
-            _eb = np.clip(cv2.GaussianBlur(_eb, (0, 0), sigmaX=max(1.0, _fwi_eb * 0.02)), 0, 1)
-            _eyeblock = np.maximum(_eyeblock, _eb)
-        _skin = _face_reg * (1.0 - _eyeblock)
-        _shadow = np.clip((0.33 - lum) / 0.33, 0.0, 1.0) * _skin      # deepest facial shadow
-        a = a * (1.0 - 0.66 * _shadow)
-        _stage("13-breathe-shadow", a)
-        _hl = np.clip((lum - 0.88) / 0.12, 0.0, 1.0) * _skin          # brightest specular skin
-        _hl = np.power(_hl, 1.4)                                       # roll off -> only true peaks
-        _hl = cv2.GaussianBlur(_hl, (0, 0), sigmaX=max(1.0, fw * 0.009))
-        a = a * (1.0 - 0.32 * _hl)
-        _stage("14-breathe-highlight", a)
-    # =======================================================================
-
-    # Paper/ink ground: on light skin the whole face is highlight, so the density falls away
-    # and the features wash out (worst on fair, older subjects). Keep a gentle ink floor inside
-    # the face so the likeness reads while the surrounding paper still breathes. TYPO_PAPER_FACE
-    # (default 0.30; 0 disables). Paper ground only -- dark grounds are unaffected.
-    if ground in PAPER_FAMILY:
-        _pf = float(_settings.raw("TYPO_PAPER_FACE") or 0.30)
-        if _pf > 0.0:
-            a = np.maximum(a, w2 * _pf * np.clip(face_norm, 0, 1))
-            _stage("15-paper-face", a)
-        # Light-hair floor: silver/blonde hair on the ivory washes out (light on light), so a
-        # silver-haired subject reads as a floating face. Give the HAIR region an ink-density
-        # floor so light hair renders as delicate gray words instead of vanishing. Dark hair
-        # already has density (max() leaves it untouched). TYPO_PAPER_HAIR (default 0.35; 0 off).
-        _ph = float(_settings.raw("TYPO_PAPER_HAIR") or 0.35)
-        if _ph > 0.0:
-            _yy2 = np.arange(H, dtype=np.float32)[:, None]
-            _chin2 = max(float(_p[:, 1].max()) for _p in all_pts)
-            _hairm = ((mask01 > 0) & (_yy2 < _chin2)).astype(np.float32) * (1.0 - np.clip(face_norm, 0, 1))
-            _hairm = np.clip(cv2.GaussianBlur(_hairm, (0, 0), sigmaX=max(2.0, fw * 0.03)), 0, 1)
-            a = np.maximum(a, w2 * _ph * _hairm)
-            _stage("16-paper-hair", a)
-
-    al = a[..., None]
-    # Every diagnostic line carries the same call id, because this engine runs MORE THAN
-    # ONCE per request and reading one call's composite against another call's result is
-    # what turned a one-line question into an afternoon. out_width and the mask coverage
-    # identify which call is which.
-    # A real counter. id(an) was used first and is unsound: CPython reuses addresses, so
-    # two sequential calls can report the same "id" and a two-call sequence reads as one --
-    # which is exactly the impossible arithmetic this was meant to resolve.
+    a, anchor, glint, scl, limbal, teeth, _hl = _lf_feature_passes(a, an, g, H, W, fw, irises, _dark_lens_face_pts, _misfit_face_pts, all_pts, ground, _stage, SS, _eye_face_pts, _dark_lens_active, gray, _ssn, breathe, face_norm, _fws, lum)
+    al = _lf_paper_ground(a, ground, face_norm, w2, _stage, H, all_pts, mask01, fw)
     global _CALL_N
     _CALL_N += 1
     _cid = "#%d" % _CALL_N
@@ -1566,549 +2146,10 @@ def render_displacement_portrait(
                 cv2.imwrite(os.path.join(_sd, "MARKED-%s.png" % _lbl), _marked)
             except Exception as _e:  # noqa: BLE001
                 print("[cdump] %s failed: %s" % (_lbl, _e))
-    if ink == "photo" or ink == "mono":
-        # Photo Lifelike composite. Noir (mono) shares this exact path -- full tonal range,
-        # polarity shadows, living eyes -- and is desaturated to black & white at the end,
-        # so it's a B&W Lifelike, not the old flat single-ink sculpt.
-        # Words take the photo's OWN colors, draped over the form, on the ground.
-        bgr_full = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
-        if _eye_deglare is not None:        # tone the suppressed-eye glare out of the color too
-            gm, skin = _eye_deglare
-            bgr_full = bgr_full * (1.0 - gm[..., None]) + np.float32(skin) * gm[..., None]
-        hsv = cv2.cvtColor(np.clip(bgr_full, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
-        if ground in PAPER_FAMILY:
-            # Ink-drawing with COLORED glyphs: the words keep the photo's hue at high
-            # saturation but a capped dark value, so each word reads as colored TYPE on
-            # ivory (skin/lips/eyes show) -- color from the glyphs, not a photo overlay.
-            # Tone is the ink DENSITY applied above; minimum() keeps deep shadows deep.
-            hsv[..., 1] = np.clip(hsv[..., 1] * _PAPER_INK_SAT, 0, 255)
-            hsv[..., 2] = np.minimum(hsv[..., 2], np.float32(_PAPER_INK_VALUE))
-        else:
-            hsv[..., 1] = np.clip(hsv[..., 1] * float(_settings.raw("TYPO_INK_SAT") or 1.02), 0, 255)  # step-3 color-fidelity knob (was fixed 1.02)
-            # On a dark ground the gaps between glyphs show GROUND, so the render reads
-            # darker than the source photograph. This lifts the ink value to compensate.
-            # Multiplier and offset were hardcoded at 1.14 / 14 -- both now tunable.
-            _ilm = float(_settings.raw("TYPO_INK_LIFT") or 1.14)
-            _ila = float(_settings.raw("TYPO_INK_LIFT_ADD") or 14.0)
-            hsv[..., 2] = np.clip(hsv[..., 2] * _ilm + _ila, 0, 255)     # lift value vs dark ground
-        ink_col = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
-        # SUBJECT BASE: the ground is painted across the whole canvas, so INSIDE the
-        # silhouette it shows through every gap between glyphs -- the face reads as ground
-        # color rather than skin, and the portrait comes out far darker than the source.
-        # TYPO_SUBJECT_BASE swaps the base inside the mask for the SOURCE PHOTO, dimmed by
-        # TYPO_SUBJECT_DIM so the words still read on top of it. The flat ground stays
-        # BEHIND the subject. 0 (default) is byte-identical to the previous behavior.
-        _sb = float(_settings.raw("TYPO_SUBJECT_BASE") or 0.0)
-        _base = np.zeros((H, W, 3), np.float32) + np.array(g["bg"], np.float32)
-        if _sb > 0.0:
-            _dim = float(_settings.raw("TYPO_SUBJECT_DIM") or 0.0)
-            _m3 = (np.clip(mask01, 0, 1) * min(max(_sb, 0.0), 1.0))[..., None]
-            _base = _base * (1.0 - _m3) + (bgr_full * (1.0 - _dim)) * _m3
-        # Field dump (TYPO_DUMP_FIELDS=<dir>). The composite below is fully
-        # determined by _base, al and ink_col, so when a render is wrong the
-        # answer is in one of them -- no inference required.
-        _dd = _settings.raw("TYPO_DUMP_FIELDS").strip()
-        if _dd:
-            try:
-                os.makedirs(_dd, exist_ok=True)
-
-                def _dump(_nm, _arr):
-                    _a = np.asarray(_arr, np.float32)
-                    if _a.ndim == 3 and _a.shape[2] == 1:
-                        _a = _a[..., 0]
-                    if float(_a.max()) <= 1.001:
-                        _a = _a * 255.0
-                    cv2.imwrite(os.path.join(_dd, _nm + ".png"),
-                                np.clip(_a, 0, 255).astype(np.uint8))
-
-                _dump("mask01", mask01)
-                _dump("soft01", soft01)
-                _dump("alpha", al)
-                _dump("base", _base)
-                # The COLOR the glyphs are painted in. Where alpha is near 1 the output is
-                # essentially this layer alone, so a portrait that reads too dark with the
-                # photographic base making no difference is a statement about ink_col and
-                # nothing else. Dumped with its own statistics because a picture of a color
-                # layer is easy to misjudge by eye.
-                try:
-                    _ic = np.asarray(ink_col, np.float32)
-                    _dump("ink_col", _ic)
-                    _icl = (_ic[..., 0] * 0.114 + _ic[..., 1] * 0.587 + _ic[..., 2] * 0.299)
-                    _mk = np.asarray(mask01, np.float32) > 0.5
-                    _src = cv2.resize(np.asarray(an.img.bgr, np.float32), (W, H),
-                                      interpolation=cv2.INTER_AREA)
-                    _sl2 = (_src[..., 0] * 0.114 + _src[..., 1] * 0.587 + _src[..., 2] * 0.299)
-                    if _mk.any():
-                        print("[dump] on subject  source luma mean=%.1f p10=%.1f p90=%.1f   "
-                              "ink_col luma mean=%.1f p10=%.1f p90=%.1f"
-                              % (float(_sl2[_mk].mean()), float(np.percentile(_sl2[_mk], 10)),
-                                 float(np.percentile(_sl2[_mk], 90)),
-                                 float(_icl[_mk].mean()), float(np.percentile(_icl[_mk], 10)),
-                                 float(np.percentile(_icl[_mk], 90))))
-                except Exception as _e:  # noqa: BLE001
-                    print("[dump] ink_col failed: %s" % _e)
-                # anchor carries EVERY deliberate facial mark: lip and eye outlines, the
-                # nostril dots, the legacy eye blob. When something dark appears over an eye
-                # and the code paths that could draw it have been excluded one by one, this
-                # is the layer that settles it -- either the mark is here and the engine drew
-                # it, or it is not and the darkness comes from the tone field instead.
-                try:
-                    _dump("anchor", anchor)
-                    _an = np.asarray(anchor, np.float32)
-                    print("[dump] anchor mean=%.4f max=%.3f  pixels>0.5: %d"
-                          % (float(_an.mean()), float(_an.max()), int((_an > 0.5).sum())))
-                except NameError:
-                    pass
-                # df is the ONLY thing that decides word SIZE, so a complaint about type
-                # being too coarse in one region is a statement about df there. Dumped as
-                # a picture (bright = fine type) plus the tier the blend actually lands on,
-                # because df alone is hard to read against four discrete tiers: banding at
-                # 0.45 / 0.75 is where the visible size step happens.
-                _dfa = np.asarray(df, np.float32)
-                _dump("df", _dfa)
-                _tier = np.digitize(_dfa, [0.45, 0.75, 1.0]).astype(np.float32)  # 0..3
-                _dump("tier", _tier / 3.0)
-                # The same tiers painted over the photograph. A gray ramp cannot be read
-                # against a face -- "is her hair the same tier as his?" is answerable at a
-                # glance here and nowhere else. Red = largest words, blue = smallest.
-                _tc = np.array([(60, 60, 220), (60, 190, 240),
-                                (120, 200, 90), (230, 140, 60)], np.float32)  # BGR, L->Mi
-                _ov = _tc[np.clip(_tier, 0, 3).astype(np.int32)]
-                _ph = np.asarray(bgr_full, np.float32)
-                _ov = _ph * 0.45 + _ov * 0.55
-                _ov = np.where((np.asarray(mask01, np.float32) > 0.5)[..., None], _ov, _ph * 0.35)
-                cv2.imwrite(os.path.join(_dd, "tier_overlay.png"),
-                            np.clip(_ov, 0, 255).astype(np.uint8))
-                _msk = np.asarray(mask01, np.float32) > 0.5
-                if _msk.any():
-                    _ds = _dfa[_msk]
-                    print("[dump] df on subject  mean=%.3f  p05=%.3f p50=%.3f p95=%.3f   "
-                          "tier share  L=%.0f%% M=%.0f%% F=%.0f%% Mi=%.0f%%"
-                          % (float(_ds.mean()), float(np.percentile(_ds, 5)),
-                             float(np.percentile(_ds, 50)), float(np.percentile(_ds, 95)),
-                             *[100.0 * float((np.digitize(_ds, [0.45, 0.75, 1.0]) == _k).mean())
-                               for _k in range(4)]))
-                _a1 = np.asarray(al, np.float32)
-                if _a1.ndim == 3:
-                    _a1 = _a1[..., 0]
-                print("[dump] %s  alpha mean=%.3f p95=%.3f   soft01 mean=%.3f   "
-                      "base mean=%.1f" % (_dd, float(_a1.mean()),
-                                          float(np.percentile(_a1, 95)),
-                                          float(np.asarray(soft01, np.float32).mean()),
-                                          float(np.asarray(_base, np.float32).mean())))
-            except Exception as _e:  # noqa: BLE001
-                print("[dump] failed: %s" % _e)
-        out = _base * (1 - al) + ink_col * al
-        # One line that settles whether this composite is the image the caller receives.
-        # _base provably changes with TYPO_SUBJECT_DIM (the dumps differ) while the returned
-        # PNG does not, which cannot both be true of a single render. Printing the means of
-        # the inputs AND of the result here, plus the mean of the final array at encode time,
-        # localises the break to one side of the function.
-        if _settings.raw("TYPO_DUMP_FIELDS").strip():
-            print("[trace %s w=%d m=%.3f] ink=%r sb=%.2f dim=%.2f  base.mean=%.2f "
-                  "al.mean=%.3f ink_col.mean=%.2f -> out.mean=%.2f"
-                  % (_cid, int(out_width), _mmean,
-                     ink, _sb, float(_settings.raw("TYPO_SUBJECT_DIM") or 0.0),
-                     float(np.asarray(_base).mean()), float(np.asarray(al).mean()),
-                     float(np.asarray(ink_col).mean()), float(np.asarray(out).mean())))
-        # Default 1, matching docker-compose.yml. It read "0" here while compose defaulted
-        # it ON in every container, so this whole block ran while the code said it did not.
-        if _settings.raw("TYPO_POLARITY").strip().lower() in ("1", "true", "on", "yes"):
-            # Polarity model (the paper-grade shadow behavior, brought to the dark-ground
-            # Lifelike look). Instead of "light ink whose COVERAGE follows brightness"
-            # (shadow -> no ink -> ground shows -> absence), make the type present at HIGH
-            # coverage everywhere and carry the tone in the LETTER COLOR across the full
-            # range: near-black letters in deep shadow (a heavy dark mass to lean into),
-            # light letters in highlight. Two tuning knobs (env; iterate without a rebuild):
-            #   TYPO_POLARITY_GAMMA (>1 drives deep shadow harder to black; default 1.35)
-            #   TYPO_POLARITY_FLOOR (how black the shadow GAPS get; 0 = true black; default 0.18)
-            _pol_g = float(_settings.raw("TYPO_POLARITY_GAMMA") or 1.35)
-            _pol_f = float(_settings.raw("TYPO_POLARITY_FLOOR") or 0.18)
-            _mkf = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0, 1)
-            _tone = np.clip(lum, 0.0, 1.0)[..., None] ** _pol_g  # gamma>1 -> deep shadow drives to near-black
-            _pc = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
-            _pl = (_pc[..., 0] * 0.114 + _pc[..., 1] * 0.587 + _pc[..., 2] * 0.299)[..., None] + 1e-3
-            # The INK's own black point. At _tone -> 0 the letters were painted at value 3 --
-            # essentially black -- and neither POLARITY_GAMMA nor POLARITY_FLOOR touches it:
-            # gamma sets how fast tone falls, the floor lifts the GROUND between glyphs. On a
-            # fair face whose only deep shadow is the eye socket, near-black letters packed at
-            # rising coverage read as a hole rather than an eye. Measured on 08-white-hair,
-            # both existing knobs at their limits moved near-black pixels from 13.2% to 8.4%
-            # of the frame -- real, and far below noticeable.
-            #
-            # 40 chosen by sweep on 08-white-hair, a fair white-haired subject on a light
-            # ground -- the case where this failed worst. Near-black pixels: 13.2% of the
-            # frame at 3, 7.3% at 40, 1.0% at 80. 80 removed the black the model exists to
-            # provide; 3 rendered the eyes as holes.
-            #
-            # This default MATCHES docker-compose.yml. The two disagreeing is what turned a
-            # dark render into an afternoon: compose defaults TYPO_POLARITY to 1 while the
-            # code reads "0", so the polarity model was running in every container and
-            # reading .env said otherwise.
-            _pol_i = float(_settings.raw("TYPO_POLARITY_INK_FLOOR") or 40.0)
-            # Hue comes from channel / luminance. In a deep shadow a JPEG pixel is (5, 0, 0):
-            # luminance under 1, so the division turns four levels of compression noise
-            # into pure blue at full strength -- the blue and green specks along the cheek
-            # of 10-smile and the magenta over the shadowed eye of 06-sidelight (measured
-            # 2026-09-18: the wild pixels had source luminance p50 1.3, p90 4.2, and four
-            # levels of chroma). A pedestal on both sides of the division makes a pixel
-            # with no light in it come out neutral and leaves a lit one alone: at skin
-            # luminance 140 the ratio moves by under 1%; on a navy blouse at 10 it keeps
-            # three quarters of its colour. TYPO_POLARITY_PEDESTAL=0 restores the old math.
-            _pol_p = float(_settings.raw("TYPO_POLARITY_PEDESTAL") or 0.0)
-            _ratio = (_pc + _pol_p) / (_pl + _pol_p)
-            _ink = _ratio * (_pol_i + (253.0 - _pol_i) * _tone)   # keep the photo HUE, re-map brightness full-range
-            _ink = np.minimum(_ink, np.float32([255, 255, 255])) # (hue*value can exceed 255 on saturated pixels)
-            # Coverage rises INTO the shadows (heavier, denser type there) and eases in highlights, and
-            # the glyph field w2 keeps the letterforms visible. Deep shadow = a dense near-black letter
-            # mass ("black to lean into"); highlight = lighter, airier letters. Ground shows in the gaps
-            # so it still reads as words, not a photo.
-            _dark = 1.0 - _tone[..., 0]
-            _cov = np.clip((0.28 + 0.22 * _dark) + 0.55 * w2, 0.0, 1.0) * _mkf
-            # Darken the LOCAL ground (the gaps) toward black in deep shadow too, so the shadow
-            # reads as true black -- not the mid navy -- giving the piece a black to lean into.
-            _bg_local = np.array(g["bg"], np.float32) * np.clip(_pol_f + (1.0 - _pol_f) * _tone, 0.0, 1.0)
-            out = _bg_local * (1 - _cov[..., None]) + np.clip(_ink, 0, 255) * _cov[..., None]
-    elif ink in _SCULPT_INK:
-        word = np.array(_SCULPT_INK[ink], np.float32)
-        out = np.array(g["bg"], np.float32) * (1 - al) + word * al
-    elif ink == "custom" and ink_hex:
-        # A user-picked color, sculpted as a single light tint. Reuse the poster
-        # helper's dark-color lift (hue preserved, brightened if it's too dark to
-        # read on the dark ground), then drape it like any other sculpt ink.
-        from .tonal import custom_poster
-        _cp = custom_poster(ink_hex)
-        if _cp:
-            _h = _cp[1].lstrip("#")
-            word = np.array((int(_h[4:6], 16), int(_h[2:4], 16), int(_h[0:2], 16)), np.float32)  # RGB hex -> BGR
-        else:
-            word = np.array(g["ink"], np.float32)
-        out = np.array(g["bg"], np.float32) * (1 - al) + word * al
-    else:
-        out = np.array(g["bg"], np.float32) * (1 - al) + np.array(g["ink"], np.float32) * al
-
-    # Living eyes, color: glyphs inside the iris carry the person's TRUE eye
-    _t("A-after-ink-branch")
-    _cdump("A-after-ink-branch")
-    # color -- sampled by the shared gated helper (both irises saturated and
-    # hue-consistent, else no tint; sampled, never invented). Dark grounds only:
-    # the lifted tint is designed for light-ink-on-dark.
-    # TYPO_EYE_PLAIN: render the eye as TYPE and nothing else. The iris tint, limbal
-    # ring, sclera paint and photographic paste are all gated on `irises`, so emptying
-    # it here disables the entire synthesis in one place. Nothing is drawn from landmark
-    # geometry, so a badly fitted mesh cannot place a disc where no eye is. Teeth are
-    # unaffected (their gate is `irises or teeth`).
-    if _settings.raw("TYPO_EYE_PLAIN").strip().lower() in ("1", "true", "on", "yes"):
-        irises = []
-        iris_m = None
-    if irises and iris_m is not None and g["tone"] == "light" and ink in ("photo", "mono"):
-        from .tonal import _iris_tint, _iris_tint_face
-
-        def _iris_layer(_tint):
-            """The color laid inside an iris: the sampled tint when the gate passed, else
-            the source's own iris pixels lifted so a dark brown reads on the dark ground."""
-            if _tint is not None:
-                _tp = np.array(_tint[1][::-1], np.float32)   # lifted RGB -> BGR
-                _iaa = float(_settings.raw("TYPO_IRIS_ALPHA") or 0.0)
-                _iall = np.maximum(al, _iaa) if _iaa > 0.0 else al
-                return np.array(g["bg"], np.float32) * (1 - _iall) + _tp * _iall
-            _ill = float(_settings.raw("TYPO_IRIS_LIFT") or 1.35)
-            _bff = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
-            _hvv = cv2.cvtColor(np.clip(_bff, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
-            _hvv[..., 1] = np.clip(_hvv[..., 1] * 1.3, 0, 255)
-            _hvv[..., 2] = np.clip(_hvv[..., 2] * _ill + 40, 0, 255)
-            _icol = cv2.cvtColor(_hvv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
-            return np.array(g["bg"], np.float32) * (1 - al) + _icol * al
-
-        if (_settings.raw("TYPO_IRIS_PER_FACE").strip().lower() in ("1", "true", "on", "yes")
-                and _iris_face_idx):
-            # Each face gets ITS OWN sampled color on ITS OWN irises. Previously one tint
-            # from faces[0] was painted onto every iris in the image, so a mixed-eye-color
-            # group inherited the primary face's eyes. A face whose gate rejects now falls
-            # back alone rather than forcing the fallback on everyone.
-            for _fx in sorted(set(_iris_face_idx)):
-                _sel = [_c for _c, _fi2 in zip(irises, _iris_face_idx) if _fi2 == _fx]
-                if not _sel:
-                    continue
-                _fm = np.zeros((H, W), np.float32)
-                for (_ccx, _ccy, _rr) in _sel:
-                    cv2.circle(_fm, (int(round(_ccx)), int(round(_ccy))), int(round(_rr)),
-                               1.0, -1, cv2.LINE_AA)
-                _rmean = float(np.mean([_c[2] for _c in _sel]))
-                _fm = np.clip(cv2.GaussianBlur(_fm, (0, 0), sigmaX=max(1.0, _rmean * 0.18)), 0, 1)
-                _fm3 = _fm[..., None]
-                out = out * (1.0 - _fm3) + _iris_layer(_iris_tint_face(an, _fx)) * _fm3
-            tint = None
-            im3 = None
-        else:
-            tint = _iris_tint(an)
-            im3 = iris_m[..., None]
-        if im3 is not None and tint is not None:
-            tip = np.array(tint[1][::-1], np.float32)        # lifted RGB -> BGR
-            # The iris is composited over the GROUND, so wherever ink alpha is low the navy
-            # ground (13,27,58 RGB -- a saturated dark blue) shows through and a correctly
-            # sampled BROWN iris renders BLUE. TYPO_IRIS_ALPHA floors the alpha inside the
-            # iris so the sampled color wins. 0 (default) keeps the previous behavior.
-            _ia = float(_settings.raw("TYPO_IRIS_ALPHA") or 0.0)
-            _ial = np.maximum(al, _ia) if _ia > 0.0 else al
-            iout = np.array(g["bg"], np.float32) * (1 - _ial) + tip * _ial
-            out = out * (1.0 - im3) + iout * im3
-        elif im3 is not None:
-            # The tint gate rejected the sample -- most often a low-saturation BROWN iris in
-            # shadow. Without word-eyes the photo paste covered this; with word-eyes the iris
-            # would otherwise fall through to the dark navy ground and read BLUE. Re-lay the
-            # source's own iris pixels (saturation + a value lift so a dark brown reads on the
-            # dark ground), so a brown eye renders brown -- not blue. TYPO_IRIS_LIFT tunes it.
-            _il = float(_settings.raw("TYPO_IRIS_LIFT") or 1.35)
-            bf = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
-            hv = cv2.cvtColor(np.clip(bf, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
-            hv[..., 1] = np.clip(hv[..., 1] * 1.3, 0, 255)
-            hv[..., 2] = np.clip(hv[..., 2] * _il + 40, 0, 255)
-            iris_col = cv2.cvtColor(hv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
-            iout = np.array(g["bg"], np.float32) * (1 - al) + iris_col * al
-            out = out * (1.0 - im3) + iout * im3
-    elif irises and iris_m is not None and ground in PAPER_FAMILY and ink == "photo":
-        # Paper: keep the iris its TRUE source color. The Keep-Paper-Light lift
-        # mutes everything toward the paper, which would wash the eye color out --
-        # so re-lay the source's own iris pixels here, saturated but NOT lifted, so
-        # the real hue (her green/hazel/blue) pops against the airy face.
-        bf = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA).astype(np.float32)
-        hv = cv2.cvtColor(np.clip(bf, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
-        hv[..., 1] = np.clip(hv[..., 1] * _PAPER_IRIS_SAT, 0, 255)   # true hue, balanced with the face
-        iris_col = cv2.cvtColor(hv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
-        iout = np.array(g["bg"], np.float32) * (1 - al) + iris_col * al
-        im3 = iris_m[..., None]
-        out = out * (1.0 - im3) + iout * im3
-    # Limbal ring: a dark rim at the iris edge -- the single strongest cue that
-    # reads as a real iris rather than a flat tinted disc. Darken toward the
-    # ground in that thin annulus.
-    if irises and g["tone"] == "light":
-        lim = limbal[..., None]
-        out = out * (1.0 - 0.60 * lim) + np.array(g["bg"], np.float32) * (0.60 * lim)
-    # Eye-white + teeth (dark ground): neither carries typography. A neutral, dim
-    # light tone shaded by the photo's OWN luminance (so it keeps the real bright/
-    # shadow gradient, not a flat disc) -- the SAME treatment in every ink. Using
-    # the photo's actual pixels in Photo mode read too bright/warm (the whites
-    # glowed and picked up the render's cast); the neutral tone never glows and
-    # never takes the ink's color. The iris still carries the subject's real eye
-    # color in Photo mode (handled separately above).
-    if (g["tone"] == "light" or ground in PAPER_FAMILY) and (irises or teeth is not None):
-        gshade = np.clip((gray / 255.0 - 0.20) / 0.55, 0.0, 1.0)
-        # On the mid greige paper ground the sclera/teeth must be painted brighter
-        # and stronger than on a dark ground, or they read as dirty greige instead
-        # of white -- this is what makes the eyes/smile come alive on paper.
-        paper_feat = ground in PAPER_FAMILY
-        s_str, t_str = (0.90, 0.92) if paper_feat else (0.70, 0.66)
-        s_col = (236, 238, 240) if paper_feat else (198, 200, 202)
-        t_col = (238, 240, 242) if paper_feat else (200, 202, 204)
-        if irises:
-            # Natural sclera shading from each eye's OWN luminance, stretched PER EYE:
-            # the real upper-lid shadow and corner falloff come through as a GRADIENT
-            # instead of a flat gray disc, while per-eye normalization keeps even a
-            # shaded eye bright (preserving the dark-merge fix without the uniform,
-            # artificial look). A faint warm-neutral tint reads more like sclera than
-            # a cool gray.
-            scl_val = _sclera_value(gray, _eye_face_pts, scl, floor=(0.70 if paper_feat else 0.58))
-            sw = (scl * scl_val * s_str)[..., None]
-            out = out * (1.0 - sw) + np.array(s_col, np.float32) * sw
-        if teeth is not None:
-            tw = (teeth * gshade * t_str)[..., None]
-            out = out * (1.0 - tw) + np.array(t_col, np.float32) * tw
-    # Catchlight is a SPECULAR highlight: always white (the lightest thing on the
-    # face), never ink- or iris-colored -- painted over the color composite.
-    if irises and (g["tone"] == "light" or ground in PAPER_FAMILY):
-        gl3 = glint[..., None]
-        out = out * (1.0 - gl3) + np.float32(238.0) * gl3   # bright glint, below blow-out so vibrance doesn't bloom it
-    # Realistic eyes: composite the photo's OWN eye openings, tone-normalized, OVER the
-    # synthetic fill -- the real eye never glows (the synthetic bright sclera/catchlight
-    # does). Applied for EVERY ink on a dark ground; the Photo ink keeps it full color,
-    # the tinted/monochrome inks (Noir/Sepia/Navy/Sage) then DESATURATE it into the ink's
-    # palette so a full-color eye doesn't clash with the tinted face. Gated by the
-    # openness check (closed eyes skipped); paper keeps its words-form-the-eye treatment.
-    # Word-formed eyes (paper's treatment, brought to the dark ground): when TYPO_WORD_EYES
-    # is on, the Photo Lifelike look SKIPS this photographic paste and lets the eye be built
-    # from the synthetic sclera + tinted-iris words + limbal ring + catchlight already laid
-    # above -- so the eye reads as part of the typography, not a photo patch. Tinted inks
-    # (Noir/Sepia/...) still get the photographic eye (they have no color clash to word-form).
-    _word_eyes = _settings.raw("TYPO_WORD_EYES").strip().lower() in ("1", "true", "on", "yes")
-    if irises and g["tone"] == "light" and not (_word_eyes and ink in ("photo", "mono")):
-        from .tonal import _photo_eye_overlay
-        bgr_eye = cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_CUBIC).astype(np.float32)
-        # Composite the REAL photo eye for EVERY subject's eyes (this is what makes an
-        # eye read as real vs. a synthetic dark disc) -- not just the primary face.
-        eye_bgr = bgr_eye.copy()
-        eye_a = np.zeros((H, W), np.float32)
-        for _fp in _eye_face_pts:
-            _eb, _ea = _photo_eye_overlay(bgr_eye, _fp, (_GROUPS["Leye"], _GROUPS["Reye"]), H, W)
-            _tk = _ea > eye_a
-            eye_a = np.where(_tk, _ea, eye_a)
-            eye_bgr[_tk] = _eb[_tk]
-        # 1.0 to match docker-compose.yml. Worth knowing what that means: the eye is an
-        # OPAQUE paste of the photograph's own pixels, not typography blended over it. The
-        # code claimed 0.5 -- half blended -- and no container has ever run that.
-        a3 = (eye_a * float(_settings.raw("TYPO_EYE_PHOTO") or 1.0))[..., None]   # 1=opaque photo eye; lower blends the typography through so the eye reads as part of the words
-        out = out * (1.0 - a3) + eye_bgr * a3
-        # A NON-closeup source has small, soft eyes, so the pasted eye reads flat/muddy.
-        # Sharpen + lift local contrast INSIDE the eye opening so the iris/pupil/catchlight
-        # read crisp; scale the amount UP for smaller (more distant) eyes. TYPO_EYE_SHARPEN
-        # (0 disables) sets the base strength.
-        _esh = float(_settings.raw("TYPO_EYE_SHARPEN") or 0.6)
-        if _esh > 0.0 and float(eye_a.max()) > 0.0:
-            _em = np.clip(eye_a, 0.0, 1.0)[..., None]
-            _amt = _esh * float(np.clip((0.16 * W) / max(1.0, fw), 0.6, 2.4))   # smaller face -> more
-            _blur = cv2.GaussianBlur(out, (0, 0), sigmaX=max(1.0, fw * 0.010))
-            _enh = np.clip((out - 128.0) * 1.12 + 128.0 + _amt * (out - _blur), 0.0, 255.0)
-            out = out * (1.0 - _em) + _enh * _em
-        # Eye "pop": re-assert a crisp specular CATCHLIGHT + a dark LIMBAL rim ON TOP of the
-        # photo eye. "Flat and muddy" = a soft source lost its key-light glint and iris rim;
-        # painting them back (like real portrait retouching) makes even a low-res eye read
-        # alive and defined. Scaled UP for smaller eyes; TYPO_EYE_POP (0 disables). A faint
-        # pupil-core darken adds depth. Runs before the mono desaturate so Noir gets it too.
-        _pop = float(_settings.raw("TYPO_EYE_POP") or 0.8)
-        if _pop > 0.0 and float(glint.max()) > 0.0:
-            _psc = float(np.clip((0.16 * W) / max(1.0, fw), 0.7, 2.2))   # smaller face -> more pop
-            _l3 = np.clip(limbal * (0.6 * _pop), 0.0, 1.0)[..., None]
-            out = out * (1.0 - _l3) + (out * 0.32) * _l3                 # dark iris rim (definition)
-            _g3 = np.clip(glint * (_pop * _psc), 0.0, 1.0)[..., None]
-            out = out * (1.0 - _g3) + np.float32(246.0) * _g3           # bright specular catchlight
-        if ink not in ("photo", "mono"):             # mono desaturates the WHOLE subject below
-            lum = (out[..., 0] * 0.114 + out[..., 1] * 0.587 + out[..., 2] * 0.299)[..., None]
-            grayed = out * 0.22 + lum * 0.78         # pull the eye toward the ink's monochrome
-            em3 = eye_a[..., None]
-            out = out * (1.0 - em3) + grayed * em3
-    # === Phase-1 (opt-in): highlight glaze + discovery layer ===============
-    if breathe and _hl is not None:
-        _glz = (0.34 * _hl)[..., None]                          # crisp specular relief, not fog
-        _bright = np.array((232.0, 236.0, 240.0), np.float32)   # warm near-white (BGR)
-        out = out * (1.0 - _glz) + _bright * _glz
-    if discovery:
-        out = _add_discovery(out, pts, fw, H, W, discovery)
-        _t("B-after-discovery")
-    # =======================================================================
-
-    # Noir = the finished Lifelike render in black & white. Desaturate to luminance with a
-    # gentle contrast lift so the grayscale is punchy, not muddy -- keeping the polarity
-    # shadows, catchlight and living eyes intact. TYPO_NOIR_CONTRAST tunes the punch.
-    if ink == "mono":
-        _nc = float(_settings.raw("TYPO_NOIR_CONTRAST") or 1.08)
-        _lo = out[..., 0] * 0.114 + out[..., 1] * 0.587 + out[..., 2] * 0.299
-        _lo = np.clip((_lo - 128.0) * _nc + 128.0, 0, 255)
-        out = np.stack([_lo, _lo, _lo], axis=-1)
-        _t("C-after-mono")
-
-    # De-posterize: the tonal floors (highlight wash / shadow lift) and the discrete text-
-    # density steps flatten the face into bands. Add the photo's OWN low-frequency light->dark
-    # falloff back as a gentle multiply -- brighter where the photo is bright, darker where it
-    # is dark -- so the flat regions regain smooth photographic gradation WITHOUT blurring the
-    # glyph edges (only the LOW frequencies move, the type stays crisp). Subject only, light
-    # ground only. Default 0 -> byte-identical; TYPO_DEPOSTERIZE tunes the strength.
-    _dp = float(_settings.raw("TYPO_DEPOSTERIZE") or 0.6)   # default ON; 0 disables
-    if _dp > 0.0 and g["tone"] == "light":
-        _plo = cv2.GaussianBlur(gray.astype(np.float32) / 255.0, (0, 0), sigmaX=max(2.0, fw * 0.11))
-        _m = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.01), 0, 1)
-        _mid = float(np.mean(_plo[mask01 > 0])) if np.any(mask01 > 0) else 0.5
-        _mod = 1.0 + _dp * np.clip(_plo - _mid, -0.5, 0.5) * _m
-        out = np.clip(out * _mod[..., None], 0, 255)
-        _t("D-after-deposterize")
-        _cdump("D-after-deposterize")
-
-    oh = max(1, int(out_width * h0 / w0))
-    out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
-    _t("E-after-resize")
-    _cdump("E-after-resize")
-    # Background fill: recolor the region OUTSIDE the subject silhouette. The subject
-    # (on its own ground -- e.g. the navy Lifelike sculpt) is NEVER touched; only pixels
-    # outside the silhouette move. Two sources, in priority order:
-    #   1. An explicit `backdrop` swatch (the "match your space" wall color) -- fills
-    #      with that color regardless of ground. This is the user-facing feature.
-    #   2. Else the legacy env TYPO_BG_LIGHTEN lift (navy sculpt on a lighter gray),
-    #      dark grounds only (the light "paper" ground is already bright -> skipped).
-    _transparent = (backdrop or "").strip().lower() == "transparent"
-    _bd = None if _transparent else (BACKDROPS.get((backdrop or "").strip().lower()) if backdrop else None)
-    try:
-        _bg_lift = float(_settings.raw("TYPO_BG_LIGHTEN"))
-    except ValueError:
-        _bg_lift = 0.0
-    _bg_lift = min(max(_bg_lift, 0.0), 1.0)
-    _pad_bg = g["bg"]
-    _fill = None
-    _alpha = None
-    _floral_inside = None
-    if _floral_key and getattr(an, "silhouette", None) is not None:
-        # Floral frame: capture the subject's soft alpha now; the frame itself is composited
-        # over the padded canvas below (so the blooms sit on the true edges). Pad with the
-        # art's cream so any pad the frame doesn't cover stays seamless.
-        _ow = int(out_width)
-        _floral_inside = np.clip(cv2.resize(soft01, (_ow, oh), interpolation=cv2.INTER_LINEAR), 0.0, 1.0)
-        _pad_bg = _FLORAL_CREAM
-    elif _transparent and getattr(an, "silhouette", None) is not None:
-        # Transparent cutout (digital PNG only): alpha = the soft matte (hair-preserving),
-        # so wispy hair feathers into transparency instead of a hard cut. Everything outside
-        # -- and the print-canvas padding -- becomes fully transparent, portrait floats free.
-        _ow = int(out_width)
-        _alpha = np.clip(cv2.resize(soft01, (_ow, oh), interpolation=cv2.INTER_LINEAR), 0.0, 1.0)
-        _pad_bg = (0.0, 0.0, 0.0)
-    elif _bd is not None:
-        _fill = np.array(_bd, np.float32)
-    elif _bg_lift > 0.0 and ground not in PAPER_FAMILY:
-        _bgc = np.array(g["bg"], np.float32)
-        _fill = _bgc + (255.0 - _bgc) * _bg_lift
-    if _fill is not None and getattr(an, "silhouette", None) is not None:
-        _ow = int(out_width)
-        # Soft matte edge so the backdrop blends into hair instead of a hard cardboard cut.
-        _inside = np.clip(cv2.resize(soft01, (_ow, oh), interpolation=cv2.INTER_LINEAR), 0.0, 1.0)
-        _outside = (1.0 - _inside)[..., None]
-        out = out.astype(np.float32) * (1.0 - _outside) + _fill * _outside
-        _pad_bg = tuple(float(c) for c in _fill)
-    # Standard print canvas (4:5 = 16x20), padded with the ground BEFORE vibrance
-    # so the band is processed identically to the interior ground (no seam).
-    from .tonal import _fit_print_canvas
-    out = _fit_print_canvas(out, _pad_bg, print_aspect)
-    _t("F-after-canvas")
-    _cdump("F-after-canvas")
-    from .preprocess import apply_vibrance
-    _vib = float(_settings.raw("TYPO_VIBRANCE") or 0.22)   # step-3 color-fidelity knob (was fixed 0.34)
-    out = apply_vibrance(out, strength=_vib, bgr=True)   # gentle life (clarity); restrained so color stays natural and the sclera isn't glow-brightened
-    # Color fidelity: soft-cap HSV saturation so the oversaturated extremes -- magenta lips,
-    # orange-boosted skin highlights -- compress toward a natural ceiling while ordinary skin
-    # keeps its color. Only saturation ABOVE the cap is compressed (35% slope), so nothing
-    # below it is touched. TYPO_SAT_CAP=0 disables. Default 170 (gentle).
-    _scap = float(_settings.raw("TYPO_SAT_CAP") or 150)
-    if _scap > 0:
-        _hh = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_BGR2HSV).astype(np.float32)
-        _s = _hh[..., 1]
-        _hh[..., 1] = np.where(_s > _scap, _scap + (_s - _scap) * 0.35, _s)
-        out = cv2.cvtColor(_hh.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
-    if _floral_key and _floral_inside is not None:
-        # Floral frame: composite the watercolor frame everywhere OUTSIDE the subject, on the
-        # padded canvas (blooms land on the true edges). Pad the subject alpha to the SAME canvas
-        # (0 outside) so hair feathers into the frame; a missing art file -> a plain cream mat.
-        _fl = _load_floral(_floral_key)
-        _hc, _wc = out.shape[:2]
-        _fa = _fit_print_canvas(np.repeat(_floral_inside[..., None], 3, axis=2).astype(np.float32),
-                                (0.0, 0.0, 0.0), print_aspect)
-        _fai = np.clip(_fa[..., 0:1], 0.0, 1.0)
-        if _fl is None:
-            _fl = np.full((_hc, _wc, 3), _FLORAL_CREAM, np.float32)
-        else:
-            _fl = cv2.resize(_fl, (_wc, _hc), interpolation=cv2.INTER_AREA).astype(np.float32)
-        out = np.clip(out, 0, 255).astype(np.float32) * _fai + _fl * (1.0 - _fai)
-    if _transparent and _alpha is not None:
-        # Pad the alpha to the SAME canvas as `out` (transparent border), then emit BGRA.
-        _a3 = _fit_print_canvas(np.repeat(_alpha[..., None], 3, axis=2).astype(np.float32),
-                                (0.0, 0.0, 0.0), print_aspect)
-        _alpha_c = np.clip(_a3[..., 0], 0.0, 1.0)
-        bgra = np.dstack([np.clip(out, 0, 255).astype(np.uint8),
-                          (_alpha_c * 255.0).astype(np.uint8)])
-        ok, buf = cv2.imencode(".png", bgra)
-    else:
-        ok, buf = cv2.imencode(".png", np.clip(out, 0, 255).astype(np.uint8))
-    if not ok:
-        raise ValueError("encode_failed")
-    if _settings.raw("TYPO_DUMP_FIELDS").strip():
-        print("[trace %s w=%d m=%.3f] encode  out.mean=%.2f  bytes=%d"
-              % (_cid, int(out_width), _mmean,
-                 float(np.asarray(out).mean()), len(buf.tobytes())))
+    out = _lf_ink_branch(ink, al, an, g, W, ground, H, _eye_deglare, mask01, soft01, lum, anchor, df, _cid, _mmean, out_width, w2, ink_hex)
+    out = _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W, _iris_face_idx, out, gray, _eye_face_pts, pts, glint, fw, discovery, _hl, breathe)
+    out = _lf_noir(ink, out, _t)
+    out, buf = _lf_finish(an, g, W, ground, fw, gray, mask01, out, _t, _cdump, h0, out_width, w0, backdrop, _floral_key, soft01, print_aspect, _cid, _mmean)
     _png = buf.tobytes()
     del out, buf
     # Same as the pet engine's end-of-render trim: glibc keeps what a render freed unless
