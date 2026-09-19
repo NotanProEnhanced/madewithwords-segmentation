@@ -46,6 +46,7 @@ import threading
 import sys
 import math
 import random
+import time
 
 
 import numpy as np
@@ -3790,7 +3791,8 @@ def _phase_tangent_field(mask, W, base, theta_s, coherence_s, landmarks, H, gray
 
 def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None,
               landmarks=None, debug_dir=None, out_stem="render", verbose=False, backdrop_rgb=None,
-              type_scale=None, auto_res=True, anatomy=None, human=False, wisp_alpha=None, max_px=None):
+              type_scale=None, auto_res=True, anatomy=None, human=False, wisp_alpha=None, max_px=None,
+              hires_h=None):
     """Render a typographic portrait of the pet in `bgr` (BGR uint8, already at the working
     resolution). Returns (rgb_uint8, metrics). `words`: the customer's comma-separated name +
     descriptors (the first entries weight highest; see _weighted_stream); None -> DEFAULT_WORDS.
@@ -3900,7 +3902,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
             return render_v2(_bgr_in, words, mask=_mask_in, render_scale=_factor, max_overlap=max_overlap,
                              landmarks=_lm, debug_dir=debug_dir, out_stem=out_stem, verbose=verbose,
                              backdrop_rgb=backdrop_rgb, type_scale=type_scale, auto_res=False, anatomy=anatomy,
-                             human=human, wisp_alpha=_wisp_in, max_px=max_px)
+                             human=human, wisp_alpha=_wisp_in, max_px=max_px, hires_h=hires_h)
     # Every eye in the photo: what density, hero placement and the structural pass keep clear of.
     all_eye_pts = list(attractor_pts) + [p for f in extra_faces for p in f["eyes"]]
     # NOT blending these into theta/coherence anymore: two corrected attempts both made the
@@ -3982,6 +3984,10 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
         best_placements, best_pass, best_stats, best_pass_stats, base, coherence_s, get_font,
         mask, micro_px_area, occupancy, rng, theta_s, short_tokens, size_px_field,
         letter_tokens, gray, fill_px_area, hero_px_area, struct_px_area, best_glyphs)
+    # Sharp print output (hires_h): the working-res inputs the finishing needs, captured before
+    # the finishing runs at this size, so it can run again at print scale over the type drawn
+    # fresh from the glyph log. Copies of the small structures only; the arrays are shared.
+    _sharp = bool(hires_h and float(hires_h) > H * 1.15)
     canvas, ink_raw, ink_alpha = _phase_opacity_tone(canvas, base, gray, debug_dir, H, W,
         out_path, mask)
     eye_reveal = _phase_eye_reveal(H, W, base, _es, _lm_env, attractor_pts, extra_faces, gray, mask)
@@ -4000,6 +4006,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     _wisp_fr, composited, _dbg, _dbg_pt, whisker_ink_alpha = _phase_wisps(a, feat, wisp_alpha,
         _outer_keep, mask, photo_rgb, composited, ink_alpha, eye_reveal, sat_anomaly, wash,
         ground_rgb, bgr_clean, whisker_outside, whisker_zone, deep_fur_rgb, gray)
+    _P_low = composited.astype(np.float32, copy=True) if _sharp else None   # sharp print: the composite before the tone match
     (m_in, composited, src_L_in, letters_in, light_mix, src_mean_L, L_after, dark_f,
      dark_mix, gap_scale, letter_scale, light_f, pcts) = _phase_tone_match(mask,
         human, attractor_pts, _es, xx, yy, bgr_source, composited, base, ink_raw, _dbg, _dbg_pt,
@@ -4011,7 +4018,136 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     metrics = _phase_likeness_test(photo_out, out_path, W, attractor_pts, base, bgr_source,
         canvas, extra_faces, mask, debug_dir, exposed, fillable, fp_cov, best_placements, coll,
         coll_core, cov_final, H, rep, _wisp_fr, wisp_alpha, whisker_ink_alpha, backdrop_rgb)
+    if _sharp:
+        _k = float(hires_h) / float(H)
+        _log(f"sharp print: type drawn again at {_k:.3f}x ({int(round(W * _k))}x{int(round(H * _k))})")
+        _t0 = time.time()
+        # The two fields the reveal formula cannot read back from `a`: the hair term (a max)
+        # and the whisker suppression (a multiply). Both phases are pure functions of geometry
+        # and the photo, so evaluating them on a zero / unit alpha returns the field itself.
+        _zero = np.zeros((H, W), np.float32)
+        _hair_term = (_phase_hair_reveal(_zero, attractor_pts, human, _es, xx, yy, mask, sat_anomaly)
+                      if human else None)
+        _wkeep = _phase_suppress_photo_whiskers(_zero + 1.0, gray, whisker_region_inside)[..., 0]
+        _st = dict(W=W, H=H, base=base, gray=gray, mask=mask, feat=feat, sat_anomaly=sat_anomaly,
+                   eye_reveal=eye_reveal, nose_reveal=nose_reveal, wash=wash, hair_term=_hair_term,
+                   whisker_keep=_wkeep, ground_rgb=ground_rgb, photo_rgb=photo_rgb,
+                   wisp_fr=_wisp_fr, wisp_alpha=wisp_alpha, outer_keep=_outer_keep,
+                   whisker_outside=whisker_outside, whisker_zone=whisker_zone,
+                   deep_fur_rgb=deep_fur_rgb, P_low=_P_low, C_low=composited.astype(np.float32),
+                   glyphs=list(best_glyphs))
+        del composited, a, ink_alpha, m_in, letters_in, L_after
+        _trim_heap()
+        composited_u8, _ow = _finish_sharp(_st, _k)
+        del _st
+        _log(f"sharp print: done in {time.time() - _t0:.1f}s")
+        metrics["outside_w"] = _ow
+        metrics["size"] = (int(composited_u8.shape[1]), int(composited_u8.shape[0]))
     return composited_u8, metrics
+
+
+# ---- Sharp print output --------------------------------------------------------------------
+# A paid file is 3600 x 4500 and the engine's working height is capped at 2400 (memory: a
+# native 4500 render would need more than twice the box). Until 2026-09-19 the finished
+# render was simply enlarged 1.9x, so every letter on paper was a stretched bitmap. This
+# path instead keeps the working render for everything that is smooth (the photo, the
+# masks, the reveals, the fields) and enlarges those, while the type is DRAWN AGAIN at print
+# scale from the glyph log; the finishing phases then run at print scale over the sharp type.
+# The composition is the working render's (same words, same places, same tone rules), only
+# the letter edges are new. Measured: the print file downsampled to the working size is
+# within a few levels of the working render everywhere except letter edges.
+
+def _sharp_print_on():
+    return (_settings.raw("PET_V2_SHARP_PRINT") or "").strip().lower() not in ("0", "false", "off", "no")
+
+
+def _upscale(a, k, interp=cv2.INTER_LINEAR):
+    if a is None:
+        return None
+    H, W = a.shape[:2]
+    return cv2.resize(a, (int(round(W * k)), int(round(H * k))), interpolation=interp)
+
+
+def _upscale_angles(theta, k):
+    """Angles wrap at +/-pi, so interpolate the unit vector, not the angle."""
+    c = _upscale(np.cos(theta).astype(np.float32), k)
+    s = _upscale(np.sin(theta).astype(np.float32), k)
+    return np.arctan2(s, c).astype(np.float32)
+
+
+def _finish_sharp(st, k):
+    """The paid file at scale k: the type drawn again at print size, everything else carried
+    over from the working render.
+
+    What runs at print size is only what depends on letter edges: the type raster and its
+    opacity modulation, the reveal alpha (a per-pixel formula of ink and smooth fields), the
+    composite ground*(1-a)+photo*a, the wisp strands and the typographic whiskers. Every
+    field those need is the working render's, enlarged. Everything after the composite
+    (the tone match) is transferred as a difference gain: where the print's composite equals
+    the enlarged working composite, which is everywhere but at letter edges, the print IS the
+    enlarged working render; at an edge the difference is scaled by the tone match's own local
+    gain. Measured on the dog and a person: the print downsampled to the working size differs
+    from the working render by a mean of well under one level.
+
+    `st` is the dict render_v2 captures; returns (rgb_u8, outside_w_u8) at (W*k, H*k)."""
+    W, H = st["W"], st["H"]
+    Wk, Hk = int(round(W * k)), int(round(H * k))
+    up = lambda a, i=cv2.INTER_LINEAR: _upscale(np.ascontiguousarray(a, dtype=np.float32), k, i)
+    base = st["base"] * k
+    gray = _upscale(st["gray"], k, cv2.INTER_CUBIC)
+    mask = np.clip(up(st["mask"]), 0, 1)
+
+    # 1. the type, sharp, with the same opacity-carries-tone modulation
+    canvas = rasterise_glyphs(st["glyphs"], W, H, k)
+    _, _, ink = _phase_opacity_tone(canvas, base, gray, None, Hk, Wk, None, mask)
+    del canvas, gray
+
+    # 2. the reveal alpha: the formula of _phase_saturation_anomaly / photo_wash / hair_reveal /
+    #    suppress_photo_whiskers, with the smooth fields enlarged and the ink sharp
+    M = mask * (1.0 - 0.15 * np.clip(up(st["feat"]), 0, 1)) * (1.0 - 0.95 * np.clip(up(st["sat_anomaly"]), 0, 1))
+    a = np.clip(ink * M, 0, 1)
+    del M
+    a = np.clip(a + up(st["eye_reveal"]) * (1.0 - a) * 0.92, 0, 1)
+    a = np.clip(a + up(st["nose_reveal"]) * (1.0 - a) * 0.85, 0, 1)
+    a = np.clip(np.maximum(a, up(st["wash"])), 0, 1)
+    if st["hair_term"] is not None:
+        a = np.clip(np.maximum(a, up(st["hair_term"])), 0, 1)
+    a = a * up(st["whisker_keep"])
+    a = a[..., None]
+
+    # 3. the composite, the strands, the typographic whiskers -> P_hi
+    ground = st["ground_rgb"]
+    ground = up(ground, cv2.INTER_CUBIC) if getattr(ground, "ndim", 0) == 3 else np.asarray(ground, np.float32)
+    photo = up(st["photo_rgb"], cv2.INTER_CUBIC)
+    P = ground * (1.0 - a) + photo * a
+    del ground
+    wf = None
+    if st["wisp_fr"] is not None:
+        wf = np.clip(up(st["wisp_fr"]), 0, 1)
+        al = np.clip(up(st["wisp_alpha"]), 0, 1)
+        strand = up(st["outer_keep"], cv2.INTER_CUBIC) * (1.0 - al[..., None]) + photo * al[..., None]
+        P = P * (1.0 - wf[..., None]) + strand * wf[..., None]
+        del strand
+    del photo
+    wia = ink * np.clip(up(st["whisker_outside"]), 0, 1)
+    wz = np.clip(up(st["whisker_zone"]), 0, 1)[..., None]
+    hair_color = np.array([222.0, 218.0, 205.0], np.float32) * wz + up(st["deep_fur_rgb"], cv2.INTER_CUBIC) * (1.0 - wz)
+    P = P * (1.0 - wia[..., None]) + hair_color * wia[..., None]
+    del hair_color, wz, ink
+
+    # 4. the tone match and everything after it, as a difference gain from the working render
+    P_low, C_low = st["P_low"], st["C_low"]
+    G = np.clip(C_low / np.maximum(P_low, 8.0), 0.25, 3.0).astype(np.float32)
+    out = up(C_low, cv2.INTER_CUBIC) + up(G, cv2.INTER_CUBIC) * (P - up(P_low, cv2.INTER_CUBIC))
+    del P, G
+    rgb = np.clip(out, 0, 255).astype(np.uint8)
+    del out
+    if wf is None:
+        ow = (1.0 - mask)
+    else:
+        ow = (1.0 - al) * wf + (1.0 - mask) * (1.0 - wf)
+    outside_w = np.clip(ow * (1.0 - wia) * 255.0, 0, 255).astype(np.uint8)
+    return rgb, outside_w
 
 
 # ---- Render cache for the site's entry point --------------------------------------------
@@ -4385,7 +4521,9 @@ def render_pet_portrait_v2(image_bytes, words, ground="dark", height=900,
         rgb, metrics = render_v2(bgr, words, mask=mask, render_scale=_scale, backdrop_rgb=ground_rgb,
                                  type_scale=_ts, landmarks=_lm_str, auto_res=(_scale == 1.0),
                                  verbose=_settings.raw("PET_V2_VERBOSE") not in ("", "0"), anatomy=_anat,
-                                 human=_human, wisp_alpha=_wisp, max_px=max_px)
+                                 human=_human, wisp_alpha=_wisp, max_px=max_px,
+                                 hires_h=(int(height) if _sharp_print_on() and height and work_h
+                                          and int(height) > work_h * 1.15 else None))
         entry = (int(rgb.shape[0]), rgb, metrics["outside_w"], ground_rgb, _notes, photo_bg)   # the height actually rendered
         _cache_put(key, entry)
     finally:
