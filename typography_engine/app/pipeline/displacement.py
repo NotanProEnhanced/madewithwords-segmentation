@@ -319,7 +319,7 @@ def _add_discovery(out, pts, fw, H, W, marks):
 
 
 def _lf_finish(an, g, W, ground, fw, gray, mask01, out, _t, _cdump, h0, out_width, w0, backdrop,
-               _floral_key, soft01, print_aspect, _cid, _mmean):
+               _floral_key, soft01, print_aspect, _cid, _mmean, sharp_st=None):
     """Finish.
 
     Moved verbatim out of render_displacement_portrait; the parameters are what the
@@ -342,7 +342,10 @@ def _lf_finish(an, g, W, ground, fw, gray, mask01, out, _t, _cdump, h0, out_widt
         _cdump("D-after-deposterize")
 
     oh = max(1, int(out_width * h0 / w0))
-    out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
+    if sharp_st and sharp_st.get("mode") and int(out_width) > W * 1.15 and _lf_sharp_on():
+        out = _lf_sharp_resize(out, sharp_st, int(out_width), oh)
+    else:
+        out = cv2.resize(out, (int(out_width), oh), interpolation=cv2.INTER_AREA)
     _t("E-after-resize")
     _cdump("E-after-resize")
     # Background fill: recolor the region OUTSIDE the subject silhouette. The subject
@@ -668,7 +671,7 @@ def _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W,
 
 
 def _lf_ink_branch(ink, al, an, g, W, ground, H, _eye_deglare, mask01, soft01, lum, anchor, df,
-                   _cid, _mmean, out_width, w2, ink_hex):
+                   _cid, _mmean, out_width, w2, ink_hex, sharp_st=None):
     """Ink branch.
 
     Moved verbatim out of render_displacement_portrait; the parameters are what the
@@ -877,9 +880,17 @@ def _lf_ink_branch(ink, al, an, g, W, ground, H, _eye_deglare, mask01, soft01, l
             # reads as true black -- not the mid navy -- giving the piece a black to lean into.
             _bg_local = np.array(g["bg"], np.float32) * np.clip(_pol_f + (1.0 - _pol_f) * _tone, 0.0, 1.0)
             out = _bg_local * (1 - _cov[..., None]) + np.clip(_ink, 0, 255) * _cov[..., None]
+            if sharp_st is not None:
+                sharp_st.update(mode="polarity", ink=np.clip(_ink, 0, 255).astype(np.float32),
+                                bg_local=_bg_local.astype(np.float32), dark=_dark.astype(np.float32),
+                                mkf=_mkf.astype(np.float32))
+        elif sharp_st is not None:
+            sharp_st.update(mode="alpha", base=_base.astype(np.float32), word=ink_col.astype(np.float32))
     elif ink in _SCULPT_INK:
         word = np.array(_SCULPT_INK[ink], np.float32)
         out = np.array(g["bg"], np.float32) * (1 - al) + word * al
+        if sharp_st is not None:
+            sharp_st.update(mode="alpha", base=np.array(g["bg"], np.float32), word=word)
     elif ink == "custom" and ink_hex:
         # A user-picked color, sculpted as a single light tint. Reuse the poster
         # helper's dark-color lift (hue preserved, brightened if it's too dark to
@@ -892,8 +903,12 @@ def _lf_ink_branch(ink, al, an, g, W, ground, H, _eye_deglare, mask01, soft01, l
         else:
             word = np.array(g["ink"], np.float32)
         out = np.array(g["bg"], np.float32) * (1 - al) + word * al
+        if sharp_st is not None:
+            sharp_st.update(mode="alpha", base=np.array(g["bg"], np.float32), word=word)
     else:
         out = np.array(g["bg"], np.float32) * (1 - al) + np.array(g["ink"], np.float32) * al
+        if sharp_st is not None:
+            sharp_st.update(mode="alpha", base=np.array(g["bg"], np.float32), word=np.array(g["ink"], np.float32))
 
     return out
 
@@ -1601,6 +1616,7 @@ def _lf_text_rows(W, s, _ssn, H, flow, rng, _vocab_stream, seed):
         im = Image.new("L", (W, H + _row_pad), 255)
         d = ImageDraw.Draw(im)
         y = 0
+        _log_rows = []      # (y, [(x, word), ...]) per row, for the sharp print's redraw
         if flow:
             # MESSAGE mode: stream the words continuously DOWN the rows, wrapping word
             # by word and looping seamlessly, so the sentence reads in order and then
@@ -1630,6 +1646,10 @@ def _lf_text_rows(W, s, _ssn, H, flow, rng, _vocab_stream, seed):
                     parts.append(tok); row_w += adv.get(tok, space)
                 _ox = -(_r.randint(0, int(fs * _fjit)) if _fjit > 0 else int((ry % 5) * fs * 0.5))
                 d.text((_ox, y), " ".join(parts), font=f, fill=0)
+                _xw, _x = [], float(_ox)
+                for tok in parts:
+                    _xw.append((_x, tok)); _x += adv.get(tok, space)
+                _log_rows.append((y, _xw))
                 y += max(6, int(fs)); ry += 1
         else:
             # Keep the words in the order they were entered (a sentence stays a
@@ -1643,13 +1663,23 @@ def _lf_text_rows(W, s, _ssn, H, flow, rng, _vocab_stream, seed):
             # once -- it never varied per row.
             bw = max(1.0, float(d.textlength(base, font=f)))
             line = base * max(2, int((W + fs * 7) / bw) + 2)
+            _adv = {w: float(d.textlength(w + " ", font=f)) for w in set(_vocab_stream)}
+            _line_words = [w for w in line.split(" ") if w]
             _prng = random.Random(seed ^ 0x9E3779B9)   # see the note above: pad rows must
             while y < H + _row_pad + fs:                # not disturb the main sequence
                 _r = rng if y < H + fs else _prng
-                d.text((-_r.randint(0, int(fs * 6)), y), line, font=f, fill=0)
+                _ox = -_r.randint(0, int(fs * 6))
+                d.text((_ox, y), line, font=f, fill=0)
+                _xw, _x = [], float(_ox)
+                for tok in _line_words:
+                    _xw.append((_x, tok)); _x += _adv.get(tok, 0.0)
+                _log_rows.append((y, _xw))
                 y += max(6, int(fs))
+        rows.log[fs] = _log_rows
         return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
 
+    rows.log = {}          # fs -> rows drawn: what the sharp print redraws at print scale
+    rows.pad = _row_pad
     return rows
 
 
@@ -1947,6 +1977,195 @@ def _lf_eye_geometry(an, sunglasses, H, W, sunglass_faces, all_pts, _ssn, gray, 
     return irises, _iris_face_idx, eye_centers, _eye_face_pts, _dark_lens_active, _dark_lens_face_pts, _misfit_face_pts, gray, _eye_deglare
 
 
+def _lf_sharp_on():
+    return (_settings.raw("TYPO_SHARP_PRINT") or "").strip().lower() not in ("0", "false", "off", "no")
+
+
+def _lf_rows_at_scale(log_rows, fs, k, Wk, Hk_pad):
+    """Draw one tier's rows again at scale k from the row log: the same words at the same
+    places (positions scaled), with the font at fs*k, so every letter is drawn by the font
+    engine at print size instead of enlarged. Returns the 0..1 ink field (Hk_pad x Wk)."""
+    # The working render drew this tier with _font(fs), which truncates to an integer pixel
+    # size; the print-scale face is exactly that size times k, as a fractional size, so a
+    # word's advance scales with its slot (measured: 0.03 px over a ten-letter word) and
+    # every letter lands where its working-size counterpart sat.
+    fp = _font_path()
+    try:
+        f = ImageFont.truetype(fp, max(6, int(fs)) * k) if fp else ImageFont.load_default()
+    except Exception:  # noqa: BLE001
+        f = _font(fs * k)
+    im = Image.new("L", (Wk, Hk_pad), 255)
+    d = ImageDraw.Draw(im)
+    for y, words in log_rows:
+        yk = y * k
+        if yk > Hk_pad + fs * k:
+            break
+        for x, tok in words:
+            xk = x * k
+            if xk > Wk:
+                break
+            d.text((xk, yk), tok, font=f, fill=0)
+    return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
+
+
+def _lf_sharp_resize(C_low, st, Wk, Hk, band_rows=512):
+    """The paid Lifelike file at print size: the type drawn again at print scale, the
+    composite rebuilt over it, everything else carried over from the working render.
+
+    Replaces the plain enlargement of the finished working render (W x H -> Wk x Hk). The
+    glyph field is rebuilt at print scale exactly as the working render built it: the rows
+    redrawn from the row log, warped by the enlarged drape field, blended by the enlarged
+    detail field, thickened by the enlarged ink field. The composite is then the working
+    render's own formula over the enlarged smooth fields (photo ink, local ground, shadow
+    tone, mask feather) and the sharp glyph field. Everything after the composite (the
+    photographic eyes, noir, deposterize) is transferred as a difference gain from the
+    working render: away from letter edges the print IS the enlarged working render.
+
+    For the sculpt inks the passes that turn the glyph field into the final alpha (feature
+    anchoring, teeth, paper floors) are carried as a per-pixel sensitivity, so their
+    edges sharpen in proportion. The photo ink with the shadow model on, which every site
+    runs, is exact."""
+    W, H = st["W"], st["H"]
+    k = Wk / float(W)
+    # ---- the glyph field at print scale
+    pad_k = int(round(st["row_pad"] * k))
+    def rows_k(fs):
+        return _lf_rows_at_scale(st["row_log"][fs], fs, k, Wk, Hk + pad_k)
+    gray_hi = cv2.resize(st["gray"], (Wk, Hk), interpolation=cv2.INTER_CUBIC)
+    D = cv2.GaussianBlur(gray_hi, (0, 0), sigmaX=Wk * 0.020)
+    dn = (D / 255.0 - 0.5) * 2.0
+    del D, gray_hi
+    amp_hi = cv2.resize(st["amp"], (Wk, Hk), interpolation=cv2.INTER_LINEAR) * k
+    xx, yy = np.meshgrid(np.arange(Wk).astype(np.float32), np.arange(Hk).astype(np.float32))
+    my = (yy + amp_hi * dn).astype(np.float32); mx = xx.astype(np.float32)
+    del xx, yy, amp_hi, dn
+    def R(tile):
+        return cv2.remap(tile, mx, my, cv2.INTER_LINEAR, borderValue=0.0)
+    df = cv2.resize(st["df"], (Wk, Hk), interpolation=cv2.INTER_LINEAR)
+    fsL, fsM, fsF, fsMi = st["tier_fs"]
+    wL = R(rows_k(fsL)); warped = wL.copy()
+    wM = R(rows_k(fsM))
+    bt = np.clip((df - 0.0) / 0.45, 0, 1); sel = (df >= 0.0) & (df < 0.45)
+    warped = np.where(sel, wL * (1 - bt) + wM * bt, warped); del wL
+    wF = R(rows_k(fsF))
+    bt = np.clip((df - 0.45) / 0.30, 0, 1); sel = (df >= 0.45) & (df < 0.75)
+    warped = np.where(sel, wM * (1 - bt) + wF * bt, warped); del wM
+    wMi = R(rows_k(fsMi))
+    bt = np.clip((df - 0.75) / 0.2501, 0, 1); sel = (df >= 0.75) & (df < 1.0001)
+    warped = np.where(sel, wF * (1 - bt) + wMi * bt, warped); del wF
+    warped = np.where(df >= 1.0, wMi, warped); del wMi, bt, sel, df
+    if st.get("irises") and st.get("iris_fs") is not None:
+        iris_m = np.zeros((Hk, Wk), np.float32)
+        ir_mean = float(np.mean([r for _, _, r in st["irises"]]))
+        for icx, icy, ir in st["irises"]:
+            cv2.circle(iris_m, (int(round(icx * k)), int(round(icy * k))), int(round(ir * k)), 1.0, -1, cv2.LINE_AA)
+        iris_m = np.clip(cv2.GaussianBlur(iris_m, (0, 0), sigmaX=max(1.0, ir_mean * k * 0.18)), 0, 1)
+        warped = warped * (1.0 - iris_m) + R(rows_k(st["iris_fs"])) * iris_m
+        del iris_m
+    del mx, my
+    ink_field = cv2.resize(st["ink_field"], (Wk, Hk), interpolation=cv2.INTER_LINEAR)
+    # A dilation by an n x n kernel grows a stroke by n-1 pixels; the working render grows by
+    # 1 and 2, so the print-scale kernels grow by k and 2k (measured: kernels 3 and 5 at
+    # 1.875x reproduce the working coverage to 0.2%; 4 and 6 added 14%).
+    k2, k3 = max(2, int(round(1 * k)) + 1), max(3, int(round(2 * k)) + 1)
+    b1 = cv2.dilate(warped, np.ones((k2, k2), np.uint8), 1)
+    b2 = cv2.dilate(warped, np.ones((k3, k3), np.uint8), 1)
+    gd1 = np.clip((ink_field - 0.40) / 0.60, 0, 1)
+    gd2 = np.clip((ink_field - 0.70) / 0.30, 0, 1)
+    # The thickening adds a partial-opacity ring around each glyph. At the working size the
+    # ring is one pixel and melts into the antialiased edge; at print scale it would be a
+    # flat band k pixels wide and read as a halo. Soften the ring by the scale so its edge is
+    # the gradient the working size effectively had (coverage unchanged: a blur conserves it).
+    ring = (b1 - warped) * gd1 + (b2 - b1) * gd2
+    ring = cv2.GaussianBlur(ring, (0, 0), sigmaX=max(0.6, 0.5 * k))
+    w2 = np.clip(warped + ring, 0, 1)
+    del warped, b1, b2, gd1, gd2, ink_field, ring
+    _dbgdir = (_settings.raw("TYPO_DUMP_FIELDS") or "").strip()
+    if _dbgdir:
+        try:
+            os.makedirs(_dbgdir, exist_ok=True)
+            np.save(os.path.join(_dbgdir, "sharp_w2_hi.npy"), w2)
+            np.save(os.path.join(_dbgdir, "sharp_w2_low.npy"), st["w2"])
+            np.save(os.path.join(_dbgdir, "sharp_P_low.npy"), st["P_low"])
+            np.save(os.path.join(_dbgdir, "sharp_C_low.npy"), C_low)
+        except Exception as _e:  # noqa: BLE001
+            print("[sharp] dump failed: %s" % _e)
+    # ---- the composite, in bands, then the affine transfer
+    # Everything between the composite and here (photographic eyes and teeth, the glaze,
+    # noir, deposterize) is, per pixel, a smooth AFFINE map of the composite: a gain (tone,
+    # deposterize) and an offset (a blend toward a constant, as the teeth and sclera passes
+    # do). A gain alone cannot carry an offset, and its residual rang at every letter edge
+    # (measured: the teeth pass lifts the gaps by 54 levels and the letters by 2). So the
+    # map is fitted per neighbourhood from the working render's own letters and gaps:
+    #   A = (C_letters - C_gaps) / (P_letters - P_gaps),   B = C_gaps - A * P_gaps
+    # with the class means taken as weighted blurs, and applied to the sharp composite:
+    #   out = A * P_hi + B
+    # Where a neighbourhood has no letters (or no gaps) the two means coincide and the map
+    # falls back to the plain gain. The print is then the enlarged working render wherever
+    # the composite is unchanged, and at a letter edge each side gets its own class's map.
+    P_low, w2_low = st["P_low"], st["w2"]
+    # Noir converts to black and white AFTER the composite, a cross-channel mix that a
+    # per-channel affine map cannot carry (measured: a tinted print). Apply the same
+    # conversion to the composite on both sides of the fit, so the map is grey to grey.
+    _noir = None
+    if st.get("ink_name") == "mono":
+        _nc = float(_settings.raw("TYPO_NOIR_CONTRAST") or 1.08)
+        def _noir(x):
+            lo = x[..., 0] * 0.114 + x[..., 1] * 0.587 + x[..., 2] * 0.299
+            lo = np.clip((lo - 128.0) * _nc + 128.0, 0, 255)
+            return np.stack([lo, lo, lo], axis=-1)
+        P_low = _noir(P_low)
+    _sig = max(4.0, 0.012 * W)
+    wl = np.clip((w2_low - 0.35) / 0.3, 0, 1).astype(np.float32); wg = 1.0 - wl
+    def _cmean(X, wgt):
+        num = cv2.GaussianBlur(X * wgt[..., None], (0, 0), sigmaX=_sig)
+        den = cv2.GaussianBlur(wgt, (0, 0), sigmaX=_sig)[..., None]
+        return num / np.maximum(den, 1e-3), den
+    CL, dl = _cmean(C_low, wl); CG, dg = _cmean(C_low, wg)
+    PL, _ = _cmean(P_low, wl); PG, _ = _cmean(P_low, wg)
+    dP = PL - PG
+    A_ratio = np.clip(C_low / np.maximum(P_low, 8.0), 0.25, 3.0).astype(np.float32)
+    ok = (np.abs(dP) > 6.0) & (dl > 0.02) & (dg > 0.02)
+    A = np.where(ok, np.clip((CL - CG) / np.where(ok, dP, 1.0), 0.0, 3.0), A_ratio).astype(np.float32)
+    B = np.where(ok, CG - A * PG, C_low - A_ratio * P_low).astype(np.float32)
+    del CL, CG, PL, PG, dP, dl, dg, wl, wg, A_ratio, ok
+    out = np.empty((Hk, Wk, 3), np.float32)
+    xs = ((np.arange(Wk, dtype=np.float32) + 0.5) / k - 0.5)
+    mode = st["mode"]
+    if mode == "alpha":
+        S_low = np.clip(st["al"][..., 0] / np.maximum(w2_low, 0.05), 0.0, 2.0).astype(np.float32)
+    for Y0 in range(0, Hk, band_rows):
+        Y1 = min(Hk, Y0 + band_rows)
+        ys = ((np.arange(Y0, Y1, dtype=np.float32) + 0.5) / k - 0.5)
+        mapx, mapy = np.meshgrid(xs, ys); mapx = mapx.astype(np.float32); mapy = mapy.astype(np.float32)
+        def up(a, interp=cv2.INTER_LINEAR):
+            return cv2.remap(np.ascontiguousarray(a, dtype=np.float32), mapx, mapy, interp, borderMode=cv2.BORDER_REPLICATE)
+        w2b = w2[Y0:Y1]
+        if mode == "polarity":
+            cov = np.clip((0.28 + 0.22 * up(st["dark"])) + 0.55 * w2b, 0.0, 1.0) * up(st["mkf"])
+            P = up(st["bg_local"], cv2.INTER_CUBIC) * (1 - cov[..., None]) + up(st["ink"], cv2.INTER_CUBIC) * cov[..., None]
+            del cov
+        else:
+            al = np.clip(up(st["al"][..., 0]) + up(S_low) * (w2b - up(w2_low)), 0.0, 1.0)[..., None]
+            base = st["base"]; word = st["word"]
+            base = up(base, cv2.INTER_CUBIC) if getattr(base, "ndim", 0) == 3 else base
+            word = up(word, cv2.INTER_CUBIC) if getattr(word, "ndim", 0) == 3 else word
+            P = base * (1 - al) + word * al
+            del al
+        if _noir is not None:
+            P = _noir(P)
+        out[Y0:Y1] = up(A, cv2.INTER_CUBIC) * P + up(B, cv2.INTER_CUBIC)
+        if _dbgdir:
+            if Y0 == 0:
+                _P_all = np.empty((Hk, Wk, 3), np.float32)
+            _P_all[Y0:Y1] = P
+            if Y1 == Hk:
+                np.save(os.path.join(_dbgdir, "sharp_P_hi.npy"), _P_all)
+        del P, mapx, mapy
+    del w2, A, B
+    return np.clip(out, 0, 255)
+
+
 def _lf_backdrop_setup(backdrop, ground, an, seed, flow, uppercase, words, variety, supersample,
                        pts0):
     """Backdrop setup.
@@ -2118,6 +2337,15 @@ def render_displacement_portrait(
     lum, ink_field = _lf_tonal_field(g, gray, mask01, fw, face_w, feat_norm, face_norm,
         _grad_on, all_pts, yy)
     w2 = _lf_density(warped, ink_field)
+    # Sharp print (paid sizes): everything the print-scale rebuild of the glyph field and the
+    # composite needs, captured at the working resolution. See _lf_sharp_resize.
+    _sst = None
+    if int(out_width) > W * 1.15 and _lf_sharp_on():
+        _tier_keys = list(rows.log.keys())
+        _sst = dict(W=W, H=H, row_pad=rows.pad, row_log=rows.log, tier_fs=_tier_keys[:4],
+                    iris_fs=(_tier_keys[4] if len(_tier_keys) > 4 else None), irises=list(irises or []),
+                    gray=gray, df=df, ink_field=ink_field, w2=w2, ink_name=ink,
+                    amp=(float(_settings.raw("TYPO_DRAPE") or 64.0) * s * _ssn * (1.0 - 0.85 * feat_damp)).astype(np.float32))
     # STAGED INK DUMP (TYPO_DUMP_STAGES=<dir>). The ink field is rewritten by sixteen
     # passes in sequence, and any of them can drive a region to bare ground. Reasoning from
     # the code about which one did it failed four times on a single defect -- each wrong
@@ -2276,12 +2504,15 @@ def render_displacement_portrait(
             except Exception as _e:  # noqa: BLE001
                 print("[cdump] %s failed: %s" % (_lbl, _e))
     out = _lf_ink_branch(ink, al, an, g, W, ground, H, _eye_deglare, mask01, soft01, lum,
-        anchor, df, _cid, _mmean, out_width, w2, ink_hex)
+        anchor, df, _cid, _mmean, out_width, w2, ink_hex, sharp_st=_sst)
+    if _sst is not None:
+        _sst["P_low"] = np.asarray(out, np.float32).copy()
+        _sst["al"] = np.asarray(al, np.float32)
     out = _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W,
         _iris_face_idx, out, gray, _eye_face_pts, pts, glint, fw, discovery, _hl, breathe)
     out = _lf_noir(ink, out, _t)
     out, buf = _lf_finish(an, g, W, ground, fw, gray, mask01, out, _t, _cdump, h0, out_width,
-        w0, backdrop, _floral_key, soft01, print_aspect, _cid, _mmean)
+        w0, backdrop, _floral_key, soft01, print_aspect, _cid, _mmean, sharp_st=_sst)
     _png = buf.tobytes()
     del out, buf
     # Same as the pet engine's end-of-render trim: glibc keeps what a render freed unless

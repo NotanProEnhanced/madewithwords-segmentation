@@ -169,6 +169,8 @@ _k("PET_LM_DEBUG", "on/off", "",
    "Debug: log why a detection was or was not used.")
 
 # ---- Lifelike renderer (app/pipeline/displacement.py) ------------------------------
+_k("TYPO_SHARP_PRINT", "on/off", "1",
+   "Paid files: draw the type again at print scale and rebuild the composite over it, instead of enlarging the working render. 0 = the old enlargement.")
 _k("TYPO_FLORAL_DIR", "path", "",
    "Directory of the watercolour floral frames; empty uses the bundled art.")
 _k("TYPO_MATTE_FLOOR", "float", "0.12",
