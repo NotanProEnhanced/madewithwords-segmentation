@@ -318,8 +318,12 @@ def _add_discovery(out, pts, fw, H, W, marks):
     return out * (1.0 - al) + col * al
 
 
-def _lf_finish(an, g, W, ground, fw, gray, mask01, out, _t, _cdump, h0, out_width, w0, backdrop, _floral_key, soft01, print_aspect, _cid, _mmean):
-    """_lf_finish. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+def _lf_finish(an, g, W, ground, fw, gray, mask01, out, _t, _cdump, h0, out_width, w0, backdrop,
+               _floral_key, soft01, print_aspect, _cid, _mmean):
+    """Finish.
+
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
     buf = None
     # De-posterize: the tonal floors (highlight wash / shadow lift) and the discrete text-
     # density steps flatten the face into bands. Add the photo's OWN low-frequency light->dark
@@ -438,7 +442,10 @@ def _lf_finish(an, g, W, ground, fw, gray, mask01, out, _t, _cdump, h0, out_widt
 
 
 def _lf_noir(ink, out, _t):
-    """_lf_noir. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    """Noir = the finished Lifelike render in black & white.
+
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
     # Noir = the finished Lifelike render in black & white. Desaturate to luminance with a
     # gentle contrast lift so the grayscale is punchy, not muddy -- keeping the polarity
     # shadows, catchlight and living eyes intact. TYPO_NOIR_CONTRAST tunes the punch.
@@ -452,8 +459,12 @@ def _lf_noir(ink, out, _t):
     return out
 
 
-def _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W, _iris_face_idx, out, gray, _eye_face_pts, pts, glint, fw, discovery, _hl, breathe):
-    """_lf_eye_colour. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+def _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W, _iris_face_idx,
+                   out, gray, _eye_face_pts, pts, glint, fw, discovery, _hl, breathe):
+    """Living eyes, color: glyphs inside the iris carry the person's TRUE eye.
+
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
     # Living eyes, color: glyphs inside the iris carry the person's TRUE eye
     _t("A-after-ink-branch")
     _cdump("A-after-ink-branch")
@@ -656,8 +667,12 @@ def _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W,
     return out
 
 
-def _lf_ink_branch(ink, al, an, g, W, ground, H, _eye_deglare, mask01, soft01, lum, anchor, df, _cid, _mmean, out_width, w2, ink_hex):
-    """_lf_ink_branch. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+def _lf_ink_branch(ink, al, an, g, W, ground, H, _eye_deglare, mask01, soft01, lum, anchor, df,
+                   _cid, _mmean, out_width, w2, ink_hex):
+    """Ink branch.
+
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
     out = None
     if ink == "photo" or ink == "mono":
         # Photo Lifelike composite. Noir (mono) shares this exact path -- full tonal range,
@@ -884,7 +899,11 @@ def _lf_ink_branch(ink, al, an, g, W, ground, H, _eye_deglare, mask01, soft01, l
 
 
 def _lf_paper_ground(a, ground, face_norm, w2, _stage, H, all_pts, mask01, fw):
-    """_lf_paper_ground. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    """Paper/ink ground: on light skin the whole face is highlight, so the density falls away
+    and the features wash out (worst on fair, older subjects).
+
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
     # Paper/ink ground: on light skin the whole face is highlight, so the density falls away
     # and the features wash out (worst on fair, older subjects). Keep a gentle ink floor inside
     # the face so the likeness reads while the surrounding paper still breathes. TYPO_PAPER_FACE
@@ -918,8 +937,13 @@ def _lf_paper_ground(a, ground, face_norm, w2, _stage, H, all_pts, mask01, fw):
     return al
 
 
-def _lf_feature_passes(a, an, g, H, W, fw, irises, _dark_lens_face_pts, _misfit_face_pts, all_pts, ground, _stage, SS, _eye_face_pts, _dark_lens_active, gray, _ssn, breathe, face_norm, _fws, lum):
-    """_lf_feature_passes. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+def _lf_feature_passes(a, an, g, H, W, fw, irises, _dark_lens_face_pts, _misfit_face_pts,
+                       all_pts, ground, _stage, SS, _eye_face_pts, _dark_lens_active, gray,
+                       _ssn, breathe, face_norm, _fws, lum):
+    """Feature passes.
+
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
     glint = None
     limbal = None
     scl = None
@@ -1168,7 +1192,10 @@ def _lf_feature_passes(a, an, g, H, W, fw, irises, _dark_lens_face_pts, _misfit_
 
 
 def _lf_density(warped, ink_field):
-    """_lf_density. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    """Progressive density: thicken text where ink is strongest.
+
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
     # Progressive density: thicken text where ink is strongest.
     b1 = cv2.dilate(warped, np.ones((2, 2), np.uint8), 1)
     b2 = cv2.dilate(warped, np.ones((3, 3), np.uint8), 1)
@@ -1180,7 +1207,10 @@ def _lf_density(warped, ink_field):
 
 
 def _lf_tonal_field(g, gray, mask01, fw, face_w, feat_norm, face_norm, _grad_on, all_pts, yy):
-    """_lf_tonal_field. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    """Tonal field: percentile-stretch within the subject.
+
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
     # Tonal field: percentile-stretch within the subject.
     vals = gray[mask01 > 0]
     if vals.size == 0:
@@ -1239,7 +1269,11 @@ def _lf_tonal_field(g, gray, mask01, fw, face_w, feat_norm, face_norm, _grad_on,
 
 
 def _lf_iris_circles(irises, t_iris, H, W, R, warped):
-    """_lf_iris_circles. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    """Iris circles take the eye-scaled tier (feathered edge); iris_m is reused below for the
+    color blend.
+
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
     # Iris circles take the eye-scaled tier (feathered edge); iris_m is reused
     # below for the color blend.
     iris_m = None
@@ -1255,7 +1289,10 @@ def _lf_iris_circles(irises, t_iris, H, W, R, warped):
 
 
 def _lf_drape(s, W, gray, H, _ssn, feat_damp, t_fine, t_large, t_micro, t_mid, df):
-    """_lf_drape. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    """Clean vertical drape, dampened in the feature band (keeps features crisp).
+
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
     # Clean vertical drape, dampened in the feature band (keeps features crisp).
     D = cv2.GaussianBlur(gray, (0, 0), sigmaX=W * 0.020)
     dn = (D / 255.0 - 0.5) * 2.0
@@ -1283,7 +1320,11 @@ def _lf_drape(s, W, gray, H, _ssn, feat_damp, t_fine, t_large, t_micro, t_mid, d
 
 
 def _lf_detail_field(H, face_w, W, mask_of, mask01, fmh, fw, all_pts, graduate, _fws, gray):
-    """_lf_detail_field. Extracted verbatim from render_displacement_portrait; inputs and outputs are the block's own."""
+    """Smooth "detail field" df in [0,1] that drives a CONTINUOUS size gradient: ~0 on the body
+    (large text) -> ~0.45 on the broad face (mid) -> ~1 at the.
+
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
     # Smooth "detail field" df in [0,1] that drives a CONTINUOUS size gradient:
     # ~0 on the body (large text) -> ~0.45 on the broad face (mid) -> ~1 at the
     # features (small). Heavily feathered so the size transition is gradual.
@@ -1452,150 +1493,172 @@ def _lf_detail_field(H, face_w, W, mask_of, mask01, fmh, fw, all_pts, graduate, 
     return df, face_norm, feat_norm, _grad_on
 
 
-def render_displacement_portrait(
-    an: Analysis,
-    words: Sequence[str],
-    ground: str = "navy",
-    out_width: int = 1400,
-    supersample: int = 2,
-    seed: int = 7,
-    uppercase: bool = True,
-    ink: Optional[str] = None,
-    ink_hex: Optional[str] = None,  # only when ink=="custom": the user-picked color.
-                                  # Draped as a single light tint (lifted to read on the
-                                  # dark ground) so a Custom pick SCULPTS in its own hue
-                                  # instead of falling back to a flat/photo render.
-    print_aspect: float = 0.8,    # width/height of the print canvas (4:5 default)
-    flow: bool = False,           # True => the text is a MESSAGE: keep it in written
-                                  # order and stream it continuously (a sculpted letter),
-                                  # instead of importance-weighting a word list.
-    variety: float = 0.0,         # 0 = current importance skew (leading words repeat up to
-                                  # ~3x, so the portrait is built mostly OF them); ->1 flattens
-                                  # the skew so a varied word list reads as varied, not name-dominated.
-    breathe: bool = False,        # opt-in Phase-1: tonal 'breathing' -- deep-shadow negative
-                                  # space + crisp specular highlight relief, compressing the type
-                                  # into the midtones for more sculptural depth. Default OFF.
-    discovery: Optional[Sequence[str]] = None,  # opt-in Phase-1: hide a small cross + these tiny
-                                  # marks (e.g. ["IHS", "JN 8:12"]) for close-inspection 'discovery'.
-                                  # None => nothing drawn (default).
-    word_scale: float = 1.0,      # multiplier on all four size tiers, so the studio's word-size
-                                  # control actually reaches this engine. main.py passes
-                                  # cfg.min_font_px / 57, where 57 is the studio default -- so
-                                  # 1.0 is byte-identical to every render made before this
-                                  # parameter existed. min_font_px itself is meaningless here
-                                  # (this engine has never had a per-word minimum; it tiles
-                                  # rows at fixed tier sizes), which is exactly why the Small /
-                                  # Medium / Large buttons did nothing on the Lifelike style.
-    graduate: bool = True,        # graduate the type OUTSIDE the face -- body (below chin) and hair
-                                  # (above face) step down from the largest tier -- plus a hair
-                                  # local-contrast 'sculpt'. Default ON; env TYPO_GRADUATE_BODY=0
-                                  # reverts with no code change.
-    backdrop: Optional[str] = None,  # "match your space" background color. Recolors ONLY the
-                                  # region outside the subject silhouette (a named key in BACKDROPS);
-                                  # the subject render is untouched. None => legacy TYPO_BG_LIGHTEN.
-    sunglasses: bool = False,     # MANUAL sunglasses control. Pixels cannot reliably tell a
-                                  # tinted/reflective lens from a real eye (a dark sclera and a
-                                  # mirror lens look identical), so opacity is caller-driven:
-                                  # False (default) => NO face is ever dark-lensed, real eyes are
-                                  # never blacked out; True => every detected face's eye region is
-                                  # rendered as an opaque lens.
-    sunglass_faces: Optional[Sequence[int]] = None,  # PER-SUBJECT sunglasses: left-to-right face
-                                  # indices the user explicitly marked. When given (not None) this
-                                  # is AUTHORITATIVE -- lens EXACTLY those faces, unconditionally,
-                                  # and never touch anyone else. No brightness guessing. Overrides
-                                  # the global `sunglasses` flag. [] => nobody wears sunglasses.
-    _diag: Optional[dict] = None,  # test hook: if a dict is passed, the per-face eye
-                                  # classification counts are recorded into it (no effect on
-                                  # output). Lets a regression test assert e.g. that a bright
-                                  # single face is NOT flagged as a sunglasses/dark lens.
-) -> bytes:
-    """Render a displacement typographic portrait to PNG bytes.
+def _lf_face_widths(W, fw, all_pts, H):
+    """Each face's OWN width.
 
-    Raises ValueError("displacement_needs_face") if no face mesh is available
-    (this style is driven by the 478-point landmarks).
-    """
-    pts0 = an.landmarks.points if an.landmarks is not None else None
-    if pts0 is None:
-        raise ValueError("displacement_needs_face")
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
+    # Each face's OWN width. `fw` above is the PRIMARY face's, and every feather radius and
+    # type scale below was derived from it -- so in a two-person portrait the second face was
+    # sized and feathered for the first. That is why two faces in one photograph came out
+    # with visibly different type: one global scale, taken from one of them.
+    #
+    # With a single face these are identical to the old global values, so nothing changes on
+    # a one-subject photograph. TYPO_PER_FACE=0 restores the previous behavior.
+    _perface = (_settings.raw("TYPO_PER_FACE").strip().lower()
+                not in ("0", "false", "no", "off"))
+    # The PRIMARY face keeps exactly `fw`, and the others are scaled relative to it by
+    # landmark-hull width. Measuring the primary face's hull directly would give a slightly
+    # different number than fw (which comes from the detector's bbox, not the hull), and a
+    # single-face render would then shift for no reason -- destroying the one property that
+    # makes this change checkable: with one face, nothing may change at all.
+    _hw = [max(1.0, float(np.asarray(_p)[:, 0].max() - np.asarray(_p)[:, 0].min()))
+           for _p in all_pts]
+    _fws = [fw] * len(all_pts)
+    if _perface and len(all_pts) > 1 and _hw[0] > 0:
+        _fws = [fw * (_w / _hw[0]) for _w in _hw]
 
-    # A floral frame is chosen via the `backdrop` slot. It must frame the SAME rich sculpt as
-    # the default Original look -- the dense photographic word-portrait on the hero dark ground
-    # -- NOT the muted ink-on-ivory Paper treatment (which caps brightness/boosts ink and reads
-    # flat and washed). So force the hero DARK ground here: the subject renders exactly like a
-    # normal Original portrait, and the floral frame (composited below) fills everything OUTSIDE
-    # the silhouette with the cream watercolor mat, so the visible background is cream, not navy.
-    _floral_key = (backdrop or "").strip().lower()
-    _floral_key = _floral_key if _floral_key in _FLORAL_KEYS else None
-    if _floral_key:
-        ground = "navy"
-    g = GROUNDS.get(ground, GROUNDS["navy"])
-    rng = random.Random(seed)
-    vocab = _normalize_words(words, uppercase, keep_punct=flow)   # keep sentence punctuation only for a flowing Passage/Letter
-    # Importance-weighted frequency: words arrive most-important-first (the AI returns
-    # them that way; people type the name first), so repeat the leading words more --
-    # the portrait is built mostly OF them. Each word's copies are spread evenly across
-    # the stream so none clump, and the skew is gentle (top ~3x the tail) to avoid a
-    # monotonous look. Tiny lists (<3 words) stay flat.
-    if flow or len(vocab) < 3:
-        # flow: a message must read in its written order (importance-weighting would
-        # multiply and scatter the opening words, shredding the sentence). Tiny lists
-        # also stay flat. Everything else gets the importance skew below.
-        _vocab_stream = list(vocab)
-    else:
-        _n = len(vocab)
-        # variety dial: 0 keeps the default 3x lead-word skew; 1 flattens it to 1x (every
-        # word equally frequent) so a varied list shows its variety instead of the name.
-        _top = 3.0 - max(0.0, min(1.0, variety)) * 2.0
-        _wts = [max(1, int(round(1.0 + (_top - 1.0) * (1.0 - i / (_n - 1)) ** 1.3))) for i in range(_n)]
-        _items = []
-        for _i, _w in enumerate(vocab):
-            for _c in range(_wts[_i]):
-                _items.append(((_c + 0.5) / _wts[_i], _i, _w))   # spread each word's copies evenly
-        _items.sort(key=lambda t: (t[0], t[1]))
-        _vocab_stream = [t[2] for t in _items]
+    def mask_of(keys, dil_f, sig_f) -> np.ndarray:
+        """Union of the named landmark groups. `dil_f` and `sig_f` are FRACTIONS of a face's
+        width, applied per face, so a small face gets a small feather rather than the
+        primary face's."""
+        acc = np.zeros((H, W), np.float32)
+        for _fp, _fwi in zip(all_pts, _fws):
+            mm = np.zeros((H, W), np.uint8)
+            for k in keys:
+                p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
+                if len(p) >= 3:
+                    cv2.fillConvexPoly(mm, cv2.convexHull(p), 1)
+            d = int(_fwi * dil_f)
+            if d > 0:
+                mm = cv2.dilate(mm, np.ones((d | 1, d | 1), np.uint8), 1)
+            acc = np.maximum(acc, cv2.GaussianBlur(mm.astype(np.float32), (0, 0),
+                                                   sigmaX=max(1.0, _fwi * sig_f)))
+        return np.clip(acc, 0, 1)
 
-    g0 = an.img.gray.astype(np.float32)
-    m0 = (an.silhouette.mask > 127).astype(np.float32)
-    h0, w0 = g0.shape
-    SS = max(1, int(supersample))
-    # A few absolute pixel sizes below (text tiers, drape amplitude) were tuned at
-    # the default SS=2. Everything else (face width, blurs, warp coords) scales
-    # with the canvas, so at a LOWER SS those absolutes come out coarse relative to
-    # the face. Normalize them by SS so a light preview (SS=1) keeps the SAME
-    # typography + drape as the full SS=2 paid file -- just at lower resolution.
-    _ssn = SS / 2.0
-    W, H = w0 * SS, h0 * SS
-    gray = cv2.resize(g0, (W, H), interpolation=cv2.INTER_CUBIC)
-    mask01 = cv2.resize(m0, (W, H), interpolation=cv2.INTER_LINEAR)
-    # Soft alpha matte (hair-preserving feathered edge). Used for the SUBJECT edge and all
-    # subject/background compositing so the silhouette doesn't read as a hard "cardboard"
-    # cut. Falls back to a gently-blurred binary edge when matting is off/unavailable, so
-    # behavior is unchanged then. mask01 stays BINARY for density/geometry/guards.
-    _soft = getattr(an.silhouette, "soft", None)
-    if _soft is not None:
-        soft01 = np.clip(cv2.resize(_soft.astype(np.float32) / 255.0, (W, H),
-                                    interpolation=cv2.INTER_LINEAR), 0.0, 1.0)
-        # Clean the faint transition band so background GAPS between hair strands don't
-        # carry stray words: push the low end toward 0 while keeping the wisps. A soft
-        # knee (below TYPO_MATTE_FLOOR -> 0) plus a gentle gamma. Only when a real matte
-        # is present (the coarse fallback edge is already soft, no band to clean).
-        _mf = float(_settings.raw("TYPO_MATTE_FLOOR") or 0.12)
-        _mgam = float(_settings.raw("TYPO_MATTE_GAMMA") or 1.5)
-        if _mf > 0.0:
-            soft01 = np.clip((soft01 - _mf) / max(1e-3, 1.0 - _mf), 0.0, 1.0)
-        if _mgam != 1.0:
-            soft01 = np.power(soft01, _mgam)
-    else:
-        soft01 = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0.0, 1.0)
-    pts = pts0 * SS
-    # Every detected face's landmarks (primary first), so eyes + facial-feature
-    # typography are rendered identically for EVERY subject, not just the largest.
-    all_pts = [np.asarray(f.points) * SS for f in (an.faces or [an.landmarks])]
-    fbb = an.face_bbox
-    fw = (fbb[2] * SS) if fbb else W * 0.55
-    face_frac = (fbb[2] / w0) if fbb else 0.55
-    s = float(np.clip(face_frac / 0.47, 0.5, 1.3))   # subject-relative scale (hero anchor = 0.47)
+    feat_damp = mask_of(_GROUPS.keys(), 0.06, 0.045)
 
+    fmh = np.zeros((H, W), np.uint8)
+    for _fp in all_pts:
+        cv2.fillConvexPoly(fmh, cv2.convexHull(_fp.astype(np.int32)), 1)
+    # Per-face hull feathering, for the same reason as mask_of above.
+    _face_w_pf = np.zeros((H, W), np.float32)
+    for _fp, _fwi in zip(all_pts, _fws):
+        _m = np.zeros((H, W), np.uint8)
+        cv2.fillConvexPoly(_m, cv2.convexHull(_fp.astype(np.int32)), 1)
+        _face_w_pf = np.maximum(_face_w_pf, cv2.GaussianBlur(
+            _m.astype(np.float32), (0, 0), sigmaX=max(W * 0.012, _fwi * 0.22)))
+    # FACE-relative feathering (not image-relative): on a tight crop the face fills
+    # the frame, so an image-relative blur transitions over too thin a band and the
+    # type SNAPS large->small. Scaling the blur to the face width keeps the size
+    # gradient gradual across the forehead/cheeks at any crop tightness.
+    face_w = _face_w_pf
+
+    return _fws, mask_of, feat_damp, fmh, face_w
+
+
+def _lf_text_tiers(s, word_scale, _ssn, rows, irises):
+    """Four size tiers blended *continuously* (below) so the type eases from large to small
+    instead of snapping between discrete sizes.
+
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
+    # Four size tiers blended *continuously* (below) so the type eases from large
+    # to small instead of snapping between discrete sizes.
+    # Clamped so a bad value cannot produce a canvas of one enormous letter or a render
+    # that never finishes. 0.2 is finer than the studio's smallest offer, 3.0 coarser than
+    # its largest.
+    _wsc = float(np.clip(float(word_scale or 1.0), 0.2, 3.0))
+    t_large, t_mid, t_fine, t_micro = (rows(64 * s * _ssn * _wsc), rows(40 * s * _ssn * _wsc),
+                                       rows(26 * s * _ssn * _wsc), rows(16 * s * _ssn * _wsc))
+    # Fifth tier, scaled to the EYE rather than the face: even "micro" type spans
+    # a whole iris on a close-up, so the iris gets rows proportional to its own
+    # radius -- typography that fits inside the eye.
+    t_iris = rows(max(6.0, float(np.mean([r for _, _, r in irises])) * 0.30)) if irises else None
+
+    return t_fine, t_large, t_micro, t_mid, t_iris
+
+
+def _lf_text_rows(W, s, _ssn, H, flow, rng, _vocab_stream, seed):
+    """The text canvas is drawn TALLER than the frame.
+
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
+    # The text canvas is drawn TALLER than the frame. The drape below samples DOWNWARD on
+    # bright regions -- my = yy + amp*dn -- so at the bottom edge it reaches past the canvas,
+    # where a zero border returns no glyphs. The pet engine had the identical construction and
+    # it produced a measurable stripe: glyph coverage held at 0.25 to 94% of the frame and
+    # collapsed to 0.098 below it, on a pale chest that ran to the bottom of the picture.
+    #
+    # Padding by the drape's own maximum reach gives it real rows to find. Subjects here are
+    # usually inset from the edge, so this may change little -- but the construction was the
+    # same and the failure needs only a bright region touching the bottom, which a light shirt
+    # is.
+    _row_pad = int(round(float(_settings.raw("TYPO_DRAPE") or 64.0) * s * _ssn)) + 8
+
+    def rows(fs: float) -> np.ndarray:
+        f = _font(fs)
+        im = Image.new("L", (W, H + _row_pad), 255)
+        d = ImageDraw.Draw(im)
+        y = 0
+        if flow:
+            # MESSAGE mode: stream the words continuously DOWN the rows, wrapping word
+            # by word and looping seamlessly, so the sentence reads in order and then
+            # repeats like a refrain across the face. A SHORT looping phrase would tile into
+            # a visible "wallpaper" lattice, so offset each row's horizontal start (rows are
+            # built 6*fs wider than the canvas, so an offset never leaves a gap). Env-tunable
+            # in units of the row font size -- TYPO_FLOW_JITTER=0 restores the old gentle,
+            # near-aligned indent; higher scatters more. Seeded rng => preview == paid file.
+            _fjit = float(_settings.raw("TYPO_FLOW_JITTER") or 3.0)
+            adv = {w: float(d.textlength(w + " ", font=f)) for w in set(_vocab_stream)}
+            space = max(1.0, float(d.textlength(" ", font=f)))
+            n = max(1, len(_vocab_stream))
+            wi = 0
+            target = float(W) + fs * 6.0
+            ry = 0
+            # The rows BELOW the frame draw from their own generator. Sharing `rng` would
+            # consume extra draws and shift the jitter of every tier built afterwards, so
+            # padding the canvas would silently re-lay the whole portrait -- it did, on all
+            # ten test images -- and no comparison could then say whether a change came from
+            # the fix or from the reshuffle.
+            _prng = random.Random(seed ^ 0x9E3779B9)
+            while y < H + _row_pad + fs:
+                _r = rng if y < H + fs else _prng
+                parts, row_w = [], 0.0
+                while row_w < target and len(parts) < 20000:   # cap: never hang a row
+                    tok = _vocab_stream[wi % n]; wi += 1
+                    parts.append(tok); row_w += adv.get(tok, space)
+                _ox = -(_r.randint(0, int(fs * _fjit)) if _fjit > 0 else int((ry % 5) * fs * 0.5))
+                d.text((_ox, y), " ".join(parts), font=f, fill=0)
+                y += max(6, int(fs)); ry += 1
+        else:
+            # Keep the words in the order they were entered (a sentence stays a
+            # sentence); only the row's horizontal start is jittered for variety.
+            base = " ".join(_vocab_stream) + " "
+            # Repeat only enough to span the canvas + jitter margin. The legacy fixed
+            # multiplier (W//(3*fs)+18) assumed a SHORT word list; fed a long list or a
+            # pasted tribute it made every row a giant, mostly-off-canvas string -> 60s+
+            # renders (the 120s timeout). Sizing by measured width is visually identical
+            # (the surplus copies fell off the right edge) but bounds the work. Built
+            # once -- it never varied per row.
+            bw = max(1.0, float(d.textlength(base, font=f)))
+            line = base * max(2, int((W + fs * 7) / bw) + 2)
+            _prng = random.Random(seed ^ 0x9E3779B9)   # see the note above: pad rows must
+            while y < H + _row_pad + fs:                # not disturb the main sequence
+                _r = rng if y < H + fs else _prng
+                d.text((-_r.randint(0, int(fs * 6)), y), line, font=f, fill=0)
+                y += max(6, int(fs))
+        return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
+
+    return rows
+
+
+def _lf_eye_geometry(an, sunglasses, H, W, sunglass_faces, all_pts, _ssn, gray, _diag):
+    """Living eyes: true iris geometry from MediaPipe's iris landmarks (center + 4-point ring
+    per eye, 478-point mesh only).
+
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
     # --- Living eyes: true iris geometry from MediaPipe's iris landmarks ------
     # (center + 4-point ring per eye, 478-point mesh only). Drives a round pupil,
     # an iris-scaled text tier, a real catchlight, and -- separately gated -- the
@@ -1881,145 +1944,179 @@ def render_displacement_portrait(
         _dlm = np.clip(cv2.GaussianBlur(_dlm, (0, 0), sigmaX=max(1.0, _dlr * 0.30)), 0, 1)
         gray = gray * (1.0 - 0.90 * _dlm)
 
-    # The text canvas is drawn TALLER than the frame. The drape below samples DOWNWARD on
-    # bright regions -- my = yy + amp*dn -- so at the bottom edge it reaches past the canvas,
-    # where a zero border returns no glyphs. The pet engine had the identical construction and
-    # it produced a measurable stripe: glyph coverage held at 0.25 to 94% of the frame and
-    # collapsed to 0.098 below it, on a pale chest that ran to the bottom of the picture.
-    #
-    # Padding by the drape's own maximum reach gives it real rows to find. Subjects here are
-    # usually inset from the edge, so this may change little -- but the construction was the
-    # same and the failure needs only a bright region touching the bottom, which a light shirt
-    # is.
-    _row_pad = int(round(float(_settings.raw("TYPO_DRAPE") or 64.0) * s * _ssn)) + 8
+    return irises, _iris_face_idx, eye_centers, _eye_face_pts, _dark_lens_active, _dark_lens_face_pts, _misfit_face_pts, gray, _eye_deglare
 
-    def rows(fs: float) -> np.ndarray:
-        f = _font(fs)
-        im = Image.new("L", (W, H + _row_pad), 255)
-        d = ImageDraw.Draw(im)
-        y = 0
-        if flow:
-            # MESSAGE mode: stream the words continuously DOWN the rows, wrapping word
-            # by word and looping seamlessly, so the sentence reads in order and then
-            # repeats like a refrain across the face. A SHORT looping phrase would tile into
-            # a visible "wallpaper" lattice, so offset each row's horizontal start (rows are
-            # built 6*fs wider than the canvas, so an offset never leaves a gap). Env-tunable
-            # in units of the row font size -- TYPO_FLOW_JITTER=0 restores the old gentle,
-            # near-aligned indent; higher scatters more. Seeded rng => preview == paid file.
-            _fjit = float(_settings.raw("TYPO_FLOW_JITTER") or 3.0)
-            adv = {w: float(d.textlength(w + " ", font=f)) for w in set(_vocab_stream)}
-            space = max(1.0, float(d.textlength(" ", font=f)))
-            n = max(1, len(_vocab_stream))
-            wi = 0
-            target = float(W) + fs * 6.0
-            ry = 0
-            # The rows BELOW the frame draw from their own generator. Sharing `rng` would
-            # consume extra draws and shift the jitter of every tier built afterwards, so
-            # padding the canvas would silently re-lay the whole portrait -- it did, on all
-            # ten test images -- and no comparison could then say whether a change came from
-            # the fix or from the reshuffle.
-            _prng = random.Random(seed ^ 0x9E3779B9)
-            while y < H + _row_pad + fs:
-                _r = rng if y < H + fs else _prng
-                parts, row_w = [], 0.0
-                while row_w < target and len(parts) < 20000:   # cap: never hang a row
-                    tok = _vocab_stream[wi % n]; wi += 1
-                    parts.append(tok); row_w += adv.get(tok, space)
-                _ox = -(_r.randint(0, int(fs * _fjit)) if _fjit > 0 else int((ry % 5) * fs * 0.5))
-                d.text((_ox, y), " ".join(parts), font=f, fill=0)
-                y += max(6, int(fs)); ry += 1
-        else:
-            # Keep the words in the order they were entered (a sentence stays a
-            # sentence); only the row's horizontal start is jittered for variety.
-            base = " ".join(_vocab_stream) + " "
-            # Repeat only enough to span the canvas + jitter margin. The legacy fixed
-            # multiplier (W//(3*fs)+18) assumed a SHORT word list; fed a long list or a
-            # pasted tribute it made every row a giant, mostly-off-canvas string -> 60s+
-            # renders (the 120s timeout). Sizing by measured width is visually identical
-            # (the surplus copies fell off the right edge) but bounds the work. Built
-            # once -- it never varied per row.
-            bw = max(1.0, float(d.textlength(base, font=f)))
-            line = base * max(2, int((W + fs * 7) / bw) + 2)
-            _prng = random.Random(seed ^ 0x9E3779B9)   # see the note above: pad rows must
-            while y < H + _row_pad + fs:                # not disturb the main sequence
-                _r = rng if y < H + fs else _prng
-                d.text((-_r.randint(0, int(fs * 6)), y), line, font=f, fill=0)
-                y += max(6, int(fs))
-        return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
 
-    # Four size tiers blended *continuously* (below) so the type eases from large
-    # to small instead of snapping between discrete sizes.
-    # Clamped so a bad value cannot produce a canvas of one enormous letter or a render
-    # that never finishes. 0.2 is finer than the studio's smallest offer, 3.0 coarser than
-    # its largest.
-    _wsc = float(np.clip(float(word_scale or 1.0), 0.2, 3.0))
-    t_large, t_mid, t_fine, t_micro = (rows(64 * s * _ssn * _wsc), rows(40 * s * _ssn * _wsc),
-                                       rows(26 * s * _ssn * _wsc), rows(16 * s * _ssn * _wsc))
-    # Fifth tier, scaled to the EYE rather than the face: even "micro" type spans
-    # a whole iris on a close-up, so the iris gets rows proportional to its own
-    # radius -- typography that fits inside the eye.
-    t_iris = rows(max(6.0, float(np.mean([r for _, _, r in irises])) * 0.30)) if irises else None
+def _lf_backdrop_setup(backdrop, ground, an, seed, flow, uppercase, words, variety, supersample,
+                       pts0):
+    """Backdrop setup.
 
-    # Each face's OWN width. `fw` above is the PRIMARY face's, and every feather radius and
-    # type scale below was derived from it -- so in a two-person portrait the second face was
-    # sized and feathered for the first. That is why two faces in one photograph came out
-    # with visibly different type: one global scale, taken from one of them.
-    #
-    # With a single face these are identical to the old global values, so nothing changes on
-    # a one-subject photograph. TYPO_PER_FACE=0 restores the previous behavior.
-    _perface = (_settings.raw("TYPO_PER_FACE").strip().lower()
-                not in ("0", "false", "no", "off"))
-    # The PRIMARY face keeps exactly `fw`, and the others are scaled relative to it by
-    # landmark-hull width. Measuring the primary face's hull directly would give a slightly
-    # different number than fw (which comes from the detector's bbox, not the hull), and a
-    # single-face render would then shift for no reason -- destroying the one property that
-    # makes this change checkable: with one face, nothing may change at all.
-    _hw = [max(1.0, float(np.asarray(_p)[:, 0].max() - np.asarray(_p)[:, 0].min()))
-           for _p in all_pts]
-    _fws = [fw] * len(all_pts)
-    if _perface and len(all_pts) > 1 and _hw[0] > 0:
-        _fws = [fw * (_w / _hw[0]) for _w in _hw]
+    Moved verbatim out of render_displacement_portrait; the parameters are what the
+    block read and the return values what later phases use."""
+    _vocab_stream = None
+    soft01 = None
+    # A floral frame is chosen via the `backdrop` slot. It must frame the SAME rich sculpt as
+    # the default Original look -- the dense photographic word-portrait on the hero dark ground
+    # -- NOT the muted ink-on-ivory Paper treatment (which caps brightness/boosts ink and reads
+    # flat and washed). So force the hero DARK ground here: the subject renders exactly like a
+    # normal Original portrait, and the floral frame (composited below) fills everything OUTSIDE
+    # the silhouette with the cream watercolor mat, so the visible background is cream, not navy.
+    _floral_key = (backdrop or "").strip().lower()
+    _floral_key = _floral_key if _floral_key in _FLORAL_KEYS else None
+    if _floral_key:
+        ground = "navy"
+    g = GROUNDS.get(ground, GROUNDS["navy"])
+    rng = random.Random(seed)
+    vocab = _normalize_words(words, uppercase, keep_punct=flow)   # keep sentence punctuation only for a flowing Passage/Letter
+    # Importance-weighted frequency: words arrive most-important-first (the AI returns
+    # them that way; people type the name first), so repeat the leading words more --
+    # the portrait is built mostly OF them. Each word's copies are spread evenly across
+    # the stream so none clump, and the skew is gentle (top ~3x the tail) to avoid a
+    # monotonous look. Tiny lists (<3 words) stay flat.
+    if flow or len(vocab) < 3:
+        # flow: a message must read in its written order (importance-weighting would
+        # multiply and scatter the opening words, shredding the sentence). Tiny lists
+        # also stay flat. Everything else gets the importance skew below.
+        _vocab_stream = list(vocab)
+    else:
+        _n = len(vocab)
+        # variety dial: 0 keeps the default 3x lead-word skew; 1 flattens it to 1x (every
+        # word equally frequent) so a varied list shows its variety instead of the name.
+        _top = 3.0 - max(0.0, min(1.0, variety)) * 2.0
+        _wts = [max(1, int(round(1.0 + (_top - 1.0) * (1.0 - i / (_n - 1)) ** 1.3))) for i in range(_n)]
+        _items = []
+        for _i, _w in enumerate(vocab):
+            for _c in range(_wts[_i]):
+                _items.append(((_c + 0.5) / _wts[_i], _i, _w))   # spread each word's copies evenly
+        _items.sort(key=lambda t: (t[0], t[1]))
+        _vocab_stream = [t[2] for t in _items]
 
-    def mask_of(keys, dil_f, sig_f) -> np.ndarray:
-        """Union of the named landmark groups. `dil_f` and `sig_f` are FRACTIONS of a face's
-        width, applied per face, so a small face gets a small feather rather than the
-        primary face's."""
-        acc = np.zeros((H, W), np.float32)
-        for _fp, _fwi in zip(all_pts, _fws):
-            mm = np.zeros((H, W), np.uint8)
-            for k in keys:
-                p = np.array([_fp[i] for i in _GROUPS[k] if i < len(_fp)], np.int32)
-                if len(p) >= 3:
-                    cv2.fillConvexPoly(mm, cv2.convexHull(p), 1)
-            d = int(_fwi * dil_f)
-            if d > 0:
-                mm = cv2.dilate(mm, np.ones((d | 1, d | 1), np.uint8), 1)
-            acc = np.maximum(acc, cv2.GaussianBlur(mm.astype(np.float32), (0, 0),
-                                                   sigmaX=max(1.0, _fwi * sig_f)))
-        return np.clip(acc, 0, 1)
+    g0 = an.img.gray.astype(np.float32)
+    m0 = (an.silhouette.mask > 127).astype(np.float32)
+    h0, w0 = g0.shape
+    SS = max(1, int(supersample))
+    # A few absolute pixel sizes below (text tiers, drape amplitude) were tuned at
+    # the default SS=2. Everything else (face width, blurs, warp coords) scales
+    # with the canvas, so at a LOWER SS those absolutes come out coarse relative to
+    # the face. Normalize them by SS so a light preview (SS=1) keeps the SAME
+    # typography + drape as the full SS=2 paid file -- just at lower resolution.
+    _ssn = SS / 2.0
+    W, H = w0 * SS, h0 * SS
+    gray = cv2.resize(g0, (W, H), interpolation=cv2.INTER_CUBIC)
+    mask01 = cv2.resize(m0, (W, H), interpolation=cv2.INTER_LINEAR)
+    # Soft alpha matte (hair-preserving feathered edge). Used for the SUBJECT edge and all
+    # subject/background compositing so the silhouette doesn't read as a hard "cardboard"
+    # cut. Falls back to a gently-blurred binary edge when matting is off/unavailable, so
+    # behavior is unchanged then. mask01 stays BINARY for density/geometry/guards.
+    _soft = getattr(an.silhouette, "soft", None)
+    if _soft is not None:
+        soft01 = np.clip(cv2.resize(_soft.astype(np.float32) / 255.0, (W, H),
+                                    interpolation=cv2.INTER_LINEAR), 0.0, 1.0)
+        # Clean the faint transition band so background GAPS between hair strands don't
+        # carry stray words: push the low end toward 0 while keeping the wisps. A soft
+        # knee (below TYPO_MATTE_FLOOR -> 0) plus a gentle gamma. Only when a real matte
+        # is present (the coarse fallback edge is already soft, no band to clean).
+        _mf = float(_settings.raw("TYPO_MATTE_FLOOR") or 0.12)
+        _mgam = float(_settings.raw("TYPO_MATTE_GAMMA") or 1.5)
+        if _mf > 0.0:
+            soft01 = np.clip((soft01 - _mf) / max(1e-3, 1.0 - _mf), 0.0, 1.0)
+        if _mgam != 1.0:
+            soft01 = np.power(soft01, _mgam)
+    else:
+        soft01 = np.clip(cv2.GaussianBlur(mask01, (0, 0), sigmaX=W * 0.007), 0.0, 1.0)
+    pts = pts0 * SS
+    # Every detected face's landmarks (primary first), so eyes + facial-feature
+    # typography are rendered identically for EVERY subject, not just the largest.
+    all_pts = [np.asarray(f.points) * SS for f in (an.faces or [an.landmarks])]
+    fbb = an.face_bbox
+    fw = (fbb[2] * SS) if fbb else W * 0.55
+    face_frac = (fbb[2] / w0) if fbb else 0.55
+    s = float(np.clip(face_frac / 0.47, 0.5, 1.3))   # subject-relative scale (hero anchor = 0.47)
 
-    feat_damp = mask_of(_GROUPS.keys(), 0.06, 0.045)
+    return s, g, ground, _floral_key, rng, _vocab_stream, gray, h0, w0, SS, W, _ssn, H, mask01, soft01, pts, all_pts, fw
 
-    fmh = np.zeros((H, W), np.uint8)
-    for _fp in all_pts:
-        cv2.fillConvexPoly(fmh, cv2.convexHull(_fp.astype(np.int32)), 1)
-    # Per-face hull feathering, for the same reason as mask_of above.
-    _face_w_pf = np.zeros((H, W), np.float32)
-    for _fp, _fwi in zip(all_pts, _fws):
-        _m = np.zeros((H, W), np.uint8)
-        cv2.fillConvexPoly(_m, cv2.convexHull(_fp.astype(np.int32)), 1)
-        _face_w_pf = np.maximum(_face_w_pf, cv2.GaussianBlur(
-            _m.astype(np.float32), (0, 0), sigmaX=max(W * 0.012, _fwi * 0.22)))
-    # FACE-relative feathering (not image-relative): on a tight crop the face fills
-    # the frame, so an image-relative blur transitions over too thin a band and the
-    # type SNAPS large->small. Scaling the blur to the face width keeps the size
-    # gradient gradual across the forehead/cheeks at any crop tightness.
-    face_w = _face_w_pf
 
-    df, face_norm, feat_norm, _grad_on = _lf_detail_field(H, face_w, W, mask_of, mask01, fmh, fw, all_pts, graduate, _fws, gray)
+def render_displacement_portrait(
+    an: Analysis,
+    words: Sequence[str],
+    ground: str = "navy",
+    out_width: int = 1400,
+    supersample: int = 2,
+    seed: int = 7,
+    uppercase: bool = True,
+    ink: Optional[str] = None,
+    ink_hex: Optional[str] = None,  # only when ink=="custom": the user-picked color.
+                                  # Draped as a single light tint (lifted to read on the
+                                  # dark ground) so a Custom pick SCULPTS in its own hue
+                                  # instead of falling back to a flat/photo render.
+    print_aspect: float = 0.8,    # width/height of the print canvas (4:5 default)
+    flow: bool = False,           # True => the text is a MESSAGE: keep it in written
+                                  # order and stream it continuously (a sculpted letter),
+                                  # instead of importance-weighting a word list.
+    variety: float = 0.0,         # 0 = current importance skew (leading words repeat up to
+                                  # ~3x, so the portrait is built mostly OF them); ->1 flattens
+                                  # the skew so a varied word list reads as varied, not name-dominated.
+    breathe: bool = False,        # opt-in Phase-1: tonal 'breathing' -- deep-shadow negative
+                                  # space + crisp specular highlight relief, compressing the type
+                                  # into the midtones for more sculptural depth. Default OFF.
+    discovery: Optional[Sequence[str]] = None,  # opt-in Phase-1: hide a small cross + these tiny
+                                  # marks (e.g. ["IHS", "JN 8:12"]) for close-inspection 'discovery'.
+                                  # None => nothing drawn (default).
+    word_scale: float = 1.0,      # multiplier on all four size tiers, so the studio's word-size
+                                  # control actually reaches this engine. main.py passes
+                                  # cfg.min_font_px / 57, where 57 is the studio default -- so
+                                  # 1.0 is byte-identical to every render made before this
+                                  # parameter existed. min_font_px itself is meaningless here
+                                  # (this engine has never had a per-word minimum; it tiles
+                                  # rows at fixed tier sizes), which is exactly why the Small /
+                                  # Medium / Large buttons did nothing on the Lifelike style.
+    graduate: bool = True,        # graduate the type OUTSIDE the face -- body (below chin) and hair
+                                  # (above face) step down from the largest tier -- plus a hair
+                                  # local-contrast 'sculpt'. Default ON; env TYPO_GRADUATE_BODY=0
+                                  # reverts with no code change.
+    backdrop: Optional[str] = None,  # "match your space" background color. Recolors ONLY the
+                                  # region outside the subject silhouette (a named key in BACKDROPS);
+                                  # the subject render is untouched. None => legacy TYPO_BG_LIGHTEN.
+    sunglasses: bool = False,     # MANUAL sunglasses control. Pixels cannot reliably tell a
+                                  # tinted/reflective lens from a real eye (a dark sclera and a
+                                  # mirror lens look identical), so opacity is caller-driven:
+                                  # False (default) => NO face is ever dark-lensed, real eyes are
+                                  # never blacked out; True => every detected face's eye region is
+                                  # rendered as an opaque lens.
+    sunglass_faces: Optional[Sequence[int]] = None,  # PER-SUBJECT sunglasses: left-to-right face
+                                  # indices the user explicitly marked. When given (not None) this
+                                  # is AUTHORITATIVE -- lens EXACTLY those faces, unconditionally,
+                                  # and never touch anyone else. No brightness guessing. Overrides
+                                  # the global `sunglasses` flag. [] => nobody wears sunglasses.
+    _diag: Optional[dict] = None,  # test hook: if a dict is passed, the per-face eye
+                                  # classification counts are recorded into it (no effect on
+                                  # output). Lets a regression test assert e.g. that a bright
+                                  # single face is NOT flagged as a sunglasses/dark lens.
+) -> bytes:
+    """Render a displacement typographic portrait to PNG bytes.
+
+    Raises ValueError("displacement_needs_face") if no face mesh is available
+    (this style is driven by the 478-point landmarks).
+    """
+    pts0 = an.landmarks.points if an.landmarks is not None else None
+    if pts0 is None:
+        raise ValueError("displacement_needs_face")
+
+    (s, g, ground, _floral_key, rng, _vocab_stream, gray, h0, w0, SS, W, _ssn, H, mask01,
+     soft01, pts, all_pts, fw) = _lf_backdrop_setup(backdrop,
+        ground, an, seed, flow, uppercase, words, variety, supersample, pts0)
+    (irises, _iris_face_idx, eye_centers, _eye_face_pts, _dark_lens_active,
+     _dark_lens_face_pts, _misfit_face_pts, gray, _eye_deglare) = _lf_eye_geometry(an,
+        sunglasses, H, W, sunglass_faces, all_pts, _ssn, gray, _diag)
+    rows = _lf_text_rows(W, s, _ssn, H, flow, rng, _vocab_stream, seed)
+    t_fine, t_large, t_micro, t_mid, t_iris = _lf_text_tiers(s, word_scale, _ssn, rows, irises)
+    _fws, mask_of, feat_damp, fmh, face_w = _lf_face_widths(W, fw, all_pts, H)
+    df, face_norm, feat_norm, _grad_on = _lf_detail_field(H, face_w, W, mask_of, mask01, fmh,
+        fw, all_pts, graduate, _fws, gray)
     yy, R, warped = _lf_drape(s, W, gray, H, _ssn, feat_damp, t_fine, t_large, t_micro, t_mid, df)
     warped = _lf_iris_circles(irises, t_iris, H, W, R, warped)
-    lum, ink_field = _lf_tonal_field(g, gray, mask01, fw, face_w, feat_norm, face_norm, _grad_on, all_pts, yy)
+    lum, ink_field = _lf_tonal_field(g, gray, mask01, fw, face_w, feat_norm, face_norm,
+        _grad_on, all_pts, yy)
     w2 = _lf_density(warped, ink_field)
     # STAGED INK DUMP (TYPO_DUMP_STAGES=<dir>). The ink field is rewritten by sixteen
     # passes in sequence, and any of them can drive a region to bare ground. Reasoning from
@@ -2107,7 +2204,9 @@ def render_displacement_portrait(
             a = np.clip(a + _sl * _lo * np.clip(face_norm, 0, 1) * (1.0 - a), 0, 1)
             _stage("04-shadow-lift", a)
 
-    a, anchor, glint, scl, limbal, teeth, _hl = _lf_feature_passes(a, an, g, H, W, fw, irises, _dark_lens_face_pts, _misfit_face_pts, all_pts, ground, _stage, SS, _eye_face_pts, _dark_lens_active, gray, _ssn, breathe, face_norm, _fws, lum)
+    a, anchor, glint, scl, limbal, teeth, _hl = _lf_feature_passes(a, an, g, H, W, fw, irises,
+        _dark_lens_face_pts, _misfit_face_pts, all_pts, ground, _stage, SS, _eye_face_pts,
+        _dark_lens_active, gray, _ssn, breathe, face_norm, _fws, lum)
     al = _lf_paper_ground(a, ground, face_norm, w2, _stage, H, all_pts, mask01, fw)
     global _CALL_N
     _CALL_N += 1
@@ -2176,10 +2275,13 @@ def render_displacement_portrait(
                 cv2.imwrite(os.path.join(_sd, "MARKED-%s.png" % _lbl), _marked)
             except Exception as _e:  # noqa: BLE001
                 print("[cdump] %s failed: %s" % (_lbl, _e))
-    out = _lf_ink_branch(ink, al, an, g, W, ground, H, _eye_deglare, mask01, soft01, lum, anchor, df, _cid, _mmean, out_width, w2, ink_hex)
-    out = _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W, _iris_face_idx, out, gray, _eye_face_pts, pts, glint, fw, discovery, _hl, breathe)
+    out = _lf_ink_branch(ink, al, an, g, W, ground, H, _eye_deglare, mask01, soft01, lum,
+        anchor, df, _cid, _mmean, out_width, w2, ink_hex)
+    out = _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W,
+        _iris_face_idx, out, gray, _eye_face_pts, pts, glint, fw, discovery, _hl, breathe)
     out = _lf_noir(ink, out, _t)
-    out, buf = _lf_finish(an, g, W, ground, fw, gray, mask01, out, _t, _cdump, h0, out_width, w0, backdrop, _floral_key, soft01, print_aspect, _cid, _mmean)
+    out, buf = _lf_finish(an, g, W, ground, fw, gray, mask01, out, _t, _cdump, h0, out_width,
+        w0, backdrop, _floral_key, soft01, print_aspect, _cid, _mmean)
     _png = buf.tobytes()
     del out, buf
     # Same as the pet engine's end-of-render trim: glibc keeps what a render freed unless
