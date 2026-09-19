@@ -30,6 +30,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from . import pet_landmarks
 from . import settings as _settings
+from . import typeface as _typeface
 
 _FONT = next((p for p in (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -382,7 +383,7 @@ def _rows(stream, W, H, fs, rng, pad=0):
     so without it the bottom edge has nothing real to read and the type stops short."""
     fs = max(6, int(round(fs)))
     pad = max(0, int(pad))
-    font = ImageFont.truetype(_FONT, fs) if _FONT else ImageFont.load_default()
+    font = _typeface.load(fs, _FONT)
     im = Image.new("L", (W, H + pad), 255)
     d = ImageDraw.Draw(im)
     # Subtle letter tracking so glyphs in a row don't crowd -- a hair of space between words

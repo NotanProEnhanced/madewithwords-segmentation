@@ -59,6 +59,7 @@ from .glyph_paths import (
     resolve_angle, clamp_turn, path_length, sample_path_at, render_word_bitmap,
 )
 from .. import settings as _settings
+from .. import typeface as _typeface
 
 DEFAULT_WORDS = ("LOYAL, GENTLE, SOUL, PLAYFUL, SWEET, KIND, HOME, JOY, WARM, CURIOUS, "
                  "FAITHFUL, BRAVE, WISE, FUNNY, CUDDLY, DEVOTED, PRECIOUS, BELOVED, "
@@ -253,7 +254,7 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
         # keys never repeated (profiled: 93,696 renders with the cache in place). 16 alpha
         # levels and 3-degree bins are below what's visible at these sizes.
         key = (word, int(round(getattr(font, "size", 0))), (int(alpha) // 16) * 16,
-               int(round(math.degrees(angle) / 3.0)) * 3)
+               int(round(math.degrees(angle) / 3.0)) * 3, _typeface.font_id())
         hit = _BITMAP_CACHE.get(key)
         if hit is None:
             # Rendered FROM the key's quantized alpha and angle, not from this call's exact
@@ -266,7 +267,7 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
             _deg_q = float(key[3])
             # The unrotated text is shared across the angle bins (profiled: 21,926 text
             # renders for ~6,700 distinct word/size/alpha triples), rotation stays per key.
-            _tkey = (word, key[1], key[2])
+            _tkey = (word, key[1], key[2], key[4])
             bmp = _TEXT_CACHE.get(_tkey)
             if bmp is None:
                 bmp = render_word_bitmap(word, font, alpha=_alpha_q)
@@ -342,7 +343,7 @@ def rasterise_glyphs(glyphs, W, H, scale=1.0, font_path=None):
         pk = max(6, int(round(px * k)))
         f = fonts.get(pk)
         if f is None:
-            f = ImageFont.truetype(fp, pk) if fp else ImageFont.load_default()
+            f = _typeface.load(pk, fp)
             fonts[pk] = f
         tkey = (word, pk, alpha_q)
         bmp = texts.get(tkey)
@@ -3600,7 +3601,7 @@ def _phase_importance_map(attractor_pts, base, extra_faces, mask, H, W, coherenc
         px = max(6, int(round(px)))
         f = font_cache.get(px)
         if f is None:
-            f = ImageFont.truetype(_FONT, px) if _FONT else ImageFont.load_default()
+            f = _typeface.load(px, _FONT)
             font_cache[px] = f
         return f
 

@@ -26,6 +26,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .analyze import Analysis
 from .. import settings as _settings
+from .. import typeface as _typeface
 
 # Ground (background + ink) options. BGR colors. ``tone`` selects whether the
 # ink follows the photo's highlights ("light" -> light ink on a dark ground) or
@@ -251,13 +252,7 @@ def _font_path() -> Optional[str]:
 
 def _font(sz: int) -> ImageFont.FreeTypeFont:
     sz = max(6, int(sz))
-    fp = _font_path()
-    if fp:
-        try:
-            return ImageFont.truetype(fp, sz)
-        except Exception:  # noqa: BLE001
-            pass
-    return ImageFont.load_default()
+    return _typeface.load(sz, _font_path())
 
 
 # Characters kept inside a token. Word-cloud modes keep only hyphen + apostrophe (commas
@@ -1989,11 +1984,7 @@ def _lf_rows_at_scale(log_rows, fs, k, Wk, Hk_pad):
     # size; the print-scale face is exactly that size times k, as a fractional size, so a
     # word's advance scales with its slot (measured: 0.03 px over a ten-letter word) and
     # every letter lands where its working-size counterpart sat.
-    fp = _font_path()
-    try:
-        f = ImageFont.truetype(fp, max(6, int(fs)) * k) if fp else ImageFont.load_default()
-    except Exception:  # noqa: BLE001
-        f = _font(fs * k)
+    f = _typeface.load(max(6, int(fs)) * k, _font_path())
     im = Image.new("L", (Wk, Hk_pad), 255)
     d = ImageDraw.Draw(im)
     for y, words in log_rows:

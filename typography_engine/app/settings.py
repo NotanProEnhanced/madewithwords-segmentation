@@ -169,6 +169,10 @@ _k("PET_LM_DEBUG", "on/off", "",
    "Debug: log why a detection was or was not used.")
 
 # ---- Lifelike renderer (app/pipeline/displacement.py) ------------------------------
+_k("TYPO_FONT", "path", "",
+   "The typeface both engines draw with: a file under typography_engine/fonts/ or a path. Unset = the box font (DejaVu Sans Bold).")
+_k("TYPO_FONT_WEIGHT", "float", "",
+   "Weight axis for a variable typeface (e.g. 700); a static face ignores it.")
 _k("TYPO_SHARP_PRINT", "on/off", "1",
    "Paid files: draw the type again at print scale and rebuild the composite over it, instead of enlarging the working render. 0 = the old enlargement.")
 _k("TYPO_FLORAL_DIR", "path", "",
