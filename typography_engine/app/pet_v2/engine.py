@@ -4075,7 +4075,7 @@ def _upscale_angles(theta, k):
     return np.arctan2(s, c).astype(np.float32)
 
 
-def _finish_sharp(st, k):
+def _finish_sharp(st, k, band_rows=512):
     """The paid file at scale k: the type drawn again at print size, everything else carried
     over from the working render.
 
@@ -4087,66 +4087,84 @@ def _finish_sharp(st, k):
     the enlarged working composite, which is everywhere but at letter edges, the print IS the
     enlarged working render; at an edge the difference is scaled by the tone match's own local
     gain. Measured on the dog and a person: the print downsampled to the working size differs
-    from the working render by a mean of well under one level.
+    from the working render by about one level mean.
+
+    Everything after the type raster is per-pixel, so it runs in horizontal bands of
+    `band_rows` print rows; the fields are enlarged per band by remap with the exact resize
+    mapping, so the result is the same as a whole-frame resize. Peak memory is the type
+    plane plus one band (measured: a person's paid file 3.7 GB -> under the 3.5 GB cap).
 
     `st` is the dict render_v2 captures; returns (rgb_u8, outside_w_u8) at (W*k, H*k)."""
     W, H = st["W"], st["H"]
     Wk, Hk = int(round(W * k)), int(round(H * k))
-    up = lambda a, i=cv2.INTER_LINEAR: _upscale(np.ascontiguousarray(a, dtype=np.float32), k, i)
     base = st["base"] * k
+    # 1. the type, sharp, with the same opacity-carries-tone modulation (whole frame: it
+    #    has a blur and a dilation, and it is one plane)
     gray = _upscale(st["gray"], k, cv2.INTER_CUBIC)
-    mask = np.clip(up(st["mask"]), 0, 1)
-
-    # 1. the type, sharp, with the same opacity-carries-tone modulation
+    mask_full = np.clip(_upscale(np.asarray(st["mask"], np.float32), k), 0, 1)
     canvas = rasterise_glyphs(st["glyphs"], W, H, k)
-    _, _, ink = _phase_opacity_tone(canvas, base, gray, None, Hk, Wk, None, mask)
-    del canvas, gray
+    _, _, ink_full = _phase_opacity_tone(canvas, base, gray, None, Hk, Wk, None, mask_full)
+    del canvas, gray, mask_full
+    _trim_heap()
 
-    # 2. the reveal alpha: the formula of _phase_saturation_anomaly / photo_wash / hair_reveal /
-    #    suppress_photo_whiskers, with the smooth fields enlarged and the ink sharp
-    M = mask * (1.0 - 0.15 * np.clip(up(st["feat"]), 0, 1)) * (1.0 - 0.95 * np.clip(up(st["sat_anomaly"]), 0, 1))
-    a = np.clip(ink * M, 0, 1)
-    del M
-    a = np.clip(a + up(st["eye_reveal"]) * (1.0 - a) * 0.92, 0, 1)
-    a = np.clip(a + up(st["nose_reveal"]) * (1.0 - a) * 0.85, 0, 1)
-    a = np.clip(np.maximum(a, up(st["wash"])), 0, 1)
-    if st["hair_term"] is not None:
-        a = np.clip(np.maximum(a, up(st["hair_term"])), 0, 1)
-    a = a * up(st["whisker_keep"])
-    a = a[..., None]
-
-    # 3. the composite, the strands, the typographic whiskers -> P_hi
+    rgb = np.empty((Hk, Wk, 3), np.uint8)
+    outside_w = np.empty((Hk, Wk), np.uint8)
     ground = st["ground_rgb"]
-    ground = up(ground, cv2.INTER_CUBIC) if getattr(ground, "ndim", 0) == 3 else np.asarray(ground, np.float32)
-    photo = up(st["photo_rgb"], cv2.INTER_CUBIC)
-    P = ground * (1.0 - a) + photo * a
-    del ground
-    wf = None
-    if st["wisp_fr"] is not None:
-        wf = np.clip(up(st["wisp_fr"]), 0, 1)
-        al = np.clip(up(st["wisp_alpha"]), 0, 1)
-        strand = up(st["outer_keep"], cv2.INTER_CUBIC) * (1.0 - al[..., None]) + photo * al[..., None]
-        P = P * (1.0 - wf[..., None]) + strand * wf[..., None]
-        del strand
-    del photo
-    wia = ink * np.clip(up(st["whisker_outside"]), 0, 1)
-    wz = np.clip(up(st["whisker_zone"]), 0, 1)[..., None]
-    hair_color = np.array([222.0, 218.0, 205.0], np.float32) * wz + up(st["deep_fur_rgb"], cv2.INTER_CUBIC) * (1.0 - wz)
-    P = P * (1.0 - wia[..., None]) + hair_color * wia[..., None]
-    del hair_color, wz, ink
-
-    # 4. the tone match and everything after it, as a difference gain from the working render
+    ground_is_map = getattr(ground, "ndim", 0) == 3
+    ground_c = None if ground_is_map else np.asarray(ground, np.float32)
     P_low, C_low = st["P_low"], st["C_low"]
-    G = np.clip(C_low / np.maximum(P_low, 8.0), 0.25, 3.0).astype(np.float32)
-    out = up(C_low, cv2.INTER_CUBIC) + up(G, cv2.INTER_CUBIC) * (P - up(P_low, cv2.INTER_CUBIC))
-    del P, G
-    rgb = np.clip(out, 0, 255).astype(np.uint8)
-    del out
-    if wf is None:
-        ow = (1.0 - mask)
-    else:
-        ow = (1.0 - al) * wf + (1.0 - mask) * (1.0 - wf)
-    outside_w = np.clip(ow * (1.0 - wia) * 255.0, 0, 255).astype(np.uint8)
+    G_low = np.clip(C_low / np.maximum(P_low, 8.0), 0.25, 3.0).astype(np.float32)
+    xs = ((np.arange(Wk, dtype=np.float32) + 0.5) / k - 0.5)
+    for Y0 in range(0, Hk, band_rows):
+        Y1 = min(Hk, Y0 + band_rows)
+        ys = ((np.arange(Y0, Y1, dtype=np.float32) + 0.5) / k - 0.5)
+        mapx, mapy = np.meshgrid(xs, ys)
+        mapx = mapx.astype(np.float32); mapy = mapy.astype(np.float32)
+
+        def up(a, interp=cv2.INTER_LINEAR):
+            return cv2.remap(np.ascontiguousarray(a, dtype=np.float32), mapx, mapy, interp,
+                             borderMode=cv2.BORDER_REPLICATE)
+
+        ink = ink_full[Y0:Y1]
+        mask = np.clip(up(st["mask"]), 0, 1)
+        # 2. the reveal alpha: _phase_saturation_anomaly / photo_wash / hair_reveal /
+        #    suppress_photo_whiskers, with the smooth fields enlarged and the ink sharp
+        a = np.clip(ink * mask * (1.0 - 0.15 * np.clip(up(st["feat"]), 0, 1))
+                    * (1.0 - 0.95 * np.clip(up(st["sat_anomaly"]), 0, 1)), 0, 1)
+        a = np.clip(a + up(st["eye_reveal"]) * (1.0 - a) * 0.92, 0, 1)
+        a = np.clip(a + up(st["nose_reveal"]) * (1.0 - a) * 0.85, 0, 1)
+        a = np.clip(np.maximum(a, up(st["wash"])), 0, 1)
+        if st["hair_term"] is not None:
+            a = np.clip(np.maximum(a, up(st["hair_term"])), 0, 1)
+        a = (a * up(st["whisker_keep"]))[..., None]
+        # 3. the composite, the strands, the typographic whiskers -> P
+        photo = up(st["photo_rgb"], cv2.INTER_CUBIC)
+        g = up(ground, cv2.INTER_CUBIC) if ground_is_map else ground_c
+        P = g * (1.0 - a) + photo * a
+        del g, a
+        wf = al = None
+        if st["wisp_fr"] is not None:
+            wf = np.clip(up(st["wisp_fr"]), 0, 1)
+            al = np.clip(up(st["wisp_alpha"]), 0, 1)
+            strand = up(st["outer_keep"], cv2.INTER_CUBIC) * (1.0 - al[..., None]) + photo * al[..., None]
+            P = P * (1.0 - wf[..., None]) + strand * wf[..., None]
+            del strand
+        del photo
+        wia = ink * np.clip(up(st["whisker_outside"]), 0, 1)
+        wz = np.clip(up(st["whisker_zone"]), 0, 1)[..., None]
+        hair_color = (np.array([222.0, 218.0, 205.0], np.float32) * wz
+                      + up(st["deep_fur_rgb"], cv2.INTER_CUBIC) * (1.0 - wz))
+        P = P * (1.0 - wia[..., None]) + hair_color * wia[..., None]
+        del hair_color, wz
+        # 4. the tone match and everything after it, as a difference gain
+        out = up(C_low, cv2.INTER_CUBIC) + up(G_low, cv2.INTER_CUBIC) * (P - up(P_low, cv2.INTER_CUBIC))
+        del P
+        rgb[Y0:Y1] = np.clip(out, 0, 255).astype(np.uint8)
+        del out
+        ow = (1.0 - mask) if wf is None else ((1.0 - al) * wf + (1.0 - mask) * (1.0 - wf))
+        outside_w[Y0:Y1] = np.clip(ow * (1.0 - wia) * 255.0, 0, 255).astype(np.uint8)
+        del ow, wia, mask, mapx, mapy
+    del ink_full, G_low
     return rgb, outside_w
 
 
