@@ -434,6 +434,117 @@ def place(theta: np.ndarray, coh: np.ndarray, size_px: np.ndarray, mask01: np.nd
     return field, log
 
 
+def typed_iris_on() -> bool:
+    return (_settings.raw("TYPO_TYPED_IRIS") or "").strip().lower() in ("1", "true", "on", "yes")
+
+
+def _set_along(field, log, bm, P, words, px, max_overlap, fit_len=None):
+    """Set words along the polyline P (N x 2) at size px, left to right along the path.
+    With fit_len the FIRST word of the stream whose advance fits that length is set once
+    (a spoke holds one word); otherwise the words run on along the path."""
+    seg = np.hypot(np.diff(P[:, 0]), np.diff(P[:, 1]))
+    cum = np.concatenate([[0.0], np.cumsum(seg)])
+    total = float(cum[-1])
+    if total < 1.0:
+        return 0
+
+    def _at(d):
+        i = min(max(int(np.searchsorted(cum, d, side="right")), 1), len(P) - 1)
+        t = 0.0 if seg[i - 1] < 1e-6 else min(1.0, max(0.0, (d - cum[i - 1]) / seg[i - 1]))
+        return (float(P[i - 1, 0] + (P[i, 0] - P[i - 1, 0]) * t),
+                float(P[i - 1, 1] + (P[i, 1] - P[i - 1, 1]) * t),
+                math.atan2(P[i, 1] - P[i - 1, 1], P[i, 0] - P[i - 1, 0]))
+
+    n_set = 0
+    if fit_len is not None:
+        for _k in range(len(words)):
+            word = words[(words.i + _k) % len(words)]
+            wide = bm.advance(word, px)
+            if wide <= fit_len:
+                cx, cy, ang = _at(total / 2.0)
+                deg = _upright_deg(ang)
+                if _paste_max(field, bm.rotated(word, px, deg), cx, cy, True, max_overlap):
+                    log.append((word, px, deg, cx, cy))
+                    n_set += 1
+                words.i += _k + 1
+                return n_set
+        # No word fits (a small iris): the next word's initial, still typography.
+        word = words[words.i % len(words)][:1] or "I"
+        words.i += 1
+        cx, cy, ang = _at(total / 2.0)
+        deg = _upright_deg(ang)
+        if _paste_max(field, bm.rotated(word, px, deg), cx, cy, True, max_overlap):
+            log.append((word, px, deg, cx, cy))
+            n_set += 1
+        return n_set
+    d = 0.0
+    while d < total:
+        word = words[words.i % len(words)]
+        words.i += 1
+        wide = bm.advance(word, px)
+        if d + wide * 0.6 > total:
+            break
+        cx, cy, ang = _at(d + wide / 2.0)
+        deg = _upright_deg(ang)
+        if _paste_max(field, bm.rotated(word, px, deg), cx, cy, True, max_overlap):
+            log.append((word, px, deg, cx, cy))
+            n_set += 1
+        d += wide + bm.space_px(px)
+    return n_set
+
+
+class _Stream(list):
+    """The word stream with a cursor, so the rings and spokes read on in order."""
+    i = 0
+
+
+def typed_iris(irises: Sequence[Tuple[float, float, float]], stream: Sequence[str],
+               font_path: Optional[str], W: int, H: int) -> Tuple[np.ndarray, List[Glyph]]:
+    """The iris built from type (TYPO_TYPED_IRIS=1): at each iris a ring of words running
+    round the limbus (the rim), and short words set radially from the pupil's edge to the
+    rim like the fibres of a real iris; the pupil is left clear for the dark disc the
+    feature pass paints, the glint sits on top. Returns the glyph field and the log the
+    sharp print redraws at print scale. Sizes follow the iris radius; the smallest word
+    is 6 px, so on a small iris the fibres are single short words and the rim one ring."""
+    field = np.zeros((H, W), np.float32)
+    log: List[Glyph] = []
+    bm = _Bitmaps(font_path)
+    words = _Stream(list(stream) or ["LOVE"])
+    ring_k = float(_settings.raw("TYPO_IRIS_RING") or 0.20)
+    spoke_k = float(_settings.raw("TYPO_IRIS_SPOKE") or 0.18)
+    for cx, cy, r in irises:
+        r = float(r)
+        # The rim: one ring of words at 0.87 r, read clockwise from the top left.
+        px = max(6, int(round(r * ring_k)))
+        rr = r * 0.87
+        ang = np.linspace(-math.pi * 0.75, math.pi * 1.25, 180)
+        P = np.stack([cx + rr * np.cos(ang), cy + rr * np.sin(ang)], axis=1).astype(np.float32)
+        _set_along(field, log, bm, P, words, px, 0.10)
+        # A large iris (the ring's words above 9 px) takes a second ring inside the first.
+        px_s = max(6, int(round(r * spoke_k)))
+        if px >= 9:
+            rr2 = r * 0.66
+            P = np.stack([cx + rr2 * np.cos(ang), cy + rr2 * np.sin(ang)], axis=1).astype(np.float32)
+            _set_along(field, log, bm, P, words, px_s, 0.10)
+            r0, r1 = r * 0.44, r * 0.56
+        else:
+            r0, r1 = r * 0.44, r * 0.78
+        # The fibres: spokes from the pupil's edge to inside the rim, one short word each
+        # (or an initial where none fits), spaced a word's height apart on the middle circle.
+        n = max(6, int(round(2 * math.pi * (0.5 * (r0 + r1)) / (px_s * 1.05))))
+        for j in range(n):
+            a = -math.pi / 2 + 2 * math.pi * j / n
+            # Read outward on the right half, inward on the left, so every word is upright.
+            if math.cos(a) >= 0:
+                P = np.array([[cx + r0 * math.cos(a), cy + r0 * math.sin(a)],
+                              [cx + r1 * math.cos(a), cy + r1 * math.sin(a)]], np.float32)
+            else:
+                P = np.array([[cx + r1 * math.cos(a), cy + r1 * math.sin(a)],
+                              [cx + r0 * math.cos(a), cy + r0 * math.sin(a)]], np.float32)
+            _set_along(field, log, bm, P, words, px_s, 0.10, fit_len=(r1 - r0) * 1.05)
+    return field, log
+
+
 def raster(log: Sequence[Glyph], Wk: int, Hk: int, k: float, font_path: Optional[str]) -> np.ndarray:
     """The logged words drawn again at scale k on a Wk x Hk field: the font at px * k, the
     same angle, the centre scaled. At k = 1 this is the working field (up to the collision

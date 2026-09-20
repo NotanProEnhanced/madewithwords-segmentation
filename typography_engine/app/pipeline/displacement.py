@@ -2112,8 +2112,12 @@ def _lf_sharp_resize(C_low, st, Wk, Hk, band_rows=512):
         for icx, icy, ir in st["irises"]:
             cv2.circle(iris_m, (int(round(icx * k)), int(round(icy * k))), int(round(ir * k)), 1.0, -1, cv2.LINE_AA)
         iris_m = np.clip(cv2.GaussianBlur(iris_m, (0, 0), sigmaX=max(1.0, ir_mean * k * 0.18)), 0, 1)
-        warped = warped * (1.0 - iris_m) + R(rows_k(st["iris_fs"])) * iris_m
-        del iris_m
+        if st.get("iris_log") is not None:
+            _ir_hi = _flow.raster(st["iris_log"], Wk, Hk, k, _font_path())
+        else:
+            _ir_hi = R(rows_k(st["iris_fs"]))
+        warped = warped * (1.0 - iris_m) + _ir_hi * iris_m
+        del iris_m, _ir_hi
     del mx, my
     ink_field = cv2.resize(st["ink_field"], (Wk, Hk), interpolation=cv2.INTER_LINEAR)
     # A dilation by an n x n kernel grows a stroke by n-1 pixels; the working render grows by
@@ -2406,7 +2410,18 @@ def render_displacement_portrait(
     if _flow_log is not None:
         warped = _flow_fld if _flow_w is None else warped * (1.0 - _flow_w) + _flow_fld * _flow_w
         del _flow_fld
-    warped = _lf_iris_circles(irises, t_iris, H, W, R, warped)
+    # The iris built from type (TYPO_TYPED_IRIS=1): a ring of words at the rim and radial
+    # words between the pupil and the rim, in place of the draped rows of the iris tier.
+    _iris_log = None
+    if irises and t_iris is not None and _flow.typed_iris_on():
+        _iris_fld, _iris_log = _flow.typed_iris(irises, _vocab_stream, _font_path(), W, H)
+        _R_iris = R
+        R = lambda t: _iris_fld if t is t_iris else _R_iris(t)   # noqa: E731
+        warped = _lf_iris_circles(irises, t_iris, H, W, R, warped)
+        R = _R_iris
+        del _iris_fld
+    else:
+        warped = _lf_iris_circles(irises, t_iris, H, W, R, warped)
     lum, ink_field = _lf_tonal_field(g, gray, mask01, fw, face_w, feat_norm, face_norm,
         _grad_on, all_pts, yy)
     w2 = _lf_density(warped, ink_field)
@@ -2417,7 +2432,7 @@ def render_displacement_portrait(
         _tier_keys = list(rows.log.keys())
         _sst = dict(W=W, H=H, row_pad=rows.pad, row_log=rows.log, tier_fs=_tier_keys[:4],
                     iris_fs=(_tier_keys[4] if len(_tier_keys) > 4 else None), irises=list(irises or []),
-                    gray=gray, df=df, ink_field=ink_field, w2=w2, ink_name=ink, flow_log=_flow_log, flow_w=_flow_w,
+                    gray=gray, df=df, ink_field=ink_field, w2=w2, ink_name=ink, flow_log=_flow_log, flow_w=_flow_w, iris_log=_iris_log,
                     amp=(float(_settings.raw("TYPO_DRAPE") or 64.0) * s * _ssn * (1.0 - 0.85 * feat_damp)).astype(np.float32))
     # STAGED INK DUMP (TYPO_DUMP_STAGES=<dir>). The ink field is rewritten by sixteen
     # passes in sequence, and any of them can drive a region to bare ground. Reasoning from
