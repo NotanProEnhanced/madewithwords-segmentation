@@ -706,6 +706,12 @@ def _lf_ink_branch(ink, al, an, g, W, ground, H, _eye_deglare, mask01, soft01, l
         # TYPO_SUBJECT_DIM so the words still read on top of it. The flat ground stays
         # BEHIND the subject. 0 (default) is byte-identical to the previous behavior.
         _sb = float(_settings.raw("TYPO_SUBJECT_BASE") or 0.0)
+        # The paper ink drawing (TYPO_PAPER_INK=1): the words sit on the ivory, not on the
+        # dimmed photograph, and the polarity model below stays off paper. See there.
+        _paper_ink = (ground in PAPER_FAMILY
+                      and _settings.raw("TYPO_PAPER_INK").strip().lower() in ("1", "true", "on", "yes"))
+        if _paper_ink:
+            _sb = 0.0
         _base = np.zeros((H, W, 3), np.float32) + np.array(g["bg"], np.float32)
         if _sb > 0.0:
             _dim = float(_settings.raw("TYPO_SUBJECT_DIM") or 0.0)
@@ -820,7 +826,17 @@ def _lf_ink_branch(ink, al, an, g, W, ground, H, _eye_deglare, mask01, soft01, l
                      float(np.asarray(ink_col).mean()), float(np.asarray(out).mean())))
         # Default 1, matching docker-compose.yml. It read "0" here while compose defaulted
         # it ON in every container, so this whole block ran while the code said it did not.
-        if _settings.raw("TYPO_POLARITY").strip().lower() in ("1", "true", "on", "yes"):
+        # On the paper ground the polarity model makes the gaps between letters the photograph
+        # itself in an ivory tint, and the whole render reads as a photograph (measured on the
+        # sidelight portrait: glyph-scale contrast 5.2 against 11.3 on navy; the alpha field
+        # carries the type, the composite hides it). The paper ground has its own ink-drawing
+        # density (12-paper-ink) that the model overrides. TYPO_PAPER_INK=1 keeps the model
+        # off paper (and the photographic subject base, above) so the ink drawing shows;
+        # default off is today's output.
+        _pol_on = _settings.raw("TYPO_POLARITY").strip().lower() in ("1", "true", "on", "yes")
+        if _pol_on and ground in PAPER_FAMILY and _paper_ink:
+            _pol_on = False
+        if _pol_on:
             # Polarity model (the paper-grade shadow behavior, brought to the dark-ground
             # Lifelike look). Instead of "light ink whose COVERAGE follows brightness"
             # (shadow -> no ink -> ground shows -> absence), make the type present at HIGH

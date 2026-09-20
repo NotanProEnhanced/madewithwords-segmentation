@@ -211,6 +211,8 @@ _k("TYPO_TYPED_IRIS", "on/off (on = 1/true/on/yes)", "",
    "Words style: build each iris from type: radial fibres of type between pupil and rim, uneven like a real iris and toned by the photograph's own iris, instead of the draped rows of the iris tier. Off = the rows.")
 _k("TYPO_IRIS_SPOKE", "float", "0.16",
    "Typed iris: size of the radial fibres' type as a fraction of the iris radius.")
+_k("TYPO_PAPER_INK", "on/off (on = 1/true/on/yes)", "",
+   "Paper ground: the ink drawing it was designed as (words on the ivory, the polarity model and the photographic subject base kept off paper). Off = today's output, which reads as a photograph.")
 _k("TYPO_FLOW_PLACE", "on/off (on = 1/true/on/yes)", "",
    "Words style: set the words along the form on traced streamlines (hair grain, facial contours, eye orbits) instead of horizontal rows draped by luminance. Off = the rows.")
 _k("TYPO_FLOW_ZONE", "text", "hair",
