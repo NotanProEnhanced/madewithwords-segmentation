@@ -49,6 +49,8 @@ _k("PET_V2_MAX_RENDER_PX", "int", "2400",
    "Cap on the render height; a taller print is rendered at this height and upscaled at the end.")
 _k("PET_V2_SHARP_PRINT", "on/off", "1",
    "Paid files: draw the type again at print scale and finish there, instead of enlarging the working render. 0 = the old enlargement.")
+_k("PET_V2_GAP_PACK", "on/off (on = 1/true/on/yes)", "",
+   "Gap packing: a word that would collide is tried as the next words of the stream and at two smaller sizes before its place is given up; the smallest fill mark scales with the size slider. Off = the previous placement.")
 _k("PET_V2_CACHE_ENTRIES", "int", "4",
    "Finished renders kept in memory so previews, loupes and backdrop swaps reuse one render.")
 _k("PET_V2_HAIR_REVEAL", "float", "0.7",

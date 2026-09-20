@@ -199,7 +199,7 @@ def words_for_curvature(stream, t_coh):
 
 
 def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alpha, max_overlap=0.15,
-                                max_instances=None, size_at=None, get_font=None, gap_frac=None):
+                                max_instances=None, size_at=None, get_font=None, gap_frac=None, fit=False):
     """Same idea as place_words_along_path (v1), but checks each word's footprint against a
     SHARED occupancy map before committing it -- the real fix for overlapping letters, which
     streamline-level separation alone can't guarantee once font sizes vary (a big hero word can
@@ -232,10 +232,15 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
     # Global collision ceiling (GOP_MAX_OVERLAP): every caller's tolerance is clamped to it, so
     # "no two words collide" is a property of the whole render that one number can attest to.
     max_overlap = min(max_overlap, _TL.max_overlap_cap)
+    # Gap packing (fit): the tries at one position, in order. The word asked for at the size
+    # asked for; then the next two words of the stream (a shorter one may fit the gap); then
+    # the same word at 0.82 and 0.68 of the size. The first that clears the collision test is
+    # set; the stream advances by one word either way, so the text keeps its order.
+    _tries = ((0, 1.0), (1, 1.0), (2, 1.0), (0, 0.82), (0, 0.68)) if (fit and get_font is not None) else ((0, 1.0),)
     while d < total:
         if max_instances is not None and placed_count >= max_instances:
             break
-        word = words[wi % len(words)]
+        word0 = words[wi % len(words)]
         wi += 1
         samp = sample_path_at(pts, d)
         if samp is None:
@@ -246,78 +251,105 @@ def place_words_collision_aware(canvas, occupancy, pts, words, font, gap_px, alp
             _fpx = float(size_at(x, y))
             font = get_font(_fpx)
             gap_px = _fpx * gap_frac
-        # Rasterize + rotate once per (word, size, alpha, angle bin) and reuse. Profiled: 91,733
-        # render/measure/rotate calls to place ~20,000 words -- 30 s of a 100 s render -- for a
-        # vocabulary of 30 words at a few dozen sizes. 1-degree angle bins are invisible at
-        # these sizes; the collision test still runs on the real footprint every time.
-        # Quantized key: alpha is a continuous per-line value and sizes are jittered, so exact
-        # keys never repeated (profiled: 93,696 renders with the cache in place). 16 alpha
-        # levels and 3-degree bins are below what's visible at these sizes.
-        key = (word, int(round(getattr(font, "size", 0))), (int(alpha) // 16) * 16,
-               int(round(math.degrees(angle) / 3.0)) * 3, _typeface.font_id())
-        hit = _BITMAP_CACHE.get(key)
-        if hit is None:
-            # Rendered FROM the key's quantized alpha and angle, not from this call's exact
-            # values: the cache is shared across renders, and a bitmap built from one call's
-            # exact angle was reused for every later call in the same bin. Two renders of the
-            # same photo then differed by whether another photo had warmed the cache first
-            # (measured: 2705 vs 2769 words, different bytes), which the gate's byte
-            # comparison cannot tolerate. A bitmap is now a pure function of its key.
-            _alpha_q = min(255, key[2] + 8)
-            _deg_q = float(key[3])
-            # The unrotated text is shared across the angle bins (profiled: 21,926 text
-            # renders for ~6,700 distinct word/size/alpha triples), rotation stays per key.
-            _tkey = (word, key[1], key[2], key[4])
-            bmp = _TEXT_CACHE.get(_tkey)
-            if bmp is None:
-                bmp = render_word_bitmap(word, font, alpha=_alpha_q)
-                if len(_TEXT_CACHE) > 8000:
-                    _TEXT_CACHE.clear()
-                _TEXT_CACHE[_tkey] = bmp
-            rot = bmp.rotate(-_deg_q, expand=True, resample=Image.BICUBIC)
-            hit = (bmp.width, bmp.height, rot, np.asarray(rot.split()[3], np.float32))
-            if len(_BITMAP_CACHE) > 20000:
-                _BITMAP_CACHE.clear()
-            _BITMAP_CACHE[key] = hit
-        bmp_w, bmp_h, rot, rot_alpha = hit
-        d += bmp_w + gap_px
-        px, py = int(round(x - rot.width / 2)), int(round(y - rot.height / 2))
-        x0, y0 = max(0, px), max(0, py)
-        x1, y1 = min(W, px + rot.width), min(H, py + rot.height)
-        if x1 <= x0 or y1 <= y0:
-            continue
-        sub_alpha = rot_alpha[y0 - py:y1 - py, x0 - px:x1 - px]
-        occ_roi = occupancy[y0:y1, x0:x1]
-        glyph_mask = sub_alpha > 40
-        if not glyph_mask.any():
-            continue
-        overlap_px = int((occ_roi[glyph_mask] > 40).sum())
-        overlap_frac = overlap_px / float(glyph_mask.sum())
-        if overlap_frac > max_overlap:
-            continue   # would overlap too much -- leave a gap here rather than pile up
-        # Stats are taken BEFORE the occupancy update: occ_roi is a view into occupancy, so
-        # anything read after the np.maximum below includes this very word (measured 100%
-        # "self-collision" before this was moved).
-        core = sub_alpha > 128                 # letter bodies only, not antialiased halos
-        core_overlap = int((occ_roi[core] > 128).sum())
-        canvas.alpha_composite(rot, (px, py))
-        occupancy[y0:y1, x0:x1] = np.maximum(occ_roi, sub_alpha)
-        placed_px += int(glyph_mask.sum())
-        placed_count += 1
-        _TL.placements.append((x, y, float(getattr(font, "size", 0)), len(word), angle, bmp_w, bmp_h))
-        _TL.pass_tags.append(_TL.pass_name)
-        _TL.glyphs.append((word, key[1], _alpha_q_of(key), float(key[3]), x, y))
-        _TL.stats["glyph_px"] += int(glyph_mask.sum())
-        _TL.stats["overlap_px"] += overlap_px     # this word's stroke pixels landing on prior ink
-        _TL.stats["core_px"] += int(core.sum())
-        _TL.stats["core_overlap_px"] += core_overlap
-        _ps = _TL.pass_stats.setdefault(_TL.pass_name, [0, 0])
-        _ps[0] += int(core.sum())
-        _ps[1] += core_overlap
+        _font0 = font
+        _placed_here = False
+        for _wofs, _shr in _tries:
+          word = words[(wi - 1 + _wofs) % len(words)]
+          font = _font0 if _shr == 1.0 else get_font(float(getattr(_font0, "size", 0)) * _shr)
+          # Rasterize + rotate once per (word, size, alpha, angle bin) and reuse. Profiled: 91,733
+          # render/measure/rotate calls to place ~20,000 words -- 30 s of a 100 s render -- for a
+          # vocabulary of 30 words at a few dozen sizes. 1-degree angle bins are invisible at
+          # these sizes; the collision test still runs on the real footprint every time.
+          # Quantized key: alpha is a continuous per-line value and sizes are jittered, so exact
+          # keys never repeated (profiled: 93,696 renders with the cache in place). 16 alpha
+          # levels and 3-degree bins are below what's visible at these sizes.
+          key = (word, int(round(getattr(font, "size", 0))), (int(alpha) // 16) * 16,
+                 int(round(math.degrees(angle) / 3.0)) * 3, _typeface.font_id())
+          hit = _BITMAP_CACHE.get(key)
+          if hit is None:
+              # Rendered FROM the key's quantized alpha and angle, not from this call's exact
+              # values: the cache is shared across renders, and a bitmap built from one call's
+              # exact angle was reused for every later call in the same bin. Two renders of the
+              # same photo then differed by whether another photo had warmed the cache first
+              # (measured: 2705 vs 2769 words, different bytes), which the gate's byte
+              # comparison cannot tolerate. A bitmap is now a pure function of its key.
+              _alpha_q = min(255, key[2] + 8)
+              _deg_q = float(key[3])
+              # The unrotated text is shared across the angle bins (profiled: 21,926 text
+              # renders for ~6,700 distinct word/size/alpha triples), rotation stays per key.
+              _tkey = (word, key[1], key[2], key[4])
+              bmp = _TEXT_CACHE.get(_tkey)
+              if bmp is None:
+                  bmp = render_word_bitmap(word, font, alpha=_alpha_q)
+                  if len(_TEXT_CACHE) > 8000:
+                      _TEXT_CACHE.clear()
+                  _TEXT_CACHE[_tkey] = bmp
+              rot = bmp.rotate(-_deg_q, expand=True, resample=Image.BICUBIC)
+              hit = (bmp.width, bmp.height, rot, np.asarray(rot.split()[3], np.float32))
+              if len(_BITMAP_CACHE) > 20000:
+                  _BITMAP_CACHE.clear()
+              _BITMAP_CACHE[key] = hit
+          bmp_w, bmp_h, rot, rot_alpha = hit
+          if _wofs == 0 and _shr == 1.0:
+              _adv = bmp_w + gap_px           # the slot is the asked-for word's, whatever is set in it
+          px, py = int(round(x - rot.width / 2)), int(round(y - rot.height / 2))
+          x0, y0 = max(0, px), max(0, py)
+          x1, y1 = min(W, px + rot.width), min(H, py + rot.height)
+          if x1 <= x0 or y1 <= y0:
+              continue
+          sub_alpha = rot_alpha[y0 - py:y1 - py, x0 - px:x1 - px]
+          occ_roi = occupancy[y0:y1, x0:x1]
+          glyph_mask = sub_alpha > 40
+          if not glyph_mask.any():
+              continue
+          overlap_px = int((occ_roi[glyph_mask] > 40).sum())
+          overlap_frac = overlap_px / float(glyph_mask.sum())
+          if overlap_frac > max_overlap:
+              continue   # would overlap too much -- the next try, or a gap here rather than a pile-up
+          # Stats are taken BEFORE the occupancy update: occ_roi is a view into occupancy, so
+          # anything read after the np.maximum below includes this very word (measured 100%
+          # "self-collision" before this was moved).
+          core = sub_alpha > 128                 # letter bodies only, not antialiased halos
+          core_overlap = int((occ_roi[core] > 128).sum())
+          canvas.alpha_composite(rot, (px, py))
+          occupancy[y0:y1, x0:x1] = np.maximum(occ_roi, sub_alpha)
+          placed_px += int(glyph_mask.sum())
+          placed_count += 1
+          _placed_here = True
+          if _wofs or _shr != 1.0:
+              _adv = bmp_w + gap_px           # a substitute: the slot is what was set
+          _TL.placements.append((x, y, float(getattr(font, "size", 0)), len(word), angle, bmp_w, bmp_h))
+          _TL.pass_tags.append(_TL.pass_name)
+          _TL.glyphs.append((word, key[1], _alpha_q_of(key), float(key[3]), x, y))
+          _TL.stats["glyph_px"] += int(glyph_mask.sum())
+          _TL.stats["overlap_px"] += overlap_px     # this word's stroke pixels landing on prior ink
+          _TL.stats["core_px"] += int(core.sum())
+          _TL.stats["core_overlap_px"] += core_overlap
+          _ps = _TL.pass_stats.setdefault(_TL.pass_name, [0, 0])
+          _ps[0] += int(core.sum())
+          _ps[1] += core_overlap
+          break
+        # Off the fit path this is exactly the old advance: the asked-for word's width plus the
+        # gap, whether or not it was set. With fit, a slot nothing fitted advances by a third
+        # of the word, so the next try lands where the gap may have opened.
+        if fit and not _placed_here:
+            d += max(1.0, _adv / 3.0)
+        else:
+            d += _adv
+        font = _font0
     return placed_px
 
 
 _KEEP_FIELDS = _settings.raw("PET_V2_KEEP_FIELDS").strip().lower() not in ("", "0", "false", "off")
+
+
+def _gap_pack_on():
+    """PET_V2_GAP_PACK=1: a word that would collide is tried again as the next words of the
+    stream and at two smaller sizes before its place is given up, and the smallest mark of
+    the channel fill scales with the size slider. Measured at Large (0.56) on four pets
+    before this: structural words 6 to 18% of the marks, single channel letters 48 to 64%;
+    a rejected big word left a gap and the gap got specks. Off = the previous placement."""
+    return _settings.raw("PET_V2_GAP_PACK").strip().lower() in ("1", "true", "on", "yes")
 # (word, font px, alpha, angle deg) -> (w, h, rotated RGBA, its alpha array). Shared across
 # threads on purpose: entries are immutable once built, and dict get/set are atomic in CPython.
 _BITMAP_CACHE = {}
@@ -387,7 +419,7 @@ except Exception:  # noqa: BLE001
 
 def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
                         letters=("L", "S", "K", "J", "H", "G", "P", "W"), min_px=6, max_overlap=0.08,
-                        size_cap=None):
+                        size_cap=None, min_field=None):
     """Fill the free-space CHANNELS (the leading between lines of text, which at 2x is a lace of
     4-10px-wide corridors across the whole coat) along their own medial axis. The streamline
     tracer can't do this -- measured: 1 lane in a 107k-px lace region, because a path following
@@ -400,7 +432,11 @@ def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
     free = ((mask > 0.5) & ~ink).astype(np.uint8)
     dist = cv2.distanceTransform(free, cv2.DIST_L2, 5)
     skel = cv2.ximgproc.thinning(free * 255) > 0
-    need = min_px * 1.3                                  # channel must be ~1.3 glyph heights wide
+    # The smallest letter allowed at a point: min_px everywhere, or with gap packing a field
+    # (6 px at the features, where the corridors are narrow and the fine marks carry the
+    # tone; the slider-scaled floor on the body).
+    _minf = min_field if min_field is not None else np.full(mask.shape, float(min_px), np.float32)
+    need = _minf * 1.3                                   # channel must be ~1.3 glyph heights wide
     ys, xs = np.nonzero(skel & (dist * 2.0 >= need))
     if len(ys) == 0:
         return 0, 0
@@ -416,8 +452,9 @@ def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
         # (size_cap): a fixed 6px letter in a 20px corridor on the far body was a speck of lace
         # where the hierarchy asked for a real mark, and it outnumbered the structural words.
         if size_cap is not None:
-            _cap_px = max(min_px, float(size_cap[y, x]))
-            _px = min(_cap_px, max(float(min_px), float(dist[y, x]) * 2.0 / 1.3))
+            _mp = float(_minf[y, x])
+            _cap_px = max(_mp, float(size_cap[y, x]))
+            _px = min(_cap_px, max(_mp, float(dist[y, x]) * 2.0 / 1.3))
             font = get_font(_px)
             half = _px * 0.9
         ang = float(theta_s[y, x])
@@ -436,15 +473,17 @@ def render_channel_fill(canvas, occupancy, theta_s, mask, get_font, tone=None,
 
 
 def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
-                         tokens=("SOUL", "KIND", "HOME", "JOY", "WARM", "WISE", "LOVE"), size_field_px=None):
+                         tokens=("SOUL", "KIND", "HOME", "JOY", "WARM", "WISE", "LOVE"), size_field_px=None,
+                         min_px=6, min_field=None):
     """Fill every remaining free region larger than the smallest glyph with short tokens at the
     finest size, along the local orientation. Free space = inside the mask and not within half a
     glyph of existing ink (so nothing placed here can touch a neighbor). Repeats while a pass
     still gains footprint, so it stops when the gaps left are genuinely smaller than a glyph --
     the physical limit of "every exposed space has typography" at this resolution."""
     H, W = mask.shape
-    min_px = 6
-    r = max(1, int(round(min_px * 0.35)))
+    min_px = max(6, int(round(min_px)))
+    _floor_px = 6                    # the kernel, the region tests: the finest mark anywhere
+    r = max(1, int(round(_floor_px * 0.35)))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
     total_placed = 0
     # Rounds 0-2: short words. Round 3: single letters -- measured after the word rounds, ~67k px
@@ -453,6 +492,7 @@ def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, ge
     # initials in production), and it's what "every exposed space" physically requires at the
     # font floor: any gap narrower than one glyph is unfillable at this resolution, by definition.
     letter_tokens = tuple(sorted({t[0] for t in tokens}))
+    _fit = _gap_pack_on()
     # Round 0 sizes each token to the LOCAL structural size (about half of it, like the fill
     # rounds), so a gap on the far body gets a medium word before the floor-size rounds mop up
     # what is left: with every residual token at 6px, the far body's count was dominated by
@@ -461,22 +501,30 @@ def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, ge
     if size_field_px is not None:
         def size_at(x, y):
             xi, yi = min(W - 1, max(0, int(x))), min(H - 1, max(0, int(y)))
-            return max(min_px, float(size_field_px[yi, xi]) * 0.55)
+            _mp = float(min_field[yi, xi]) if min_field is not None else float(min_px)
+            return max(_mp, float(size_field_px[yi, xi]) * 0.55)
+    # Rounds 1-3 set the floor size; with gap packing the floor is a field (see min_field),
+    # read per token.
+    floor_at = None
+    if min_field is not None:
+        def floor_at(x, y):
+            xi, yi = min(W - 1, max(0, int(x))), min(H - 1, max(0, int(y)))
+            return float(min_field[yi, xi])
     for _round in range(4):
         if _round == 3:
             tokens = letter_tokens
-        _sz = size_at if _round == 0 else None
+        _sz = size_at if _round == 0 else floor_at
         occ_dil = cv2.dilate((occupancy > 40).astype(np.uint8), kernel)
         free = ((mask > 0.5) & (occ_dil == 0)).astype(np.uint8)
         n, labels, stats, _ = cv2.connectedComponentsWithStats(free, 8)
         single = tokens == letter_tokens
-        ext_min = min_px * (1.05 if single else 2.2)
-        area_min = min_px * min_px * (0.8 if single else 1.5)
+        ext_min = _floor_px * (1.05 if single else 2.2)
+        area_min = _floor_px * _floor_px * (0.8 if single else 1.5)
         big_ids = [i for i in range(1, n)
                    if max(stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]) >= ext_min
                    and stats[i, cv2.CC_STAT_AREA] >= area_min]
         free_area = int(sum(stats[i, cv2.CC_STAT_AREA] for i in big_ids))
-        if free_area < min_px * min_px * 4:
+        if free_area < _floor_px * _floor_px * 4:
             break
         # Per-region direct placement. The streamline tracer seeds ONCE globally and propagates
         # along its own lines, so on a mask of ~3,000 disconnected gaps it produced 1 line and 0
@@ -485,7 +533,7 @@ def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, ge
         # decides whether a token actually fits.
         placed = 0
         n_before = len(_TL.placements)
-        font = get_font(min_px)
+        font = get_font(_floor_px)
         for i in big_ids:
             w_, h_ = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
             cx = stats[i, cv2.CC_STAT_LEFT] + w_ / 2.0
@@ -494,15 +542,15 @@ def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, ge
             # evenly spaced lanes); one straight token path through the centroid only ever fills a
             # single lane -- measured at 2x: 910k px still free after the rounds, mostly in big
             # regions that each got one token.
-            if stats[i, cv2.CC_STAT_AREA] >= min_px * min_px * 40:
+            if stats[i, cv2.CC_STAT_AREA] >= _floor_px * _floor_px * 40:
                 x0_, y0_ = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP]
                 region = np.zeros((H, W), np.float32)
                 region[y0_:y0_ + h_, x0_:x0_ + w_] = (labels[y0_:y0_ + h_, x0_:x0_ + w_] == i)
                 # Lane budget scales with the region: the free space at 2x is a few enormous lace
                 # networks (one can span the whole chest), and a flat 300-lane cap left 14% of the
                 # animal glyph-fillable but unfilled (measured by channel width).
-                _sep = max(3, int(min_px * 0.9))
-                if _sz is not None:   # round 0: lanes as wide as the local token size
+                _sep = max(3, int(_floor_px * 0.9))
+                if _sz is not None:   # lanes as wide as the local token size
                     _sep = max(_sep, int(_sz(cx, cy) * 0.9))
                 _area = int(stats[i, cv2.CC_STAT_AREA])
                 lanes = evenly_spaced_streamlines(theta_s, coherence_s, region, _sep,
@@ -512,7 +560,8 @@ def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, ge
                 for lane in lanes:
                     placed += place_words_collision_aware(canvas, occupancy, lane, list(tokens), font,
                                                           gap_px=1.5, alpha=205, max_overlap=0.08,
-                                                          size_at=_sz, get_font=get_font, gap_frac=0.25)
+                                                          size_at=_sz, get_font=get_font, gap_frac=0.25,
+                                                          fit=_fit)
                 continue
             ext = float(math.hypot(w_, h_))
             ang0 = float(theta_s[min(H - 1, max(0, int(cy))), min(W - 1, max(0, int(cx)))])
@@ -522,14 +571,15 @@ def render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, ge
                 path = [(cx + dx * t, cy + dy * t, ang) for t in np.linspace(-ext / 2, ext / 2, 9)]
                 got = place_words_collision_aware(canvas, occupancy, path, list(tokens), font,
                                                   gap_px=1.5, alpha=205, max_overlap=0.08,
-                                                  size_at=_sz, get_font=get_font, gap_frac=0.25)
+                                                  size_at=_sz, get_font=get_font, gap_frac=0.25,
+                                                  fit=_fit)
                 if got:
                     break
             placed += got
         total_placed += placed
         _log(f"    residual fill round {_round}: free area {free_area}px in {len(big_ids)} fillable regions, "
               f"{len(_TL.placements) - n_before} tokens placed ({placed}px)")
-        if placed < min_px * min_px * 3 and _round < 3:
+        if placed < _floor_px * _floor_px * 3 and _round < 3:
             tokens = letter_tokens      # words no longer fit anywhere -- go straight to letters
     return total_placed
 
@@ -2847,6 +2897,7 @@ def _phase_opacity_tone(canvas, base, gray, debug_dir, H, W, out_path, mask):
     ink_raw = np.asarray(_a, np.float32) / 255.0
     if _KEEP_FIELDS:
         _TL.fields["ink_raw"] = ink_raw
+        _TL.fields["mask"] = np.asarray(mask, np.float32)
     _a = Image.fromarray(np.clip(np.asarray(_a, np.float32) * tone_gain, 0, 255).astype(np.uint8))
     canvas = Image.merge("RGBA", (_r, _g, _b, _a))
 
@@ -2870,7 +2921,7 @@ def _phase_opacity_tone(canvas, base, gray, debug_dir, H, W, out_path, mask):
 def _phase_final_fills(canvas, best_placements, best_pass, best_stats, best_pass_stats, base,
                        coherence_s, get_font, mask, micro_px_area, occupancy, rng, theta_s,
                        short_tokens, size_px_field, letter_tokens, gray, fill_px_area,
-                       hero_px_area, struct_px_area, best_glyphs):
+                       hero_px_area, struct_px_area, best_glyphs, MICRO_PX=None):
     """Final fills, once, on the winning canvas.
 
     Moved verbatim out of render_v2; the parameters are what the block read and the
@@ -2885,12 +2936,24 @@ def _phase_final_fills(canvas, best_placements, best_pass, best_stats, best_pass
     _TL.stats.update(best_stats)
     _TL.pass_stats.clear()
     _TL.pass_stats.update({k: list(v) for k, v in best_pass_stats.items()})
+    # Gap packing: the smallest mark scales with the slider like every other size. MICRO_PX is
+    # base x 0.10 x the slider's factor, so the factor is read back from it: 6 px at Small
+    # (unchanged), 10 px at Large, where a 6 px token beside a 29 px word was a speck.
+    _min_px, _min_field = 6, None
+    if _gap_pack_on() and MICRO_PX is not None:
+        _min_px = max(6, int(round(6.0 * float(MICRO_PX) / max(1e-6, base * 0.10))))
+        # ... but 6 px at the features, where the corridors are narrow and the fine marks
+        # carry the tone (measured: a flat 10 px floor at Large cost the doodle 0.03 of
+        # likeness); the floor follows the local size up to the slider-scaled value.
+        _min_field = np.clip(size_px_field * 0.6, 6.0, float(_min_px)).astype(np.float32)
     _TL.pass_name = "residual"
     micro_px_area += render_residual_fill(canvas, occupancy, theta_s, coherence_s, mask, base, get_font, rng,
-                                          tokens=short_tokens, size_field_px=size_px_field)
+                                          tokens=short_tokens, size_field_px=size_px_field, min_px=_min_px,
+                                          min_field=_min_field)
     _TL.pass_name = "channel"
     ch_n, ch_px = render_channel_fill(canvas, occupancy, theta_s, mask, get_font, letters=letter_tokens,
-                                      tone=gray.astype(np.float32) / 255.0, size_cap=size_px_field)
+                                      tone=gray.astype(np.float32) / 255.0, size_cap=size_px_field,
+                                      min_px=_min_px, min_field=_min_field)
     micro_px_area += ch_px
     _log(f"final fills: channel fill placed {ch_n} letters ({ch_px}px)")
     best_placements = list(_TL.placements)
@@ -3094,6 +3157,7 @@ def _phase_iterative_loop(stream, N_ITERS, base, sep_correction, sep_field_base,
         _TL.pass_name = "fringe"
         render_silhouette_fringe(canvas, occupancy, mask, theta_s, base, fringe_points, stream, get_font, rng)
         _TL.pass_name = "struct"
+        _fit = _gap_pack_on()
 
         # ---- Structural/micro pass -- everything EXCEPT hero lines (recommendation #6) -----
         # Size/alpha formula is back to plain (no correction multiplier) -- sep_field above is
@@ -3145,7 +3209,8 @@ def _phase_iterative_loop(stream, N_ITERS, base, sep_correction, sep_field_base,
             # there's a real per-segment curvature signal to drive this with (see conversation).
             placed = place_words_collision_aware(canvas, occupancy, line, stream, font,
                                                  gap_px=font_px * 0.35, alpha=alpha,
-                                                 size_at=size_at, get_font=get_font, gap_frac=0.35)
+                                                 size_at=size_at, get_font=get_font, gap_frac=0.35,
+                                                 fit=_fit)
             if size_t < MICRO_STRUCT_SPLIT:
                 micro_px_area += placed
             else:
@@ -3207,7 +3272,7 @@ def _phase_iterative_loop(stream, N_ITERS, base, sep_correction, sep_field_base,
                                                              gap_px=font_px * gap_frac, alpha=alpha,
                                                              max_overlap=round_overlap,
                                                              size_at=fill_size_at, get_font=get_font,
-                                                             gap_frac=gap_frac)
+                                                             gap_frac=gap_frac, fit=_fit)
             cov = float((occupancy[mask > 0.5] > 40).mean())
             gained = cov - prev_coverage
             prev_coverage = cov
@@ -3972,6 +4037,10 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     (_with_nose_hint, fine_blend, size_field, line_size_t, size_px_field) = _phase_features(primary_kind,
         _es, attractor_pts, gray, mask, extra_faces, H, W, importance_norm, primary_mouth, xx,
         yy, head_center, human, detail_field, MICRO_PX, STRUCT_PX, _energy, _gx, _gy)
+    if _KEEP_FIELDS:   # measurement only (PET_V2_KEEP_FIELDS=1): the size rule and the constants
+        _TL.fields["size_px"] = size_px_field
+        _TL.fields["consts"] = dict(base=float(base), MICRO_PX=float(MICRO_PX), STRUCT_PX=float(STRUCT_PX),
+                                    FILL_PX=float(FILL_PX), sep_px=float(sep_px), W=int(W), H=int(H))
     (canvas, occupancy, best_placements, best_pass, best_stats, best_pass_stats,
      fill_px_area, hero_px_area, micro_px_area, struct_px_area, best_glyphs) = _phase_iterative_loop(stream,
         N_ITERS, base, sep_correction, sep_field_base, sep_px, W, size_px_field, coherence_s,
@@ -3984,7 +4053,7 @@ def render_v2(bgr, words=None, *, mask=None, render_scale=None, max_overlap=None
     best_placements, best_pass, best_stats, best_pass_stats, best_glyphs = _phase_final_fills(canvas,
         best_placements, best_pass, best_stats, best_pass_stats, base, coherence_s, get_font,
         mask, micro_px_area, occupancy, rng, theta_s, short_tokens, size_px_field,
-        letter_tokens, gray, fill_px_area, hero_px_area, struct_px_area, best_glyphs)
+        letter_tokens, gray, fill_px_area, hero_px_area, struct_px_area, best_glyphs, MICRO_PX=MICRO_PX)
     # Sharp print output (hires_h): the working-res inputs the finishing needs, captured before
     # the finishing runs at this size, so it can run again at print scale over the type drawn
     # fresh from the glyph log. Copies of the small structures only; the arrays are shared.
