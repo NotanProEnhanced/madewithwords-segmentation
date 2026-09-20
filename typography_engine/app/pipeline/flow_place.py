@@ -86,6 +86,7 @@ def hair_zone(mask01: np.ndarray, fmh: np.ndarray, chin_y: float, fw: float, W: 
     ys_h = np.nonzero(hull8.any(axis=1))[0]
     fh = float(ys_h.max() - ys_h.min()) if len(ys_h) else fw
     up = max(1, int(fh * 0.20))
+    hull_face = hull8.copy()
     hull8 = cv2.dilate(hull8, np.ones((up, 1), np.uint8), anchor=(0, up - 1), iterations=1)
     hull = hull8.astype(np.float32)
     hull = np.clip(cv2.GaussianBlur(hull, (0, 0), sigmaX=max(1.0, fw * 0.012)), 0, 1)
@@ -97,9 +98,19 @@ def hair_zone(mask01: np.ndarray, fmh: np.ndarray, chin_y: float, fw: float, W: 
     cx = float(xs.mean()) if len(xs) else W / 2.0
     _th, coh = multi_scale_orientation(np.asarray(gray, np.float32), W)
     coh_s = cv2.GaussianBlur(coh, (0, 0), sigmaX=max(2.0, fw * 0.04))
+    # Confidence alone cannot tell hair from skin: a forehead's shading is one smooth
+    # gradient and measures 0.96, the hair 0.98. Texture can (local contrast: hair 16.6,
+    # forehead 7.7, cheek 9.0 on the smile portrait), normalised to this subject's own
+    # hair so a soft or a contrasty photograph reads the same. Grain = confidence x texture.
+    g32 = np.asarray(gray, np.float32)
+    tex = np.sqrt(np.maximum(cv2.GaussianBlur((g32 - cv2.GaussianBlur(g32, (0, 0), sigmaX=max(1.0, fw * 0.01))) ** 2,
+                                              (0, 0), sigmaX=max(2.0, fw * 0.03)), 0.0))
+    ref_t = float(np.median(tex[above])) if above.any() else float(np.median(tex[inside])) if inside.any() else 1.0
+    grain = coh_s * np.clip((tex / max(ref_t, 1e-3) - 0.5) / 0.4, 0, 1)
     # Below the chin the weight is soft (a hard confidence cut drew a horizontal seam
     # through long hair at chin height): the grain's confidence, times the colour test.
-    below_w = np.clip((coh_s - 0.25) / 0.25, 0, 1) * (inside & (yy >= chin_y) & (np.abs(xx - cx) > 0.55 * fw))
+    below_w = np.clip((grain - 0.25) / 0.25, 0, 1) * (inside & (yy >= chin_y) & (np.abs(xx - cx) > 0.55 * fw))
+    lab = None
     if bgr is not None and above.any():
         # The hair's colour, from the hair above the chin. Chroma (a, b) separates hair
         # from a garment where the full Lab distance did not (dark brown hair and a navy
@@ -111,12 +122,38 @@ def hair_zone(mask01: np.ndarray, fmh: np.ndarray, chin_y: float, fw: float, W: 
         chroma = np.sqrt(((lab[..., 1:] - ref[1:]) ** 2).sum(axis=2))
         colour_ok = (chroma < 16.0) & (np.abs(lab[..., 0] - ref[0]) < 50.0)
         below_w = below_w * colour_ok
-    cand = above | (below_w > 0.05)
+    # A fringe falling onto the forehead sits inside the grown hull and was set in rows,
+    # with rows and flow meeting on the strands. Inside the growth band (and the top of
+    # the face hull itself) confident, hair-coloured strands near the hair's own
+    # lightness count as hair again. Skin shares brown hair's chroma, so the lightness
+    # band and the grain carry the test there.
+    fringe_w = None
+    if lab is not None:
+        top_y = float(ys_h.min()) if len(ys_h) else 0.0
+        band = (hull8 > 0) & ((hull_face == 0) | (yy < top_y + 0.15 * fh)) & inside
+        fringe_ok = colour_ok & (np.abs(lab[..., 0] - ref[0]) < 25.0) & (chroma < 12.0)
+        fringe_w = np.clip((grain - 0.30) / 0.25, 0, 1) * (band & fringe_ok)
+        fringe_w = np.clip(cv2.GaussianBlur(fringe_w.astype(np.float32), (0, 0), sigmaX=max(1.0, fw * 0.01)), 0, 1)
+    # The mesh sits low on a high forehead, so the band above the grown hull can be
+    # skin. Above the hull, smooth pixels of the face's own colour are skin, not hair:
+    # measured on the smile portrait, a band of forehead a fifth of the face high took
+    # curved words. Hair of a skin-like colour keeps its grain, which is the tie-break.
+    above_w = above.astype(np.float32)
+    if lab is not None and (hull_face > 0).any():
+        skin_ref = np.median(lab[hull_face > 0], axis=0)
+        skin_chroma = np.sqrt(((lab[..., 1:] - skin_ref[1:]) ** 2).sum(axis=2))
+        skin_like = (skin_chroma < 10.0) & (np.abs(lab[..., 0] - skin_ref[0]) < 22.0)
+        smooth = np.clip((0.40 - grain) / 0.15, 0, 1)
+        above_w = above_w * (1.0 - smooth * skin_like)
+        above_w = np.clip(cv2.GaussianBlur(above_w, (0, 0), sigmaX=max(1.0, fw * 0.01)), 0, 1) * above
+    cand = (above_w > 0.3) | (below_w > 0.05) | ((fringe_w > 0.3) if fringe_w is not None else False)
     n, lab_cc = cv2.connectedComponents(cand.astype(np.uint8), connectivity=8)
     keep = np.zeros(n, bool)
-    keep[np.unique(lab_cc[above])] = True
+    keep[np.unique(lab_cc[above_w > 0.3])] = True
     keep[0] = False
-    zone = np.where(above, 1.0, below_w).astype(np.float32) * keep[lab_cc] * (1.0 - hull)
+    zone = np.where(above, above_w, below_w).astype(np.float32) * keep[lab_cc] * (1.0 - hull)
+    if fringe_w is not None:
+        zone = np.maximum(zone, fringe_w * keep[lab_cc])
     return np.clip(cv2.GaussianBlur(zone, (0, 0), sigmaX=max(1.0, fw * 0.008)), 0, 1).astype(np.float32)
 
 
