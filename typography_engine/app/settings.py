@@ -203,6 +203,26 @@ _k("TYPO_DRAPE", "float", "64",
    "How far rows warp vertically to ride the form, in pixels at reference scale.")
 _k("TYPO_FLOW_JITTER", "float", "3.0",
    "Per-row horizontal offset in units of the row font size, breaking the wallpaper lattice. 0 = aligned.")
+_k("TYPO_FLOW_PLACE", "on/off (on = 1/true/on/yes)", "",
+   "Words style: set the words along the form on traced streamlines (hair grain, facial contours, eye orbits) instead of horizontal rows draped by luminance. Off = the rows.")
+_k("TYPO_FLOW_LEADING", "float", "0.92",
+   "Flow placement: line spacing in units of the local type size; lines may come 0.85 of this close, and drift wider, so the mean is about the rows' 1.0.")
+_k("TYPO_FLOW_HAIR", "float", "1.0",
+   "Flow placement: how far the hair's own grain steers the lines in the hair (0 = the drape direction there too).")
+_k("TYPO_FLOW_EDGE", "float", "1.5",
+   "Flow placement: rows of type within which the lines turn along the silhouette; 0 = off.")
+_k("TYPO_FLOW_SMOOTH", "float", "0.02",
+   "Flow placement: smoothing of the direction field, as a fraction of the face width, so neighbouring lines run parallel.")
+_k("TYPO_FLOW_FILL", "int", "1",
+   "Flow placement: gap-fill waves grown in the lanes the first lines left empty; 0 = none.")
+_k("TYPO_FLOW_DEBUG", "on/off", "",
+   "Debug: print the line, word and coverage counts of a flow placement.")
+_k("TYPO_FLOW_EYE", "float", "0.6",
+   "Flow placement: strength of the orbit around each iris, 0 = none.")
+_k("TYPO_FLOW_TEST", "float", "0.62",
+   "Flow placement: a line ends when it comes within this fraction of a row of another (the tracer's closeness test).")
+_k("TYPO_FLOW_OVERLAP", "float", "0.10",
+   "Flow placement: a word is skipped when more than this fraction of its letters would land on placed ink.")
 _k("TYPO_PER_FACE", "on/off", "1",
    "Size the type per face in a group photo rather than one global scale.")
 _k("TYPO_FACE_DETAIL", "float", "0.95",

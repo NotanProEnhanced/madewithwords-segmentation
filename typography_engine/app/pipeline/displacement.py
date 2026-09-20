@@ -27,6 +27,7 @@ from PIL import Image, ImageDraw, ImageFont
 from .analyze import Analysis
 from .. import settings as _settings
 from .. import typeface as _typeface
+from . import flow_place as _flow
 
 # Ground (background + ink) options. BGR colors. ``tone`` selects whether the
 # ink follows the photo's highlights ("light" -> light ink on a dark ground) or
@@ -2032,19 +2033,23 @@ def _lf_sharp_resize(C_low, st, Wk, Hk, band_rows=512):
     del xx, yy, amp_hi, dn
     def R(tile):
         return cv2.remap(tile, mx, my, cv2.INTER_LINEAR, borderValue=0.0)
-    df = cv2.resize(st["df"], (Wk, Hk), interpolation=cv2.INTER_LINEAR)
-    fsL, fsM, fsF, fsMi = st["tier_fs"]
-    wL = R(rows_k(fsL)); warped = wL.copy()
-    wM = R(rows_k(fsM))
-    bt = np.clip((df - 0.0) / 0.45, 0, 1); sel = (df >= 0.0) & (df < 0.45)
-    warped = np.where(sel, wL * (1 - bt) + wM * bt, warped); del wL
-    wF = R(rows_k(fsF))
-    bt = np.clip((df - 0.45) / 0.30, 0, 1); sel = (df >= 0.45) & (df < 0.75)
-    warped = np.where(sel, wM * (1 - bt) + wF * bt, warped); del wM
-    wMi = R(rows_k(fsMi))
-    bt = np.clip((df - 0.75) / 0.2501, 0, 1); sel = (df >= 0.75) & (df < 1.0001)
-    warped = np.where(sel, wF * (1 - bt) + wMi * bt, warped); del wF
-    warped = np.where(df >= 1.0, wMi, warped); del wMi, bt, sel, df
+    if st.get("flow_log") is not None:
+        # Flow placement: the logged words drawn again at print scale (see flow_place).
+        warped = _flow.raster(st["flow_log"], Wk, Hk, k, _font_path())
+    else:
+        df = cv2.resize(st["df"], (Wk, Hk), interpolation=cv2.INTER_LINEAR)
+        fsL, fsM, fsF, fsMi = st["tier_fs"]
+        wL = R(rows_k(fsL)); warped = wL.copy()
+        wM = R(rows_k(fsM))
+        bt = np.clip((df - 0.0) / 0.45, 0, 1); sel = (df >= 0.0) & (df < 0.45)
+        warped = np.where(sel, wL * (1 - bt) + wM * bt, warped); del wL
+        wF = R(rows_k(fsF))
+        bt = np.clip((df - 0.45) / 0.30, 0, 1); sel = (df >= 0.45) & (df < 0.75)
+        warped = np.where(sel, wM * (1 - bt) + wF * bt, warped); del wM
+        wMi = R(rows_k(fsMi))
+        bt = np.clip((df - 0.75) / 0.2501, 0, 1); sel = (df >= 0.75) & (df < 1.0001)
+        warped = np.where(sel, wF * (1 - bt) + wMi * bt, warped); del wF
+        warped = np.where(df >= 1.0, wMi, warped); del wMi, bt, sel, df
     if st.get("irises") and st.get("iris_fs") is not None:
         iris_m = np.zeros((Hk, Wk), np.float32)
         ir_mean = float(np.mean([r for _, _, r in st["irises"]]))
@@ -2323,7 +2328,23 @@ def render_displacement_portrait(
     _fws, mask_of, feat_damp, fmh, face_w = _lf_face_widths(W, fw, all_pts, H)
     df, face_norm, feat_norm, _grad_on = _lf_detail_field(H, face_w, W, mask_of, mask01, fmh,
         fw, all_pts, graduate, _fws, gray)
+    # Flow placement (TYPO_FLOW_PLACE=1): the words set along the form on traced streamlines
+    # instead of horizontal rows draped by luminance. The drape's remap is still built for
+    # the iris rows; the four tiers it warps are replaced by the flow field. See flow_place.
+    _flow_log = None
+    if _flow.on():
+        _fsz = _flow.size_field(df, s, _ssn, float(np.clip(float(word_scale or 1.0), 0.2, 3.0)))
+        _chin = max(float(_p[:, 1].max()) for _p in all_pts)
+        _amp = (float(_settings.raw("TYPO_DRAPE") or 64.0) * s * _ssn * (1.0 - 0.85 * feat_damp)).astype(np.float32)
+        _th, _co = _flow.flow_field(gray, mask01, face_norm, _chin, irises, fw, W, H, _amp,
+                                    float(_fsz[mask01 > 0.5].mean()) if (mask01 > 0.5).any() else float(_fsz.mean()))
+        del _amp
+        _flow_fld, _flow_log = _flow.place(_th, _co, _fsz, mask01, _vocab_stream, _font_path(), W, H)
+        del _th, _co, _fsz
     yy, R, warped = _lf_drape(s, W, gray, H, _ssn, feat_damp, t_fine, t_large, t_micro, t_mid, df)
+    if _flow_log is not None:
+        warped = _flow_fld
+        del _flow_fld
     warped = _lf_iris_circles(irises, t_iris, H, W, R, warped)
     lum, ink_field = _lf_tonal_field(g, gray, mask01, fw, face_w, feat_norm, face_norm,
         _grad_on, all_pts, yy)
@@ -2335,7 +2356,7 @@ def render_displacement_portrait(
         _tier_keys = list(rows.log.keys())
         _sst = dict(W=W, H=H, row_pad=rows.pad, row_log=rows.log, tier_fs=_tier_keys[:4],
                     iris_fs=(_tier_keys[4] if len(_tier_keys) > 4 else None), irises=list(irises or []),
-                    gray=gray, df=df, ink_field=ink_field, w2=w2, ink_name=ink,
+                    gray=gray, df=df, ink_field=ink_field, w2=w2, ink_name=ink, flow_log=_flow_log,
                     amp=(float(_settings.raw("TYPO_DRAPE") or 64.0) * s * _ssn * (1.0 - 0.85 * feat_damp)).astype(np.float32))
     # STAGED INK DUMP (TYPO_DUMP_STAGES=<dir>). The ink field is rewritten by sixteen
     # passes in sequence, and any of them can drive a region to bare ground. Reasoning from
