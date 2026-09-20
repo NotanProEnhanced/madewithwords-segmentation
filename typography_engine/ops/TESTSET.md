@@ -306,3 +306,25 @@ matte model alone) joined the set on 2026-09-16.
 
 Runs file under `/root/typortrait-testset/woven/out/<image>/`. The same photos through the
 human engine (`./ops/render-testset.sh`) are the other half of a blind pair.
+
+## Blind judging (the standing rule for "is it better")
+
+`compare-testset.sh` says whether a change moved anything. When it moved everything on
+purpose, whether it is *better* was decided by looking at labelled pairs, and a labelled
+pair is judged with the answer in view. `blind-judge.py` takes the label away:
+
+    ./ops/blind-judge.py build <run A> <run B> [--label NAME] [--pets]
+    ./ops/blind-judge.py tally <label> '<results line>' ['<another judge>' ...]
+    ./ops/blind-judge.py rm <label>
+
+`build` puts the pairs on a staging page in a random order with the sides swapped at
+random and no labels; the key that says which side is which is written outside the
+served tree. Judge every pair as a customer would judge a print (keys 1, 2, 0), copy
+the results line, and `tally` decodes it: per image which run won, the totals, a sign
+test. More than one judge is better than one; each pastes a line.
+
+The rule: a change is adopted on a blind win. Preferred on at least two thirds of the
+decided pairs, with no loss on the hard cases (couple, sidelight, dark-on-dark,
+white-hair), is a clear win. Anything closer is no difference, and no difference means
+the production look stays. A change can still be adopted for a measured reason (a
+number the engine prints), but not on a look at a labelled pair.
