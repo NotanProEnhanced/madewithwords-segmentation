@@ -208,11 +208,9 @@ _k("TYPO_FLOW_JITTER", "float", "3.0",
 _k("TYPO_ROW_STAGGER", "on/off (on = 1/true/on/yes)", "",
    "Rows: choose each row's start among eight seeded draws so its word gaps do not line up with the two rows above (no vertical rivers). Off = the single random draw.")
 _k("TYPO_TYPED_IRIS", "on/off (on = 1/true/on/yes)", "",
-   "Words style: build each iris from type, a ring of words at the rim and radial words between pupil and rim, instead of the draped rows of the iris tier. Off = the rows.")
-_k("TYPO_IRIS_RING", "float", "0.20",
-   "Typed iris: size of the rim ring's words as a fraction of the iris radius.")
-_k("TYPO_IRIS_SPOKE", "float", "0.18",
-   "Typed iris: size of the radial words as a fraction of the iris radius.")
+   "Words style: build each iris from type: radial fibres of type between pupil and rim, uneven like a real iris and toned by the photograph's own iris, instead of the draped rows of the iris tier. Off = the rows.")
+_k("TYPO_IRIS_SPOKE", "float", "0.16",
+   "Typed iris: size of the radial fibres' type as a fraction of the iris radius.")
 _k("TYPO_FLOW_PLACE", "on/off (on = 1/true/on/yes)", "",
    "Words style: set the words along the form on traced streamlines (hair grain, facial contours, eye orbits) instead of horizontal rows draped by luminance. Off = the rows.")
 _k("TYPO_FLOW_ZONE", "text", "hair",

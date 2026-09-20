@@ -2414,7 +2414,7 @@ def render_displacement_portrait(
     # words between the pupil and the rim, in place of the draped rows of the iris tier.
     _iris_log = None
     if irises and t_iris is not None and _flow.typed_iris_on():
-        _iris_fld, _iris_log = _flow.typed_iris(irises, _vocab_stream, _font_path(), W, H)
+        _iris_fld, _iris_log = _flow.typed_iris(irises, _vocab_stream, _font_path(), W, H, gray=gray, seed=seed)
         _R_iris = R
         R = lambda t: _iris_fld if t is t_iris else _R_iris(t)   # noqa: E731
         warped = _lf_iris_circles(irises, t_iris, H, W, R, warped)

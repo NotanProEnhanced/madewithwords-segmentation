@@ -40,6 +40,7 @@ Off (the default) nothing here runs and the rows renderer is byte-identical.
 from __future__ import annotations
 
 import math
+import random
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import cv2
@@ -499,41 +500,48 @@ class _Stream(list):
 
 
 def typed_iris(irises: Sequence[Tuple[float, float, float]], stream: Sequence[str],
-               font_path: Optional[str], W: int, H: int) -> Tuple[np.ndarray, List[Glyph]]:
-    """The iris built from type (TYPO_TYPED_IRIS=1): at each iris a ring of words running
-    round the limbus (the rim), and short words set radially from the pupil's edge to the
-    rim like the fibres of a real iris; the pupil is left clear for the dark disc the
-    feature pass paints, the glint sits on top. Returns the glyph field and the log the
-    sharp print redraws at print scale. Sizes follow the iris radius; the smallest word
-    is 6 px, so on a small iris the fibres are single short words and the rim one ring."""
+               font_path: Optional[str], W: int, H: int, gray: Optional[np.ndarray] = None,
+               seed: int = 7) -> Tuple[np.ndarray, List[Glyph]]:
+    """The iris built from type (TYPO_TYPED_IRIS=1): radial fibres of type between the
+    pupil and the rim, the way an iris is made. The first build set a ring of words at one
+    radius and spokes at equal angles, and it read as a clock face (owner: "a bit
+    unnatural"). Now: no ring; fibres only, of uneven angle, start, length and size (a
+    seeded rng, so the preview and the paid file agree); each fibre's opacity is the
+    photograph's own iris at that spot, so the collarette and the crypts of the real eye
+    show through the type, and a fibre never crosses the pupil. The limbal rim is the dark
+    ring the feature pass paints. Returns the glyph field and the log the sharp print
+    redraws at print scale."""
     field = np.zeros((H, W), np.float32)
     log: List[Glyph] = []
     bm = _Bitmaps(font_path)
     words = _Stream(list(stream) or ["LOVE"])
-    ring_k = float(_settings.raw("TYPO_IRIS_RING") or 0.20)
-    spoke_k = float(_settings.raw("TYPO_IRIS_SPOKE") or 0.18)
+    rng = random.Random(seed ^ 0x51C3)
+    spoke_k = float(_settings.raw("TYPO_IRIS_SPOKE") or 0.16)
+    g = None if gray is None else np.asarray(gray, np.float32)
     for cx, cy, r in irises:
         r = float(r)
-        # The rim: one ring of words at 0.87 r, read clockwise from the top left.
-        px = max(6, int(round(r * ring_k)))
-        rr = r * 0.87
-        ang = np.linspace(-math.pi * 0.75, math.pi * 1.25, 180)
-        P = np.stack([cx + rr * np.cos(ang), cy + rr * np.sin(ang)], axis=1).astype(np.float32)
-        _set_along(field, log, bm, P, words, px, 0.10)
-        # A large iris (the ring's words above 9 px) takes a second ring inside the first.
-        px_s = max(6, int(round(r * spoke_k)))
-        if px >= 9:
-            rr2 = r * 0.66
-            P = np.stack([cx + rr2 * np.cos(ang), cy + rr2 * np.sin(ang)], axis=1).astype(np.float32)
-            _set_along(field, log, bm, P, words, px_s, 0.10)
-            r0, r1 = r * 0.44, r * 0.56
-        else:
-            r0, r1 = r * 0.44, r * 0.78
-        # The fibres: spokes from the pupil's edge to inside the rim, one short word each
-        # (or an initial where none fits), spaced a word's height apart on the middle circle.
-        n = max(6, int(round(2 * math.pi * (0.5 * (r0 + r1)) / (px_s * 1.05))))
+        px = max(6, int(round(r * spoke_k)))
+        # The iris's own tone, stretched between its darkest and brightest fifth, so the
+        # fibres are set where the real iris has structure and thin where it is flat.
+        tone = None
+        if g is not None:
+            y0, y1 = max(0, int(cy - r)), min(H, int(cy + r) + 1)
+            x0, x1 = max(0, int(cx - r)), min(W, int(cx + r) + 1)
+            patch = g[y0:y1, x0:x1]
+            if patch.size:
+                lo, hi = np.percentile(patch, [20, 80])
+                tone = (patch, x0, y0, float(lo), float(max(hi, lo + 1.0)))
+        # Fibres: about one per spoke height on the mid circle, in two staggered rounds
+        # (inner and outer) so the pattern is a mesh, not a dial.
+        n = max(8, int(round(2 * math.pi * r * 0.62 / (px * 0.95))))
         for j in range(n):
-            a = -math.pi / 2 + 2 * math.pi * j / n
+            a = 2 * math.pi * (j + rng.uniform(-0.35, 0.35)) / n
+            inner = rng.random() < 0.5
+            r0 = r * (0.46 if inner else 0.62) + r * rng.uniform(-0.03, 0.05)
+            r1 = min(r * 0.86, r0 + r * rng.uniform(0.16, 0.34))
+            if r1 - r0 < 3.0:
+                continue
+            pxj = max(6, int(round(px * rng.uniform(0.82, 1.12))))
             # Read outward on the right half, inward on the left, so every word is upright.
             if math.cos(a) >= 0:
                 P = np.array([[cx + r0 * math.cos(a), cy + r0 * math.sin(a)],
@@ -541,7 +549,25 @@ def typed_iris(irises: Sequence[Tuple[float, float, float]], stream: Sequence[st
             else:
                 P = np.array([[cx + r1 * math.cos(a), cy + r1 * math.sin(a)],
                               [cx + r0 * math.cos(a), cy + r0 * math.sin(a)]], np.float32)
-            _set_along(field, log, bm, P, words, px_s, 0.10, fit_len=(r1 - r0) * 1.05)
+            n0 = len(log)
+            _set_along(field, log, bm, P, words, pxj, 0.12, fit_len=(r1 - r0) * 1.05)
+            if tone is not None and len(log) > n0:
+                # Scale the fibre's ink by the iris tone at its centre (0.35 .. 1).
+                patch, x0, y0, lo, hi = tone
+                mx, my = 0.5 * (P[0, 0] + P[1, 0]), 0.5 * (P[0, 1] + P[1, 1])
+                ty, tx = min(patch.shape[0] - 1, max(0, int(my - y0))), min(patch.shape[1] - 1, max(0, int(mx - x0)))
+                tv = 0.35 + 0.65 * min(1.0, max(0.0, (float(patch[ty, tx]) - lo) / (hi - lo)))
+                word, pxl, deg, gx, gy = log[-1]
+                bmp = bm.rotated(word, pxl, deg)
+                hh, ww = bmp.shape
+                px_, py_ = int(round(gx - ww / 2.0)), int(round(gy - hh / 2.0))
+                xa, ya = max(0, px_), max(0, py_)
+                xb, yb = min(W, px_ + ww), min(H, py_ + hh)
+                if xb > xa and yb > ya:
+                    sub = bmp[ya - py_:yb - py_, xa - px_:xb - px_]
+                    roi = field[ya:yb, xa:xb]
+                    roi[sub > 0.05] = np.minimum(roi[sub > 0.05], sub[sub > 0.05] * tv)
+                log[-1] = (word, pxl, deg, gx, gy, tv)
     return field, log
 
 
@@ -551,6 +577,9 @@ def raster(log: Sequence[Glyph], Wk: int, Hk: int, k: float, font_path: Optional
     test, which the log already passed)."""
     field = np.zeros((Hk, Wk), np.float32)
     bm = _Bitmaps(font_path, k)
-    for word, px, deg, cx, cy in log:
-        _paste_max(field, bm.rotated(word, px, deg), cx * k, cy * k, False, 1.0)
+    for entry in log:
+        word, px, deg, cx, cy = entry[:5]
+        tv = float(entry[5]) if len(entry) > 5 else 1.0
+        bmp = bm.rotated(word, px, deg)
+        _paste_max(field, bmp if tv >= 1.0 else bmp * tv, cx * k, cy * k, False, 1.0)
     return field
