@@ -203,8 +203,12 @@ _k("TYPO_DRAPE", "float", "64",
    "How far rows warp vertically to ride the form, in pixels at reference scale.")
 _k("TYPO_FLOW_JITTER", "float", "3.0",
    "Per-row horizontal offset in units of the row font size, breaking the wallpaper lattice. 0 = aligned.")
+_k("TYPO_ROW_STAGGER", "on/off (on = 1/true/on/yes)", "",
+   "Rows: choose each row's start among eight seeded draws so its word gaps do not line up with the two rows above (no vertical rivers). Off = the single random draw.")
 _k("TYPO_FLOW_PLACE", "on/off (on = 1/true/on/yes)", "",
    "Words style: set the words along the form on traced streamlines (hair grain, facial contours, eye orbits) instead of horizontal rows draped by luminance. Off = the rows.")
+_k("TYPO_FLOW_ZONE", "text", "hair",
+   "Flow placement: 'hair' (the hybrid: rows on the face and body, flow in the hair) or 'all' (the whole subject).")
 _k("TYPO_FLOW_LEADING", "float", "0.92",
    "Flow placement: line spacing in units of the local type size; lines may come 0.85 of this close, and drift wider, so the mean is about the rows' 1.0.")
 _k("TYPO_FLOW_HAIR", "float", "1.0",

@@ -1607,12 +1607,52 @@ def _lf_text_rows(W, s, _ssn, H, flow, rng, _vocab_stream, seed):
     # is.
     _row_pad = int(round(float(_settings.raw("TYPO_DRAPE") or 64.0) * s * _ssn)) + 8
 
+    # Rivers (TYPO_ROW_STAGGER=1): a row's horizontal start was a random draw, and with a
+    # short word list a tenth of the word gaps land within 0.2 of a row height of a gap in
+    # the row above (measured on the smile portrait, five words: 8 to 13% per tier). Runs
+    # of those read as vertical white rivers through the face. With the switch on, each
+    # row's start is chosen among eight seeded draws as the one whose word gaps sit
+    # farthest from the two rows above. Same rng, same seed: preview == paid file.
+    _stagger = _settings.raw("TYPO_ROW_STAGGER").strip().lower() in ("1", "true", "on", "yes")
+    _prev_gaps = []          # word-gap x positions of the last two rows (0 = the row above)
+
+    def _remember(_xw):
+        _prev_gaps.insert(0, np.array([x for x, _t in _xw if -1 < x < W + 1], np.float32))
+        del _prev_gaps[2:]
+
+    def _pick_offset(_r, span, advances, tol):
+        """The offset (0..span) among eight draws whose word gaps align least with the
+        rows above: the share of gaps within 0.2 fs of one above, the row above counting
+        double, ties broken by the smallest gap-to-gap distance being largest."""
+        cands = [_r.randint(0, span) for _ in range(8)]
+        if not _prev_gaps or not advances:
+            return cands[0]
+        rel = np.concatenate([[0.0], np.cumsum(np.asarray(advances, np.float32))[:-1]])
+        best, best_key = cands[0], None
+        for c in cands:
+            gaps = rel - c
+            gaps = gaps[(gaps > -1) & (gaps < W + 1)]
+            if not len(gaps):
+                continue
+            score, dmin = 0.0, 1e9
+            for wgt, pg in zip((1.0, 0.5), _prev_gaps):
+                if not len(pg):
+                    continue
+                dd = np.abs(gaps[:, None] - pg[None, :]).min(1)
+                score += wgt * float((dd < tol).mean())
+                dmin = min(dmin, float(dd.min()))
+            key = (score, -dmin)
+            if best_key is None or key < best_key:
+                best, best_key = c, key
+        return best
+
     def rows(fs: float) -> np.ndarray:
         f = _font(fs)
         im = Image.new("L", (W, H + _row_pad), 255)
         d = ImageDraw.Draw(im)
         y = 0
         _log_rows = []      # (y, [(x, word), ...]) per row, for the sharp print's redraw
+        del _prev_gaps[:]   # rivers are judged within a tier
         if flow:
             # MESSAGE mode: stream the words continuously DOWN the rows, wrapping word
             # by word and looping seamlessly, so the sentence reads in order and then
@@ -1640,12 +1680,16 @@ def _lf_text_rows(W, s, _ssn, H, flow, rng, _vocab_stream, seed):
                 while row_w < target and len(parts) < 20000:   # cap: never hang a row
                     tok = _vocab_stream[wi % n]; wi += 1
                     parts.append(tok); row_w += adv.get(tok, space)
-                _ox = -(_r.randint(0, int(fs * _fjit)) if _fjit > 0 else int((ry % 5) * fs * 0.5))
+                if _stagger and _fjit > 0:
+                    _ox = -_pick_offset(_r, int(fs * _fjit), [adv.get(t, space) for t in parts], 0.2 * fs)
+                else:
+                    _ox = -(_r.randint(0, int(fs * _fjit)) if _fjit > 0 else int((ry % 5) * fs * 0.5))
                 d.text((_ox, y), " ".join(parts), font=f, fill=0)
                 _xw, _x = [], float(_ox)
                 for tok in parts:
                     _xw.append((_x, tok)); _x += adv.get(tok, space)
                 _log_rows.append((y, _xw))
+                _remember(_xw)
                 y += max(6, int(fs)); ry += 1
         else:
             # Keep the words in the order they were entered (a sentence stays a
@@ -1661,15 +1705,20 @@ def _lf_text_rows(W, s, _ssn, H, flow, rng, _vocab_stream, seed):
             line = base * max(2, int((W + fs * 7) / bw) + 2)
             _adv = {w: float(d.textlength(w + " ", font=f)) for w in set(_vocab_stream)}
             _line_words = [w for w in line.split(" ") if w]
+            _line_adv = [_adv.get(w, 0.0) for w in _line_words]
             _prng = random.Random(seed ^ 0x9E3779B9)   # see the note above: pad rows must
             while y < H + _row_pad + fs:                # not disturb the main sequence
                 _r = rng if y < H + fs else _prng
-                _ox = -_r.randint(0, int(fs * 6))
+                if _stagger:
+                    _ox = -_pick_offset(_r, int(fs * 6), _line_adv, 0.2 * fs)
+                else:
+                    _ox = -_r.randint(0, int(fs * 6))
                 d.text((_ox, y), line, font=f, fill=0)
                 _xw, _x = [], float(_ox)
                 for tok in _line_words:
                     _xw.append((_x, tok)); _x += _adv.get(tok, 0.0)
                 _log_rows.append((y, _xw))
+                _remember(_xw)
                 y += max(6, int(fs))
         rows.log[fs] = _log_rows
         return 1.0 - (np.asarray(im).astype(np.float32) / 255.0)
@@ -2033,8 +2082,9 @@ def _lf_sharp_resize(C_low, st, Wk, Hk, band_rows=512):
     del xx, yy, amp_hi, dn
     def R(tile):
         return cv2.remap(tile, mx, my, cv2.INTER_LINEAR, borderValue=0.0)
-    if st.get("flow_log") is not None:
-        # Flow placement: the logged words drawn again at print scale (see flow_place).
+    if st.get("flow_log") is not None and st.get("flow_w") is None:
+        # Flow placement over the whole subject: the logged words drawn again at print
+        # scale (see flow_place).
         warped = _flow.raster(st["flow_log"], Wk, Hk, k, _font_path())
     else:
         df = cv2.resize(st["df"], (Wk, Hk), interpolation=cv2.INTER_LINEAR)
@@ -2050,6 +2100,12 @@ def _lf_sharp_resize(C_low, st, Wk, Hk, band_rows=512):
         bt = np.clip((df - 0.75) / 0.2501, 0, 1); sel = (df >= 0.75) & (df < 1.0001)
         warped = np.where(sel, wF * (1 - bt) + wMi * bt, warped); del wF
         warped = np.where(df >= 1.0, wMi, warped); del wMi, bt, sel, df
+        if st.get("flow_log") is not None:
+            # The hybrid: the flow's words redrawn at print scale, blended in through the
+            # enlarged hair weight exactly as the working render blended them.
+            fw_k = cv2.resize(st["flow_w"], (Wk, Hk), interpolation=cv2.INTER_LINEAR)
+            warped = warped * (1.0 - fw_k) + _flow.raster(st["flow_log"], Wk, Hk, k, _font_path()) * fw_k
+            del fw_k
     if st.get("irises") and st.get("iris_fs") is not None:
         iris_m = np.zeros((Hk, Wk), np.float32)
         ir_mean = float(np.mean([r for _, _, r in st["irises"]]))
@@ -2331,19 +2387,24 @@ def render_displacement_portrait(
     # Flow placement (TYPO_FLOW_PLACE=1): the words set along the form on traced streamlines
     # instead of horizontal rows draped by luminance. The drape's remap is still built for
     # the iris rows; the four tiers it warps are replaced by the flow field. See flow_place.
-    _flow_log = None
+    _flow_log, _flow_w = None, None
     if _flow.on():
         _fsz = _flow.size_field(df, s, _ssn, float(np.clip(float(word_scale or 1.0), 0.2, 3.0)))
         _chin = max(float(_p[:, 1].max()) for _p in all_pts)
+        if (_settings.raw("TYPO_FLOW_ZONE") or "hair").strip().lower() != "all":
+            _flow_w = _flow.hair_zone(mask01, fmh, _chin, fw, W, H, gray,
+                                      cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA))
         _amp = (float(_settings.raw("TYPO_DRAPE") or 64.0) * s * _ssn * (1.0 - 0.85 * feat_damp)).astype(np.float32)
         _th, _co = _flow.flow_field(gray, mask01, face_norm, _chin, irises, fw, W, H, _amp,
-                                    float(_fsz[mask01 > 0.5].mean()) if (mask01 > 0.5).any() else float(_fsz.mean()))
+                                    float(_fsz[mask01 > 0.5].mean()) if (mask01 > 0.5).any() else float(_fsz.mean()),
+                                    hair=_flow_w)
         del _amp
-        _flow_fld, _flow_log = _flow.place(_th, _co, _fsz, mask01, _vocab_stream, _font_path(), W, H)
+        _flow_fld, _flow_log = _flow.place(_th, _co, _fsz, mask01, _vocab_stream, _font_path(), W, H,
+                                           zone=_flow_w)
         del _th, _co, _fsz
     yy, R, warped = _lf_drape(s, W, gray, H, _ssn, feat_damp, t_fine, t_large, t_micro, t_mid, df)
     if _flow_log is not None:
-        warped = _flow_fld
+        warped = _flow_fld if _flow_w is None else warped * (1.0 - _flow_w) + _flow_fld * _flow_w
         del _flow_fld
     warped = _lf_iris_circles(irises, t_iris, H, W, R, warped)
     lum, ink_field = _lf_tonal_field(g, gray, mask01, fw, face_w, feat_norm, face_norm,
@@ -2356,7 +2417,7 @@ def render_displacement_portrait(
         _tier_keys = list(rows.log.keys())
         _sst = dict(W=W, H=H, row_pad=rows.pad, row_log=rows.log, tier_fs=_tier_keys[:4],
                     iris_fs=(_tier_keys[4] if len(_tier_keys) > 4 else None), irises=list(irises or []),
-                    gray=gray, df=df, ink_field=ink_field, w2=w2, ink_name=ink, flow_log=_flow_log,
+                    gray=gray, df=df, ink_field=ink_field, w2=w2, ink_name=ink, flow_log=_flow_log, flow_w=_flow_w,
                     amp=(float(_settings.raw("TYPO_DRAPE") or 64.0) * s * _ssn * (1.0 - 0.85 * feat_damp)).astype(np.float32))
     # STAGED INK DUMP (TYPO_DUMP_STAGES=<dir>). The ink field is rewritten by sixteen
     # passes in sequence, and any of them can drive a region to bare ground. Reasoning from

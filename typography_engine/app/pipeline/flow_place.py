@@ -29,6 +29,12 @@ A word whose letters would land on more than a tenth of already placed ink is sk
 sharp print draws the log again at print scale with the font at size x k, exactly as the
 pet engine's print path does.
 
+TYPO_FLOW_ZONE=hair (the default) is the hybrid: the rows stay on the face and body and
+the flow is placed only in the hair, blended through a feathered hair weight (hair_zone).
+Judged on staging 2026-09-20: whole-subject flow lost to the rows on a soft frontal face
+(busier, darker, ripples round the highlights) and won only in the hair. "all" is the
+whole-subject mode.
+
 Off (the default) nothing here runs and the rows renderer is byte-identical.
 """
 from __future__ import annotations
@@ -63,9 +69,61 @@ def size_field(df: np.ndarray, s: float, ssn: float, wsc: float) -> np.ndarray:
     return np.interp(np.asarray(df, np.float32), np.array(_DF_KNOTS, np.float32), sizes).astype(np.float32)
 
 
+def hair_zone(mask01: np.ndarray, fmh: np.ndarray, chin_y: float, fw: float, W: int, H: int,
+              gray: np.ndarray, bgr: Optional[np.ndarray] = None) -> np.ndarray:
+    """Where the flow places words in the hybrid (TYPO_FLOW_ZONE=hair): the subject outside
+    the face hull above the chin, and below it only long hair: grain-confident, clear of
+    the neck column, joined to the hair above, and of the hair's own colour (a neck crease
+    and a woven garment are confident and joined too; the first trials set flow words on
+    a neck and a shirt). Feathered by a few pixels so the seam at the hairline is a short
+    cross-fade: a wide one doubled the words in the band."""
+    from ..pet_v2.engine import multi_scale_orientation
+    d = int(fw * 0.03) | 1
+    hull8 = cv2.dilate(np.asarray(fmh, np.uint8), np.ones((d, d), np.uint8), 1)
+    # The mesh stops short of the hairline; the forehead above it is skin and stays in
+    # rows. Grow the hull upward by a fifth of the face height (anchor at the kernel's
+    # foot, so only upward).
+    ys_h = np.nonzero(hull8.any(axis=1))[0]
+    fh = float(ys_h.max() - ys_h.min()) if len(ys_h) else fw
+    up = max(1, int(fh * 0.20))
+    hull8 = cv2.dilate(hull8, np.ones((up, 1), np.uint8), anchor=(0, up - 1), iterations=1)
+    hull = hull8.astype(np.float32)
+    hull = np.clip(cv2.GaussianBlur(hull, (0, 0), sigmaX=max(1.0, fw * 0.012)), 0, 1)
+    yy = np.arange(H, dtype=np.float32)[:, None]
+    xx = np.arange(W, dtype=np.float32)[None, :]
+    inside = mask01 > 0.5
+    above = inside & (yy < chin_y) & (hull < 0.5)
+    ys, xs = np.nonzero(np.asarray(fmh) > 0)
+    cx = float(xs.mean()) if len(xs) else W / 2.0
+    _th, coh = multi_scale_orientation(np.asarray(gray, np.float32), W)
+    coh_s = cv2.GaussianBlur(coh, (0, 0), sigmaX=max(2.0, fw * 0.04))
+    # Below the chin the weight is soft (a hard confidence cut drew a horizontal seam
+    # through long hair at chin height): the grain's confidence, times the colour test.
+    below_w = np.clip((coh_s - 0.25) / 0.25, 0, 1) * (inside & (yy >= chin_y) & (np.abs(xx - cx) > 0.55 * fw))
+    if bgr is not None and above.any():
+        # The hair's colour, from the hair above the chin. Chroma (a, b) separates hair
+        # from a garment where the full Lab distance did not (dark brown hair and a navy
+        # shirt are 37 apart in Lab, 35 of it chroma); lightness gets a wide band so the
+        # strand highlights pass.
+        lab = cv2.cvtColor(cv2.GaussianBlur(np.asarray(bgr, np.uint8), (0, 0), sigmaX=max(1.0, fw * 0.02)),
+                           cv2.COLOR_BGR2LAB).astype(np.float32)
+        ref = np.median(lab[above], axis=0)
+        chroma = np.sqrt(((lab[..., 1:] - ref[1:]) ** 2).sum(axis=2))
+        colour_ok = (chroma < 16.0) & (np.abs(lab[..., 0] - ref[0]) < 50.0)
+        below_w = below_w * colour_ok
+    cand = above | (below_w > 0.05)
+    n, lab_cc = cv2.connectedComponents(cand.astype(np.uint8), connectivity=8)
+    keep = np.zeros(n, bool)
+    keep[np.unique(lab_cc[above])] = True
+    keep[0] = False
+    zone = np.where(above, 1.0, below_w).astype(np.float32) * keep[lab_cc] * (1.0 - hull)
+    return np.clip(cv2.GaussianBlur(zone, (0, 0), sigmaX=max(1.0, fw * 0.008)), 0, 1).astype(np.float32)
+
+
 def flow_field(gray: np.ndarray, mask01: np.ndarray, face_norm: np.ndarray, chin_y: float,
                irises: Sequence[Tuple[float, float, float]], fw: float, W: int, H: int,
-               amp: np.ndarray, base_px: float) -> Tuple[np.ndarray, np.ndarray]:
+               amp: np.ndarray, base_px: float, hair: Optional[np.ndarray] = None
+               ) -> Tuple[np.ndarray, np.ndarray]:
     """The direction (mod pi) and confidence (0..1) the streamlines follow.
 
     On the face the direction is the draped row's own: a row y = c becomes the curve
@@ -76,18 +134,24 @@ def flow_field(gray: np.ndarray, mask01: np.ndarray, face_norm: np.ndarray, chin
     side-lit face the terminator runs vertically and every highlight is a small island.
     In the hair the multi-scale structure tensor (the pet engine's fur grain) takes over
     where it is confident; at the silhouette the lines turn along the edge; around each
-    iris the pet engine's orbit is blended in."""
+    iris the pet engine's orbit is blended in. `hair` is the hair weight (0..1); None
+    derives one from the face feather (the whole-subject mode)."""
     from ..pet_v2.engine import multi_scale_orientation, blend_attractor_field
     g = np.asarray(gray, np.float32)
     D = cv2.GaussianBlur(g, (0, 0), sigmaX=W * 0.020)         # the drape's own smoothing
     F = np.asarray(amp, np.float32) * ((D / 255.0 - 0.5) * 2.0)
     Fy, Fx = np.gradient(F)
-    th_drape = np.arctan2(-Fx, 1.0 + Fy).astype(np.float32)
+    # The fold: where 1 + dF/dy nears zero the drape compresses a row to nothing and the
+    # tangent swings vertical; past zero it loops, and a traced line circled every cheek
+    # highlight (the ripples seen on staging). A row is bounded by the amplitude; the
+    # tangent is floored so a line cannot loop.
+    th_drape = np.arctan2(-Fx, np.maximum(0.5, 1.0 + Fy)).astype(np.float32)
     # Hair grain, trusted on the subject above the chin and off the face.
     th_hair, coh_hair = multi_scale_orientation(g, W)
-    yy = np.arange(H, dtype=np.float32)[:, None]
-    hair = ((mask01 > 0.5) & (yy < chin_y)).astype(np.float32) * (1.0 - np.clip(face_norm, 0, 1))
-    hair = np.clip(cv2.GaussianBlur(hair, (0, 0), sigmaX=max(2.0, fw * 0.03)), 0, 1)
+    if hair is None:
+        yy = np.arange(H, dtype=np.float32)[:, None]
+        hair = ((mask01 > 0.5) & (yy < chin_y)).astype(np.float32) * (1.0 - np.clip(face_norm, 0, 1))
+        hair = np.clip(cv2.GaussianBlur(hair, (0, 0), sigmaX=max(2.0, fw * 0.03)), 0, 1)
     hair_k = float(_settings.raw("TYPO_FLOW_HAIR") or 1.0)
     w_hair = np.clip(np.clip(coh_hair * 1.5, 0, 1) ** 2 * hair * hair_k, 0.0, 0.92)
     c2 = np.cos(2 * th_drape) * (1.0 - w_hair) + np.cos(2 * th_hair) * w_hair
@@ -218,8 +282,8 @@ def _upright_deg(angle: float) -> int:
 
 
 def place(theta: np.ndarray, coh: np.ndarray, size_px: np.ndarray, mask01: np.ndarray,
-          stream: Sequence[str], font_path: Optional[str], W: int, H: int
-          ) -> Tuple[np.ndarray, List[Glyph]]:
+          stream: Sequence[str], font_path: Optional[str], W: int, H: int,
+          zone: Optional[np.ndarray] = None) -> Tuple[np.ndarray, List[Glyph]]:
     """Trace the streamlines and set the words along them. Returns the ink field (H x W,
     0..1) and the placement log the sharp print redraws."""
     from ..pet_v2.engine import evenly_spaced_streamlines
@@ -228,7 +292,10 @@ def place(theta: np.ndarray, coh: np.ndarray, size_px: np.ndarray, mask01: np.nd
     # Lines run past the silhouette by a couple of rows so the matte, not a missing line,
     # cuts the edge; the rows renderer covered the whole frame for the same reason.
     reach = int(round(float(size_px.max()) * 2.0)) | 1
-    region = cv2.dilate((mask01 > 0.5).astype(np.uint8), np.ones((reach, reach), np.uint8), 1).astype(np.float32)
+    where = (mask01 > 0.5) if zone is None else (zone > 0.15)
+    region = cv2.dilate(where.astype(np.uint8), np.ones((reach, reach), np.uint8), 1).astype(np.float32)
+    if not region.any():
+        return np.zeros((H, W), np.float32), []
     # A line never dies for want of confidence: where the field is uncertain it is already
     # near-horizontal, and the rows renderer drew there too. The floor keeps the tracer's
     # own test off; the seed is still the most confident point.
@@ -321,7 +388,7 @@ def place(theta: np.ndarray, coh: np.ndarray, size_px: np.ndarray, mask01: np.nd
                 continue
             d += wide + bm.space_px(px)
     if (_settings.raw("TYPO_FLOW_DEBUG") or "").strip():
-        inside = mask01 > 0.5
+        inside = (mask01 > 0.5) if zone is None else (zone > 0.5)
         _ln = [float(np.hypot(np.diff([p[0] for p in l]), np.diff([p[1] for p in l])).sum()) for l in lines if len(l) > 1]
         print("[flow] lines=%d (median %.0f px) words=%d coverage(subject)=%.3f step=%.1f sep=%.0f-%.0f"
               % (n_lines, float(np.median(_ln)) if _ln else 0.0, len(log),
