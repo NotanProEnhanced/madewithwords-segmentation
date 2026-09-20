@@ -33,6 +33,7 @@ _BRAND_MARK = {
     "keepsake": "LovedInWords.com",
     "everloved": "Ever Loved",
     "pawsinwords": "PawsInWords.com",
+    "faithinwords": "FaithInWords.com",   # was missing: Faith previews read "typortrait.com"
 }
 
 
