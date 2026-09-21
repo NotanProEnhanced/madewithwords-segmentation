@@ -89,7 +89,7 @@ def build(a_name: str, b_name: str, label: str, pets: bool) -> None:
         json.dump(key, fh, indent=1)
     with open(os.path.join(dest, "index.html"), "w") as fh:
         fh.write(_page(label, [p["id"] for p in key["pairs"]]))
-    print(f"{len(names)} pairs.  page: {BASE}/static/blind/{label}/   key: {KEY_DIR}/{label}-key.json")
+    print(f"{len(names)} pairs.  page: {BASE}/static/blind/{label}/index.html   key: {KEY_DIR}/{label}-key.json")
     print("Judge every pair without opening the key. Then: ./blind-judge.py tally", label, "'<results line>'")
 
 
