@@ -131,8 +131,11 @@ const BRANDS = {
   typortrait: {
     wordmark: "", docTitle: "The Typortrait Gallery",
     title: "The Typortrait Gallery",
-    lead: "Sacred figures and beloved moments, each portrait woven entirely from the words that belong to it.",
-    showTool: true, theme: null,          // no allowlist -> every collection
+    lead: "History in Words: American icons and world figures, each portrait woven entirely from the words that belong to their story.",
+    showTool: true, theme: null,
+    // Scoped to History in Words -- Typortrait is the secular flagship and must
+    // never surface FaithInWords' devotional-only collections (see note above).
+    collections: ["historyinwords"],
   },
   faithinwords: {
     // FaithInWords leads; Typortrait is demoted to a quiet "powered by" in the footer.

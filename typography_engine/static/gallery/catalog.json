@@ -771,7 +771,7 @@
     {
       "id": "prophets-old-testament",
       "title": "Prophets & the Old Testament",
-      "blurb": "From Abraham to the forerunner — the prophets and patriarchs, made from the words of the covenant.",
+      "blurb": "From Abraham to the forerunner \u2014 the prophets and patriarchs, made from the words of the covenant.",
       "sections": [
         {
           "id": "prophets-old-testament",
@@ -831,7 +831,7 @@
               "art": "original (AI-generated)",
               "text": "",
               "price": "29",
-              "scripture": "She turned and said to him, 'Rabboni!' — which means Teacher.",
+              "scripture": "She turned and said to him, 'Rabboni!' \u2014 which means Teacher.",
               "scripture_ref": "John 20:16"
             }
           ]
@@ -841,7 +841,7 @@
     {
       "id": "christmas",
       "title": "The Christmas Collection",
-      "blurb": "The Nativity, the Magi, and the gift-bringers — each woven entirely from the words that belong to them.",
+      "blurb": "The Nativity, the Magi, and the gift-bringers \u2014 each woven entirely from the words that belong to them.",
       "sections": [
         {
           "id": "the-nativity",
@@ -1016,7 +1016,7 @@
     {
       "id": "easter",
       "title": "The Easter Collection",
-      "blurb": "The Passion and the Resurrection — the days on which everything turns.",
+      "blurb": "The Passion and the Resurrection \u2014 the days on which everything turns.",
       "sections": [
         {
           "id": "easter",
@@ -1083,7 +1083,7 @@
     },
     {
       "id": "sacred-portraits-old-masters",
-      "title": "Sacred Portraits — Old Masters",
+      "title": "Sacred Portraits \u2014 Old Masters",
       "blurb": "The faces of Christ and his Mother from the old masters, each woven from the very words of Scripture.",
       "sections": [
         {
@@ -1194,6 +1194,249 @@
               "price": "29",
               "scripture": "Peace I leave with you, my peace I give unto you: not as the world giveth, give I unto you",
               "scripture_ref": "John 14:27"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "historyinwords",
+      "title": "History in Words",
+      "blurb": "American icons and world figures, each portrait woven entirely from the words that belong to their story.",
+      "sections": [
+        {
+          "id": "historyinwords",
+          "title": "",
+          "items": [
+            {
+              "id": "edgar-allan-poe",
+              "title": "Edgar Allan Poe",
+              "subject": "Edgar Allan Poe",
+              "words": "EDGAR ALLAN POE POET AUTHOR MYSTERY DARKNESS IMAGINATION NEVERMORE THE RAVEN BALTIMORE RICHMOND BOSTON GOTHIC MACABRE DETECTIVE FICTION SHORT STORY CRITIC MELANCHOLY OBSESSION MADNESS DEATH BEAUTY SHADOW DREAM VERSE LITERATURE AMERICA LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "frederick-douglass",
+              "title": "Frederick Douglass",
+              "subject": "Frederick Douglass",
+              "words": "FREDERICK DOUGLASS ABOLITIONIST ORATOR AUTHOR FREEDOM SLAVERY MARYLAND NEW YORK NARRATIVE AUTOBIOGRAPHY NORTH STAR NEWSPAPER SUFFRAGE EQUALITY JUSTICE CIVIL RIGHTS RECONSTRUCTION STATESMAN ELOQUENCE COURAGE DIGNITY LIBERTY CONSCIENCE PERSEVERANCE HISTORY LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "harriet-tubman",
+              "title": "Harriet Tubman",
+              "subject": "Harriet Tubman",
+              "words": "HARRIET TUBMAN UNDERGROUND RAILROAD ABOLITIONIST CONDUCTOR FREEDOM MARYLAND MOSES CIVIL WAR NURSE SPY SCOUT SUFFRAGE COURAGE FAITH RESILIENCE LIBERTY BRAVERY SACRIFICE FAMILY COMMUNITY JUSTICE STRENGTH DETERMINATION HISTORY LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "abraham-lincoln",
+              "title": "Abraham Lincoln",
+              "subject": "Abraham Lincoln",
+              "words": "ABRAHAM LINCOLN PRESIDENT UNION EMANCIPATION CIVIL WAR ILLINOIS KENTUCKY GETTYSBURG ADDRESS LAWYER ORATOR HONESTY UNITY FREEDOM DEMOCRACY SACRIFICE PERSEVERANCE HUMILITY WISDOM LEADERSHIP RECONSTRUCTION NATION LIBERTY EQUALITY COURAGE MEMORY LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "mark-twain",
+              "title": "Mark Twain",
+              "subject": "Mark Twain",
+              "words": "MARK TWAIN SAMUEL CLEMENS AUTHOR HUMORIST MISSISSIPPI HANNIBAL RIVERBOAT PILOT TOM SAWYER HUCKLEBERRY FINN LITERATURE SATIRE WIT TRAVEL LECTURE INNOCENTS ABROAD A CONNECTICUT YANKEE ADVENTURE AMERICA OBSERVATION HUMAN NATURE STORYTELLER PEN NAME NOVELIST ESSAYIST MISSOURI HARTFORD MEMORY FREEDOM CONSCIENCE LANGUAGE LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "susan-b-anthony",
+              "title": "Susan B. Anthony",
+              "subject": "Susan B. Anthony",
+              "words": "SUSAN B ANTHONY SUFFRAGE VOTES FOR WOMEN EQUALITY WOMENS RIGHTS REFORMER ACTIVIST ROCHESTER NEW YORK ABOLITION TEMPERANCE CONSTITUTION CITIZENSHIP BALLOT JUSTICE LIBERTY DEMOCRACY CONVENTION ORGANIZER SPEAKER LEADERSHIP COURAGE PERSISTENCE NINETEENTH AMENDMENT NATIONAL WOMAN SUFFRAGE ASSOCIATION ELIZABETH CADY STANTON RIGHTS REPRESENTATION FREEDOM LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "walt-whitman",
+              "title": "Walt Whitman",
+              "subject": "Walt Whitman",
+              "words": "WALT WHITMAN POET LEAVES OF GRASS SONG OF MYSELF DEMOCRACY AMERICA BROOKLYN LONG ISLAND CAMDEN HUMANITY BODY SOUL NATURE WAR NURSE CIVIL WAR FREE VERSE GRASS SEA ROAD JOURNEY BROTHERHOOD COMPASSION INDIVIDUAL COSMOS LANGUAGE CELEBRATION EQUALITY VISION LITERATURE LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "sojourner-truth",
+              "title": "Sojourner Truth",
+              "subject": "Sojourner Truth",
+              "words": "SOJOURNER TRUTH ISABELLA BAUMFREE FREEDOM ABOLITIONIST WOMENS RIGHTS ORATOR ACTIVIST NEW YORK ULSTER COUNTY EMANCIPATION FAITH TRUTH JUSTICE EQUALITY COURAGE DIGNITY HUMANITY SPEAKER ADVOCATE RESISTANCE LIBERTY SUFFRAGE MOTHER METHODIST CIVIL WAR REFORM STRENGTH PERSEVERANCE CONSCIENCE LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "theodore-roosevelt",
+              "title": "Theodore Roosevelt",
+              "subject": "Theodore Roosevelt",
+              "words": "THEODORE ROOSEVELT TEDDY PRESIDENT ROUGH RIDER CONSERVATION NATIONAL PARKS PROGRESSIVE REFORM NEW YORK SAGAMORE HILL RANCHER NATURALIST EXPLORER STRENUOUS LIFE BULLY PULPIT SQUARE DEAL PANAMA CANAL TRUST BUSTER NAVY DUTY COURAGE VIGOR LEADERSHIP PUBLIC SERVICE WILDERNESS ADVENTURE RESPONSIBILITY AMERICA LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "nikola-tesla",
+              "title": "Nikola Tesla",
+              "subject": "Nikola Tesla",
+              "words": "NIKOLA TESLA INVENTOR ENGINEER ELECTRICITY ALTERNATING CURRENT AC POWER INDUCTION MOTOR TESLA COIL MAGNETIC FIELD FREQUENCY VOLTAGE CURRENT ENERGY WIRELESS RADIO LABORATORY NEW YORK COLORADO SPRINGS SERBIA VISIONARY EXPERIMENT INNOVATION IMAGINATION SCIENCE TECHNOLOGY LIGHT POWER FUTURE GENIUS LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "ulysses-s-grant",
+              "title": "Ulysses S. Grant",
+              "subject": "Ulysses S. Grant",
+              "words": "ULYSSES S GRANT GENERAL PRESIDENT UNION CIVIL WAR COMMANDER WEST POINT VICKSBURG APPOMATTOX SHILOH OVERLAND CAMPAIGN UNION ARMY MEMOIRS OHIO ILLINOIS SOLDIER LEADERSHIP DETERMINATION RESOLVE DUTY COURAGE RECONSTRUCTION PEACE SURRENDER STRATEGY SERVICE NATION AMERICA LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "booker-t-washington",
+              "title": "Booker T. Washington",
+              "subject": "Booker T. Washington",
+              "words": "BOOKER T WASHINGTON EDUCATOR TUSKEGEE INSTITUTE AUTHOR ORATOR LEADER UP FROM SLAVERY VIRGINIA ALABAMA HAMPTON INSTITUTE EDUCATION INDUSTRY SELF RELIANCE SKILL OPPORTUNITY PROGRESS COMMUNITY DIGNITY WORK KNOWLEDGE SERVICE LEADERSHIP ADVANCEMENT ENTERPRISE TEACHER REFORM COURAGE LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "sitting-bull",
+              "title": "Sitting Bull",
+              "subject": "Sitting Bull",
+              "words": "SITTING BULL TATANKA IYOTAKE HUNKPAPA LAKOTA LEADER SPIRITUAL LEADER GREAT PLAINS DAKOTA BLACK HILLS LITTLE BIGHORN RESISTANCE SOVEREIGNTY COMMUNITY COURAGE WISDOM PRAYER TRADITION FAMILY LAND BUFFALO TREATY DIGNITY STRENGTH VISION PEOPLE HOMELAND SURVIVAL LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "geronimo",
+              "title": "Geronimo",
+              "subject": "Geronimo",
+              "words": "GERONIMO GOYAALE BEDONKOHE APACHE LEADER MEDICINE MAN CHIRICAHUA ARIZONA NEW MEXICO SIERRA MADRE HOMELAND RESISTANCE SURVIVAL COURAGE ENDURANCE FREEDOM FAMILY COMMUNITY TRADITION LAND DIGNITY STRENGTH DETERMINATION HISTORY PEOPLE MEMORY LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "clara-barton",
+              "title": "Clara Barton",
+              "subject": "Clara Barton",
+              "words": "CLARA BARTON NURSE HUMANITARIAN AMERICAN RED CROSS CIVIL WAR BATTLEFIELD ANGEL OF THE BATTLEFIELD RELIEF SERVICE COMPASSION COURAGE CARE MEDICINE WOUNDED MISSING SOLDIERS ANDERSONVILLE GENEVA DISASTER RELIEF TEACHER PATENT OFFICE LEADERSHIP ORGANIZATION DUTY HUMANITY AID MERCY RESILIENCE ADVOCATE LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "elizabeth-cady-stanton",
+              "title": "Elizabeth Cady Stanton",
+              "subject": "Elizabeth Cady Stanton",
+              "words": "ELIZABETH CADY STANTON SUFFRAGE WOMENS RIGHTS SENECA FALLS DECLARATION OF SENTIMENTS EQUALITY BALLOT CONSTITUTION CITIZENSHIP REFORMER WRITER ORATOR ACTIVIST NEW YORK SUSAN B ANTHONY CONVENTION ABOLITION JUSTICE LIBERTY REPRESENTATION LEADERSHIP ORGANIZER DEMOCRACY COURAGE PERSISTENCE RIGHTS FREEDOM LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "charles-darwin",
+              "title": "Charles Darwin",
+              "subject": "Charles Darwin",
+              "words": "CHARLES DARWIN NATURALIST EVOLUTION NATURAL SELECTION ORIGIN OF SPECIES DESCENT OF MAN HMS BEAGLE GALAPAGOS ENGLAND DOWN HOUSE SCIENCE BIOLOGY GEOLOGY SPECIES VARIATION ADAPTATION NATURE OBSERVATION EVIDENCE RESEARCH COLLECTION VOYAGE THEORY LIFE EARTH DISCOVERY CURIOSITY PATIENCE KNOWLEDGE LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "queen-victoria",
+              "title": "Queen Victoria",
+              "subject": "Queen Victoria",
+              "words": "QUEEN VICTORIA MONARCH UNITED KINGDOM BRITAIN EMPIRE VICTORIAN ERA BUCKINGHAM PALACE WINDSOR OSBORNE HOUSE PRINCE ALBERT SOVEREIGN CROWN DUTY FAMILY MOURNING INDUSTRY RAILWAYS REFORM PARLIAMENT LONG REIGN TRADITION STATE DIPLOMACY HISTORY NINETEENTH CENTURY LEADERSHIP LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "john-brown",
+              "title": "John Brown",
+              "subject": "John Brown",
+              "words": "JOHN BROWN ABOLITIONIST HARPERS FERRY KANSAS SLAVERY FREEDOM RESISTANCE RAID ARSENAL VIRGINIA OHIO CONVICTION COURAGE SACRIFICE JUSTICE EMANCIPATION UNDERGROUND RAILROAD ABOLITION LIBERTY CONSCIENCE FAITH ACTION MARTYR CIVIL WAR HISTORY LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "pt-barnum",
+              "title": "P.T. Barnum",
+              "subject": "P.T. Barnum",
+              "words": "P T BARNUM PHINEAS TAYLOR BARNUM SHOWMAN ENTREPRENEUR PROMOTER ENTERTAINMENT MUSEUM CIRCUS BRIDGEPORT CONNECTICUT NEW YORK AMERICAN MUSEUM CURIOSITY SPECTACLE PUBLICITY IMAGINATION ENTERPRISE AUDIENCE EXHIBITION STORYTELLING PERFORMANCE HUMOR AMBITION INNOVATION POPULAR CULTURE MAYOR PHILANTHROPY LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "chief-joseph",
+              "title": "Chief Joseph",
+              "subject": "Chief Joseph",
+              "words": "CHIEF JOSEPH NEZ PERCE WALLOWA LEADER OREGON IDAHO HOMELAND PEOPLE PEACE RESISTANCE RETREAT BEAR PAW TREATY SOVEREIGNTY DIGNITY COURAGE ENDURANCE FAMILY COMMUNITY TRADITION LAND JUSTICE SURVIVAL WISDOM MEMORY LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "emily-dickinson",
+              "title": "Emily Dickinson",
+              "subject": "Emily Dickinson",
+              "words": "EMILY DICKINSON POET AMHERST MASSACHUSETTS POETRY LETTERS DASHES ENVELOPE POEMS GARDEN FLOWERS NATURE DEATH IMMORTALITY HOPE SOUL MIND LIGHT SILENCE SOLITUDE MEMORY TIME TRUTH BEAUTY MYSTERY IMAGINATION LANGUAGE OBSERVATION HOME LITERATURE LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
+            },
+            {
+              "id": "robert-e-lee",
+              "title": "Robert E. Lee",
+              "subject": "Robert E. Lee",
+              "words": "ROBERT E LEE VIRGINIA WEST POINT ENGINEER SOLDIER GENERAL CIVIL WAR CONFEDERACY SECESSION SLAVERY ARMY OF NORTHERN VIRGINIA APPOMATTOX GETTYSBURG ANTIETAM FREDERICKSBURG CHANCELLORSVILLE STRATEGY COMMAND DEFEAT SURRENDER RECONSTRUCTION RECONCILIATION WASHINGTON COLLEGE EDUCATOR HISTORY MEMORY LEGACY",
+              "art": "original (AI-generated)",
+              "text": "",
+              "price": "29",
+              "category": "History in Words"
             }
           ]
         }
