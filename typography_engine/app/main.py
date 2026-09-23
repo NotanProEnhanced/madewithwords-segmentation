@@ -2302,7 +2302,7 @@ def gallery_page(request: Request) -> HTMLResponse:
     # Crawlable internal links to the collection landing pages (the grid itself is JS,
     # so bots can't follow the tabs). Brand-filtered, injected just above the trust nav.
     try:
-        allow = _brand_collections(host)
+        allow = _brand_collections(host, request.query_params.get("brand", ""))
         cat = json.loads((STATIC_DIR / "gallery" / "catalog.json").read_text(encoding="utf-8"))
         links = "".join(
             f'<a href="/collections/{c.get("id")}">{c.get("title")}</a>'
@@ -2336,12 +2336,19 @@ def gallery_page(request: Request) -> HTMLResponse:
     return HTMLResponse(html)
 
 
-def _brand_collections(host: str) -> Optional[set]:
-    """The collection ids a brand host may show, or None for 'all'. The FaithInWords
-    catalog is now the full nine-collection devotional set (Christmas included), so no
-    brand currently restricts a collection. Kept as the hook if a future brand needs to
-    hide one."""
-    return None
+def _brand_collections(host: str, brand_q: str = "") -> Optional[set]:
+    """The collection ids a brand host (or ?brand= override, for staging -- staging has
+    one hostname, so this is the only way to preview a non-default brand's view there)
+    may show, or None for 'all'. FaithInWords intentionally shows its full multi-collection
+    devotional catalog (Christmas/Santa included). Every OTHER brand -- Typortrait, and
+    anything unrecognized -- defaults to the secular set: enabling the gallery on a brand
+    must never surface FaithInWords' devotional-only collections just because a shared
+    catalog.json and a shared private-art directory happen to hold both."""
+    h = (host or "").split(":")[0].lower()
+    bq = (brand_q or "").lower()
+    if "faithinwords" in h or bq == "faithinwords":
+        return None
+    return {"historyinwords"}
 
 
 def _sitemap_paths(host: str, brand_q: str = "") -> list:
@@ -2367,7 +2374,7 @@ def _sitemap_paths(host: str, brand_q: str = "") -> list:
     paths.append("/gallery")
     paths.append("/how-its-made")                        # the process/story page
     paths += [f"/guides/{s}" for s in gallery_content.GUIDES]   # intent/gift landing pages
-    allow = _brand_collections(host)
+    allow = _brand_collections(host, brand_q)
     try:
         cat = json.loads((STATIC_DIR / "gallery" / "catalog.json").read_text(encoding="utf-8"))
         for col in cat.get("collections", []):
@@ -2928,6 +2935,13 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
     it = gallery_catalog.get(item)
     if not it:
         return JSONResponse({"ok": False, "error": "unknown_item"}, status_code=404)
+    # Brand gate: a shared catalog.json + a shared private-art directory can hold items
+    # from multiple brands' collections (see _brand_collections) -- without this, any
+    # brand's checkout would happily sell any OTHER brand's item, e.g. a devotional
+    # portrait through the secular Typortrait storefront.
+    allow = _brand_collections(request.headers.get("host", ""), request.query_params.get("brand", ""))
+    if allow is not None and gallery_catalog.collection_of(item) not in allow:
+        return JSONResponse({"ok": False, "error": "unknown_item"}, status_code=404)
     if gallery_catalog.master_path(item) is None:
         # Item is in the catalog but its artwork isn't in place yet.
         return JSONResponse({"ok": False, "error": "art_missing"}, status_code=409)
@@ -3261,7 +3275,7 @@ def gallery_bundle_checkout(request: Request, bundle: str = Form(...), ref: str 
     b = _gallery_bundle(bundle)
     if not b:
         return JSONResponse({"ok": False, "error": "unknown_bundle"}, status_code=404)
-    allow = _brand_collections(request.headers.get("host", ""))
+    allow = _brand_collections(request.headers.get("host", ""), request.query_params.get("brand", ""))
     if allow is not None and b["collection_id"] not in allow:
         return JSONResponse({"ok": False, "error": "unknown_bundle"}, status_code=404)
     if not STRIPE_SECRET_KEY:
@@ -3460,6 +3474,13 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
         raise HTTPException(status_code=404, detail="not_found")
     it = gallery_catalog.get(item_id)
     if not it or gallery_catalog.art_path(item_id) is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    # Brand gate -- see _brand_collections: a shared catalog + shared private-art
+    # directory can hold another brand's items, and this crawlable per-item page is a
+    # direct/shared-link entry point that never goes through the client-side JS filter
+    # the browsable grid uses, so it needs its own server-side check.
+    allow = _brand_collections(request.headers.get("host", ""), request.query_params.get("brand", ""))
+    if allow is not None and gallery_catalog.collection_of(item_id) not in allow:
         raise HTTPException(status_code=404, detail="not_found")
 
     base = _req_base(request)
@@ -3678,7 +3699,7 @@ def collection_page(collection_id: str, request: Request) -> HTMLResponse:
     cols = cat.get("collections", [])
     col = next((c for c in cols if c.get("id") == collection_id), None)
     host = (request.headers.get("host") or "").lower()
-    allow = _brand_collections(host)
+    allow = _brand_collections(host, request.query_params.get("brand", ""))
     if col is None or (allow is not None and collection_id not in allow):
         raise HTTPException(status_code=404, detail="not_found")
 

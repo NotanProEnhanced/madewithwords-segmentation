@@ -48,6 +48,27 @@ def _load_items() -> Dict[str, dict]:
     return out
 
 
+def collection_of(item_id: str) -> Optional[str]:
+    """Which top-level collection an item belongs to, or None if unknown. Used to gate
+    which brand/host may view or buy it -- see _brand_collections in main.py. Items
+    aren't tagged with their collection in _load_items()'s flattened view, so this walks
+    the catalog structure directly."""
+    iid = (item_id or "").strip()
+    if not iid:
+        return None
+    try:
+        data = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    for col in data.get("collections", []):
+        cid = str(col.get("id") or "")
+        for sec in col.get("sections", []):
+            for it in sec.get("items", []):
+                if str(it.get("id") or "").strip() == iid:
+                    return cid
+    return None
+
+
 def get(item_id: str) -> Optional[dict]:
     """Return the catalog item dict for a given id, or None if unknown."""
     return _load_items().get((item_id or "").strip())
