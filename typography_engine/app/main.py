@@ -3067,7 +3067,7 @@ def gallery_printful_fetch(item: str, exp: int, sig: str, a: float = _PRINT_ASPE
 
 
 @app.get("/gallery/download")
-def gallery_download(item: str, session_id: str, fmt: str = "zip"):
+def gallery_download(request: Request, item: str, session_id: str, fmt: str = "zip"):
     """Serve a paid gallery item after verifying its Stripe session. Default (fmt=zip)
     is the full 'digital everywhere' bundle — master + phone/desktop/square wallpapers
     + read-me; fmt=png is the single master. Falls back to the master if the bundle
@@ -3087,15 +3087,20 @@ def gallery_download(item: str, session_id: str, fmt: str = "zip"):
     meta_item = getattr(meta, "gallery_item", None) if meta is not None else None
     if not paid or meta_item != item:
         return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
+    # Brand-aware filename: same endpoint serves the general gallery AND FaithInWords.com
+    # (see gallery_item_page above) -- the delivered file name must follow the host the
+    # buyer actually checked out on, not always name the FaithInWords pilot.
+    host = (request.headers.get("host") or "").lower()
+    brand_prefix = "FaithInWords" if "faithinwords" in host else "Typortrait"
     if fmt != "png":
-        bundle = _ensure_gallery_bundle(item)
+        bundle = _ensure_gallery_bundle(item, brand_prefix)
         if bundle is not None:
             return FileResponse(str(bundle), media_type="application/zip",
-                                filename=f"FaithInWords-{item}.zip")
+                                filename=f"{brand_prefix}-{item}.zip")
     path = gallery_catalog.master_path(item)
     if path is None:
         return JSONResponse({"ok": False, "error": "art_missing"}, status_code=404)
-    return FileResponse(str(path), media_type="image/png", filename=f"typortrait-{item}.png")
+    return FileResponse(str(path), media_type="image/png", filename=f"{brand_prefix.lower()}-{item}.png")
 
 
 # ---------------------------------------------------------------------------
@@ -3198,25 +3203,31 @@ def _gallery_bundle(bundle_id: str) -> Optional[dict]:
     return _build_bundle(col, part) if col else None
 
 
-def _bundle_set_readme(b: dict) -> str:
+def _bundle_set_readme(b: dict, label: str = "Typortrait") -> str:
     lines = "\n".join(f"  • {str((gallery_catalog.get(x) or {}).get('title') or x)}.png"
                       for x in b["item_ids"])
+    site = {"LovedInWords": "LovedInWords.com", "FaithInWords": "FaithInWords.com",
+            "PawsInWords": "PawsInWords.com"}.get(label, "Typortrait.com")
+    signoff = (f"With gratitude,\n{site}  ·  powered by Typortrait\n"
+               if label in ("LovedInWords", "FaithInWords", "PawsInWords") else f"Thank you,\n{site}\n")
     return (f"{b['title']}\n{'='*len(b['title'])}\n\n"
             f"Thank you. This set includes {b['n']} high-resolution word portraits, "
             "each with no watermark — print them at home or at any photo lab, up to poster size:\n\n"
             f"{lines}\n\n"
             "Each file is a full-quality PNG. For personal use — not for resale or redistribution.\n\n"
-            "With gratitude,\nFaithInWords.com  ·  powered by Typortrait\n")
+            f"{signoff}")
 
 
-def _ensure_bundle_zip(bundle_id: str) -> Optional[Path]:
+def _ensure_bundle_zip(bundle_id: str, label: str = "Typortrait") -> Optional[Path]:
     """Build (once, cached) the ZIP for a set: every included portrait's high-res PNG
-    + a read-me. None if the set is unknown or no art could be added."""
+    + a read-me. None if the set is unknown or no art could be added. Cached per
+    (bundle, label) -- see _ensure_gallery_bundle for why the brand belongs in the key."""
     b = _gallery_bundle(bundle_id)
     if b is None:
         return None
     safe = re.sub(r"[^a-z0-9]+", "-", bundle_id.lower()).strip("-")
-    zip_path = PRIVATE_DIR / f"bundleset-{safe}.zip"
+    safe_label = re.sub(r"[^A-Za-z0-9]+", "", label) or "Typortrait"
+    zip_path = PRIVATE_DIR / f"bundleset-{safe}.{safe_label}.zip"
     if zip_path.exists():
         return zip_path
     try:
@@ -3232,7 +3243,7 @@ def _ensure_bundle_zip(bundle_id: str) -> Optional[Path]:
                 nm = re.sub(r"[^A-Za-z0-9 &-]", "", str(it.get("title") or iid)).strip() or iid
                 z.writestr(f"{nm}.png", Path(mp).read_bytes())
                 added += 1
-            z.writestr("Read Me.txt", _bundle_set_readme(b))
+            z.writestr("Read Me.txt", _bundle_set_readme(b, label))
         if added == 0:
             tmp.unlink(missing_ok=True)
             return None
@@ -3287,7 +3298,7 @@ def gallery_bundle_checkout(request: Request, bundle: str = Form(...), ref: str 
 
 
 @app.get("/gallery/bundle/download")
-def gallery_bundle_download(bundle: str, session_id: str):
+def gallery_bundle_download(request: Request, bundle: str, session_id: str):
     """Serve a paid collection set as a ZIP after verifying its Stripe session."""
     if not GALLERY_ENABLED:
         return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
@@ -3304,11 +3315,13 @@ def gallery_bundle_download(bundle: str, session_id: str):
     meta_bundle = getattr(meta, "bundle", None) if meta is not None else None
     if not paid or meta_bundle != bundle:
         return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
-    z = _ensure_bundle_zip(bundle)
+    host = (request.headers.get("host") or "").lower()
+    brand_prefix = "FaithInWords" if "faithinwords" in host else "Typortrait"
+    z = _ensure_bundle_zip(bundle, brand_prefix)
     if z is None:
         return JSONResponse({"ok": False, "error": "art_missing"}, status_code=404)
     safe = re.sub(r"[^A-Za-z0-9]+", "-", bundle).strip("-")
-    return FileResponse(str(z), media_type="application/zip", filename=f"FaithInWords-{safe}.zip")
+    return FileResponse(str(z), media_type="application/zip", filename=f"{brand_prefix}-{safe}.zip")
 
 
 _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
@@ -4958,12 +4971,15 @@ def _ensure_wallpaper_bundle(job: str) -> Optional[Path]:
         return None
 
 
-def _ensure_gallery_bundle(item: str) -> Optional[Path]:
+def _ensure_gallery_bundle(item: str, label: str = "Typortrait") -> Optional[Path]:
     """The 'digital everywhere' ZIP for a fixed gallery item: the high-res master +
     phone/desktop/square wallpapers + read-me, built from the item's master. Cached on
-    disk. Returns None if the master is missing or the bundle can't be built (caller
-    then serves the single master PNG so a purchase is never broken by this value-add)."""
-    zip_path = PRIVATE_DIR / f"gallery-{item}.bundle.zip"
+    disk, keyed by (item, label) so a brand's cached zip never leaks another brand's
+    wordmark into the internal filenames/read-me. Returns None if the master is missing
+    or the bundle can't be built (caller then serves the single master PNG so a purchase
+    is never broken by this value-add)."""
+    safe_label = re.sub(r"[^A-Za-z0-9]+", "", label) or "Typortrait"
+    zip_path = PRIVATE_DIR / f"gallery-{item}.{safe_label}.bundle.zip"
     if zip_path.exists():
         return zip_path
     mp = gallery_catalog.master_path(item)
@@ -4972,7 +4988,6 @@ def _ensure_gallery_bundle(item: str) -> Optional[Path]:
     try:
         import zipfile
         from .wallpaper import build_wallpaper_set
-        label = "FaithInWords"
         master_bytes = Path(mp).read_bytes()
         wp = build_wallpaper_set(master_bytes)
         tmp = zip_path.with_suffix(".zip.tmp")
