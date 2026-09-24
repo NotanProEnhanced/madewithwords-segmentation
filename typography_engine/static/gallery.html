@@ -120,6 +120,7 @@
      they fit side by side; their .wall panels overlap slightly and read as one
      continuous alcove wall rather than separate floating tiles. */
   .frame.bay{width:clamp(115px,30vw,190px)}
+  .frame.bay .cap{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* Gallery track-light glow above each frame -- purely decorative, absolutely
      positioned within the frame's own local 3D group like .wall, so it's just as
      local/safe and can never occlude a different frame. */
@@ -127,24 +128,39 @@
       transform:translate(-50%,0) translateZ(2px);
       background:radial-gradient(ellipse at 50% 100%,rgba(255,222,165,.55),transparent 72%);
       filter:blur(1px)}
-  /* Standalone decorative elements: floor plants and glimpsed side-passage archways.
-     Same discipline as .wall -- small, local to their own 3D group, never a sweeping
-     plane. Positioned lower (via extra translateY) to read as sitting on the floor. */
+  /* Standalone decorative elements: floor plants, glimpsed side-passage archways, and
+     the shared backing wall for a bay cluster. Same discipline as .wall -- small,
+     local to their own 3D group, never a sweeping plane. Plants/archways sit lower
+     (extra translateY) to read as resting on the floor. */
   .decor{position:absolute;top:50%;left:50%;pointer-events:none;transform-style:preserve-3d;
          transition:opacity .25s linear}
-  .plant .pot{position:absolute;left:50%;bottom:0;width:46px;height:36px;transform:translateX(-50%);
-      background:linear-gradient(180deg,#6b4a35,#48311f);border-radius:4px 4px 12px 12px;
-      box-shadow:0 14px 26px rgba(0,0,0,.55)}
-  .plant .leaf{position:absolute;left:50%;bottom:32px;width:13px;height:64px;
-      background:linear-gradient(180deg,#527d54,#33512f);border-radius:50% 50% 50% 4%}
-  .arch .opening{position:absolute;inset:0;
-      background:radial-gradient(ellipse at 50% 32%,#221f1b,#08080a 78%);
-      border-radius:50% 50% 5px 5px / 32% 32% 5px 5px;box-shadow:inset 0 0 44px rgba(0,0,0,.85)}
-  .arch .glimpse{position:absolute;left:50%;top:36%;width:44%;height:52%;transform:translate(-50%,-50%);
-      opacity:.55;filter:brightness(.55) saturate(.8);border-radius:2px;overflow:hidden}
+  .plant{width:80px;height:130px}
+  .plant svg{display:block;width:100%;height:100%;filter:drop-shadow(0 12px 16px rgba(0,0,0,.55))}
+  /* A real arch silhouette (rounded top via border-radius on a tall box), not a plain
+     rectangle -- an outer stone surround, a darker recessed opening, a warm glow
+     suggesting light from whatever's beyond, and a small dim glimpse of another
+     portrait low in the opening as if seen down a short passage. */
+  .arch{width:130px;height:260px}
+  .arch .surround{position:absolute;inset:0;background:linear-gradient(180deg,#4d453a,#2a261f);
+      border-radius:50% 50% 6px 6px/38% 38% 6px 6px;box-shadow:0 24px 50px rgba(0,0,0,.6)}
+  .arch .opening{position:absolute;left:11px;right:11px;top:11px;bottom:0;
+      background:radial-gradient(ellipse at 50% 22%,#2b2620 0%,#0a0908 78%);
+      border-radius:50% 50% 4px 4px/40% 40% 4px 4px;box-shadow:inset 0 0 50px rgba(0,0,0,.9)}
+  .arch .glow{position:absolute;left:50%;top:12%;width:64%;height:26%;transform:translateX(-50%);
+      background:radial-gradient(ellipse,rgba(255,214,140,.4),transparent 72%);filter:blur(5px)}
+  .arch .glimpse{position:absolute;left:50%;top:56%;width:44%;height:36%;transform:translate(-50%,-50%);
+      opacity:.6;filter:brightness(.6) saturate(.85);border-radius:2px;overflow:hidden;
+      box-shadow:0 0 24px rgba(0,0,0,.7)}
   .arch .glimpse img{width:100%;height:100%;object-fit:cover;display:block}
-  .plant{width:70px;height:130px}
-  .arch{width:110px;height:220px}
+  /* One shared backing for an entire bay cluster (2-3 frames), not one panel per
+     frame -- reads as a single continuous alcove wall. Still scoped to just this
+     bay's own footprint, so it's exactly as local/safe as the single-frame .wall. */
+  .bayback .back{position:absolute;inset:0;background:linear-gradient(180deg,#3c3830,#211e19);
+      box-shadow:inset 0 0 90px rgba(0,0,0,.5);border-radius:2px}
+  .bayback .ret{position:absolute;top:0;bottom:0;width:34px;
+      background:linear-gradient(90deg,#181613,#2f2b25)}
+  .bayback .ret.l{left:-34px;transform:rotateY(48deg);transform-origin:right center}
+  .bayback .ret.r{right:-34px;transform:rotateY(-48deg);transform-origin:left center}
   .cor-hint{position:absolute;left:0;right:0;bottom:26px;text-align:center;color:#d9d4c8;font-size:13px;
             letter-spacing:.04em;text-transform:uppercase;opacity:.85;pointer-events:none;
             animation:corbob 1.6s ease-in-out infinite}
@@ -423,44 +439,66 @@ function corFade(effZ){
   return Math.max(0, 1 - (effZ-60)/220);
 }
 
-function corMakeFrame(it, x, z, angleDeg, isBay){
+function corMakeFrame(it, x, z, angleDeg, withWall){
   const a = document.createElement("a");
-  a.className = "frame" + (isBay ? " bay" : "");
+  a.className = "frame" + (withWall ? "" : " bay");
   a.href = "/gallery/"+encodeURIComponent(it.id);
   // translate(-50%,-50%) first so the frame is centered on its own top:50%/left:50%
   // anchor regardless of its (responsive, clamp()-based) rendered size, THEN the 3D
   // placement composes on top of that already-centered box.
   a.style.transform = `translate(-50%,-50%) translate3d(${x}px, 0px, ${z}px) rotateY(${angleDeg}deg)`;
-  a.innerHTML = `<div class="spot"></div><div class="wall"></div>
+  a.innerHTML = `<div class="spot"></div>${withWall ? '<div class="wall"></div>' : ''}
                   <div class="mat"><img src="/static/gallery/art/${it.id}-card.webp" onerror="this.onerror=null;this.src='/static/gallery/art/${it.id}.png'" alt="${it.title}" loading="lazy"/></div>
                   <div class="cap">${it.title}</div>`;
   return {el:a, z};
 }
+// A real, layered fern -- SVG paths instead of rectangles, so it actually reads as a
+// plant rather than a stack of boxes.
+const PLANT_SVG = `<svg viewBox="0 0 64 108" xmlns="http://www.w3.org/2000/svg">
+  <defs><linearGradient id="potG" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#7a5738"/><stop offset="1" stop-color="#432c1b"/>
+  </linearGradient></defs>
+  <path d="M17 82 L47 82 L42 104 L22 104 Z" fill="url(#potG)"/>
+  <path d="M32 82 C20 66 8 46 10 18 C24 38 30 60 32 82Z" fill="#3c6a40"/>
+  <path d="M32 82 C44 64 52 44 50 16 C38 36 33 58 32 82Z" fill="#4c7d4e"/>
+  <path d="M32 82 C22 62 10 50 2 34 C16 42 26 58 32 82Z" fill="#345c38"/>
+  <path d="M32 82 C42 62 54 50 62 34 C48 42 38 58 32 82Z" fill="#3c6a40"/>
+  <path d="M32 82 C30 58 34 32 28 6 C38 28 34 56 32 82Z" fill="#5a8c5c"/>
+</svg>`;
 function corMakePlant(x, z){
   const d = document.createElement("div");
   d.className = "decor plant";
   d.style.transform = `translate(-50%,-50%) translate3d(${x}px, 150px, ${z}px)`;
-  d.innerHTML = `<div class="pot"></div>
-      <div class="leaf" style="left:50%;transform:rotate(-18deg)"></div>
-      <div class="leaf" style="left:57%;transform:rotate(8deg)"></div>
-      <div class="leaf" style="left:43%;transform:rotate(-42deg)"></div>`;
+  d.innerHTML = PLANT_SVG;
   return {el:d, z};
 }
 function corMakeArch(x, z, glimpseItem){
   const d = document.createElement("div");
   d.className = "decor arch";
-  d.style.transform = `translate(-50%,-50%) translate3d(${x}px, 15px, ${z}px)`;
-  d.innerHTML = `<div class="opening"></div>
+  d.style.transform = `translate(-50%,-50%) translate3d(${x}px, 5px, ${z}px)`;
+  d.innerHTML = `<div class="surround"></div><div class="opening"></div><div class="glow"></div>
       <div class="glimpse"><img src="/static/gallery/art/${glimpseItem.id}-card.webp" onerror="this.onerror=null;this.src='/static/gallery/art/${glimpseItem.id}.png'" alt=""/></div>`;
+  return {el:d, z};
+}
+// One shared backing wall for an entire bay cluster, sized to the actual span of its
+// frames -- reads as a continuous alcove, not three overlapping tiles. `ret` side
+// panels angle back to suggest the alcove has depth (still local to this bay only).
+function corMakeBayback(centerX, z, spanWidth){
+  const d = document.createElement("div");
+  d.className = "decor bayback";
+  d.style.width = spanWidth+"px"; d.style.height = "280px";
+  d.style.transform = `translate(-50%,-50%) translate3d(${centerX}px, 0px, ${z-16}px)`;
+  d.innerHTML = `<div class="back"></div><div class="ret l"></div><div class="ret r"></div>`;
   return {el:d, z};
 }
 
 // Layout: mostly single frames alternating left/right wall (angled toward the viewer),
-// with an occasional "bay" of 2-3 portraits hung together on one flat, camera-facing
-// wall -- a small gallery alcove. Plants and glimpsed side-passage archways are placed
-// between slots purely for atmosphere; every one of them is its own small, independently
-// positioned element (same discipline as .wall from the single-frame version), never a
-// large shared plane, so nothing here can occlude a frame the way the old 3D floor did.
+// with periodic "bays" of 2-3 portraits hung together on one flat, camera-facing wall
+// -- a small gallery alcove with its own shared backing wall. Plants and glimpsed
+// side-passage archways are placed between slots purely for atmosphere. Every one of
+// these is its own small, independently positioned element (same discipline as .wall
+// from the single-frame version), never a large shared plane, so nothing here can
+// occlude a frame the way the old 3D floor did.
 function renderCorridor(){
   const items = getCurrentItems();
   const world = $("#corWorld");
@@ -469,31 +507,34 @@ function renderCorridor(){
   // width would shove it half off-screen (this is what happened on mobile before this
   // was computed from innerWidth instead of hardcoded).
   const wallX = Math.min(260, window.innerWidth*0.30);
-  const spreadUnit = Math.min(150, window.innerWidth*0.17);
+  const spreadUnit = Math.min(130, window.innerWidth*0.15);
+  const bayFrameW = Math.min(190, window.innerWidth*0.32);
 
   corFrames = []; corDecor = [];
   let z = -COR_DIST, side = -1, baySide = -1, sinceBay = 0, i = 0, slot = 0;
   while(i < items.length){
     const remaining = items.length - i;
-    if(sinceBay >= 4 && remaining >= 2){
+    if(sinceBay >= 2 && remaining >= 2){
       const n = Math.min(3, remaining);
-      const bx = baySide * (wallX + 30);
-      const offsets = n===3 ? [-spreadUnit,0,spreadUnit] : n===2 ? [-spreadUnit*0.6,spreadUnit*0.6] : [0];
-      for(let k=0;k<n;k++) corFrames.push(corMakeFrame(items[i+k], bx+offsets[k], z, 0, true));
-      i += n; z -= COR_DIST*1.25; baySide *= -1; sinceBay = 0;
+      const bx = baySide * (wallX + 40);
+      const offsets = n===3 ? [-spreadUnit,0,spreadUnit] : n===2 ? [-spreadUnit*0.62,spreadUnit*0.62] : [0];
+      for(let k=0;k<n;k++) corFrames.push(corMakeFrame(items[i+k], bx+offsets[k], z, 0, false));
+      const span = (n===1?1:2)*spreadUnit*(n===2?0.62:1) + bayFrameW + 90;
+      corDecor.push(corMakeBayback(bx, z, span));
+      i += n; z -= COR_DIST*1.3; baySide *= -1; sinceBay = 0;
     } else {
-      corFrames.push(corMakeFrame(items[i], side*wallX, z, side<0?18:-18, false));
+      corFrames.push(corMakeFrame(items[i], side*wallX, z, side<0?18:-18, true));
       side *= -1; i += 1; z -= COR_DIST; sinceBay += 1;
     }
     slot++;
     if(slot % 2 === 0) corDecor.push(corMakePlant((slot%4===0?1:-1)*(wallX*0.62), z+COR_DIST*0.45));
-    if(slot % 5 === 0 && items.length){
+    if(slot % 3 === 0 && items.length){
       const glimpse = items[(i*7+3) % items.length];
-      corDecor.push(corMakeArch((slot%10===0?1:-1)*(wallX*1.7), z+COR_DIST*0.5, glimpse));
+      corDecor.push(corMakeArch((slot%6===0?1:-1)*(wallX*1.75), z+COR_DIST*0.5, glimpse));
     }
   }
   corFrames.forEach(f=>world.appendChild(f.el));
-  corDecor.forEach(d=>world.appendChild(d.el));
+  corDecor.sort((a,b)=>b.z-a.z).forEach(d=>world.appendChild(d.el));
 
   corMaxProgress = -z + COR_DIST;
   $("#corridor").style.height = (corMaxProgress + window.innerHeight) + "px";
