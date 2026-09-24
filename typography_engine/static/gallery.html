@@ -116,6 +116,35 @@
   .frame img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;border:1px solid #d8d0bd;background:#333}
   .frame .cap{position:relative;color:#f3efe6;text-align:center;font-family:var(--serif);font-size:15px;padding:12px 6px 6px;
               text-shadow:0 2px 10px rgba(0,0,0,.6)}
+  /* A smaller frame width for bay clusters (2-3 hung together on one facing wall) so
+     they fit side by side; their .wall panels overlap slightly and read as one
+     continuous alcove wall rather than separate floating tiles. */
+  .frame.bay{width:clamp(115px,30vw,190px)}
+  /* Gallery track-light glow above each frame -- purely decorative, absolutely
+     positioned within the frame's own local 3D group like .wall, so it's just as
+     local/safe and can never occlude a different frame. */
+  .frame .spot{position:absolute;left:50%;top:-42px;width:85%;height:58px;pointer-events:none;
+      transform:translate(-50%,0) translateZ(2px);
+      background:radial-gradient(ellipse at 50% 100%,rgba(255,222,165,.55),transparent 72%);
+      filter:blur(1px)}
+  /* Standalone decorative elements: floor plants and glimpsed side-passage archways.
+     Same discipline as .wall -- small, local to their own 3D group, never a sweeping
+     plane. Positioned lower (via extra translateY) to read as sitting on the floor. */
+  .decor{position:absolute;top:50%;left:50%;pointer-events:none;transform-style:preserve-3d;
+         transition:opacity .25s linear}
+  .plant .pot{position:absolute;left:50%;bottom:0;width:46px;height:36px;transform:translateX(-50%);
+      background:linear-gradient(180deg,#6b4a35,#48311f);border-radius:4px 4px 12px 12px;
+      box-shadow:0 14px 26px rgba(0,0,0,.55)}
+  .plant .leaf{position:absolute;left:50%;bottom:32px;width:13px;height:64px;
+      background:linear-gradient(180deg,#527d54,#33512f);border-radius:50% 50% 50% 4%}
+  .arch .opening{position:absolute;inset:0;
+      background:radial-gradient(ellipse at 50% 32%,#221f1b,#08080a 78%);
+      border-radius:50% 50% 5px 5px / 32% 32% 5px 5px;box-shadow:inset 0 0 44px rgba(0,0,0,.85)}
+  .arch .glimpse{position:absolute;left:50%;top:36%;width:44%;height:52%;transform:translate(-50%,-50%);
+      opacity:.55;filter:brightness(.55) saturate(.8);border-radius:2px;overflow:hidden}
+  .arch .glimpse img{width:100%;height:100%;object-fit:cover;display:block}
+  .plant{width:70px;height:130px}
+  .arch{width:110px;height:220px}
   .cor-hint{position:absolute;left:0;right:0;bottom:26px;text-align:center;color:#d9d4c8;font-size:13px;
             letter-spacing:.04em;text-transform:uppercase;opacity:.85;pointer-events:none;
             animation:corbob 1.6s ease-in-out infinite}
@@ -379,35 +408,94 @@ $("#search").addEventListener("input", e=>{ SEARCH=e.target.value.trim().toLower
 // positioned in 3D space; scrolling the page moves the whole "world" toward the
 // camera via translateZ, so frames appear to approach and pass as you walk. No
 // canvas, no WebGL -- every frame stays a genuine, crawlable link the whole time.
-const COR_DIST = 900;         // world units (px) of hallway between each frame
-let corFrames = [];           // [{el, capEl, z}]
+const COR_DIST = 900;         // world units (px) of hallway between each slot
+let corFrames = [];           // [{el, z}] -- real portraits, count toward the N/23 counter
+let corDecor = [];            // [{el, z}] -- plants/archways, atmosphere only
 let corMaxProgress = 0;
 
+function corFade(effZ){
+  // Fade in as it approaches, fade out just before it would overtake the camera
+  // (perspective-projected elements distort badly right at the eye, so we dissolve
+  // them first -- reads as "walking through" rather than a glitch).
+  if(effZ < -COR_DIST*1.3) return 0;
+  if(effZ < -COR_DIST*0.55) return (effZ + COR_DIST*1.3) / (COR_DIST*0.75);
+  if(effZ < 60) return 1;
+  return Math.max(0, 1 - (effZ-60)/220);
+}
+
+function corMakeFrame(it, x, z, angleDeg, isBay){
+  const a = document.createElement("a");
+  a.className = "frame" + (isBay ? " bay" : "");
+  a.href = "/gallery/"+encodeURIComponent(it.id);
+  // translate(-50%,-50%) first so the frame is centered on its own top:50%/left:50%
+  // anchor regardless of its (responsive, clamp()-based) rendered size, THEN the 3D
+  // placement composes on top of that already-centered box.
+  a.style.transform = `translate(-50%,-50%) translate3d(${x}px, 0px, ${z}px) rotateY(${angleDeg}deg)`;
+  a.innerHTML = `<div class="spot"></div><div class="wall"></div>
+                  <div class="mat"><img src="/static/gallery/art/${it.id}-card.webp" onerror="this.onerror=null;this.src='/static/gallery/art/${it.id}.png'" alt="${it.title}" loading="lazy"/></div>
+                  <div class="cap">${it.title}</div>`;
+  return {el:a, z};
+}
+function corMakePlant(x, z){
+  const d = document.createElement("div");
+  d.className = "decor plant";
+  d.style.transform = `translate(-50%,-50%) translate3d(${x}px, 150px, ${z}px)`;
+  d.innerHTML = `<div class="pot"></div>
+      <div class="leaf" style="left:50%;transform:rotate(-18deg)"></div>
+      <div class="leaf" style="left:57%;transform:rotate(8deg)"></div>
+      <div class="leaf" style="left:43%;transform:rotate(-42deg)"></div>`;
+  return {el:d, z};
+}
+function corMakeArch(x, z, glimpseItem){
+  const d = document.createElement("div");
+  d.className = "decor arch";
+  d.style.transform = `translate(-50%,-50%) translate3d(${x}px, 15px, ${z}px)`;
+  d.innerHTML = `<div class="opening"></div>
+      <div class="glimpse"><img src="/static/gallery/art/${glimpseItem.id}-card.webp" onerror="this.onerror=null;this.src='/static/gallery/art/${glimpseItem.id}.png'" alt=""/></div>`;
+  return {el:d, z};
+}
+
+// Layout: mostly single frames alternating left/right wall (angled toward the viewer),
+// with an occasional "bay" of 2-3 portraits hung together on one flat, camera-facing
+// wall -- a small gallery alcove. Plants and glimpsed side-passage archways are placed
+// between slots purely for atmosphere; every one of them is its own small, independently
+// positioned element (same discipline as .wall from the single-frame version), never a
+// large shared plane, so nothing here can occlude a frame the way the old 3D floor did.
 function renderCorridor(){
   const items = getCurrentItems();
   const world = $("#corWorld");
-  world.querySelectorAll(".frame").forEach(f=>f.remove());
-  // Responsive wall offset -- on a narrow viewport a fixed 260px push plus the frame's
-  // own width would shove it half off-screen (this is exactly what happened on mobile
-  // before this was computed from innerWidth instead of hardcoded).
+  world.innerHTML = "";
+  // Responsive wall offset -- on a narrow viewport a fixed px push plus the frame's own
+  // width would shove it half off-screen (this is what happened on mobile before this
+  // was computed from innerWidth instead of hardcoded).
   const wallX = Math.min(260, window.innerWidth*0.30);
-  corFrames = items.map((it,i)=>{
-    const z = -(i+1)*COR_DIST;
-    const x = (i%2===0) ? -wallX : wallX;
-    const a = document.createElement("a");
-    a.className = "frame";
-    a.href = "/gallery/"+encodeURIComponent(it.id);
-    // translate(-50%,-50%) first so the frame is centered on its own top:50%/left:50%
-    // anchor regardless of its (responsive, clamp()-based) rendered size, THEN the 3D
-    // placement composes on top of that already-centered box.
-    a.style.transform = `translate(-50%,-50%) translate3d(${x}px, 0px, ${z}px) rotateY(${i%2===0?18:-18}deg)`;
-    a.innerHTML = `<div class="wall"></div>
-                    <div class="mat"><img src="/static/gallery/art/${it.id}-card.webp" onerror="this.onerror=null;this.src='/static/gallery/art/${it.id}.png'" alt="${it.title}" loading="lazy"/></div>
-                    <div class="cap">${it.title}</div>`;
-    world.appendChild(a);
-    return {el:a, z};
-  });
-  corMaxProgress = (items.length+1)*COR_DIST;
+  const spreadUnit = Math.min(150, window.innerWidth*0.17);
+
+  corFrames = []; corDecor = [];
+  let z = -COR_DIST, side = -1, baySide = -1, sinceBay = 0, i = 0, slot = 0;
+  while(i < items.length){
+    const remaining = items.length - i;
+    if(sinceBay >= 4 && remaining >= 2){
+      const n = Math.min(3, remaining);
+      const bx = baySide * (wallX + 30);
+      const offsets = n===3 ? [-spreadUnit,0,spreadUnit] : n===2 ? [-spreadUnit*0.6,spreadUnit*0.6] : [0];
+      for(let k=0;k<n;k++) corFrames.push(corMakeFrame(items[i+k], bx+offsets[k], z, 0, true));
+      i += n; z -= COR_DIST*1.25; baySide *= -1; sinceBay = 0;
+    } else {
+      corFrames.push(corMakeFrame(items[i], side*wallX, z, side<0?18:-18, false));
+      side *= -1; i += 1; z -= COR_DIST; sinceBay += 1;
+    }
+    slot++;
+    if(slot % 2 === 0) corDecor.push(corMakePlant((slot%4===0?1:-1)*(wallX*0.62), z+COR_DIST*0.45));
+    if(slot % 5 === 0 && items.length){
+      const glimpse = items[(i*7+3) % items.length];
+      corDecor.push(corMakeArch((slot%10===0?1:-1)*(wallX*1.7), z+COR_DIST*0.5, glimpse));
+    }
+  }
+  corFrames.forEach(f=>world.appendChild(f.el));
+  corDecor.forEach(d=>world.appendChild(d.el));
+
+  corMaxProgress = -z + COR_DIST;
   $("#corridor").style.height = (corMaxProgress + window.innerHeight) + "px";
   $("#corProgress").textContent = (items.length ? "1" : "0") + " / " + items.length;
   updateCorridor();
@@ -420,15 +508,7 @@ function updateCorridor(){
   $("#corWorld").style.transform = `translateZ(${progress}px)`;
   let bestIdx=0, bestOp=-1;
   corFrames.forEach((f,i)=>{
-    const effZ = f.z + progress;               // position relative to the camera
-    // Fade in as it approaches, fade out just before it would overtake the camera
-    // (perspective-projected elements distort badly right at the eye, so we
-    // dissolve them first -- reads as "walking through" rather than a glitch).
-    let op;
-    if(effZ < -COR_DIST*1.3) op = 0;
-    else if(effZ < -COR_DIST*0.55) op = (effZ + COR_DIST*1.3) / (COR_DIST*0.75);
-    else if(effZ < 60) op = 1;
-    else op = Math.max(0, 1 - (effZ-60)/220);
+    const op = corFade(f.z + progress);
     f.el.style.opacity = op;
     f.el.classList.toggle("live", op > 0.15);
     // "Current" item for the counter = most VISIBLE, not merely nearest by distance --
@@ -436,6 +516,7 @@ function updateCorridor(){
     // while, which made the counter lag on a stale item right after passing it.
     if(op > bestOp){ bestOp = op; bestIdx = i; }
   });
+  corDecor.forEach(d=>{ d.el.style.opacity = corFade(d.z + progress) * 0.9; });
   if(corFrames.length) $("#corProgress").textContent = (bestIdx+1) + " / " + corFrames.length;
   $("#corHint").style.opacity = progress < 40 ? 1 : 0;
 }
