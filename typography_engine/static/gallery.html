@@ -75,6 +75,44 @@
   .foot{text-align:center;color:var(--muted);font-size:12.5px;margin-top:46px}
   .foot a{color:var(--navy)}
   @media(max-width:680px){ .modal{grid-template-columns:1fr} .modal img{aspect-ratio:4/5} }
+
+  /* view toggle (Grid / Walk Through) */
+  .viewtoggle{display:flex;gap:6px;justify-content:center;margin:16px 0 0}
+  .vtbtn{border:1px solid var(--line);background:#fff;color:var(--navy);padding:7px 16px;border-radius:999px;
+         font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;transition:.15s}
+  .vtbtn.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+
+  /* first-person walk-through corridor -- a real scroll-driven CSS 3D hallway, not a
+     canvas/WebGL scene. Each frame is a genuine <a href> in the DOM (crawlable,
+     screen-reader reachable); only its position is achieved with a transform, so
+     nothing here depends on JS to exist as a link. */
+  .corridor{display:none}
+  .corridor.on{display:block}
+  .cor-viewer{position:sticky;top:0;height:100vh;overflow:hidden;perspective:1200px;
+              background:radial-gradient(ellipse 70% 60% at 50% 46%,#242631 0%,#0f1013 70%,#08080a 100%)}
+  .cor-world{position:absolute;inset:0;transform-style:preserve-3d;will-change:transform}
+  /* A flat vignette, NOT part of the 3D world -- deliberately kept out of preserve-3d so
+     it can never z-fight with a frame the way an actual 3D floor plane did (tried it:
+     a rotateX(90deg) floor sitting near z=0 visually covered every frame behind it). */
+  .cor-vignette{position:absolute;inset:0;pointer-events:none;
+       background:linear-gradient(180deg,rgba(0,0,0,.5) 0%,transparent 22% 78%,rgba(0,0,0,.6) 100%)}
+  .frame{position:absolute;top:50%;left:50%;width:clamp(170px,56vw,300px);
+         transition:opacity .25s linear;pointer-events:none;text-decoration:none}
+  .frame.live{pointer-events:auto}
+  .frame .mat{background:#efe9dc;padding:14px 14px 0;border-radius:3px;
+              box-shadow:0 30px 70px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.3)}
+  .frame img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;border:1px solid #d8d0bd;background:#333}
+  .frame .cap{color:#f3efe6;text-align:center;font-family:var(--serif);font-size:15px;padding:12px 6px 20px;
+              text-shadow:0 2px 10px rgba(0,0,0,.6)}
+  .cor-hint{position:absolute;left:0;right:0;bottom:26px;text-align:center;color:#d9d4c8;font-size:13px;
+            letter-spacing:.04em;text-transform:uppercase;opacity:.85;pointer-events:none;
+            animation:corbob 1.6s ease-in-out infinite}
+  @keyframes corbob{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+  .cor-progress{position:absolute;top:18px;right:22px;color:#d9d4c8;font-size:12.5px;letter-spacing:.06em;
+                background:rgba(0,0,0,.35);padding:6px 12px;border-radius:999px;pointer-events:none}
+  .cor-exit{position:absolute;top:16px;left:22px;background:rgba(0,0,0,.35);color:#f3efe6;border:1px solid rgba(255,255,255,.25);
+            border-radius:999px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+  @media(prefers-reduced-motion:reduce){ .cor-hint{animation:none} }
 </style>
 </head>
 <body>
@@ -90,6 +128,9 @@
   <div class="tabs" id="tabs"></div>
   <p class="colblurb" id="colblurb"></p>
   <div class="subtabs" id="subtabs"></div>
+  <div class="viewtoggle" id="viewtoggle">
+    <button class="vtbtn" id="vtWalk">Walk Through the Gallery</button>
+  </div>
   <div class="grid" id="grid"></div>
 
   <p class="foot"><span id="footNote">Every piece is rendered from public-domain scripture and verse.</span><span id="toolLink"> &nbsp;·&nbsp;
@@ -97,6 +138,16 @@
   <nav class="trustnav" style="text-align:center;margin:2px 0 34px;font-size:13.5px;color:#8a8172">
     <a href="/about">About</a> &middot; <a href="/faq">FAQ</a> &middot; <a href="/partners">Partners</a> &middot; <a href="/refunds">Returns &amp; Refunds</a> &middot; <a href="/terms">Terms</a> &middot; <a href="/privacy">Privacy</a>
   </nav>
+</div>
+
+<div class="corridor" id="corridor">
+  <div class="cor-viewer" id="corViewer">
+    <div class="cor-world" id="corWorld"></div>
+    <div class="cor-vignette"></div>
+    <button class="cor-exit" id="corExit">&larr; Exit walkthrough</button>
+    <div class="cor-progress" id="corProgress">1 / 1</div>
+    <p class="cor-hint" id="corHint">Scroll to walk</p>
+  </div>
 </div>
 
 <div class="scrim" id="scrim">
@@ -118,7 +169,7 @@
 
 <script>
 const $ = s => document.querySelector(s);
-let CAT=null, PRODUCTS=null, DIGITAL_CENTS=1499, curCol=0, curSec=0, curItem=null, SEARCH="";
+let CAT=null, PRODUCTS=null, DIGITAL_CENTS=1499, curCol=0, curSec=0, curItem=null, SEARCH="", VIEW="grid";
 
 // Gallery brand skins. Same storefront, different front: name, tagline, theme, and
 // whether the generator ("make your own from a photo") is surfaced. A gallery-only
@@ -214,23 +265,31 @@ function renderTabs(){
       b.onclick=()=>{ curSec=j; renderTabs(); }; st.appendChild(b);
     });
   }
-  renderGrid();
+  refreshCurrentView();
+}
+
+function refreshCurrentView(){
+  if(VIEW==="walk") renderCorridor(); else renderGrid();
+}
+
+// The item list for whatever's currently selected (collection/section/search) --
+// shared by the grid and the walk-through corridor so they can never drift apart
+// or disagree about which brand-allowed items exist.
+function getCurrentItems(){
+  const col=CAT.collections[curCol];
+  if(SEARCH){
+    const q=SEARCH;
+    return col.sections.flatMap(s=>s.items).filter(it=>
+      ((it.title||"")+" "+(it.words||"")).toLowerCase().includes(q));
+  }
+  return (col.sections[curSec]||{items:[]}).items;
 }
 
 function renderGrid(){
   const g=$("#grid"); g.innerHTML="";
   const col=CAT.collections[curCol];
-  let items;
-  if(SEARCH){
-    // Search spans the whole collection (all sections); hide the sub-tabs.
-    const q=SEARCH;
-    items=col.sections.flatMap(s=>s.items).filter(it=>
-      ((it.title||"")+" "+(it.words||"")).toLowerCase().includes(q));
-    $("#subtabs").style.display="none";
-  } else {
-    items=(col.sections[curSec]||{items:[]}).items;
-    $("#subtabs").style.display = col.sections.length>1 ? "" : "none";
-  }
+  $("#subtabs").style.display = SEARCH ? "none" : (col.sections.length>1 ? "" : "none");
+  const items=getCurrentItems();
   if(!items.length){ g.innerHTML='<p style="grid-column:1/-1;color:#8a8172;text-align:center;padding:40px 0">No pieces match.</p>'; return; }
   items.forEach(it=>{
     // Each card is a real link to the item's own landing page — crawlable for
@@ -301,7 +360,102 @@ async function startCheckout(itemId, sku, btn){
   buy.disabled=false; buy.textContent="Buy the digital download";
 }
 $("#buy").onclick=()=>{ if(curItem){ $("#buy").textContent="Opening secure checkout…"; startCheckout(curItem.id,"digital",$("#buy")); } };
-$("#search").addEventListener("input", e=>{ SEARCH=e.target.value.trim().toLowerCase(); renderGrid(); });
+$("#search").addEventListener("input", e=>{ SEARCH=e.target.value.trim().toLowerCase(); refreshCurrentView(); });
+
+// ---- Walk-through corridor ------------------------------------------------
+// A scroll-driven CSS 3D hallway. Each portrait is a real <a href="/gallery/{id}">
+// positioned in 3D space; scrolling the page moves the whole "world" toward the
+// camera via translateZ, so frames appear to approach and pass as you walk. No
+// canvas, no WebGL -- every frame stays a genuine, crawlable link the whole time.
+const COR_DIST = 900;         // world units (px) of hallway between each frame
+let corFrames = [];           // [{el, capEl, z}]
+let corMaxProgress = 0;
+
+function renderCorridor(){
+  const items = getCurrentItems();
+  const world = $("#corWorld");
+  world.querySelectorAll(".frame").forEach(f=>f.remove());
+  // Responsive wall offset -- on a narrow viewport a fixed 260px push plus the frame's
+  // own width would shove it half off-screen (this is exactly what happened on mobile
+  // before this was computed from innerWidth instead of hardcoded).
+  const wallX = Math.min(260, window.innerWidth*0.30);
+  corFrames = items.map((it,i)=>{
+    const z = -(i+1)*COR_DIST;
+    const x = (i%2===0) ? -wallX : wallX;
+    const a = document.createElement("a");
+    a.className = "frame";
+    a.href = "/gallery/"+encodeURIComponent(it.id);
+    // translate(-50%,-50%) first so the frame is centered on its own top:50%/left:50%
+    // anchor regardless of its (responsive, clamp()-based) rendered size, THEN the 3D
+    // placement composes on top of that already-centered box.
+    a.style.transform = `translate(-50%,-50%) translate3d(${x}px, 0px, ${z}px) rotateY(${i%2===0?18:-18}deg)`;
+    a.innerHTML = `<div class="mat"><img src="/static/gallery/art/${it.id}-card.webp" onerror="this.onerror=null;this.src='/static/gallery/art/${it.id}.png'" alt="${it.title}" loading="lazy"/></div>
+                    <div class="cap">${it.title}</div>`;
+    world.appendChild(a);
+    return {el:a, z};
+  });
+  corMaxProgress = (items.length+1)*COR_DIST;
+  $("#corridor").style.height = (corMaxProgress + window.innerHeight) + "px";
+  $("#corProgress").textContent = (items.length ? "1" : "0") + " / " + items.length;
+  updateCorridor();
+}
+
+function updateCorridor(){
+  if(VIEW!=="walk") return;
+  const rect = $("#corridor").getBoundingClientRect();
+  const progress = Math.max(0, Math.min(corMaxProgress, -rect.top));
+  $("#corWorld").style.transform = `translateZ(${progress}px)`;
+  let bestIdx=0, bestOp=-1;
+  corFrames.forEach((f,i)=>{
+    const effZ = f.z + progress;               // position relative to the camera
+    // Fade in as it approaches, fade out just before it would overtake the camera
+    // (perspective-projected elements distort badly right at the eye, so we
+    // dissolve them first -- reads as "walking through" rather than a glitch).
+    let op;
+    if(effZ < -COR_DIST*1.3) op = 0;
+    else if(effZ < -COR_DIST*0.55) op = (effZ + COR_DIST*1.3) / (COR_DIST*0.75);
+    else if(effZ < 60) op = 1;
+    else op = Math.max(0, 1 - (effZ-60)/220);
+    f.el.style.opacity = op;
+    f.el.classList.toggle("live", op > 0.15);
+    // "Current" item for the counter = most VISIBLE, not merely nearest by distance --
+    // a frame that already fully faded out behind you is still numerically close for a
+    // while, which made the counter lag on a stale item right after passing it.
+    if(op > bestOp){ bestOp = op; bestIdx = i; }
+  });
+  if(corFrames.length) $("#corProgress").textContent = (bestIdx+1) + " / " + corFrames.length;
+  $("#corHint").style.opacity = progress < 40 ? 1 : 0;
+}
+
+let corTicking = false;
+window.addEventListener("scroll", ()=>{
+  if(VIEW!=="walk" || corTicking) return;
+  corTicking = true;
+  requestAnimationFrame(()=>{ updateCorridor(); corTicking=false; });
+}, {passive:true});
+let corResizeTimer=null;
+window.addEventListener("resize", ()=>{
+  if(VIEW!=="walk") return;
+  clearTimeout(corResizeTimer);
+  corResizeTimer=setTimeout(()=>{ const y=window.scrollY; renderCorridor(); window.scrollTo(0,y); }, 150);
+});
+
+function enterWalk(){
+  VIEW = "walk";
+  document.querySelector(".wrap").style.display = "none";
+  $("#corridor").classList.add("on");
+  window.scrollTo(0,0);
+  renderCorridor();
+}
+function exitWalk(){
+  VIEW = "grid";
+  $("#corridor").classList.remove("on");
+  document.querySelector(".wrap").style.display = "";
+  window.scrollTo(0,0);
+}
+$("#vtWalk").onclick = enterWalk;
+$("#corExit").onclick = exitWalk;
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && VIEW==="walk") exitWalk(); });
 
 init();
 </script>
