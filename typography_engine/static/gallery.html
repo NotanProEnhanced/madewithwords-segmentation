@@ -89,36 +89,48 @@
   .corridor{display:none}
   .corridor.on{display:block}
   .cor-viewer{position:sticky;top:0;height:100vh;overflow:hidden;perspective:1200px;
-              background:radial-gradient(ellipse 70% 60% at 50% 46%,#242631 0%,#0f1013 70%,#08080a 100%)}
+              background:#dcd8cc}
   .cor-world{position:absolute;inset:0;transform-style:preserve-3d;will-change:transform}
-  /* A flat vignette, NOT part of the 3D world -- deliberately kept out of preserve-3d so
-     it can never z-fight with a frame the way an actual 3D floor plane did (tried it:
-     a rotateX(90deg) floor sitting near z=0 visually covered every frame behind it). */
+  /* Room shell: floor, ceiling, and both side walls, each built from small tiled
+     segments (one per corridor "slot", ~900 world units of Z) instead of one giant
+     plane -- a single continuous plane spanning the whole hallway is EXACTLY what
+     caused the original occlusion bug (a rotateX(90deg) floor sitting near z=0
+     visually covered every frame behind it, because at close range perspective
+     rendered its near edge large enough to cover the screen area where a small,
+     far-away frame projects, even though their true 3D Y coordinates never
+     overlapped). Each tile here only spans its own ~900-unit Z range, so it can
+     never grow large enough at any scroll position to reach over a DIFFERENT
+     slot's frame the way the old single plane did. */
+  .rtile{position:absolute;top:50%;left:50%;pointer-events:none}
+  .rtile.floor{background:
+      repeating-linear-gradient(90deg,rgba(0,0,0,.05) 0 1px,transparent 1px 150px),
+      linear-gradient(180deg,#efece3,#e2ddd0)}
+  .rtile.ceil{background:linear-gradient(180deg,#f7f5ee,#eeebe0)}
+  .rtile.wall{background:linear-gradient(180deg,rgba(0,0,0,.05) 0%,transparent 6% 94%,rgba(0,0,0,.07) 100%),#f5f2e9}
+  /* Flat, NOT part of the 3D world -- a subtle edge darkening appropriate to a bright
+     room, kept out of preserve-3d for the same reason the original dark vignette was:
+     it can never z-fight with anything since it isn't in the 3D scene at all. */
   .cor-vignette{position:absolute;inset:0;pointer-events:none;
-       background:linear-gradient(180deg,rgba(0,0,0,.5) 0%,transparent 22% 78%,rgba(0,0,0,.6) 100%)}
+       background:radial-gradient(ellipse 85% 80% at 50% 50%,transparent 60%,rgba(30,28,22,.16) 100%)}
   .frame{position:absolute;top:50%;left:50%;width:clamp(170px,56vw,300px);
          transition:opacity .25s linear;pointer-events:none;text-decoration:none;
          transform-style:preserve-3d}
   .frame.live{pointer-events:auto}
-  /* A wall panel scoped to THIS frame alone -- sized just a bit larger than the mat and
-     pushed a few px behind it via its own translateZ (needs .frame's preserve-3d above
-     to have any effect). Deliberately small/local, not a shared sweeping plane, so it
-     can never occlude a DIFFERENT frame the way the old 3D floor did. */
+  /* A slightly raised backing plaque behind the mat -- light, close to the wall's own
+     color, just enough to ground the frame's shadow. Small/local to this frame alone,
+     same discipline as everything else here. */
   .frame .wall{position:absolute;left:50%;top:50%;
-      width:calc(100% + 76px);height:calc(100% + 84px);
-      transform:translate(-50%,-50%) translateZ(-18px);
-      background:linear-gradient(180deg,#39352f 0%,#2a2722 55%,#201e1a 100%);
-      box-shadow:inset 0 0 70px rgba(0,0,0,.45);border-radius:2px}
+      width:calc(100% + 60px);height:calc(100% + 66px);
+      transform:translate(-50%,-50%) translateZ(-14px);
+      background:#efebe0;box-shadow:0 20px 46px rgba(60,55,40,.28);border-radius:2px}
   .frame .mat{position:relative;background:#efe9dc;padding:14px 14px 0;
               border:10px solid #8a6a34;border-radius:1px;
               box-shadow:inset 0 0 0 2px rgba(255,255,255,.15),
-                         0 30px 60px rgba(0,0,0,.6),0 0 0 1px rgba(0,0,0,.35)}
+                         0 26px 46px rgba(40,35,25,.35),0 0 0 1px rgba(0,0,0,.2)}
   .frame img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;border:1px solid #d8d0bd;background:#333}
-  .frame .cap{position:relative;color:#f3efe6;text-align:center;font-family:var(--serif);font-size:15px;padding:12px 6px 6px;
-              text-shadow:0 2px 10px rgba(0,0,0,.6)}
+  .frame .cap{position:relative;color:#3a352b;text-align:center;font-family:var(--serif);font-size:15px;padding:12px 6px 6px}
   /* A smaller frame width for bay clusters (2-3 hung together on one facing wall) so
-     they fit side by side; their .wall panels overlap slightly and read as one
-     continuous alcove wall rather than separate floating tiles. */
+     they fit side by side. */
   .frame.bay{width:clamp(115px,30vw,190px)}
   .frame.bay .cap{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* Gallery track-light glow above each frame -- purely decorative, absolutely
@@ -126,7 +138,7 @@
      local/safe and can never occlude a different frame. */
   .frame .spot{position:absolute;left:50%;top:-42px;width:85%;height:58px;pointer-events:none;
       transform:translate(-50%,0) translateZ(2px);
-      background:radial-gradient(ellipse at 50% 100%,rgba(255,222,165,.55),transparent 72%);
+      background:radial-gradient(ellipse at 50% 100%,rgba(255,240,205,.8),transparent 72%);
       filter:blur(1px)}
   /* Standalone decorative elements: floor plants, glimpsed side-passage archways, and
      the shared backing wall for a bay cluster. Same discipline as .wall -- small,
@@ -141,8 +153,8 @@
      suggesting light from whatever's beyond, and a small dim glimpse of another
      portrait low in the opening as if seen down a short passage. */
   .arch{width:130px;height:260px}
-  .arch .surround{position:absolute;inset:0;background:linear-gradient(180deg,#4d453a,#2a261f);
-      border-radius:50% 50% 6px 6px/38% 38% 6px 6px;box-shadow:0 24px 50px rgba(0,0,0,.6)}
+  .arch .surround{position:absolute;inset:0;background:#efebe0;
+      border-radius:50% 50% 6px 6px/38% 38% 6px 6px;box-shadow:0 24px 50px rgba(60,55,40,.3)}
   .arch .opening{position:absolute;left:11px;right:11px;top:11px;bottom:0;
       background:radial-gradient(ellipse at 50% 22%,#2b2620 0%,#0a0908 78%);
       border-radius:50% 50% 4px 4px/40% 40% 4px 4px;box-shadow:inset 0 0 50px rgba(0,0,0,.9)}
@@ -155,17 +167,18 @@
   /* One shared backing for an entire bay cluster (2-3 frames), not one panel per
      frame -- reads as a single continuous alcove wall. Still scoped to just this
      bay's own footprint, so it's exactly as local/safe as the single-frame .wall. */
-  .bayback .back{position:absolute;inset:0;background:linear-gradient(180deg,#3c3830,#211e19);
-      box-shadow:inset 0 0 90px rgba(0,0,0,.5);border-radius:2px}
+  .bayback .back{position:absolute;inset:0;background:#efebe0;
+      box-shadow:0 20px 50px rgba(60,55,40,.3);border-radius:2px}
   .bayback .ret{position:absolute;top:0;bottom:0;width:34px;
-      background:linear-gradient(90deg,#181613,#2f2b25)}
+      background:linear-gradient(90deg,#d9d3c2,#efebe0)}
   .bayback .ret.l{left:-34px;transform:rotateY(48deg);transform-origin:right center}
   .bayback .ret.r{right:-34px;transform:rotateY(-48deg);transform-origin:left center}
-  .cor-hint{position:absolute;left:0;right:0;bottom:26px;text-align:center;color:#d9d4c8;font-size:13px;
-            letter-spacing:.04em;text-transform:uppercase;opacity:.85;pointer-events:none;
+  .cor-hint{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);text-align:center;
+            color:#f3efe6;font-size:13px;letter-spacing:.04em;text-transform:uppercase;
+            background:rgba(0,0,0,.35);padding:8px 18px;border-radius:999px;pointer-events:none;
             animation:corbob 1.6s ease-in-out infinite}
-  @keyframes corbob{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
-  .cor-progress{position:absolute;top:18px;right:22px;color:#d9d4c8;font-size:12.5px;letter-spacing:.06em;
+  @keyframes corbob{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(6px)}}
+  .cor-progress{position:absolute;top:18px;right:22px;color:#f3efe6;font-size:12.5px;letter-spacing:.06em;
                 background:rgba(0,0,0,.35);padding:6px 12px;border-radius:999px;pointer-events:none}
   .cor-exit{position:absolute;top:16px;left:22px;background:rgba(0,0,0,.35);color:#f3efe6;border:1px solid rgba(255,255,255,.25);
             border-radius:999px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
@@ -426,7 +439,8 @@ $("#search").addEventListener("input", e=>{ SEARCH=e.target.value.trim().toLower
 // canvas, no WebGL -- every frame stays a genuine, crawlable link the whole time.
 const COR_DIST = 900;         // world units (px) of hallway between each slot
 let corFrames = [];           // [{el, z}] -- real portraits, count toward the N/23 counter
-let corDecor = [];            // [{el, z}] -- plants/archways, atmosphere only
+let corDecor = [];            // [{el, z}] -- plants/archways/bay backings, atmosphere only
+let corRoom = [];             // [{el, z}] -- floor/ceiling/wall tiles, always fully opaque
 let corMaxProgress = 0;
 
 function corFade(effZ){
@@ -468,14 +482,17 @@ const PLANT_SVG = `<svg viewBox="0 0 64 108" xmlns="http://www.w3.org/2000/svg">
 function corMakePlant(x, z){
   const d = document.createElement("div");
   d.className = "decor plant";
-  d.style.transform = `translate(-50%,-50%) translate3d(${x}px, 150px, ${z}px)`;
+  // Bottom edge of the plant's own box (half its 130px height below this translate)
+  // lands right at ROOM_FLOOR_Y so it reads as standing on the floor, not floating.
+  d.style.transform = `translate(-50%,-50%) translate3d(${x}px, ${ROOM_FLOOR_Y-65}px, ${z}px)`;
   d.innerHTML = PLANT_SVG;
   return {el:d, z};
 }
 function corMakeArch(x, z, glimpseItem){
   const d = document.createElement("div");
   d.className = "decor arch";
-  d.style.transform = `translate(-50%,-50%) translate3d(${x}px, 5px, ${z}px)`;
+  // Same idea -- bottom edge of the 260px-tall archway sits at floor level.
+  d.style.transform = `translate(-50%,-50%) translate3d(${x}px, ${ROOM_FLOOR_Y-130}px, ${z}px)`;
   d.innerHTML = `<div class="surround"></div><div class="opening"></div><div class="glow"></div>
       <div class="glimpse"><img src="/static/gallery/art/${glimpseItem.id}-card.webp" onerror="this.onerror=null;this.src='/static/gallery/art/${glimpseItem.id}.png'" alt=""/></div>`;
   return {el:d, z};
@@ -490,6 +507,30 @@ function corMakeBayback(centerX, z, spanWidth){
   d.style.transform = `translate(-50%,-50%) translate3d(${centerX}px, 0px, ${z-16}px)`;
   d.innerHTML = `<div class="back"></div><div class="ret l"></div><div class="ret r"></div>`;
   return {el:d, z};
+}
+// Room shell for one Z segment: floor, ceiling, left wall, right wall. Each tile only
+// spans this one segment's Z range (COR_DIST wide, +6 for seamless overlap with its
+// neighbors) -- see the big comment on .rtile for why that boundedness matters. FLOOR_Y/
+// CEIL_Y are chosen well outside a frame's own vertical extent (including its spot glow
+// above and caption below) so floor/ceiling can never visually cross into a portrait's
+// screen position regardless of how close the camera gets to that segment.
+const ROOM_FLOOR_Y = 340, ROOM_CEIL_Y = -340, ROOM_WALL_H = 680;
+function corMakeRoomSegment(zCenter, roomHalfWidth){
+  const segLen = COR_DIST + 6;
+  const mk = (cls, w, h, transform) => {
+    const el = document.createElement("div");
+    el.className = "rtile " + cls;
+    el.style.width = w+"px"; el.style.height = h+"px";
+    el.style.transform = transform;
+    return {el, z: zCenter};
+  };
+  const roomW = roomHalfWidth*2;
+  return [
+    mk("floor", roomW, segLen, `translate(-50%,-50%) translate3d(0px, ${ROOM_FLOOR_Y}px, ${zCenter}px) rotateX(90deg)`),
+    mk("ceil",  roomW, segLen, `translate(-50%,-50%) translate3d(0px, ${ROOM_CEIL_Y}px, ${zCenter}px) rotateX(-90deg)`),
+    mk("wall",  segLen, ROOM_WALL_H, `translate(-50%,-50%) translate3d(${-roomHalfWidth}px, 0px, ${zCenter}px) rotateY(90deg)`),
+    mk("wall",  segLen, ROOM_WALL_H, `translate(-50%,-50%) translate3d(${roomHalfWidth}px, 0px, ${zCenter}px) rotateY(-90deg)`),
+  ];
 }
 
 // Layout: mostly single frames alternating left/right wall (angled toward the viewer),
@@ -510,7 +551,12 @@ function renderCorridor(){
   const spreadUnit = Math.min(130, window.innerWidth*0.15);
   const bayFrameW = Math.min(190, window.innerWidth*0.32);
 
-  corFrames = []; corDecor = [];
+  // Room walls sit outside the widest thing placed in a bay/archway (bay center can
+  // reach roughly wallX+40+spreadUnit+halfFrame, archways sit at wallX*1.75) so the
+  // shell always encloses the art with margin to spare.
+  const roomHalfWidth = wallX + 320;
+
+  corFrames = []; corDecor = []; corRoom = [];
   let z = -COR_DIST, side = -1, baySide = -1, sinceBay = 0, i = 0, slot = 0;
   while(i < items.length){
     const remaining = items.length - i;
@@ -533,6 +579,23 @@ function renderCorridor(){
       corDecor.push(corMakeArch((slot%6===0?1:-1)*(wallX*1.75), z+COR_DIST*0.5, glimpse));
     }
   }
+  // Room shell: one segment per COR_DIST of depth, covering the full corridor length
+  // regardless of where frames/bays landed -- purely geometric, independent of item
+  // layout, so it looks the same whether an item happened to sit there or not. Extends
+  // 1.5 slots PAST the scrollable max (corMaxProgress, set below) on purpose: room tiles
+  // don't fade like frames do, so without this margin the very last segment ends up
+  // getting pressed right up against the camera at max scroll -- a huge flat plane at
+  // point-blank perspective range balloons up to fill/exceed the whole viewport, which
+  // is indistinguishable from a broken blank screen. Keeping a segment's worth of
+  // hallway always still ahead of you, even at max scroll, means you can never actually
+  // reach that point-blank distance.
+  const totalDepth = -z + COR_DIST;
+  const roomDepth = totalDepth + COR_DIST*1.5;
+  for(let segZ = -COR_DIST/2; segZ > -roomDepth; segZ -= COR_DIST){
+    corRoom.push(...corMakeRoomSegment(segZ, roomHalfWidth));
+  }
+
+  corRoom.forEach(r=>world.appendChild(r.el));
   corFrames.forEach(f=>world.appendChild(f.el));
   corDecor.sort((a,b)=>b.z-a.z).forEach(d=>world.appendChild(d.el));
 
