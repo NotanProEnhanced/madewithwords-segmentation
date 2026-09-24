@@ -97,12 +97,24 @@
   .cor-vignette{position:absolute;inset:0;pointer-events:none;
        background:linear-gradient(180deg,rgba(0,0,0,.5) 0%,transparent 22% 78%,rgba(0,0,0,.6) 100%)}
   .frame{position:absolute;top:50%;left:50%;width:clamp(170px,56vw,300px);
-         transition:opacity .25s linear;pointer-events:none;text-decoration:none}
+         transition:opacity .25s linear;pointer-events:none;text-decoration:none;
+         transform-style:preserve-3d}
   .frame.live{pointer-events:auto}
-  .frame .mat{background:#efe9dc;padding:14px 14px 0;border-radius:3px;
-              box-shadow:0 30px 70px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.3)}
+  /* A wall panel scoped to THIS frame alone -- sized just a bit larger than the mat and
+     pushed a few px behind it via its own translateZ (needs .frame's preserve-3d above
+     to have any effect). Deliberately small/local, not a shared sweeping plane, so it
+     can never occlude a DIFFERENT frame the way the old 3D floor did. */
+  .frame .wall{position:absolute;left:50%;top:50%;
+      width:calc(100% + 76px);height:calc(100% + 84px);
+      transform:translate(-50%,-50%) translateZ(-18px);
+      background:linear-gradient(180deg,#39352f 0%,#2a2722 55%,#201e1a 100%);
+      box-shadow:inset 0 0 70px rgba(0,0,0,.45);border-radius:2px}
+  .frame .mat{position:relative;background:#efe9dc;padding:14px 14px 0;
+              border:10px solid #8a6a34;border-radius:1px;
+              box-shadow:inset 0 0 0 2px rgba(255,255,255,.15),
+                         0 30px 60px rgba(0,0,0,.6),0 0 0 1px rgba(0,0,0,.35)}
   .frame img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;border:1px solid #d8d0bd;background:#333}
-  .frame .cap{color:#f3efe6;text-align:center;font-family:var(--serif);font-size:15px;padding:12px 6px 20px;
+  .frame .cap{position:relative;color:#f3efe6;text-align:center;font-family:var(--serif);font-size:15px;padding:12px 6px 6px;
               text-shadow:0 2px 10px rgba(0,0,0,.6)}
   .cor-hint{position:absolute;left:0;right:0;bottom:26px;text-align:center;color:#d9d4c8;font-size:13px;
             letter-spacing:.04em;text-transform:uppercase;opacity:.85;pointer-events:none;
@@ -389,7 +401,8 @@ function renderCorridor(){
     // anchor regardless of its (responsive, clamp()-based) rendered size, THEN the 3D
     // placement composes on top of that already-centered box.
     a.style.transform = `translate(-50%,-50%) translate3d(${x}px, 0px, ${z}px) rotateY(${i%2===0?18:-18}deg)`;
-    a.innerHTML = `<div class="mat"><img src="/static/gallery/art/${it.id}-card.webp" onerror="this.onerror=null;this.src='/static/gallery/art/${it.id}.png'" alt="${it.title}" loading="lazy"/></div>
+    a.innerHTML = `<div class="wall"></div>
+                    <div class="mat"><img src="/static/gallery/art/${it.id}-card.webp" onerror="this.onerror=null;this.src='/static/gallery/art/${it.id}.png'" alt="${it.title}" loading="lazy"/></div>
                     <div class="cap">${it.title}</div>`;
     world.appendChild(a);
     return {el:a, z};
