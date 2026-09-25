@@ -101,12 +101,22 @@
      overlapped). Each tile here only spans its own ~900-unit Z range, so it can
      never grow large enough at any scroll position to reach over a DIFFERENT
      slot's frame the way the old single plane did. */
-  .rtile{position:absolute;top:50%;left:50%;pointer-events:none}
-  .rtile.floor{background:
-      repeating-linear-gradient(90deg,rgba(0,0,0,.05) 0 1px,transparent 1px 150px),
-      linear-gradient(180deg,#efece3,#e2ddd0)}
-  .rtile.ceil{background:linear-gradient(180deg,#f7f5ee,#eeebe0)}
-  .rtile.wall{background:linear-gradient(180deg,rgba(0,0,0,.05) 0%,transparent 6% 94%,rgba(0,0,0,.07) 100%),#f5f2e9}
+  .rtile{position:absolute;top:50%;left:50%;pointer-events:none;background-repeat:repeat}
+  .rtile.floor{
+      background-image:linear-gradient(180deg,rgba(0,0,0,.06),transparent 30%),
+                        url(/static/gallery/textures/floor-tile.jpg);
+      background-size:auto,560px 280px}
+  .rtile.wall{
+      background-image:linear-gradient(180deg,rgba(0,0,0,.08) 0%,transparent 8% 92%,rgba(0,0,0,.1) 100%),
+                        url(/static/gallery/textures/wall-plaster.jpg);
+      background-size:auto,620px 452px}
+  /* Ceiling reuses the wall plaster (no separate photo needed for a plain ceiling) --
+     brightened and slightly desaturated via filter so it reads as a lighter, flatter
+     surface than the walls rather than an obvious repeat of the same material. */
+  .rtile.ceil{
+      background-image:url(/static/gallery/textures/wall-plaster.jpg);
+      background-size:620px 452px;
+      filter:brightness(1.22) saturate(.85)}
   /* Flat, NOT part of the 3D world -- a subtle edge darkening appropriate to a bright
      room, kept out of preserve-3d for the same reason the original dark vignette was:
      it can never z-fight with anything since it isn't in the 3D scene at all. */
