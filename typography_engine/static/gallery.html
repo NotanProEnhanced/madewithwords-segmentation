@@ -109,6 +109,24 @@
   .cor-exit{position:absolute;top:16px;left:22px;background:rgba(0,0,0,.35);color:#f3efe6;border:1px solid rgba(255,255,255,.25);
             border-radius:999px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
   @media(prefers-reduced-motion:reduce){ .cor-hint{animation:none} }
+
+  /* Photo Tour -- a second walkthrough mode sharing the same canvas/chrome as the
+     corridor above, but the "room" is a real photographed gallery (equirectangular
+     panorama on the inside of a sphere) that you look around by dragging, with our
+     own portraits placed in front of it as real 3D frames. Hidden unless .photo is on. */
+  #corCanvas{cursor:grab} #corCanvas.dragging{cursor:grabbing}
+  .cor-roomnav{display:none;position:absolute;left:50%;bottom:26px;transform:translateX(-50%);
+      align-items:center;gap:14px;pointer-events:auto}
+  .cor-viewer.photo .cor-roomnav{display:flex}
+  .cor-viewer.photo .cor-hint{bottom:78px}
+  .cor-navbtn{width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.35);color:#f3efe6;
+      border:1px solid rgba(255,255,255,.3);font-size:15px;cursor:pointer;font-family:inherit;
+      display:flex;align-items:center;justify-content:center}
+  .cor-navbtn:disabled{opacity:.35;cursor:default}
+  .cor-roomdots{display:flex;gap:8px}
+  .cor-dot{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.35);
+      border:1px solid rgba(255,255,255,.5);padding:0;cursor:pointer}
+  .cor-dot.on{background:#f3efe6}
 </style>
 </head>
 <body>
@@ -126,6 +144,7 @@
   <div class="subtabs" id="subtabs"></div>
   <div class="viewtoggle" id="viewtoggle">
     <button class="vtbtn" id="vtWalk">Walk Through the Gallery</button>
+    <button class="vtbtn" id="vtPhoto">Photo Tour</button>
   </div>
   <div class="grid" id="grid"></div>
 
@@ -143,6 +162,11 @@
     <button class="cor-exit" id="corExit">&larr; Exit walkthrough</button>
     <div class="cor-progress" id="corProgress">1 / 1</div>
     <p class="cor-hint" id="corHint">Scroll to walk</p>
+    <div class="cor-roomnav" id="corRoomNav">
+      <button class="cor-navbtn" id="corRoomPrev" aria-label="Previous room">&larr;</button>
+      <div class="cor-roomdots" id="corRoomDots"></div>
+      <button class="cor-navbtn" id="corRoomNext" aria-label="Next room">&rarr;</button>
+    </div>
   </div>
 </div>
 
@@ -272,7 +296,9 @@ function renderTabs(){
 }
 
 function refreshCurrentView(){
-  if(VIEW==="walk") window.corRebuild(); else renderGrid();
+  if(VIEW==="walk") window.corRebuild();
+  else if(VIEW==="photo") window.photoRebuild();
+  else renderGrid();
 }
 
 // The item list for whatever's currently selected (collection/section/search) --
@@ -365,12 +391,18 @@ async function startCheckout(itemId, sku, btn){
 $("#buy").onclick=()=>{ if(curItem){ $("#buy").textContent="Opening secure checkout…"; startCheckout(curItem.id,"digital",$("#buy")); } };
 $("#search").addEventListener("input", e=>{ SEARCH=e.target.value.trim().toLowerCase(); refreshCurrentView(); });
 
-// The walk-through corridor is now a separate WebGL (Three.js) module -- see the
-// <script type="module"> block below. It reads getCurrentItems()/CAT via window,
-// and defines window.enterWalk/exitWalk which the buttons below call.
+// The walk-through corridor and the photo tour are both a separate WebGL (Three.js)
+// module -- see the <script type="module"> block below. It reads getCurrentItems()/CAT
+// via window, and defines window.enterWalk/exitWalk/enterPhoto/exitPhoto which the
+// buttons below call. They share one canvas/chrome (#corridor), switched by VIEW.
 $("#vtWalk").onclick = ()=> window.enterWalk();
-$("#corExit").onclick = ()=> window.exitWalk();
-document.addEventListener("keydown", e=>{ if(e.key==="Escape" && VIEW==="walk") window.exitWalk(); });
+$("#vtPhoto").onclick = ()=> window.enterPhoto();
+$("#corExit").onclick = ()=> { if(VIEW==="photo") window.exitPhoto(); else window.exitWalk(); };
+document.addEventListener("keydown", e=>{
+  if(e.key!=="Escape") return;
+  if(VIEW==="walk") window.exitWalk();
+  else if(VIEW==="photo") window.exitPhoto();
+});
 
 init();
 </script>
@@ -407,6 +439,60 @@ let maxProgress = 0;
 let roomHalfWidth = 580;
 let raycaster, pointerNDC;   // built in initRenderer, once THREE is actually loaded
 
+// ---- Photo Tour: a real photographed gallery, our portraits placed inside it -----
+// The procedural corridor above gets the geometry and depth right but is still built
+// from flat materials and a handful of lights -- it can only ever look like a decent
+// 3D model. These three images are real (or near-photoreal) equirectangular panoramas
+// of an actual gallery interior. Mapped onto the inside of a sphere with the camera at
+// its center, they give a level of realism no procedural room can match; our own
+// portraits are placed in front of the panorama as real 3D frames (reusing the same
+// gold-border/mat/caption look as the corridor's), positioned by eye at open-looking
+// wall spots in each photo and clickable exactly like the corridor's.
+// Each room can only show as many portraits as it has hand-placed slots (23 total,
+// matching History in Words exactly) -- a smaller filtered set degrades gracefully
+// (later slots just go unused); a much larger catalog would need more slots added.
+const PHOTO_ROOM_RADIUS = 900;      // the panorama sphere
+const PHOTO_FRAME_RADIUS = 650;     // how far in front of it our portraits sit
+// Sized much smaller than the corridor's FRAME_W/BAY_FRAME_W: those were tuned for a
+// walker passing frames at 580-900 units away, but every photo-tour frame sits at a
+// fixed distance (PHOTO_FRAME_RADIUS) -- at that distance the corridor's sizing filled
+// most of the screen. These read as a painting hung at a normal viewing distance.
+const PHOTO_FRAME_W = 150, PHOTO_FRAME_H = 187.5;
+const PHOTO_BAY_W = 95, PHOTO_BAY_H = 118.75;
+const PHOTO_ROOMS = [
+  { name:"The Entrance", src:"/static/gallery/photoscene/entrance.jpg", slots:[
+    {yaw:-1.73,  pitch:0.364, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {yaw:-1.178, pitch:0.262, w:PHOTO_BAY_W, h:PHOTO_BAY_H},
+    {yaw:-0.626, pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {yaw:0.274,  pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {yaw:1.317,  pitch:0.262, w:PHOTO_BAY_W, h:PHOTO_BAY_H},
+    {yaw:2.401,  pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {yaw:2.994,  pitch:0.344, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+  ]},
+  { name:"The Main Gallery", src:"/static/gallery/photoscene/main-room.jpg", slots:[
+    {yaw:-2.528, pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {yaw:-1.595, pitch:0.221, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {yaw:-1.014, pitch:0.221, w:PHOTO_BAY_W, h:PHOTO_BAY_H},
+    {yaw:0.765,  pitch:0.2,   w:PHOTO_BAY_W, h:PHOTO_BAY_H},
+    {yaw:1.072,  pitch:0.18,  w:PHOTO_BAY_W, h:PHOTO_BAY_H},
+    {yaw:1.604,  pitch:0.2,   w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {yaw:2.074,  pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {yaw:2.544,  pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+  ]},
+  { name:"The Rear Salon", src:"/static/gallery/photoscene/rear-room.jpg", slots:[
+    {yaw:-2.733, pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {yaw:-2.078, pitch:0.2,   w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {yaw:-0.933, pitch:0.2,   w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {yaw:0.315,  pitch:0.2,   w:PHOTO_BAY_W, h:PHOTO_BAY_H},
+    {yaw:0.765,  pitch:0.2,   w:PHOTO_BAY_W, h:PHOTO_BAY_H},
+    {yaw:1.297,  pitch:0.2,   w:PHOTO_BAY_W, h:PHOTO_BAY_H},
+    {yaw:1.992,  pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {yaw:2.831,  pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+  ]},
+];
+let photoRoom = 0, photoYaw = 0, photoPitch = 0, photoFov = 66;
+let photoDrag = null, photoDragMoved = false, photoHintTimer = null;
+
 function initRenderer(){
   canvas = $$("#corCanvas");
   raycaster = new THREE.Raycaster();
@@ -430,6 +516,13 @@ function initRenderer(){
   window.addEventListener("resize", onResize);
   canvas.addEventListener("click", onCanvasClick);
   canvas.addEventListener("mousemove", onCanvasMove);
+  canvas.addEventListener("pointerdown", onCanvasPointerDown);
+  canvas.addEventListener("pointermove", onCanvasPointerMove);
+  canvas.addEventListener("pointerup", onCanvasPointerUp);
+  canvas.addEventListener("pointercancel", onCanvasPointerUp);
+  canvas.addEventListener("wheel", onCanvasWheel, {passive:false});
+  $$("#corRoomPrev").addEventListener("click", ()=> photoGoRoom(photoRoom-1));
+  $$("#corRoomNext").addEventListener("click", ()=> photoGoRoom(photoRoom+1));
 }
 
 function onResize(){
@@ -679,13 +772,16 @@ function updateCamera(){
 
 function renderLoop(){
   if(!loopRunning) return;
-  updateCamera();
+  if(window.corGetView()==="photo") updatePhotoCamera(); else updateCamera();
   loopId = requestAnimationFrame(renderLoop);
 }
 function startLoop(){ if(loopRunning) return; loopRunning = true; renderLoop(); }
 function stopLoop(){ loopRunning = false; if(loopId) cancelAnimationFrame(loopId); }
 
 function onCanvasClick(e){
+  // A drag-to-look gesture in the photo tour ends with a native 'click' too (mouseup
+  // near mousedown doesn't suppress it) -- don't let that accidentally navigate away.
+  if(window.corGetView()==="photo" && photoDragMoved){ photoDragMoved=false; return; }
   const rect = canvas.getBoundingClientRect();
   pointerNDC.x = ((e.clientX-rect.left)/rect.width)*2-1;
   pointerNDC.y = -((e.clientY-rect.top)/rect.height)*2+1;
@@ -704,14 +800,51 @@ function onCanvasMove(e){
   canvas.style.cursor = hits.length ? "pointer" : "";
 }
 
+// ---- Photo Tour camera: drag-to-look (yaw/pitch), wheel-to-zoom (fov) -- the camera
+// itself never moves, only rotates in place, matching a real photo-sphere viewer. -----
+function onCanvasPointerDown(e){
+  if(window.corGetView()!=="photo") return;
+  photoDrag = {x:e.clientX, y:e.clientY, yaw:photoYaw, pitch:photoPitch};
+  photoDragMoved = false;
+  canvas.classList.add("dragging");
+  canvas.setPointerCapture(e.pointerId);
+}
+function onCanvasPointerMove(e){
+  if(window.corGetView()!=="photo" || !photoDrag) return;
+  const dx = e.clientX-photoDrag.x, dy = e.clientY-photoDrag.y;
+  if(Math.abs(dx)+Math.abs(dy) > 6) photoDragMoved = true;
+  photoYaw = photoDrag.yaw - dx*0.0042;
+  photoPitch = Math.max(-1.0, Math.min(1.0, photoDrag.pitch + dy*0.0038));
+}
+function onCanvasPointerUp(){
+  photoDrag = null;
+  canvas.classList.remove("dragging");
+}
+function onCanvasWheel(e){
+  if(window.corGetView()!=="photo") return;
+  e.preventDefault();
+  photoFov = Math.max(40, Math.min(90, photoFov + Math.sign(e.deltaY)*3));
+}
+function updatePhotoCamera(){
+  camera.rotation.order = "YXZ";
+  camera.rotation.set(photoPitch, -photoYaw, 0);
+  if(camera.fov !== photoFov){ camera.fov = photoFov; camera.updateProjectionMatrix(); }
+  renderer.render(scene, camera);
+}
+
 window.enterWalk = async function(){
   window.corSetView("walk");
   document.querySelector(".wrap").style.display = "none";
   $$("#corridor").classList.add("on");
+  $$("#corViewer").classList.remove("photo");
+  $$("#corExit").textContent = "← Exit walkthrough";
+  $$("#corHint").textContent = "Scroll to walk";
   $$("#corLoading").classList.remove("hidden");
   window.scrollTo(0,0);
   await ensureThree();
   if(!renderer) initRenderer();
+  camera.rotation.set(0,0,0);
+  camera.fov = 62;
   buildWalkScene();
   startLoop();
 };
@@ -730,6 +863,154 @@ window.exitWalk = function(){
   document.querySelector(".wrap").style.display = "";
   window.scrollTo(0,0);
   stopLoop();
+};
+
+// ---- Photo Tour: build one room (panorama sphere + our portraits placed inside it) -
+function buildPhotoFrame(loader, it, yaw, pitch, w, h){
+  const g = new THREE.Group();
+  const border = new THREE.Mesh(
+    new THREE.PlaneGeometry(w+26, h+26),
+    new THREE.MeshStandardMaterial({color:0x8a6a34, roughness:0.45, metalness:0.25})
+  );
+  border.position.z = -0.6;
+  g.add(border);
+
+  const mat = new THREE.Mesh(
+    new THREE.PlaneGeometry(w+8, h+8),
+    new THREE.MeshStandardMaterial({color:0xefe9dc, roughness:0.9})
+  );
+  mat.position.z = -0.3;
+  g.add(mat);
+
+  const tex = loader.load(`/static/gallery/art/${it.id}.png`);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const pic = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, h),
+    new THREE.MeshStandardMaterial({map:tex, roughness:0.95})
+  );
+  pic.userData.itemId = it.id;
+  g.add(pic);
+
+  const cap = new THREE.Mesh(
+    new THREE.PlaneGeometry(w*0.95, w*0.95*(96/512)),
+    new THREE.MeshBasicMaterial({map:makeCaptionTexture(it.title), transparent:true})
+  );
+  cap.position.y = -(h/2 + 28);
+  g.add(cap);
+
+  // Place on a sphere around the camera at (yaw,pitch): same spherical-to-cartesian
+  // mapping used for the camera's own look direction in updatePhotoCamera (so a
+  // camera at yaw/pitch looks straight at this point). Facing it back toward the room
+  // center needs its own orthonormal basis (not Object3D.lookAt, and not a plain Euler
+  // rotation.set matching the camera's own pitch/-yaw): both of those either faced the
+  // wrong way or rolled the frame at combined nonzero yaw+pitch. Building right/up/
+  // forward explicitly via cross products, the standard billboard-facing construction,
+  // keeps "up" true regardless of yaw/pitch.
+  const dir = new THREE.Vector3(
+    Math.cos(pitch)*Math.sin(yaw), Math.sin(pitch), -Math.cos(pitch)*Math.cos(yaw)
+  );
+  g.position.copy(dir).multiplyScalar(PHOTO_FRAME_RADIUS);
+  const forward = dir.clone().negate();   // the frame's front (+Z) should face the room center
+  const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), forward).normalize();
+  const up = new THREE.Vector3().crossVectors(forward, right).normalize();
+  g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, forward));
+  scene.add(g);
+  return {group:g, pic, id:it.id};
+}
+
+function buildPhotoRoom(idx){
+  while(scene.children.length) scene.remove(scene.children[0]);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xdad2c0, 1.15));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+
+  const manager = new THREE.LoadingManager();
+  manager.onLoad = ()=>{ $$("#corLoading").classList.add("hidden"); };
+  manager.onError = ()=>{ $$("#corLoading").classList.add("hidden"); };
+  const loader = new THREE.TextureLoader(manager);
+
+  const room = PHOTO_ROOMS[idx];
+  const panoTex = loader.load(room.src);
+  panoTex.colorSpace = THREE.SRGBColorSpace;
+  const sphere = new THREE.Mesh(
+    new THREE.SphereGeometry(PHOTO_ROOM_RADIUS, 64, 40),
+    new THREE.MeshBasicMaterial({map:panoTex, side:THREE.BackSide})
+  );
+  scene.add(sphere);
+
+  const items = window.getCurrentItems();
+  const startIdx = PHOTO_ROOMS.slice(0, idx).reduce((n,r)=>n+r.slots.length, 0);
+  frameEntries = [];
+  room.slots.forEach((slot, i)=>{
+    const it = items[startIdx+i];
+    if(it) frameEntries.push(buildPhotoFrame(loader, it, slot.yaw, slot.pitch, slot.w, slot.h));
+  });
+
+  camera.position.set(0, EYE_Y, 0);
+  camera.fov = photoFov;
+  camera.updateProjectionMatrix();
+  $$("#corProgress").textContent = room.name + " — " + (idx+1) + " / " + PHOTO_ROOMS.length;
+  updateRoomDots(idx);
+  onResize();
+  updatePhotoCamera();
+}
+
+function updateRoomDots(idx){
+  const dots = $$("#corRoomDots");
+  dots.innerHTML = "";
+  PHOTO_ROOMS.forEach((r,i)=>{
+    const b = document.createElement("button");
+    b.className = "cor-dot"+(i===idx?" on":"");
+    b.setAttribute("aria-label", "Go to "+r.name);
+    b.onclick = ()=> photoGoRoom(i);
+    dots.appendChild(b);
+  });
+  $$("#corRoomPrev").disabled = idx===0;
+  $$("#corRoomNext").disabled = idx===PHOTO_ROOMS.length-1;
+}
+
+function photoGoRoom(idx){
+  idx = Math.max(0, Math.min(PHOTO_ROOMS.length-1, idx));
+  if(idx===photoRoom) return;
+  photoRoom = idx;
+  photoYaw = 0; photoPitch = 0;
+  $$("#corLoading").classList.remove("hidden");
+  buildPhotoRoom(photoRoom);
+}
+
+window.enterPhoto = async function(){
+  window.corSetView("photo");
+  document.querySelector(".wrap").style.display = "none";
+  $$("#corridor").classList.add("on");
+  $$("#corViewer").classList.add("photo");
+  $$("#corridor").style.height = "100vh";   // no scroll-driven dolly here, just look-around
+  $$("#corExit").textContent = "← Exit photo tour";
+  $$("#corHint").textContent = "Drag to look around";
+  $$("#corHint").style.opacity = 1;
+  $$("#corLoading").classList.remove("hidden");
+  window.scrollTo(0,0);
+  await ensureThree();
+  if(!renderer) initRenderer();
+  photoRoom = 0; photoYaw = 0; photoPitch = 0;
+  buildPhotoRoom(photoRoom);
+  startLoop();
+  clearTimeout(photoHintTimer);
+  photoHintTimer = setTimeout(()=>{ const h=$$("#corHint"); if(h) h.style.opacity = 0; }, 3500);
+};
+// Called by the classic script's refreshCurrentView() if the collection/search
+// selection changes while already touring (same caveat as corRebuild above).
+window.photoRebuild = async function(){
+  if(!renderer){ await window.enterPhoto(); return; }
+  $$("#corLoading").classList.remove("hidden");
+  buildPhotoRoom(photoRoom);
+};
+window.exitPhoto = function(){
+  window.corSetView("grid");
+  $$("#corridor").classList.remove("on");
+  $$("#corViewer").classList.remove("photo");
+  document.querySelector(".wrap").style.display = "";
+  window.scrollTo(0,0);
+  stopLoop();
+  clearTimeout(photoHintTimer);
 };
 </script>
 </body>
