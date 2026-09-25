@@ -452,22 +452,23 @@ let raycaster, pointerNDC;   // built in initRenderer, once THREE is actually lo
 // The procedural corridor above gets the geometry and depth right but is still built
 // from flat materials and a handful of lights -- it can only ever look like a decent
 // 3D model. These three images are real (or near-photoreal) equirectangular panoramas
-// of an actual gallery interior, uploaded by the user. A first version placed our
-// portraits as separate 3D "cards" floating in front of the photo -- technically
-// correct but it read as exactly that: flat stickers pasted on top of a photograph,
-// not art actually hanging on the wall. This version instead bakes each portrait
-// directly into the panorama JPGs themselves (see ops/photoscene-composite, or ask
-// Claude to regenerate), pixel-replacing the real photographed artwork's picture area
-// -- so ours sits inside the SAME real frame, mat and lighting as whatever used to
-// hang there. What's built at runtime is just an invisible click/caption target at
-// each baked position, for navigation -- there is no visible mesh over the art itself.
-// Each photo can only show a portrait on a real frame whose own shape is already
-// close to a portrait's -- forcing one onto a landscape- or extreme-portrait-shaped
-// frame (stretching it, or padding the leftover space) always looked like a visible
-// patch rather than art actually hanging there, so those frames are simply left
-// untouched. 14 of 23 catalog items have a natural-looking spot across the three
-// rooms this way; the rest still sell fine from the grid and the corridor.
-const PHOTO_BAKE_VERSION = 5;    // bump whenever the baked panorama JPGs are regenerated
+// of an actual gallery interior, uploaded by the user. Earlier versions tried, several
+// different ways, to fit our portraits into the SHAPE of whatever real frame already
+// hung at each spot (a separate 3D card floating over the photo; pixel-replacing just
+// the picture area, stretched or padded to that frame's own aspect ratio) -- every one
+// of those either left the original art peeking through, visibly stretched a face out
+// of shape, or padded the gap with an obviously-pasted-on rectangle, because a real
+// frame's shape doesn't always suit a portrait. This version (see
+// ops/photoscene-composite.py, or ask Claude to regenerate) instead ERASES the real
+// frame's original art entirely -- gradient-filled from the real wall color sampled
+// just outside it, not covered by anything foreign -- and draws our own portrait, at
+// its own correct proportions, in a freshly-drawn gold frame, sized to sit comfortably
+// in the erased area rather than forced to fill it exactly. What's built at runtime is
+// just an invisible click/caption target at each baked position, for navigation --
+// there is no separate visible mesh over the art itself, it's genuinely part of the
+// photo. 19 of 23 catalog items have a spot across the three rooms this way; the rest
+// still sell fine from the grid and the corridor.
+const PHOTO_BAKE_VERSION = 6;    // bump whenever the baked panorama JPGs are regenerated
 const PHOTO_ROOM_RADIUS = 900;   // the panorama sphere
 const PHOTO_FRAME_RADIUS = 650;  // depth of the invisible click targets (matches bake)
 // Yaw values below are pre-corrected for THREE's actual SphereGeometry UV convention
@@ -479,24 +480,29 @@ const PHOTO_FRAME_RADIUS = 650;  // depth of the invisible click targets (matche
 // before this was calibrated, and easy to miss since it looks approximately plausible.
 const PHOTO_ROOMS = [
   { name:"The Entrance", src:"/static/gallery/photoscene/entrance.jpg", slots:[
-    {id:"edgar-allan-poe", yaw:-2.9974, pitch:0.2899, w:285.6, h:375.5},
-    {id:"frederick-douglass", yaw:2.1583, pitch:0.1902, w:198.3, h:246.6},
-    {id:"abraham-lincoln", yaw:-0.9787, pitch:0.1825, w:207.9, h:335.2},
+    {id:"edgar-allan-poe", yaw:-2.9974, pitch:0.2899, w:409.6, h:503.8},
+    {id:"frederick-douglass", yaw:2.1583, pitch:0.1902, w:321.4, h:390.0},
+    {id:"harriet-tubman", yaw:0.7547, pitch:0.1825, w:407.5, h:499.2},
+    {id:"abraham-lincoln", yaw:-0.9787, pitch:0.1825, w:332.0, h:400.9},
+    {id:"mark-twain", yaw:-1.3883, pitch:0.2746, w:285.6, h:344.8},
   ]},
   { name:"The Main Gallery", src:"/static/gallery/photoscene/main-room.jpg", slots:[
-    {id:"susan-b-anthony", yaw:-2.1844, pitch:0.2132, w:305.4, h:479.4},
-    {id:"walt-whitman", yaw:-3.1278, pitch:0.2362, w:335.2, h:468.7},
-    {id:"sojourner-truth", yaw:2.5802, pitch:0.1979, w:227.2, h:355.3},
-    {id:"theodore-roosevelt", yaw:0.0399, pitch:0.2899, w:365.3, h:500.8},
-    {id:"nikola-tesla", yaw:-0.5415, pitch:0.2209, w:256.3, h:345.2},
-    {id:"ulysses-s-grant", yaw:-1.0554, pitch:0.2899, w:345.2, h:500.8},
+    {id:"susan-b-anthony", yaw:-2.1844, pitch:0.2132, w:431.7, h:531.5},
+    {id:"walt-whitman", yaw:-3.1278, pitch:0.2362, w:460.7, h:571.5},
+    {id:"sojourner-truth", yaw:2.5802, pitch:0.1979, w:351.2, h:427.3},
+    {id:"theodore-roosevelt", yaw:0.0399, pitch:0.2899, w:492.3, h:612.4},
+    {id:"nikola-tesla", yaw:-0.5415, pitch:0.2209, w:381.3, h:465.1},
+    {id:"ulysses-s-grant", yaw:-1.0554, pitch:0.2899, w:471.9, h:585.8},
   ]},
   { name:"The Rear Salon", src:"/static/gallery/photoscene/rear-room.jpg", slots:[
-    {id:"booker-t-washington", yaw:-1.9819, pitch:0.2669, w:529.0, h:577.7},
-    {id:"geronimo", yaw:2.5525, pitch:0.2025, w:321.2, h:410.3},
-    {id:"clara-barton", yaw:1.2149, pitch:0.1979, w:207.9, h:375.5},
-    {id:"elizabeth-cady-stanton", yaw:0.8084, pitch:0.2056, w:217.6, h:385.7},
-    {id:"queen-victoria", yaw:-0.5568, pitch:0.2669, w:437.2, h:669.9},
+    {id:"booker-t-washington", yaw:-2.0064, pitch:0.2669, w:614.9, h:779.2},
+    {id:"sitting-bull", yaw:-2.6446, pitch:0.2439, w:332.0, h:400.9},
+    {id:"geronimo", yaw:2.5525, pitch:0.2025, w:447.2, h:552.5},
+    {id:"clara-barton", yaw:1.2149, pitch:0.1979, w:332.0, h:400.9},
+    {id:"elizabeth-cady-stanton", yaw:0.8084, pitch:0.2056, w:340.5, h:414.0},
+    {id:"charles-darwin", yaw:0.3559, pitch:0.2746, w:310.8, h:377.0},
+    {id:"queen-victoria", yaw:-0.5568, pitch:0.2669, w:566.7, h:715.5},
+    {id:"john-brown", yaw:-1.3192, pitch:0.2362, w:374.8, h:458.4},
   ]},
 ];
 let photoRoom = 0, photoYaw = 0, photoPitch = 0, photoFov = 66;
