@@ -82,107 +82,23 @@
          font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;transition:.15s}
   .vtbtn.on{background:var(--navy);color:#fff;border-color:var(--navy)}
 
-  /* first-person walk-through corridor -- a real scroll-driven CSS 3D hallway, not a
-     canvas/WebGL scene. Each frame is a genuine <a href> in the DOM (crawlable,
-     screen-reader reachable); only its position is achieved with a transform, so
-     nothing here depends on JS to exist as a link. */
+  /* first-person walk-through corridor -- a real WebGL (Three.js) scene, not CSS 3D
+     transforms. CSS transforms couldn't deliver real lighting/shadows/material
+     response no matter how much the geometry or textures were tuned -- this replaces
+     that whole system with an actual lit 3D room. See the <script type="module"> at
+     the bottom of this file for the scene itself; these rules are just the viewer
+     chrome (loading state, exit/progress controls, scroll hint) around the canvas. */
   .corridor{display:none}
   .corridor.on{display:block}
-  .cor-viewer{position:sticky;top:0;height:100vh;overflow:hidden;perspective:1200px;
-              background:#dcd8cc}
-  .cor-world{position:absolute;inset:0;transform-style:preserve-3d;will-change:transform}
-  /* Room shell: floor, ceiling, and both side walls, each built from small tiled
-     segments (one per corridor "slot", ~900 world units of Z) instead of one giant
-     plane -- a single continuous plane spanning the whole hallway is EXACTLY what
-     caused the original occlusion bug (a rotateX(90deg) floor sitting near z=0
-     visually covered every frame behind it, because at close range perspective
-     rendered its near edge large enough to cover the screen area where a small,
-     far-away frame projects, even though their true 3D Y coordinates never
-     overlapped). Each tile here only spans its own ~900-unit Z range, so it can
-     never grow large enough at any scroll position to reach over a DIFFERENT
-     slot's frame the way the old single plane did. */
-  .rtile{position:absolute;top:50%;left:50%;pointer-events:none;background-repeat:repeat}
-  .rtile.floor{
-      background-image:linear-gradient(180deg,rgba(0,0,0,.06),transparent 30%),
-                        url(/static/gallery/textures/floor-tile.jpg);
-      background-size:auto,560px 280px}
-  .rtile.wall{
-      background-image:linear-gradient(180deg,rgba(0,0,0,.08) 0%,transparent 8% 92%,rgba(0,0,0,.1) 100%),
-                        url(/static/gallery/textures/wall-plaster.jpg);
-      background-size:auto,620px 452px}
-  /* Ceiling reuses the wall plaster (no separate photo needed for a plain ceiling) --
-     brightened and slightly desaturated via filter so it reads as a lighter, flatter
-     surface than the walls rather than an obvious repeat of the same material. */
-  .rtile.ceil{
-      background-image:url(/static/gallery/textures/wall-plaster.jpg);
-      background-size:620px 452px;
-      filter:brightness(1.22) saturate(.85)}
-  /* Flat, NOT part of the 3D world -- a subtle edge darkening appropriate to a bright
-     room, kept out of preserve-3d for the same reason the original dark vignette was:
-     it can never z-fight with anything since it isn't in the 3D scene at all. */
-  .cor-vignette{position:absolute;inset:0;pointer-events:none;
-       background:radial-gradient(ellipse 85% 80% at 50% 50%,transparent 60%,rgba(30,28,22,.16) 100%)}
-  .frame{position:absolute;top:50%;left:50%;width:clamp(170px,56vw,300px);
-         transition:opacity .25s linear;pointer-events:none;text-decoration:none;
-         transform-style:preserve-3d}
-  .frame.live{pointer-events:auto}
-  /* A slightly raised backing plaque behind the mat -- light, close to the wall's own
-     color, just enough to ground the frame's shadow. Small/local to this frame alone,
-     same discipline as everything else here. */
-  .frame .wall{position:absolute;left:50%;top:50%;
-      width:calc(100% + 60px);height:calc(100% + 66px);
-      transform:translate(-50%,-50%) translateZ(-14px);
-      background:#efebe0;box-shadow:0 20px 46px rgba(60,55,40,.28);border-radius:2px}
-  .frame .mat{position:relative;background:#efe9dc;padding:14px 14px 0;
-              border:10px solid #8a6a34;border-radius:1px;
-              box-shadow:inset 0 0 0 2px rgba(255,255,255,.15),
-                         0 26px 46px rgba(40,35,25,.35),0 0 0 1px rgba(0,0,0,.2)}
-  .frame img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;border:1px solid #d8d0bd;background:#333}
-  .frame .cap{position:relative;color:#3a352b;text-align:center;font-family:var(--serif);font-size:15px;padding:12px 6px 6px}
-  /* A smaller frame width for bay clusters (2-3 hung together on one facing wall) so
-     they fit side by side. */
-  .frame.bay{width:clamp(115px,30vw,190px)}
-  .frame.bay .cap{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  /* Gallery track-light glow above each frame -- purely decorative, absolutely
-     positioned within the frame's own local 3D group like .wall, so it's just as
-     local/safe and can never occlude a different frame. */
-  .frame .spot{position:absolute;left:50%;top:-42px;width:85%;height:58px;pointer-events:none;
-      transform:translate(-50%,0) translateZ(2px);
-      background:radial-gradient(ellipse at 50% 100%,rgba(255,240,205,.8),transparent 72%);
-      filter:blur(1px)}
-  /* Standalone decorative elements: floor plants, glimpsed side-passage archways, and
-     the shared backing wall for a bay cluster. Same discipline as .wall -- small,
-     local to their own 3D group, never a sweeping plane. Plants/archways sit lower
-     (extra translateY) to read as resting on the floor. */
-  .decor{position:absolute;top:50%;left:50%;pointer-events:none;transform-style:preserve-3d;
-         transition:opacity .25s linear}
-  .plant{width:80px;height:130px}
-  .plant svg{display:block;width:100%;height:100%;filter:drop-shadow(0 12px 16px rgba(0,0,0,.55))}
-  /* A real arch silhouette (rounded top via border-radius on a tall box), not a plain
-     rectangle -- an outer stone surround, a darker recessed opening, a warm glow
-     suggesting light from whatever's beyond, and a small dim glimpse of another
-     portrait low in the opening as if seen down a short passage. */
-  .arch{width:130px;height:260px}
-  .arch .surround{position:absolute;inset:0;background:#efebe0;
-      border-radius:50% 50% 6px 6px/38% 38% 6px 6px;box-shadow:0 24px 50px rgba(60,55,40,.3)}
-  .arch .opening{position:absolute;left:11px;right:11px;top:11px;bottom:0;
-      background:radial-gradient(ellipse at 50% 22%,#2b2620 0%,#0a0908 78%);
-      border-radius:50% 50% 4px 4px/40% 40% 4px 4px;box-shadow:inset 0 0 50px rgba(0,0,0,.9)}
-  .arch .glow{position:absolute;left:50%;top:12%;width:64%;height:26%;transform:translateX(-50%);
-      background:radial-gradient(ellipse,rgba(255,214,140,.4),transparent 72%);filter:blur(5px)}
-  .arch .glimpse{position:absolute;left:50%;top:56%;width:44%;height:36%;transform:translate(-50%,-50%);
-      opacity:.6;filter:brightness(.6) saturate(.85);border-radius:2px;overflow:hidden;
-      box-shadow:0 0 24px rgba(0,0,0,.7)}
-  .arch .glimpse img{width:100%;height:100%;object-fit:cover;display:block}
-  /* One shared backing for an entire bay cluster (2-3 frames), not one panel per
-     frame -- reads as a single continuous alcove wall. Still scoped to just this
-     bay's own footprint, so it's exactly as local/safe as the single-frame .wall. */
-  .bayback .back{position:absolute;inset:0;background:#efebe0;
-      box-shadow:0 20px 50px rgba(60,55,40,.3);border-radius:2px}
-  .bayback .ret{position:absolute;top:0;bottom:0;width:34px;
-      background:linear-gradient(90deg,#d9d3c2,#efebe0)}
-  .bayback .ret.l{left:-34px;transform:rotateY(48deg);transform-origin:right center}
-  .bayback .ret.r{right:-34px;transform:rotateY(-48deg);transform-origin:left center}
+  .cor-viewer{position:sticky;top:0;height:100vh;overflow:hidden;background:#dcd8cc}
+  #corCanvas{display:block;width:100%;height:100%}
+  .cor-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      flex-direction:column;gap:10px;background:#dcd8cc;color:#5a5648;font-size:14px;
+      letter-spacing:.04em;text-transform:uppercase;transition:opacity .3s;z-index:2}
+  .cor-loading.hidden{opacity:0;pointer-events:none}
+  .cor-spinner{width:28px;height:28px;border-radius:50%;border:3px solid rgba(90,86,72,.25);
+      border-top-color:#5a5648;animation:corspin .8s linear infinite}
+  @keyframes corspin{to{transform:rotate(360deg)}}
   .cor-hint{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);text-align:center;
             color:#f3efe6;font-size:13px;letter-spacing:.04em;text-transform:uppercase;
             background:rgba(0,0,0,.35);padding:8px 18px;border-radius:999px;pointer-events:none;
@@ -222,8 +138,8 @@
 
 <div class="corridor" id="corridor">
   <div class="cor-viewer" id="corViewer">
-    <div class="cor-world" id="corWorld"></div>
-    <div class="cor-vignette"></div>
+    <canvas id="corCanvas"></canvas>
+    <div class="cor-loading" id="corLoading"><div class="cor-spinner"></div>Loading gallery&hellip;</div>
     <button class="cor-exit" id="corExit">&larr; Exit walkthrough</button>
     <div class="cor-progress" id="corProgress">1 / 1</div>
     <p class="cor-hint" id="corHint">Scroll to walk</p>
@@ -250,6 +166,13 @@
 <script>
 const $ = s => document.querySelector(s);
 let CAT=null, PRODUCTS=null, DIGITAL_CENTS=1499, curCol=0, curSec=0, curItem=null, SEARCH="", VIEW="grid";
+// `let` doesn't auto-attach to window the way a top-level `function`/`var` does, and
+// the walk-through's Three.js code lives in a separate <script type="module"> below
+// (modules never share scope with a classic script) -- this is the one bit of shared
+// mutable state it needs, so it's bridged explicitly rather than switching everything
+// to `var` just for this.
+window.corGetView = ()=>VIEW;
+window.corSetView = v=>{ VIEW=v; };
 
 // Gallery brand skins. Same storefront, different front: name, tagline, theme, and
 // whether the generator ("make your own from a photo") is surfaced. A gallery-only
@@ -349,7 +272,7 @@ function renderTabs(){
 }
 
 function refreshCurrentView(){
-  if(VIEW==="walk") renderCorridor(); else renderGrid();
+  if(VIEW==="walk") window.corRebuild(); else renderGrid();
 }
 
 // The item list for whatever's currently selected (collection/section/search) --
@@ -442,131 +365,254 @@ async function startCheckout(itemId, sku, btn){
 $("#buy").onclick=()=>{ if(curItem){ $("#buy").textContent="Opening secure checkout…"; startCheckout(curItem.id,"digital",$("#buy")); } };
 $("#search").addEventListener("input", e=>{ SEARCH=e.target.value.trim().toLowerCase(); refreshCurrentView(); });
 
-// ---- Walk-through corridor ------------------------------------------------
-// A scroll-driven CSS 3D hallway. Each portrait is a real <a href="/gallery/{id}">
-// positioned in 3D space; scrolling the page moves the whole "world" toward the
-// camera via translateZ, so frames appear to approach and pass as you walk. No
-// canvas, no WebGL -- every frame stays a genuine, crawlable link the whole time.
-const COR_DIST = 900;         // world units (px) of hallway between each slot
-let corFrames = [];           // [{el, z}] -- real portraits, count toward the N/23 counter
-let corDecor = [];            // [{el, z}] -- plants/archways/bay backings, atmosphere only
-let corRoom = [];             // [{el, z}] -- floor/ceiling/wall tiles, always fully opaque
-let corMaxProgress = 0;
+// The walk-through corridor is now a separate WebGL (Three.js) module -- see the
+// <script type="module"> block below. It reads getCurrentItems()/CAT via window,
+// and defines window.enterWalk/exitWalk which the buttons below call.
+$("#vtWalk").onclick = ()=> window.enterWalk();
+$("#corExit").onclick = ()=> window.exitWalk();
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && VIEW==="walk") window.exitWalk(); });
 
-function corFade(effZ){
-  // Fade in as it approaches, fade out just before it would overtake the camera
-  // (perspective-projected elements distort badly right at the eye, so we dissolve
-  // them first -- reads as "walking through" rather than a glitch).
-  if(effZ < -COR_DIST*1.3) return 0;
-  if(effZ < -COR_DIST*0.55) return (effZ + COR_DIST*1.3) / (COR_DIST*0.75);
-  if(effZ < 60) return 1;
-  return Math.max(0, 1 - (effZ-60)/220);
-}
+init();
+</script>
 
-function corMakeFrame(it, x, z, angleDeg, withWall){
-  const a = document.createElement("a");
-  a.className = "frame" + (withWall ? "" : " bay");
-  a.href = "/gallery/"+encodeURIComponent(it.id);
-  // translate(-50%,-50%) first so the frame is centered on its own top:50%/left:50%
-  // anchor regardless of its (responsive, clamp()-based) rendered size, THEN the 3D
-  // placement composes on top of that already-centered box.
-  a.style.transform = `translate(-50%,-50%) translate3d(${x}px, 0px, ${z}px) rotateY(${angleDeg}deg)`;
-  a.innerHTML = `<div class="spot"></div>${withWall ? '<div class="wall"></div>' : ''}
-                  <div class="mat"><img src="/static/gallery/art/${it.id}-card.webp" onerror="this.onerror=null;this.src='/static/gallery/art/${it.id}.png'" alt="${it.title}" loading="lazy"/></div>
-                  <div class="cap">${it.title}</div>`;
-  return {el:a, z};
-}
-// A real, layered fern -- SVG paths instead of rectangles, so it actually reads as a
-// plant rather than a stack of boxes.
-const PLANT_SVG = `<svg viewBox="0 0 64 108" xmlns="http://www.w3.org/2000/svg">
-  <defs><linearGradient id="potG" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="#7a5738"/><stop offset="1" stop-color="#432c1b"/>
-  </linearGradient></defs>
-  <path d="M17 82 L47 82 L42 104 L22 104 Z" fill="url(#potG)"/>
-  <path d="M32 82 C20 66 8 46 10 18 C24 38 30 60 32 82Z" fill="#3c6a40"/>
-  <path d="M32 82 C44 64 52 44 50 16 C38 36 33 58 32 82Z" fill="#4c7d4e"/>
-  <path d="M32 82 C22 62 10 50 2 34 C16 42 26 58 32 82Z" fill="#345c38"/>
-  <path d="M32 82 C42 62 54 50 62 34 C48 42 38 58 32 82Z" fill="#3c6a40"/>
-  <path d="M32 82 C30 58 34 32 28 6 C38 28 34 56 32 82Z" fill="#5a8c5c"/>
-</svg>`;
-function corMakePlant(x, z){
-  const d = document.createElement("div");
-  d.className = "decor plant";
-  // Bottom edge of the plant's own box (half its 130px height below this translate)
-  // lands right at ROOM_FLOOR_Y so it reads as standing on the floor, not floating.
-  d.style.transform = `translate(-50%,-50%) translate3d(${x}px, ${ROOM_FLOOR_Y-65}px, ${z}px)`;
-  d.innerHTML = PLANT_SVG;
-  return {el:d, z};
-}
-function corMakeArch(x, z, glimpseItem){
-  const d = document.createElement("div");
-  d.className = "decor arch";
-  // Same idea -- bottom edge of the 260px-tall archway sits at floor level.
-  d.style.transform = `translate(-50%,-50%) translate3d(${x}px, ${ROOM_FLOOR_Y-130}px, ${z}px)`;
-  d.innerHTML = `<div class="surround"></div><div class="opening"></div><div class="glow"></div>
-      <div class="glimpse"><img src="/static/gallery/art/${glimpseItem.id}-card.webp" onerror="this.onerror=null;this.src='/static/gallery/art/${glimpseItem.id}.png'" alt=""/></div>`;
-  return {el:d, z};
-}
-// One shared backing wall for an entire bay cluster, sized to the actual span of its
-// frames -- reads as a continuous alcove, not three overlapping tiles. `ret` side
-// panels angle back to suggest the alcove has depth (still local to this bay only).
-function corMakeBayback(centerX, z, spanWidth){
-  const d = document.createElement("div");
-  d.className = "decor bayback";
-  d.style.width = spanWidth+"px"; d.style.height = "280px";
-  d.style.transform = `translate(-50%,-50%) translate3d(${centerX}px, 0px, ${z-16}px)`;
-  d.innerHTML = `<div class="back"></div><div class="ret l"></div><div class="ret r"></div>`;
-  return {el:d, z};
-}
-// Room shell for one Z segment: floor, ceiling, left wall, right wall. Each tile only
-// spans this one segment's Z range (COR_DIST wide, +6 for seamless overlap with its
-// neighbors) -- see the big comment on .rtile for why that boundedness matters. FLOOR_Y/
-// CEIL_Y are chosen well outside a frame's own vertical extent (including its spot glow
-// above and caption below) so floor/ceiling can never visually cross into a portrait's
-// screen position regardless of how close the camera gets to that segment.
-const ROOM_FLOOR_Y = 340, ROOM_CEIL_Y = -340, ROOM_WALL_H = 680;
-function corMakeRoomSegment(zCenter, roomHalfWidth){
-  const segLen = COR_DIST + 6;
-  const mk = (cls, w, h, transform) => {
-    const el = document.createElement("div");
-    el.className = "rtile " + cls;
-    el.style.width = w+"px"; el.style.height = h+"px";
-    el.style.transform = transform;
-    return {el, z: zCenter};
-  };
-  const roomW = roomHalfWidth*2;
-  return [
-    mk("floor", roomW, segLen, `translate(-50%,-50%) translate3d(0px, ${ROOM_FLOOR_Y}px, ${zCenter}px) rotateX(90deg)`),
-    mk("ceil",  roomW, segLen, `translate(-50%,-50%) translate3d(0px, ${ROOM_CEIL_Y}px, ${zCenter}px) rotateX(-90deg)`),
-    mk("wall",  segLen, ROOM_WALL_H, `translate(-50%,-50%) translate3d(${-roomHalfWidth}px, 0px, ${zCenter}px) rotateY(90deg)`),
-    mk("wall",  segLen, ROOM_WALL_H, `translate(-50%,-50%) translate3d(${roomHalfWidth}px, 0px, ${zCenter}px) rotateY(-90deg)`),
-  ];
+<script type="module">
+// ---- Walk-through corridor: real WebGL (Three.js), not CSS 3D transforms --------
+// Why this exists: an earlier CSS-transform version got the geometry and perspective
+// right but could never get real material/lighting -- flat gradients have a hard
+// ceiling on realism that no amount of tuning fixes. This is an actual lit 3D room:
+// real texture-mapped geometry (continuous, so no tiling seams), real lights with
+// real falloff, a real camera moving through it.
+// Loaded lazily (dynamic import), not as a static top-level import: Three.js is
+// ~2MB unminified, and a static `import` would fetch+parse it on every /gallery page
+// load regardless of whether the visitor ever clicks "Walk Through the Gallery" --
+// most won't. Deferring it to the moment it's actually needed keeps the default grid
+// experience, which is what most visitors use, unaffected.
+let THREE = null;
+async function ensureThree(){
+  if(!THREE) THREE = await import("/static/vendor/three.module.js");
+  return THREE;
 }
 
-// Layout: mostly single frames alternating left/right wall (angled toward the viewer),
-// with periodic "bays" of 2-3 portraits hung together on one flat, camera-facing wall
-// -- a small gallery alcove with its own shared backing wall. Plants and glimpsed
-// side-passage archways are placed between slots purely for atmosphere. Every one of
-// these is its own small, independently positioned element (same discipline as .wall
-// from the single-frame version), never a large shared plane, so nothing here can
-// occlude a frame the way the old 3D floor did.
-function renderCorridor(){
-  const items = getCurrentItems();
-  const world = $("#corWorld");
-  world.innerHTML = "";
-  // Responsive wall offset -- on a narrow viewport a fixed px push plus the frame's own
-  // width would shove it half off-screen (this is what happened on mobile before this
-  // was computed from innerWidth instead of hardcoded).
+const $$ = s => document.querySelector(s);
+const COR_DIST = 900;          // world units between each slot, same scale as before
+const EYE_Y = 0;                // camera height
+const FLOOR_Y = -160, CEIL_Y = 300;   // room floor/ceiling relative to eye level
+const FRAME_W = 260, FRAME_H = 325;   // portrait plane size (4:5 aspect, matches the art)
+const BAY_FRAME_W = 170, BAY_FRAME_H = 212.5;
+
+let scene, camera, renderer, canvas;
+let sceneBuilt = false, loopRunning = false, loopId = null;
+let frameEntries = [];   // [{group, pic, z, id}]
+let maxProgress = 0;
+let roomHalfWidth = 580;
+let raycaster, pointerNDC;   // built in initRenderer, once THREE is actually loaded
+
+function initRenderer(){
+  canvas = $$("#corCanvas");
+  raycaster = new THREE.Raycaster();
+  pointerNDC = new THREE.Vector2();
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xdcd8cc);
+
+  camera = new THREE.PerspectiveCamera(62, 16/9, 1, 6000);   // far plane updated once the corridor's real depth is known -- see buildWalkScene
+  camera.position.set(0, EYE_Y, 0);
+
+  renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  scene.add(new THREE.HemisphereLight(0xfff8ec, 0xd8d2c0, 1.05));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.28));
+  const sun = new THREE.DirectionalLight(0xfff4de, 0.35);
+  sun.position.set(200, 500, 200);
+  scene.add(sun);
+
+  window.addEventListener("resize", onResize);
+  canvas.addEventListener("click", onCanvasClick);
+  canvas.addEventListener("mousemove", onCanvasMove);
+}
+
+function onResize(){
+  if(!renderer || !canvas) return;
+  const w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;
+  if(!w || !h) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+}
+
+function loadTiledTexture(loader, url, repeatX, repeatY){
+  const t = loader.load(url);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeatX, repeatY);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+function makeCaptionTexture(text){
+  const cnv = document.createElement("canvas");
+  cnv.width = 512; cnv.height = 96;
+  const ctx = cnv.getContext("2d");
+  ctx.fillStyle = "#2a251c";
+  ctx.font = "600 40px Georgia, 'Iowan Old Style', serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(text, 256, 48, 480);
+  const tex = new THREE.CanvasTexture(cnv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// A gold-glow "spotlight pool" rendered as a simple unlit additive plane above each
+// frame, not a real dynamic light -- 23 real point lights would be expensive on
+// mobile GPUs for a purely decorative effect achievable this much more cheaply.
+function makeGlowSprite(w, h){
+  const cnv = document.createElement("canvas");
+  cnv.width = 128; cnv.height = 128;
+  const ctx = cnv.getContext("2d");
+  const g = ctx.createRadialGradient(64,64,0,64,64,64);
+  g.addColorStop(0, "rgba(255,235,190,.9)");
+  g.addColorStop(1, "rgba(255,235,190,0)");
+  ctx.fillStyle = g; ctx.fillRect(0,0,128,128);
+  const tex = new THREE.CanvasTexture(cnv);
+  const mat = new THREE.MeshBasicMaterial({map:tex, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending});
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+  return mesh;
+}
+
+function buildFrame(loader, it, x, z, angleY, w, h){
+  const g = new THREE.Group();
+  const border = new THREE.Mesh(
+    new THREE.PlaneGeometry(w+26, h+26),
+    new THREE.MeshStandardMaterial({color:0x8a6a34, roughness:0.45, metalness:0.25})
+  );
+  border.position.z = -0.6;
+  g.add(border);
+
+  const mat = new THREE.Mesh(
+    new THREE.PlaneGeometry(w+8, h+8),
+    new THREE.MeshStandardMaterial({color:0xefe9dc, roughness:0.9})
+  );
+  mat.position.z = -0.3;
+  g.add(mat);
+
+  const tex = loader.load(`/static/gallery/art/${it.id}.png`);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const pic = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, h),
+    new THREE.MeshStandardMaterial({map:tex, roughness:0.95})
+  );
+  pic.userData.itemId = it.id;
+  g.add(pic);
+
+  const cap = new THREE.Mesh(
+    new THREE.PlaneGeometry(w*0.95, w*0.95*(96/512)),
+    new THREE.MeshBasicMaterial({map:makeCaptionTexture(it.title), transparent:true})
+  );
+  cap.position.y = -(h/2 + 28);
+  g.add(cap);
+
+  const glow = makeGlowSprite(w*1.4, 90);
+  glow.position.set(0, h/2 + 55, 40);
+  g.add(glow);
+
+  g.position.set(x, EYE_Y, z);
+  g.rotation.y = angleY;
+  scene.add(g);
+  return {group:g, pic, z, id: it.id};
+}
+
+function buildPlant(x, z){
+  const g = new THREE.Group();
+  const potMat = new THREE.MeshStandardMaterial({color:0x6b4a35, roughness:0.8});
+  const pot = new THREE.Mesh(new THREE.CylinderGeometry(20, 26, 34, 12), potMat);
+  pot.position.y = 17;
+  g.add(pot);
+  const leafMat = new THREE.MeshStandardMaterial({color:0x4d7a4f, roughness:0.7, side:THREE.DoubleSide});
+  for(let i=0;i<5;i++){
+    const leaf = new THREE.Mesh(new THREE.ConeGeometry(9, 78, 6), leafMat);
+    leaf.position.set(0, 34+35, 0);
+    leaf.rotation.z = (i-2)*0.28;
+    leaf.rotation.y = i*1.3;
+    g.add(leaf);
+  }
+  g.position.set(x, FLOOR_Y, z);
+  scene.add(g);
+}
+
+function buildRoom(loader, totalDepth){
+  // Root cause of an earlier "floor/walls render as a flat, undetailed color" bug,
+  // found by bisection (isolated repros, live material/texture inspection, a solid-
+  // color material swap to confirm the right mesh was even being edited, disabling
+  // mipmaps): a single 1x1-segment PlaneGeometry spanning the WHOLE corridor depth is
+  // an extremely elongated quad (just two huge, nearly edge-on triangles from the
+  // camera's viewpoint), and perspective-correct texture interpolation across it broke
+  // down in this environment's software WebGL rasterizer -- confirmed fixed by
+  // subdividing into many smaller segments along the long axis. Not a real GPU should
+  // need this, but it's cheap (a few hundred extra triangles) and makes the geometry
+  // robust regardless of renderer, so it stays in for production too.
+  const depthSegs = Math.max(24, Math.ceil(totalDepth/150));
+
+  const floorTex = loadTiledTexture(loader, "/static/gallery/textures/floor-tile.jpg", roomHalfWidth*2/260, totalDepth/260);
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(roomHalfWidth*2, totalDepth, 4, depthSegs),
+    new THREE.MeshStandardMaterial({map:floorTex, roughness:0.9})
+  );
+  floor.rotation.x = -Math.PI/2;
+  floor.position.set(0, FLOOR_Y, -totalDepth/2);
+  scene.add(floor);
+
+  const wallTex = loadTiledTexture(loader, "/static/gallery/textures/wall-plaster.jpg", totalDepth/300, (CEIL_Y-FLOOR_Y)/300);
+  const wallMat = new THREE.MeshStandardMaterial({map:wallTex, roughness:0.95});
+  const wallGeo = new THREE.PlaneGeometry(totalDepth, CEIL_Y-FLOOR_Y, depthSegs, 4);
+
+  const wallL = new THREE.Mesh(wallGeo, wallMat);
+  wallL.rotation.y = Math.PI/2;
+  wallL.position.set(-roomHalfWidth, (FLOOR_Y+CEIL_Y)/2, -totalDepth/2);
+  scene.add(wallL);
+
+  const wallR = new THREE.Mesh(wallGeo, wallMat);
+  wallR.rotation.y = -Math.PI/2;
+  wallR.position.set(roomHalfWidth, (FLOOR_Y+CEIL_Y)/2, -totalDepth/2);
+  scene.add(wallR);
+
+  const ceilTex = loadTiledTexture(loader, "/static/gallery/textures/wall-plaster.jpg", roomHalfWidth*2/300, totalDepth/300);
+  const ceil = new THREE.Mesh(
+    new THREE.PlaneGeometry(roomHalfWidth*2, totalDepth, 4, depthSegs),
+    new THREE.MeshStandardMaterial({map:ceilTex, roughness:1, color:0xfbf8ef})
+  );
+  ceil.rotation.x = Math.PI/2;
+  ceil.position.set(0, CEIL_Y, -totalDepth/2);
+  scene.add(ceil);
+
+  // end cap so the corridor doesn't just cut off into the void at the far end
+  const cap = new THREE.Mesh(
+    new THREE.PlaneGeometry(roomHalfWidth*2, CEIL_Y-FLOOR_Y),
+    wallMat
+  );
+  cap.position.set(0, (FLOOR_Y+CEIL_Y)/2, -totalDepth);
+  scene.add(cap);
+}
+
+function buildWalkScene(){
+  while(scene.children.length) scene.remove(scene.children[0]);
+  scene.add(new THREE.HemisphereLight(0xfff8ec, 0xd8d2c0, 1.05));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.28));
+  const sun = new THREE.DirectionalLight(0xfff4de, 0.35);
+  sun.position.set(200, 500, 200);
+  scene.add(sun);
+
+  const manager = new THREE.LoadingManager();
+  manager.onLoad = ()=>{ $$("#corLoading").classList.add("hidden"); };
+  manager.onError = ()=>{ $$("#corLoading").classList.add("hidden"); };
+  const loader = new THREE.TextureLoader(manager);
+
+  const items = window.getCurrentItems();
   const wallX = Math.min(260, window.innerWidth*0.30);
   const spreadUnit = Math.min(130, window.innerWidth*0.15);
-  const bayFrameW = Math.min(190, window.innerWidth*0.32);
+  roomHalfWidth = wallX + 320;
 
-  // Room walls sit outside the widest thing placed in a bay/archway (bay center can
-  // reach roughly wallX+40+spreadUnit+halfFrame, archways sit at wallX*1.75) so the
-  // shell always encloses the art with margin to spare.
-  const roomHalfWidth = wallX + 320;
-
-  corFrames = []; corDecor = []; corRoom = [];
+  frameEntries = [];
   let z = -COR_DIST, side = -1, baySide = -1, sinceBay = 0, i = 0, slot = 0;
   while(i < items.length){
     const remaining = items.length - i;
@@ -574,98 +620,100 @@ function renderCorridor(){
       const n = Math.min(3, remaining);
       const bx = baySide * (wallX + 40);
       const offsets = n===3 ? [-spreadUnit,0,spreadUnit] : n===2 ? [-spreadUnit*0.62,spreadUnit*0.62] : [0];
-      for(let k=0;k<n;k++) corFrames.push(corMakeFrame(items[i+k], bx+offsets[k], z, 0, false));
-      const span = (n===1?1:2)*spreadUnit*(n===2?0.62:1) + bayFrameW + 90;
-      corDecor.push(corMakeBayback(bx, z, span));
+      for(let k=0;k<n;k++) frameEntries.push(buildFrame(loader, items[i+k], bx+offsets[k], z, 0, BAY_FRAME_W, BAY_FRAME_H));
       i += n; z -= COR_DIST*1.3; baySide *= -1; sinceBay = 0;
     } else {
-      corFrames.push(corMakeFrame(items[i], side*wallX, z, side<0?18:-18, true));
+      const angle = side<0 ? 0.32 : -0.32;
+      frameEntries.push(buildFrame(loader, items[i], side*wallX, z, angle, FRAME_W, FRAME_H));
       side *= -1; i += 1; z -= COR_DIST; sinceBay += 1;
     }
     slot++;
-    if(slot % 2 === 0) corDecor.push(corMakePlant((slot%4===0?1:-1)*(wallX*0.62), z+COR_DIST*0.45));
-    if(slot % 3 === 0 && items.length){
-      const glimpse = items[(i*7+3) % items.length];
-      corDecor.push(corMakeArch((slot%6===0?1:-1)*(wallX*1.75), z+COR_DIST*0.5, glimpse));
-    }
-  }
-  // Room shell: one segment per COR_DIST of depth, covering the full corridor length
-  // regardless of where frames/bays landed -- purely geometric, independent of item
-  // layout, so it looks the same whether an item happened to sit there or not. Extends
-  // 1.5 slots PAST the scrollable max (corMaxProgress, set below) on purpose: room tiles
-  // don't fade like frames do, so without this margin the very last segment ends up
-  // getting pressed right up against the camera at max scroll -- a huge flat plane at
-  // point-blank perspective range balloons up to fill/exceed the whole viewport, which
-  // is indistinguishable from a broken blank screen. Keeping a segment's worth of
-  // hallway always still ahead of you, even at max scroll, means you can never actually
-  // reach that point-blank distance.
-  const totalDepth = -z + COR_DIST;
-  const roomDepth = totalDepth + COR_DIST*1.5;
-  for(let segZ = -COR_DIST/2; segZ > -roomDepth; segZ -= COR_DIST){
-    corRoom.push(...corMakeRoomSegment(segZ, roomHalfWidth));
+    if(slot % 2 === 0) buildPlant((slot%4===0?1:-1)*(wallX*0.62), z+COR_DIST*0.45);
   }
 
-  corRoom.forEach(r=>world.appendChild(r.el));
-  corFrames.forEach(f=>world.appendChild(f.el));
-  corDecor.sort((a,b)=>b.z-a.z).forEach(d=>world.appendChild(d.el));
+  const totalDepth = -z + COR_DIST*1.5;
+  // The camera's far plane defaults to a placeholder (6000) set before the corridor's
+  // real depth is known; a collection deep enough to exceed it would otherwise clip.
+  camera.far = totalDepth + 2000;
+  camera.updateProjectionMatrix();
+  buildRoom(loader, totalDepth);
+  maxProgress = -z + COR_DIST*0.4;   // stop short of the end cap, never point-blank against it
 
-  corMaxProgress = -z + COR_DIST;
-  $("#corridor").style.height = (corMaxProgress + window.innerHeight) + "px";
-  $("#corProgress").textContent = (items.length ? "1" : "0") + " / " + items.length;
-  updateCorridor();
+  $$("#corridor").style.height = (maxProgress + window.innerHeight) + "px";
+  $$("#corProgress").textContent = (items.length ? "1" : "0") + " / " + items.length;
+  sceneBuilt = true;
+  onResize();
+  updateCamera();
 }
 
-function updateCorridor(){
-  if(VIEW!=="walk") return;
-  const rect = $("#corridor").getBoundingClientRect();
-  const progress = Math.max(0, Math.min(corMaxProgress, -rect.top));
-  $("#corWorld").style.transform = `translateZ(${progress}px)`;
-  let bestIdx=0, bestOp=-1;
-  corFrames.forEach((f,i)=>{
-    const op = corFade(f.z + progress);
-    f.el.style.opacity = op;
-    f.el.classList.toggle("live", op > 0.15);
-    // "Current" item for the counter = most VISIBLE, not merely nearest by distance --
-    // a frame that already fully faded out behind you is still numerically close for a
-    // while, which made the counter lag on a stale item right after passing it.
-    if(op > bestOp){ bestOp = op; bestIdx = i; }
+function updateCamera(){
+  const rect = $$("#corridor").getBoundingClientRect();
+  const progress = Math.max(0, Math.min(maxProgress, -rect.top));
+  camera.position.z = -progress;
+  let bestIdx = 0, bestDist = Infinity;
+  frameEntries.forEach((f,idx)=>{
+    const d = Math.abs(f.z - camera.position.z);
+    if(d < bestDist){ bestDist = d; bestIdx = idx; }
   });
-  corDecor.forEach(d=>{ d.el.style.opacity = corFade(d.z + progress) * 0.9; });
-  if(corFrames.length) $("#corProgress").textContent = (bestIdx+1) + " / " + corFrames.length;
-  $("#corHint").style.opacity = progress < 40 ? 1 : 0;
+  if(frameEntries.length) $$("#corProgress").textContent = (bestIdx+1) + " / " + frameEntries.length;
+  $$("#corHint").style.opacity = progress < 40 ? 1 : 0;
+  renderer.render(scene, camera);
 }
 
-let corTicking = false;
-window.addEventListener("scroll", ()=>{
-  if(VIEW!=="walk" || corTicking) return;
-  corTicking = true;
-  requestAnimationFrame(()=>{ updateCorridor(); corTicking=false; });
-}, {passive:true});
-let corResizeTimer=null;
-window.addEventListener("resize", ()=>{
-  if(VIEW!=="walk") return;
-  clearTimeout(corResizeTimer);
-  corResizeTimer=setTimeout(()=>{ const y=window.scrollY; renderCorridor(); window.scrollTo(0,y); }, 150);
-});
+function renderLoop(){
+  if(!loopRunning) return;
+  updateCamera();
+  loopId = requestAnimationFrame(renderLoop);
+}
+function startLoop(){ if(loopRunning) return; loopRunning = true; renderLoop(); }
+function stopLoop(){ loopRunning = false; if(loopId) cancelAnimationFrame(loopId); }
 
-function enterWalk(){
-  VIEW = "walk";
+function onCanvasClick(e){
+  const rect = canvas.getBoundingClientRect();
+  pointerNDC.x = ((e.clientX-rect.left)/rect.width)*2-1;
+  pointerNDC.y = -((e.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointerNDC, camera);
+  const hits = raycaster.intersectObjects(frameEntries.map(f=>f.pic));
+  if(hits.length && hits[0].object.userData.itemId){
+    window.location.href = "/gallery/"+encodeURIComponent(hits[0].object.userData.itemId);
+  }
+}
+function onCanvasMove(e){
+  const rect = canvas.getBoundingClientRect();
+  pointerNDC.x = ((e.clientX-rect.left)/rect.width)*2-1;
+  pointerNDC.y = -((e.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointerNDC, camera);
+  const hits = raycaster.intersectObjects(frameEntries.map(f=>f.pic));
+  canvas.style.cursor = hits.length ? "pointer" : "";
+}
+
+window.enterWalk = async function(){
+  window.corSetView("walk");
   document.querySelector(".wrap").style.display = "none";
-  $("#corridor").classList.add("on");
+  $$("#corridor").classList.add("on");
+  $$("#corLoading").classList.remove("hidden");
   window.scrollTo(0,0);
-  renderCorridor();
-}
-function exitWalk(){
-  VIEW = "grid";
-  $("#corridor").classList.remove("on");
+  await ensureThree();
+  if(!renderer) initRenderer();
+  buildWalkScene();
+  startLoop();
+};
+// Called by the classic script's refreshCurrentView() if the collection/search
+// selection changes while already in walk mode (not reachable in practice today --
+// Typortrait has a single collection and the search box lives inside .wrap, which is
+// hidden during the walkthrough -- but kept correct rather than left dangling).
+window.corRebuild = async function(){
+  if(!renderer){ await window.enterWalk(); return; }
+  $$("#corLoading").classList.remove("hidden");
+  buildWalkScene();
+};
+window.exitWalk = function(){
+  window.corSetView("grid");
+  $$("#corridor").classList.remove("on");
   document.querySelector(".wrap").style.display = "";
   window.scrollTo(0,0);
-}
-$("#vtWalk").onclick = enterWalk;
-$("#corExit").onclick = exitWalk;
-document.addEventListener("keydown", e=>{ if(e.key==="Escape" && VIEW==="walk") exitWalk(); });
-
-init();
+  stopLoop();
+};
 </script>
 </body>
 </html>
