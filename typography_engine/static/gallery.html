@@ -611,6 +611,9 @@ function buildWalkScene(){
   const wallX = Math.min(260, window.innerWidth*0.30);
   const spreadUnit = Math.min(130, window.innerWidth*0.15);
   roomHalfWidth = wallX + 320;
+  // Single portraits mount flush against the actual side wall (just proud of it, to
+  // avoid z-fighting), not floating mid-room facing down the corridor.
+  const wallMountX = roomHalfWidth - 4;
 
   frameEntries = [];
   let z = -COR_DIST, side = -1, baySide = -1, sinceBay = 0, i = 0, slot = 0;
@@ -620,11 +623,25 @@ function buildWalkScene(){
       const n = Math.min(3, remaining);
       const bx = baySide * (wallX + 40);
       const offsets = n===3 ? [-spreadUnit,0,spreadUnit] : n===2 ? [-spreadUnit*0.62,spreadUnit*0.62] : [0];
+      // A real wall behind the bay cluster -- previously these portraits faced the
+      // walker head-on with nothing behind them, floating in open air.
+      const bayWallW = (n===3 ? spreadUnit*2 : n===2 ? spreadUnit*1.24 : 0) + BAY_FRAME_W + 70;
+      const bayWallH = BAY_FRAME_H + 140;
+      const bayWallTex = loadTiledTexture(loader, "/static/gallery/textures/wall-plaster.jpg", bayWallW/300, bayWallH/300);
+      const bayWall = new THREE.Mesh(
+        new THREE.PlaneGeometry(bayWallW, bayWallH),
+        new THREE.MeshStandardMaterial({map:bayWallTex, roughness:0.95})
+      );
+      bayWall.position.set(bx, EYE_Y, z - 6);
+      scene.add(bayWall);
       for(let k=0;k<n;k++) frameEntries.push(buildFrame(loader, items[i+k], bx+offsets[k], z, 0, BAY_FRAME_W, BAY_FRAME_H));
       i += n; z -= COR_DIST*1.3; baySide *= -1; sinceBay = 0;
     } else {
-      const angle = side<0 ? 0.32 : -0.32;
-      frameEntries.push(buildFrame(loader, items[i], side*wallX, z, angle, FRAME_W, FRAME_H));
+      // rotation.y = -side*90deg turns the frame's face to lie flush in the wall's own
+      // plane (parallel to it), facing across the corridor -- matching how wallL/wallR
+      // are rotated in buildRoom(), instead of the old +/-0.32rad which left the frame
+      // mostly facing straight down the corridor (perpendicular to the wall it sat near).
+      frameEntries.push(buildFrame(loader, items[i], side*wallMountX, z, -side*Math.PI/2, FRAME_W, FRAME_H));
       side *= -1; i += 1; z -= COR_DIST; sinceBay += 1;
     }
     slot++;
