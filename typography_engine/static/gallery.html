@@ -197,6 +197,15 @@ let CAT=null, PRODUCTS=null, DIGITAL_CENTS=1499, curCol=0, curSec=0, curItem=nul
 // to `var` just for this.
 window.corGetView = ()=>VIEW;
 window.corSetView = v=>{ VIEW=v; };
+// The photo tour's portraits are baked into specific fixed positions in each panorama
+// photo (see the module script), keyed by catalog item id rather than by position in
+// whatever's currently filtered/searched -- so it looks items up directly by id,
+// independent of search/collection state, rather than through getCurrentItems().
+window.findItem = id => {
+  for(const col of CAT.collections) for(const sec of col.sections)
+    for(const it of sec.items) if(it.id===id) return it;
+  return null;
+};
 
 // Gallery brand skins. Same storefront, different front: name, tagline, theme, and
 // whether the generator ("make your own from a photo") is surfaced. A gallery-only
@@ -439,55 +448,57 @@ let maxProgress = 0;
 let roomHalfWidth = 580;
 let raycaster, pointerNDC;   // built in initRenderer, once THREE is actually loaded
 
-// ---- Photo Tour: a real photographed gallery, our portraits placed inside it -----
+// ---- Photo Tour: a real photographed gallery, our portraits baked into it ---------
 // The procedural corridor above gets the geometry and depth right but is still built
 // from flat materials and a handful of lights -- it can only ever look like a decent
 // 3D model. These three images are real (or near-photoreal) equirectangular panoramas
-// of an actual gallery interior. Mapped onto the inside of a sphere with the camera at
-// its center, they give a level of realism no procedural room can match; our own
-// portraits are placed in front of the panorama as real 3D frames (reusing the same
-// gold-border/mat/caption look as the corridor's), positioned by eye at open-looking
-// wall spots in each photo and clickable exactly like the corridor's.
-// Each room can only show as many portraits as it has hand-placed slots (23 total,
-// matching History in Words exactly) -- a smaller filtered set degrades gracefully
-// (later slots just go unused); a much larger catalog would need more slots added.
-const PHOTO_ROOM_RADIUS = 900;      // the panorama sphere
-const PHOTO_FRAME_RADIUS = 650;     // how far in front of it our portraits sit
-// Sized much smaller than the corridor's FRAME_W/BAY_FRAME_W: those were tuned for a
-// walker passing frames at 580-900 units away, but every photo-tour frame sits at a
-// fixed distance (PHOTO_FRAME_RADIUS) -- at that distance the corridor's sizing filled
-// most of the screen. These read as a painting hung at a normal viewing distance.
-const PHOTO_FRAME_W = 150, PHOTO_FRAME_H = 187.5;
-const PHOTO_BAY_W = 95, PHOTO_BAY_H = 118.75;
+// of an actual gallery interior, uploaded by the user. A first version placed our
+// portraits as separate 3D "cards" floating in front of the photo -- technically
+// correct but it read as exactly that: flat stickers pasted on top of a photograph,
+// not art actually hanging on the wall. This version instead bakes each portrait
+// directly into the panorama JPGs themselves (see ops/photoscene-composite, or ask
+// Claude to regenerate), pixel-replacing the real photographed artwork's picture area
+// -- so ours sits inside the SAME real frame, mat and lighting as whatever used to
+// hang there. What's built at runtime is just an invisible click/caption target at
+// each baked position, for navigation -- there is no visible mesh over the art itself.
+// Each photo can only show as many portraits as it has real frames worth pasting into
+// (19 of 23 across all three rooms) -- the remaining 4 still sell fine from the grid
+// and the corridor, they just don't have a natural-looking wall spot in these photos.
+const PHOTO_BAKE_VERSION = 2;    // bump whenever the baked panorama JPGs are regenerated
+const PHOTO_ROOM_RADIUS = 900;   // the panorama sphere
+const PHOTO_FRAME_RADIUS = 650;  // depth of the invisible click targets (matches bake)
+// Yaw values below are pre-corrected for THREE's actual SphereGeometry UV convention
+// (empirically calibrated by raycasting the sphere and reading back its real UV --
+// texture u=0.75 sits at yaw=0, not u=0.5 as the naive spherical-coordinates formula
+// in updatePhotoCamera/buildPhotoFrame would suggest: yaw_here = PI/2 - yaw_naive).
+// pitch needed no such correction. Get this wrong and captions/click targets land near
+// the right neighborhood but not on the actual baked portrait -- exactly what happened
+// before this was calibrated, and easy to miss since it looks approximately plausible.
 const PHOTO_ROOMS = [
   { name:"The Entrance", src:"/static/gallery/photoscene/entrance.jpg", slots:[
-    {yaw:-1.73,  pitch:0.364, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
-    {yaw:-1.178, pitch:0.262, w:PHOTO_BAY_W, h:PHOTO_BAY_H},
-    {yaw:-0.626, pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
-    {yaw:0.274,  pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
-    {yaw:1.317,  pitch:0.262, w:PHOTO_BAY_W, h:PHOTO_BAY_H},
-    {yaw:2.401,  pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
-    {yaw:2.994,  pitch:0.344, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {id:"edgar-allan-poe", yaw:-2.9974, pitch:0.2899, w:284.4, h:358.7},
+    {id:"frederick-douglass", yaw:2.1583, pitch:0.1902, w:187.9, h:235.9},
+    {id:"harriet-tubman", yaw:0.7547, pitch:0.1825, w:254.4, h:320.3},
+    {id:"abraham-lincoln", yaw:-0.9787, pitch:0.1825, w:207.9, h:261.2},
+    {id:"mark-twain", yaw:-1.4128, pitch:0.2746, w:194.5, h:244.2},
   ]},
   { name:"The Main Gallery", src:"/static/gallery/photoscene/main-room.jpg", slots:[
-    {yaw:-2.528, pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
-    {yaw:-1.595, pitch:0.221, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
-    {yaw:-1.014, pitch:0.221, w:PHOTO_BAY_W, h:PHOTO_BAY_H},
-    {yaw:0.765,  pitch:0.2,   w:PHOTO_BAY_W, h:PHOTO_BAY_H},
-    {yaw:1.072,  pitch:0.18,  w:PHOTO_BAY_W, h:PHOTO_BAY_H},
-    {yaw:1.604,  pitch:0.2,   w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
-    {yaw:2.074,  pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
-    {yaw:2.544,  pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {id:"susan-b-anthony", yaw:-2.1844, pitch:0.2132, w:305.4, h:385.7},
+    {id:"walt-whitman", yaw:-3.1278, pitch:0.2362, w:335.2, h:424.2},
+    {id:"sojourner-truth", yaw:2.5802, pitch:0.1979, w:227.2, h:285.6},
+    {id:"theodore-roosevelt", yaw:0.0399, pitch:0.2899, w:365.3, h:463.5},
+    {id:"nikola-tesla", yaw:-0.5415, pitch:0.2209, w:256.3, h:322.7},
+    {id:"ulysses-s-grant", yaw:-1.0554, pitch:0.2899, w:345.2, h:437.2},
   ]},
   { name:"The Rear Salon", src:"/static/gallery/photoscene/rear-room.jpg", slots:[
-    {yaw:-2.733, pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
-    {yaw:-2.078, pitch:0.2,   w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
-    {yaw:-0.933, pitch:0.2,   w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
-    {yaw:0.315,  pitch:0.2,   w:PHOTO_BAY_W, h:PHOTO_BAY_H},
-    {yaw:0.765,  pitch:0.2,   w:PHOTO_BAY_W, h:PHOTO_BAY_H},
-    {yaw:1.297,  pitch:0.2,   w:PHOTO_BAY_W, h:PHOTO_BAY_H},
-    {yaw:1.992,  pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
-    {yaw:2.831,  pitch:0.262, w:PHOTO_FRAME_W,     h:PHOTO_FRAME_H},
+    {id:"booker-t-washington", yaw:-1.9819, pitch:0.2669, w:431.2, h:550.2},
+    {id:"sitting-bull", yaw:-2.6446, pitch:0.2439, w:207.9, h:261.2},
+    {id:"geronimo", yaw:2.5525, pitch:0.2025, w:310.1, h:391.7},
+    {id:"clara-barton", yaw:1.2149, pitch:0.1979, w:207.9, h:261.2},
+    {id:"elizabeth-cady-stanton", yaw:0.8084, pitch:0.2056, w:217.6, h:273.4},
+    {id:"charles-darwin", yaw:0.3559, pitch:0.2746, w:188.8, h:236.9},
+    {id:"queen-victoria", yaw:-0.5568, pitch:0.2669, w:437.2, h:558.2},
+    {id:"john-brown", yaw:-1.3438, pitch:0.2362, w:281.7, h:355.3},
   ]},
 ];
 let photoRoom = 0, photoYaw = 0, photoPitch = 0, photoFov = 66;
@@ -865,71 +876,47 @@ window.exitWalk = function(){
   stopLoop();
 };
 
-// ---- Photo Tour: build one room (panorama sphere + our portraits placed inside it) -
-function buildPhotoFrame(loader, it, yaw, pitch, w, h){
+// ---- Photo Tour: build one room (panorama sphere + invisible click/caption targets
+// over each portrait, which is otherwise baked straight into the panorama JPG) -------
+function buildPhotoFrame(it, yaw, pitch, w, h){
   const g = new THREE.Group();
-  // A plain wall-toned backer, well oversized relative to the frame -- the slot
-  // positions were placed by eye against the panorama photo, not measured against the
-  // exact pixel bounds of whatever painting already hangs there, so without this the
-  // photo's own original art shows past our frame's edges. Solid color, no texture:
-  // it only needs to read as "blank wall" at a glance, not survive close inspection.
-  const patch = new THREE.Mesh(
-    new THREE.PlaneGeometry((w+26)*1.3, (h+26)*1.3),
-    // Unlit (not MeshStandardMaterial): this only needs to read as "blank wall" next
-    // to a real photo -- letting the scene's lights tint/darken it made it read as an
-    // obvious grey card instead.
-    new THREE.MeshBasicMaterial({color:0xe9decb})
-  );
-  patch.position.z = -3;
-  g.add(patch);
-  const border = new THREE.Mesh(
-    new THREE.PlaneGeometry(w+26, h+26),
-    new THREE.MeshStandardMaterial({color:0x8a6a34, roughness:0.45, metalness:0.25})
-  );
-  border.position.z = -0.6;
-  g.add(border);
-
-  const mat = new THREE.Mesh(
-    new THREE.PlaneGeometry(w+8, h+8),
-    new THREE.MeshStandardMaterial({color:0xefe9dc, roughness:0.9})
-  );
-  mat.position.z = -0.3;
-  g.add(mat);
-
-  const tex = loader.load(`/static/gallery/art/${it.id}.png`);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  const pic = new THREE.Mesh(
+  // The portrait itself is real photo pixels now (baked in ahead of time), not a mesh
+  // -- this is only a click/hover target for navigation, so it must never be visible.
+  // colorWrite/depthWrite false (rather than visible:false) keeps it fully raycastable
+  // while drawing nothing, so it can't ever mismatch the baked position by a frame.
+  const hit = new THREE.Mesh(
     new THREE.PlaneGeometry(w, h),
-    new THREE.MeshStandardMaterial({map:tex, roughness:0.95})
+    new THREE.MeshBasicMaterial({colorWrite:false, depthWrite:false})
   );
-  pic.userData.itemId = it.id;
-  g.add(pic);
+  hit.userData.itemId = it.id;
+  g.add(hit);
 
   const cap = new THREE.Mesh(
     new THREE.PlaneGeometry(w*0.95, w*0.95*(96/512)),
     new THREE.MeshBasicMaterial({map:makeCaptionTexture(it.title), transparent:true})
   );
-  cap.position.y = -(h/2 + 28);
+  cap.position.y = -(h/2 + 22);
   g.add(cap);
 
   // Place on a sphere around the camera at (yaw,pitch): same spherical-to-cartesian
-  // mapping used for the camera's own look direction in updatePhotoCamera (so a
-  // camera at yaw/pitch looks straight at this point). Facing it back toward the room
-  // center needs its own orthonormal basis (not Object3D.lookAt, and not a plain Euler
-  // rotation.set matching the camera's own pitch/-yaw): both of those either faced the
-  // wrong way or rolled the frame at combined nonzero yaw+pitch. Building right/up/
-  // forward explicitly via cross products, the standard billboard-facing construction,
-  // keeps "up" true regardless of yaw/pitch.
+  // mapping used both for the camera's own look direction in updatePhotoCamera and for
+  // computing where each portrait was baked into the panorama (see the composite
+  // script), so a camera at that yaw/pitch looks straight at the baked art. Facing the
+  // caption back toward the room center needs its own orthonormal basis (not
+  // Object3D.lookAt, and not a plain Euler rotation.set matching the camera's own
+  // pitch/-yaw): both of those either faced the wrong way or rolled at combined
+  // nonzero yaw+pitch. Building right/up/forward explicitly via cross products, the
+  // standard billboard-facing construction, keeps "up" true regardless of yaw/pitch.
   const dir = new THREE.Vector3(
     Math.cos(pitch)*Math.sin(yaw), Math.sin(pitch), -Math.cos(pitch)*Math.cos(yaw)
   );
   g.position.copy(dir).multiplyScalar(PHOTO_FRAME_RADIUS);
-  const forward = dir.clone().negate();   // the frame's front (+Z) should face the room center
+  const forward = dir.clone().negate();   // faces back toward the room center
   const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), forward).normalize();
   const up = new THREE.Vector3().crossVectors(forward, right).normalize();
   g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, forward));
   scene.add(g);
-  return {group:g, pic, id:it.id};
+  return {group:g, pic:hit, id:it.id};
 }
 
 function buildPhotoRoom(idx){
@@ -943,7 +930,14 @@ function buildPhotoRoom(idx){
   const loader = new THREE.TextureLoader(manager);
 
   const room = PHOTO_ROOMS[idx];
-  const panoTex = loader.load(room.src);
+  // Cache-busted: these panoramas have baked-in art that moves whenever the composite
+  // is regenerated, and browsers cache JPGs aggressively (no Cache-Control on this
+  // static mount, just ETag/Last-Modified) -- a returning visitor with a stale cached
+  // copy would see art at the OLD baked position while the click/caption targets below
+  // (loaded fresh with the page) point at the NEW one. Bump PHOTO_BAKE_VERSION whenever
+  // the panoramas are regenerated; a plain per-load timestamp would defeat caching
+  // entirely, which these ~400KB images don't need on every single page view.
+  const panoTex = loader.load(room.src + "?v=" + PHOTO_BAKE_VERSION);
   panoTex.colorSpace = THREE.SRGBColorSpace;
   const sphere = new THREE.Mesh(
     new THREE.SphereGeometry(PHOTO_ROOM_RADIUS, 64, 40),
@@ -951,12 +945,13 @@ function buildPhotoRoom(idx){
   );
   scene.add(sphere);
 
-  const items = window.getCurrentItems();
-  const startIdx = PHOTO_ROOMS.slice(0, idx).reduce((n,r)=>n+r.slots.length, 0);
+  // Baked positions are keyed by catalog item id (see PHOTO_ROOMS above), not by
+  // position in whatever's currently filtered/searched -- window.findItem looks an id
+  // up directly against the full catalog so this never drifts with search state.
   frameEntries = [];
-  room.slots.forEach((slot, i)=>{
-    const it = items[startIdx+i];
-    if(it) frameEntries.push(buildPhotoFrame(loader, it, slot.yaw, slot.pitch, slot.w, slot.h));
+  room.slots.forEach(slot => {
+    const it = window.findItem(slot.id);
+    if(it) frameEntries.push(buildPhotoFrame(it, slot.yaw, slot.pitch, slot.w, slot.h));
   });
 
   camera.position.set(0, EYE_Y, 0);
