@@ -38,7 +38,7 @@ import json
 import math
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageStat
 
 ROOT = Path(__file__).resolve().parent.parent
 ART_DIR = ROOT / "static/gallery/art"
@@ -86,18 +86,46 @@ W, H = 2048, 1024
 RADIUS = 650  # matches PHOTO_FRAME_RADIUS in gallery.html
 
 
+ART_ASPECT = 900 / 1125  # w/h of the source portrait PNGs (0.8)
+# How far a region's own aspect ratio may stretch the portrait before it's visibly
+# distorted (a squished-narrow or smeared-wide face) rather than just mildly stretched.
+ASPECT_BAND = (0.55, 1.5)
+
+
 def inner_box(x0, y0, x1, y1):
-    """A centered 4:5 (portrait) box within the region, filling most of it -- leaves a
-    thin margin of the real frame's own mat/border visible, which is what makes the
-    result read as "a picture in that frame" instead of a precisely-matched sticker."""
-    avail_w, avail_h = (x1 - x0) * 0.94, (y1 - y0) * 0.9
-    target_w = avail_h * 0.8
-    if target_w > avail_w:
-        target_w, target_h = avail_w, avail_w / 0.8
-    else:
-        target_h = avail_h
-    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-    return cx - target_w / 2, cy - target_h / 2, cx + target_w / 2, cy + target_h / 2
+    """Full-bleed: the region minus a hairline margin for the real frame's own inner
+    edge. A first version tried to preserve the portrait's 4:5 aspect by fitting a
+    smaller centered box inside the region -- for any region whose real aspect ratio
+    wasn't close to 4:5 (most of them), that left a visible strip of the ORIGINAL
+    photographed art uncovered along one or two edges. Stretching to fill the region
+    completely eliminates that, and works fine for most regions -- but a handful are
+    extreme (a very wide landscape frame, or a very tall narrow one), and stretching a
+    portrait to fill THOSE smears or squishes the face into something unrecognizable.
+    See clamp_box() for how those are handled instead."""
+    margin_x, margin_y = (x1 - x0) * 0.03, (y1 - y0) * 0.03
+    return x0 + margin_x, y0 + margin_y, x1 - margin_x, y1 - margin_y
+
+
+def clamp_box(bx0, by0, bx1, by1):
+    """For a region whose aspect ratio is too far from the portrait's to stretch
+    without visible distortion, shrink to the nearest aspect within ASPECT_BAND
+    (centered in the region) and report the leftover margin rectangles (0, 1 or 2 of
+    them -- one pair if clamped, none if the region was already within band) so the
+    caller can fill them separately instead of leaving the ORIGINAL art showing."""
+    w, h = bx1 - bx0, by1 - by0
+    aspect = w / h
+    cx, cy = (bx0 + bx1) / 2, (by0 + by1) / 2
+    if aspect > ASPECT_BAND[1]:              # region too wide -- clamp width
+        new_w = h * ASPECT_BAND[1]
+        px0, px1 = cx - new_w / 2, cx + new_w / 2
+        margins = [(bx0, by0, px0, by1), (px1, by0, bx1, by1)]
+        return (px0, by0, px1, by1), margins
+    if aspect < ASPECT_BAND[0]:               # region too narrow/tall -- clamp height
+        new_h = w / ASPECT_BAND[0]
+        py0, py1 = cy - new_h / 2, cy + new_h / 2
+        margins = [(bx0, by0, bx1, py0), (bx0, py1, bx1, by1)]
+        return (bx0, py0, bx1, py1), margins
+    return (bx0, by0, bx1, by1), []
 
 
 def yaw_pitch(px, py):
@@ -124,9 +152,23 @@ def main():
         for (x0, y0, x1, y1) in regions:
             it = ITEMS[idx]; idx += 1
             bx0, by0, bx1, by1 = inner_box(x0, y0, x1, y1)
-            bw, bh = int(round(bx1 - bx0)), int(round(by1 - by0))
-            art = Image.open(ART_DIR / f"{it}.png").convert("RGB").resize((bw, bh), Image.LANCZOS)
-            im.paste(art, (int(round(bx0)), int(round(by0))))
+            (px0, py0, px1, py1), margins = clamp_box(bx0, by0, bx1, by1)
+
+            # Fill any leftover margin (only for regions whose aspect was clamped)
+            # with a color sampled from that SAME margin strip in the original photo
+            # -- close enough to the real local wall/mat tone to blend, unlike a single
+            # fixed color used everywhere regardless of each region's own lighting.
+            for (mx0, my0, mx1, my1) in margins:
+                mx0i, my0i, mx1i, my1i = (int(round(v)) for v in (mx0, my0, mx1, my1))
+                if mx1i <= mx0i or my1i <= my0i:
+                    continue
+                strip = im.crop((mx0i, my0i, mx1i, my1i))
+                avg = tuple(int(c) for c in ImageStat.Stat(strip).mean[:3])
+                im.paste(Image.new("RGB", (mx1i - mx0i, my1i - my0i), avg), (mx0i, my0i))
+
+            pw, ph = int(round(px1 - px0)), int(round(py1 - py0))
+            art = Image.open(ART_DIR / f"{it}.png").convert("RGB").resize((pw, ph), Image.LANCZOS)
+            im.paste(art, (int(round(px0)), int(round(py0))))
             yaw, pitch = yaw_pitch((bx0 + bx1) / 2, (by0 + by1) / 2)
             ww, wh = world_size(bx0, by0, bx1, by1)
             js_lines.append(
