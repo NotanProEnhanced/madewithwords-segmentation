@@ -463,12 +463,17 @@ let raycaster, pointerNDC;   // built in initRenderer, once THREE is actually lo
 // frame's original art entirely -- gradient-filled from the real wall color sampled
 // just outside it, not covered by anything foreign -- and draws our own portrait, at
 // its own correct proportions, in a freshly-drawn gold frame, sized to sit comfortably
-// in the erased area rather than forced to fill it exactly. What's built at runtime is
-// just an invisible click/caption target at each baked position, for navigation --
-// there is no separate visible mesh over the art itself, it's genuinely part of the
-// photo. 19 of 23 catalog items have a spot across the three rooms this way; the rest
-// still sell fine from the grid and the corridor.
-const PHOTO_BAKE_VERSION = 6;    // bump whenever the baked panorama JPGs are regenerated
+// in the erased area rather than forced to fill it exactly. Where OpenCV can find that
+// real frame's actual four corners (most of them), the portrait is perspective-warped
+// into that exact quadrilateral, so it inherits the same skew as whatever real frame
+// used to hang on that same angled section of wall, rather than sitting as a flat
+// unskewed rectangle on a wall the camera sees at an angle -- most visible on frames
+// near the edges of each panorama, where the wall recedes noticeably. What's built at
+// runtime is just an invisible click/caption target at each baked position, for
+// navigation -- there is no separate visible mesh over the art itself, it's genuinely
+// part of the photo. 19 of 23 catalog items have a spot across the three rooms this
+// way; the rest still sell fine from the grid and the corridor.
+const PHOTO_BAKE_VERSION = 7;    // bump whenever the baked panorama JPGs are regenerated
 const PHOTO_ROOM_RADIUS = 900;   // the panorama sphere
 const PHOTO_FRAME_RADIUS = 650;  // depth of the invisible click targets (matches bake)
 // Yaw values below are pre-corrected for THREE's actual SphereGeometry UV convention
@@ -480,29 +485,29 @@ const PHOTO_FRAME_RADIUS = 650;  // depth of the invisible click targets (matche
 // before this was calibrated, and easy to miss since it looks approximately plausible.
 const PHOTO_ROOMS = [
   { name:"The Entrance", src:"/static/gallery/photoscene/entrance.jpg", slots:[
-    {id:"edgar-allan-poe", yaw:-2.9974, pitch:0.2899, w:409.6, h:503.8},
-    {id:"frederick-douglass", yaw:2.1583, pitch:0.1902, w:321.4, h:390.0},
-    {id:"harriet-tubman", yaw:0.7547, pitch:0.1825, w:407.5, h:499.2},
-    {id:"abraham-lincoln", yaw:-0.9787, pitch:0.1825, w:332.0, h:400.9},
-    {id:"mark-twain", yaw:-1.3883, pitch:0.2746, w:285.6, h:344.8},
+    {id:"edgar-allan-poe", yaw:-2.9928, pitch:0.2853, w:289.8, h:403.1},
+    {id:"frederick-douglass", yaw:2.1829, pitch:0.1856, w:178.6, h:256.5},
+    {id:"harriet-tubman", yaw:0.7563, pitch:0.181, w:315.1, h:390.0},
+    {id:"abraham-lincoln", yaw:-0.9802, pitch:0.1825, w:264.8, h:327.8},
+    {id:"mark-twain", yaw:-1.4005, pitch:0.3129, w:219.4, h:634.5},
   ]},
   { name:"The Main Gallery", src:"/static/gallery/photoscene/main-room.jpg", slots:[
-    {id:"susan-b-anthony", yaw:-2.1844, pitch:0.2132, w:431.7, h:531.5},
-    {id:"walt-whitman", yaw:-3.1278, pitch:0.2362, w:460.7, h:571.5},
-    {id:"sojourner-truth", yaw:2.5802, pitch:0.1979, w:351.2, h:427.3},
-    {id:"theodore-roosevelt", yaw:0.0399, pitch:0.2899, w:492.3, h:612.4},
-    {id:"nikola-tesla", yaw:-0.5415, pitch:0.2209, w:381.3, h:465.1},
-    {id:"ulysses-s-grant", yaw:-1.0554, pitch:0.2899, w:471.9, h:585.8},
+    {id:"susan-b-anthony", yaw:-2.1905, pitch:0.2086, w:321.4, h:501.5},
+    {id:"walt-whitman", yaw:-3.1232, pitch:0.2332, w:359.8, h:496.9},
+    {id:"sojourner-truth", yaw:2.5802, pitch:0.1963, w:283.6, h:351.2},
+    {id:"theodore-roosevelt", yaw:-0.0015, pitch:0.2071, w:383.5, h:508.4},
+    {id:"nikola-tesla", yaw:-0.4985, pitch:0.1841, w:166.4, h:334.1},
+    {id:"ulysses-s-grant", yaw:-1.0538, pitch:0.2884, w:400.9, h:501.5},
   ]},
   { name:"The Rear Salon", src:"/static/gallery/photoscene/rear-room.jpg", slots:[
-    {id:"booker-t-washington", yaw:-2.0064, pitch:0.2669, w:614.9, h:779.2},
-    {id:"sitting-bull", yaw:-2.6446, pitch:0.2439, w:332.0, h:400.9},
-    {id:"geronimo", yaw:2.5525, pitch:0.2025, w:447.2, h:552.5},
-    {id:"clara-barton", yaw:1.2149, pitch:0.1979, w:332.0, h:400.9},
-    {id:"elizabeth-cady-stanton", yaw:0.8084, pitch:0.2056, w:340.5, h:414.0},
-    {id:"charles-darwin", yaw:0.3559, pitch:0.2746, w:310.8, h:377.0},
-    {id:"queen-victoria", yaw:-0.5568, pitch:0.2669, w:566.7, h:715.5},
-    {id:"john-brown", yaw:-1.3192, pitch:0.2362, w:374.8, h:458.4},
+    {id:"booker-t-washington", yaw:-2.008, pitch:0.2669, w:503.8, h:634.5},
+    {id:"sitting-bull", yaw:-2.6492, pitch:0.1841, w:203.0, h:429.5},
+    {id:"geronimo", yaw:2.5295, pitch:0.1933, w:302.4, h:394.4},
+    {id:"clara-barton", yaw:1.2456, pitch:0.1718, w:266.9, h:351.2},
+    {id:"elizabeth-cady-stanton", yaw:0.7977, pitch:0.1672, w:205.1, h:392.2},
+    {id:"charles-darwin", yaw:0.2654, pitch:0.1657, w:219.4, h:329.9},
+    {id:"queen-victoria", yaw:-0.5584, pitch:0.2654, w:492.3, h:622.2},
+    {id:"john-brown", yaw:-1.2977, pitch:0.2102, w:246.2, h:513.0},
   ]},
 ];
 let photoRoom = 0, photoYaw = 0, photoPitch = 0, photoFov = 66;
