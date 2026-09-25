@@ -2,31 +2,26 @@
 """Bakes History in Words portraits directly into the Photo Tour panorama JPGs
 (static/gallery/photoscene/*.jpg).
 
-Earlier versions of this script tried to make our portraits sit inside the REAL
-photographed frames in these photos -- pixel-replacing just the picture area so ours
-used the real frame's own border/mat as its frame. That worked well for frames whose
-real shape was already close to a portrait's, but for the frames that weren't (a wide
-lake scene, a narrow tall strip), every way of reconciling a 4:5 portrait with a
-differently-shaped hole looked wrong: stretched a face out of shape, left the original
-art showing round the edges, or padded the gap with an obviously-pasted-on rectangle.
-That's not a technique problem, it's a shape problem -- you cannot losslessly fit a
-4:5 rectangle into a 3:1 one.
+Rebuilt from zero after several narrower fixes in a row still didn't look right
+together. What follows keeps the two ideas that had already proven out -- erase the
+real frame rather than trying to fit a portrait into its shape, and perspective-warp
+into its real detected corners rather than pasting a flat rectangle onto an angled
+wall -- but replaces the weaker parts of the old pipeline:
 
-The version after that sidestepped the shape problem by erasing the original art
-(gradient-filled from the real wall color) and drawing our own portrait, at its own
-proportions, in a freshly-drawn AXIS-ALIGNED gold frame. That fixed the shape problem
-but missed a different one: several of these frames sit on a wall seen at an angle in
-the photo (especially near the edges of each panorama), where a real frame appears
-skewed/trapezoidal, not a plain rectangle -- an axis-aligned frame pasted there reads
-as flat and pasted-on rather than actually mounted on that angled wall.
+  - Erasure was a hand-rolled 4-edge bilinear gradient fill. It removed the original
+    art but the result was visibly a flat, faintly banded patch, not real wall. This
+    uses cv2.inpaint (Telea) instead -- a real image-reconstruction algorithm that
+    pulls in the surrounding wall texture, spotlight falloff and even nearby
+    architectural lines (a pillar, a beam) as it fills the gap. Compared side by side
+    against the old fill on the same regions, there's no contest.
 
-This version fixes THAT: before erasing each frame, OpenCV detects its real four
-corners (find_frame_quad(), thresholding + contour polygon approximation -- works for
-most frames; the few it can't find a clean quad for fall back to an axis-aligned box,
-same as before, not a regression). The portrait + frame is then perspective-warped
-into that exact quadrilateral (find_coeffs() -- the standard 8-parameter PIL recipe,
-verified against a synthetic test before use) before compositing, so it inherits the
-same skew as whatever real frame used to occupy that spot.
+  - The frame itself was a flat-filled rectangle -- correct proportions and correct
+    perspective, but visually still reading as a graphic pasted on a photo rather than
+    an object sitting in it. This version adds a soft blurred drop shadow (cast down
+    and to the right, roughly matching the rooms' overhead spot lighting) and a subtle
+    diagonal bevel shade on the gold border, and brightness-matches the finished frame
+    to the actual local wall tone sampled from the freshly inpainted area, so a piece
+    hung on a dim stretch of wall doesn't look like it's lit from somewhere else.
 
 Always reads its source panoramas from ops/photoscene-originals/*.jpg -- the true,
 never-baked photos as uploaded, kept permanently for exactly this purpose -- and
@@ -55,7 +50,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
 ART_DIR = ROOT / "static/gallery/art"
@@ -100,22 +95,24 @@ REGIONS = {
 W, H = 2048, 1024
 RADIUS = 650       # matches PHOTO_FRAME_RADIUS in gallery.html
 ERASE_MARGIN = 16  # px beyond the measured box, so the real frame's border/mat is fully gone
-EDGE_SAMPLE = 10   # px thickness of the strip sampled just outside the erase box for its fill color
-FRAME_GOLD = (138, 106, 52)
+FRAME_GOLD = np.array([150, 116, 58])
 FRAME_MAT = (239, 233, 220)
-BORDER_PX, MAT_PX = 10, 6
+BORDER_PX, MAT_PX = 14, 8
+SHADOW_PAD = 26
 ART_ASPECT = 900 / 1125
 
 
+# ---------------------------------------------------------------------------------
+# Real-frame corner detection + perspective warp (kept from the previous version --
+# this part held up; verify_perspective_math() below re-checks it before every run).
+# ---------------------------------------------------------------------------------
+
 def find_frame_quad(im_rgb, x0, y0, x1, y1, pad=35):
-    """The real frame's actual four corners in the ORIGINAL (pre-erase) photo, via
-    OpenCV: threshold for dark pixels (the frame's border reads much darker than the
-    wall), take the largest contour whose area is plausible for this region, simplify
-    it to a polygon, and require exactly 4 points centered near where we expect the
-    frame to be. Tries several thresholds since frame darkness varies by room
-    lighting. Returns None (caller falls back to an axis-aligned box) if nothing
-    clean is found -- this is a best-effort visual improvement, not something the
-    bake should fail over."""
+    """The real frame's actual four corners in the ORIGINAL (pre-erase) photo. Tries
+    several thresholds (frame darkness varies by room lighting) and rejects anything
+    that isn't a plausible, centered, correctly-oriented quadrilateral. Returns None
+    (caller falls back to an axis-aligned box) if nothing clean is found -- this is a
+    best-effort visual improvement, not something the bake should fail over."""
     exp_area = (x1 - x0) * (y1 - y0)
     ecx, ecy = (x0 + x1) / 2, (y0 + y1) / 2
     ix0, iy0 = max(0, x0 - pad), max(0, y0 - pad)
@@ -139,23 +136,16 @@ def find_frame_quad(im_rgb, x0, y0, x1, y1, pad=35):
                 if not (abs(cx - ecx) < (x1 - x0) * 0.3 and abs(cy - ecy) < (y1 - y0) * 0.3):
                     continue
                 quad = order_points(pts)
-                # Reject a quad whose aspect ratio is wildly different from the
-                # region's own -- a sign order_points picked a bad point-to-corner
-                # assignment (e.g. rotated ~90deg) rather than a genuinely different
-                # frame shape. Caught exactly this on Sojourner Truth's frame: a
-                # portrait-shaped region detected as landscape-shaped, which then
-                # warped the portrait sideways.
                 tl, tr, br, bl = quad
                 v = (np.linalg.norm(tl - bl) + np.linalg.norm(tr - br)) / 2
                 h = (np.linalg.norm(tl - tr) + np.linalg.norm(bl - br)) / 2
                 detected_aspect = h / max(v, 1e-6)
                 expected_aspect = (x1 - x0) / max(y1 - y0, 1e-6)
-                # Only reject an orientation MISMATCH (expected roughly portrait,
-                # detected roughly landscape, or vice versa) -- real perspective skew
-                # legitimately changes how tall/wide a detected quad's edges measure
-                # relative to the rough hand-measured region (see Mark Twain, whose
-                # real frame IS unusually tall from this camera angle), so matching
-                # degree, not just matching orientation, rejected good detections too.
+                # Reject an orientation MISMATCH (expected portrait, detected
+                # landscape or vice versa) -- real skew legitimately changes how
+                # tall/wide a detected quad measures relative to the rough
+                # hand-measured region, so matching degree, not just orientation,
+                # rejected good detections too (see conversation history).
                 if (expected_aspect > 1.05) != (detected_aspect > 1.05):
                     continue
                 return quad
@@ -174,9 +164,7 @@ def order_points(pts):
 def find_coeffs(dest_pts, src_pts):
     """The standard 8-parameter PIL perspective-transform recipe: coefficients that
     make Image.transform(..., PERSPECTIVE, coeffs) map each DEST pixel to the
-    corresponding SRC pixel. Verified against a synthetic labeled-rectangle test
-    before trusting it on real data (a transform this easy to get subtly backwards
-    is exactly the kind of bug this session kept finding the hard way)."""
+    corresponding SRC pixel."""
     matrix = []
     for (x, y), (X, Y) in zip(dest_pts, src_pts):
         matrix.append([x, y, 1, 0, 0, 0, -X * x, -X * y])
@@ -186,70 +174,119 @@ def find_coeffs(dest_pts, src_pts):
     return np.linalg.solve(A, B)
 
 
+def verify_perspective_math():
+    """Sanity-checks find_coeffs against a synthetic case with a known answer, so a
+    subtly-backwards transform (this exact class of bug bit this feature once
+    already) fails loudly here instead of silently warping every portrait wrong."""
+    src = [(0, 0), (100, 0), (100, 100), (0, 100)]
+    dest = [(10, 5), (90, 0), (95, 95), (5, 100)]
+    coeffs = find_coeffs(dest, src)
+    # Source: white square on a black background. Warp it into `dest`, then check
+    # that a point well inside the quad (its centroid) samples white (inside the
+    # warped shape) and a point well outside it (a canvas corner) samples black --
+    # catches a transform that's inverted, transposed, or otherwise backwards, without
+    # the edge-rounding fragility of testing right at the quad's own boundary.
+    test_img = Image.new("L", (100, 100), 255)
+    warped = test_img.transform((100, 100), Image.PERSPECTIVE, coeffs, Image.NEAREST, fillcolor=0)
+    cx = round(sum(p[0] for p in dest) / 4)
+    cy = round(sum(p[1] for p in dest) / 4)
+    assert warped.getpixel((cx, cy)) > 200, "perspective warp math regressed (quad center came out empty)"
+    assert warped.getpixel((99, 99)) < 50, "perspective warp math regressed (canvas corner should be outside the quad)"
+
+
+# ---------------------------------------------------------------------------------
+# Frame rendering: beveled gold border + soft drop shadow, brightness-matched to the
+# real local wall tone.
+# ---------------------------------------------------------------------------------
+
 def build_framed_portrait(art):
-    """The portrait on its own RGBA canvas, in a freshly-drawn gold border + mat --
-    since the real photographed frame is erased, every portrait gets the same
-    deliberate framing rather than relying on whatever frame used to be there."""
+    """The portrait in a freshly-drawn gold frame with a soft drop shadow, on its own
+    RGBA canvas (padded for the shadow's blur radius). A subtle diagonal bevel on the
+    gold gives it some sense of being a lit 3D object rather than a flat-filled
+    rectangle; the shadow (rendered on this same canvas, so it warps together with
+    the frame under perspective transform) grounds it against the wall."""
     pw, ph = 400, round(400 / ART_ASPECT)
     fw, fh = pw + 2 * (BORDER_PX + MAT_PX), ph + 2 * (BORDER_PX + MAT_PX)
-    canvas = Image.new("RGBA", (fw, fh), (0, 0, 0, 0))
-    d = ImageDraw.Draw(canvas)
-    d.rectangle([0, 0, fw - 1, fh - 1], fill=FRAME_GOLD + (255,))
+    canvas = Image.new("RGBA", (fw + SHADOW_PAD * 2, fh + SHADOW_PAD * 2), (0, 0, 0, 0))
+
+    shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow)
+    sx0, sy0 = SHADOW_PAD + 5, SHADOW_PAD + 9
+    sd.rectangle([sx0, sy0, sx0 + fw, sy0 + fh], fill=(0, 0, 0, 100))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(9))
+    canvas.alpha_composite(shadow)
+
+    yy, xx = np.mgrid[0:fh, 0:fw]
+    diag = (xx / fw + (fh - yy) / fh) / 2
+    shade = 0.78 + 0.44 * diag
+    gold = np.empty((fh, fw, 4), dtype=np.uint8)
+    for c in range(3):
+        gold[..., c] = np.clip(FRAME_GOLD[c] * shade, 0, 255).astype(np.uint8)
+    gold[..., 3] = 255
+    frame = Image.fromarray(gold, "RGBA")
+    d = ImageDraw.Draw(frame)
     d.rectangle([BORDER_PX, BORDER_PX, fw - 1 - BORDER_PX, fh - 1 - BORDER_PX], fill=FRAME_MAT + (255,))
     resized = art.resize((pw, ph), Image.LANCZOS)
-    canvas.paste(resized, (BORDER_PX + MAT_PX, BORDER_PX + MAT_PX))
+    frame.paste(resized, (BORDER_PX + MAT_PX, BORDER_PX + MAT_PX))
+    canvas.alpha_composite(frame, (SHADOW_PAD, SHADOW_PAD))
     return canvas
 
 
+def match_brightness(framed, wall_sample_rgb):
+    """Scale the framed portrait's RGB toward the sampled local wall's brightness
+    level, so a piece hung in a dim corner isn't lit like it's standing in a
+    spotlight, and vice versa. Modest strength (0.35) -- enough to read as
+    consistent with the room, not enough to wash out the art itself."""
+    target = np.array(wall_sample_rgb, dtype=float).mean()
+    arr = np.array(framed).astype(float)
+    cur = arr[..., :3][arr[..., 3] > 0].mean() if (arr[..., 3] > 0).any() else 200
+    if cur < 1:
+        return framed
+    factor = 1 + 0.35 * (target / cur - 1)
+    factor = min(max(factor, 0.7), 1.4)
+    arr[..., :3] = np.clip(arr[..., :3] * factor, 0, 255)
+    return Image.fromarray(arr.astype(np.uint8), "RGBA")
+
+
+# ---------------------------------------------------------------------------------
+# Compositing
+# ---------------------------------------------------------------------------------
+
 def composite_axis_aligned(im, framed, cx, cy, max_w, max_h):
     """No detected quad: center the framed portrait, scaled to sit comfortably in the
-    erased area (not stretched or forced to fill it -- see conversation history for
-    why that looked wrong on oddly-shaped areas)."""
+    erased area (not stretched or forced to fill it)."""
     fw, fh = framed.size
-    scale = min(1.0, max_w * 0.92 / fw, max_h * 0.92 / fh, 320 / fh)
+    content_w, content_h = fw - 2 * SHADOW_PAD, fh - 2 * SHADOW_PAD
+    scale = min(1.0, max_w * 0.92 / content_w, max_h * 0.92 / content_h, 320 / content_h)
     fw2, fh2 = max(1, round(fw * scale)), max(1, round(fh * scale))
     framed2 = framed.resize((fw2, fh2), Image.LANCZOS)
     x0, y0 = round(cx - fw2 / 2), round(cy - fh2 / 2)
     im.paste(framed2, (x0, y0), framed2)
-    return (x0, y0, x0 + fw2, y0 + fh2)
+    pad2 = SHADOW_PAD * scale
+    return (x0 + pad2, y0 + pad2, x0 + fw2 - pad2, y0 + fh2 - pad2)
 
 
 def composite_perspective(im, framed, quad):
-    """Warp the framed portrait into the real frame's own detected quadrilateral."""
-    xs, ys = quad[:, 0], quad[:, 1]
+    """Warp the framed portrait (shadow included) into the real frame's own detected
+    quadrilateral. The quad describes the FRAME's real edge, so it's expanded
+    outward by the same proportion the canvas's shadow padding represents, keeping
+    the shadow visible outside the warped frame rather than clipped at the quad."""
+    fw, fh = framed.size
+    content_w, content_h = fw - 2 * SHADOW_PAD, fh - 2 * SHADOW_PAD
+    pad_frac_x, pad_frac_y = SHADOW_PAD / content_w, SHADOW_PAD / content_h
+    center = quad.mean(axis=0)
+    expanded = center + (quad - center) * [1 + 2 * pad_frac_x, 1 + 2 * pad_frac_y]
+
+    xs, ys = expanded[:, 0], expanded[:, 1]
     ox0, oy0 = int(np.floor(xs.min())), int(np.floor(ys.min()))
     ox1, oy1 = int(np.ceil(xs.max())), int(np.ceil(ys.max()))
-    local_quad = quad - [ox0, oy0]
-    fw, fh = framed.size
+    local_quad = expanded - [ox0, oy0]
     src_corners = [(0, 0), (fw, 0), (fw, fh), (0, fh)]
     coeffs = find_coeffs(local_quad.tolist(), src_corners)
     warped = framed.transform((ox1 - ox0, oy1 - oy0), Image.PERSPECTIVE, coeffs,
                                Image.BICUBIC, fillcolor=(0, 0, 0, 0))
     im.paste(warped, (ox0, oy0), warped)
-    return (ox0, oy0, ox1, oy1)
-
-
-def erase_region(arr, x0, y0, x1, y1):
-    """Gradient-fill the box in-place from the real wall color sampled just outside
-    its own four edges (bilinear blend of the four edge means) -- removes the
-    original photographed art without leaving any trace of a foreign patch, since the
-    fill color comes from that exact spot's own real lighting, not a fixed value or a
-    value borrowed from a different part of the room."""
-    h, w = arr.shape[:2]
-    ex0, ey0 = max(0, x0 - EDGE_SAMPLE), max(0, y0 - EDGE_SAMPLE)
-    ex1, ey1 = min(w, x1 + EDGE_SAMPLE), min(h, y1 + EDGE_SAMPLE)
-    top = arr[ey0:y0, x0:x1].reshape(-1, 3).mean(axis=0) if y0 > ey0 else arr[y0, x0:x1].mean(axis=0)
-    bottom = arr[y1:ey1, x0:x1].reshape(-1, 3).mean(axis=0) if ey1 > y1 else arr[y1 - 1, x0:x1].mean(axis=0)
-    left = arr[y0:y1, ex0:x0].reshape(-1, 3).mean(axis=0) if x0 > ex0 else arr[y0:y1, x0].mean(axis=0)
-    right = arr[y0:y1, x1:ex1].reshape(-1, 3).mean(axis=0) if ex1 > x1 else arr[y0:y1, x1 - 1].mean(axis=0)
-
-    bw, bh = x1 - x0, y1 - y0
-    fx = np.linspace(0, 1, bw)[None, :, None]
-    fy = np.linspace(0, 1, bh)[:, None, None]
-    horiz = left[None, None, :] * (1 - fx) + right[None, None, :] * fx
-    vert = top[None, None, :] * (1 - fy) + bottom[None, None, :] * fy
-    fill = ((horiz + vert) / 2).astype(np.uint8)
-    arr[y0:y1, x0:x1] = fill
+    return (quad[:, 0].min(), quad[:, 1].min(), quad[:, 0].max(), quad[:, 1].max())
 
 
 def yaw_pitch(px, py):
@@ -262,20 +299,20 @@ def yaw_pitch(px, py):
 
 
 def world_size(px0, py0, px1, py1):
-    # Angular size derived from the drawn frame's actual on-screen bounding box, so
-    # the invisible click target matches what's on screen either way (warped or not).
     ang_w = (px1 - px0) / W * 2 * math.pi
     ang_h = (py1 - py0) / H * math.pi
     return 2 * RADIUS * math.tan(ang_w / 2), 2 * RADIUS * math.tan(ang_h / 2)
 
 
 def main():
+    verify_perspective_math()
+
     total = 0
     quad_hits = 0
     js_lines = ["const PHOTO_ROOMS = ["]
     for room, regions in REGIONS.items():
-        im = Image.open(ORIGINALS_DIR / f"{room}.jpg").convert("RGB")
-        arr = np.array(im)
+        im_rgb = Image.open(ORIGINALS_DIR / f"{room}.jpg").convert("RGB")
+        arr = np.array(im_rgb)
         js_lines.append(f'  {{ name:"{ROOM_NAMES[room]}", src:"/static/gallery/photoscene/{room}.jpg", slots:[')
         for (it, (x0, y0, x1, y1)) in regions:
             total += 1
@@ -285,10 +322,15 @@ def main():
 
             ex0, ey0 = max(0, x0 - ERASE_MARGIN), max(0, y0 - ERASE_MARGIN)
             ex1, ey1 = min(W, x1 + ERASE_MARGIN), min(H, y1 + ERASE_MARGIN)
-            erase_region(arr, ex0, ey0, ex1, ey1)
-            im = Image.fromarray(arr).convert("RGBA")
+            mask = np.zeros(arr.shape[:2], dtype=np.uint8)
+            mask[ey0:ey1, ex0:ex1] = 255
+            arr = cv2.inpaint(arr, mask, inpaintRadius=15, flags=cv2.INPAINT_TELEA)
 
+            wall_sample = arr[ey0:ey1, ex0:ex1].reshape(-1, 3).mean(axis=0)
             framed = build_framed_portrait(Image.open(ART_DIR / f"{it}.png").convert("RGB"))
+            framed = match_brightness(framed, wall_sample)
+
+            im = Image.fromarray(arr).convert("RGBA")
             if quad is not None:
                 try:
                     px0, py0, px1, py1 = composite_perspective(im, framed, quad)
@@ -298,9 +340,7 @@ def main():
             if quad is None:
                 cx, cy = (ex0 + ex1) / 2, (ey0 + ey1) / 2
                 px0, py0, px1, py1 = composite_axis_aligned(im, framed, cx, cy, ex1 - ex0, ey1 - ey0)
-
-            im = im.convert("RGB")
-            arr = np.array(im)  # keep arr in sync for the next find_frame_quad/erase_region call
+            arr = np.array(im.convert("RGB"))
 
             yaw, pitch = yaw_pitch((px0 + px1) / 2, (py0 + py1) / 2)
             ww, wh = world_size(px0, py0, px1, py1)
@@ -309,7 +349,7 @@ def main():
                 f'w:{round(ww, 1)}, h:{round(wh, 1)}}},'
             )
         js_lines.append("  ]},")
-        im.save(OUT_DIR / f"{room}.jpg", quality=90)
+        Image.fromarray(arr).save(OUT_DIR / f"{room}.jpg", quality=90)
         print(f"{room}: baked {len(regions)} portraits")
     js_lines.append("];")
 
