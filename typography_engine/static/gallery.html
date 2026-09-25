@@ -868,6 +868,20 @@ window.exitWalk = function(){
 // ---- Photo Tour: build one room (panorama sphere + our portraits placed inside it) -
 function buildPhotoFrame(loader, it, yaw, pitch, w, h){
   const g = new THREE.Group();
+  // A plain wall-toned backer, well oversized relative to the frame -- the slot
+  // positions were placed by eye against the panorama photo, not measured against the
+  // exact pixel bounds of whatever painting already hangs there, so without this the
+  // photo's own original art shows past our frame's edges. Solid color, no texture:
+  // it only needs to read as "blank wall" at a glance, not survive close inspection.
+  const patch = new THREE.Mesh(
+    new THREE.PlaneGeometry((w+26)*1.3, (h+26)*1.3),
+    // Unlit (not MeshStandardMaterial): this only needs to read as "blank wall" next
+    // to a real photo -- letting the scene's lights tint/darken it made it read as an
+    // obvious grey card instead.
+    new THREE.MeshBasicMaterial({color:0xe9decb})
+  );
+  patch.position.z = -3;
+  g.add(patch);
   const border = new THREE.Mesh(
     new THREE.PlaneGeometry(w+26, h+26),
     new THREE.MeshStandardMaterial({color:0x8a6a34, roughness:0.45, metalness:0.25})
