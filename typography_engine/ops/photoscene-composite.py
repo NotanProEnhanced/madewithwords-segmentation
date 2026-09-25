@@ -6,19 +6,16 @@ whatever used to hang there -- see the "Photo Tour" comment block in gallery.htm
 why (a first version overlaid separate 3D "cards" on top of the photos instead, which
 read as flat stickers pasted onto a photograph, not art actually hanging on a wall).
 
-Run this from a tree where static/gallery/photoscene/*.jpg are still the ORIGINAL,
-un-baked panoramas (git checkout -- static/gallery/photoscene/ first if they've
-already been baked once -- this script pastes destructively, not idempotently, and
-running it twice bakes a portrait on top of an already-baked one). Needs Pillow:
+Always reads its source panoramas from ops/photoscene-originals/*.jpg -- the true,
+never-baked photos as uploaded, kept permanently for exactly this purpose -- and
+writes the result to static/gallery/photoscene/*.jpg, overwriting whatever's there.
+Do NOT "fix" this to read from static/gallery/photoscene/ instead: those get
+committed already-baked, so reading from there bakes a portrait on top of whatever
+was baked there last time rather than on the real photo, and any REGIONS entry
+removed since then silently keeps showing its stale previous bake instead of
+reverting to the true original -- exactly the bug that prompted keeping a separate
+pristine copy in the first place. Needs Pillow:
     python3 ops/photoscene-composite.py
-
-REGIONS below are outer pixel bounding boxes (x0,y0,x1,y1) of real frames in each
-2048x1024 equirectangular photo, hand-measured by cropping+gridding the image and
-reading it off (see conversation history / ask Claude to redo this if the panoramas
-ever change). ITEMS assigns catalog items to regions in order, one list per room --
-there are only as many usable regions as real frames worth pasting into, so a 23-item
-catalog with only 19 good regions leaves the last 4 items unbaked (still sellable from
-the grid and the walkthrough corridor, just without a natural spot in these photos).
 
 After running, paste the printed PHOTO_ROOMS block into gallery.html verbatim (it
 already has the yaw correction applied -- see below) and bump PHOTO_BAKE_VERSION so
@@ -33,6 +30,23 @@ the yaw values it prints are ready to paste straight into gallery.html's PHOTO_R
 do NOT re-derive yaw from pixel position by the "obvious" formula without this
 correction, or captions/click-targets will land near the right neighborhood but not on
 the actual baked portrait, which is exactly what happened here before this was found.
+
+IMPORTANT -- why some real frames are skipped entirely: three earlier versions of this
+script tried to make every real frame in these photos work for a portrait, however
+poorly its own shape fit one, three different ways -- (1) fit a smaller aspect-correct
+box inside the frame: left a border of the frame's ORIGINAL photographed art showing;
+(2) stretch the portrait to fill the frame exactly: fixed that but visibly distorted
+the face on any frame shaped very differently from a portrait; (3) fit the portrait at
+its true aspect and pad the leftover with more of the portrait's own plain background:
+no distortion and no original art showing, but on the more extreme frames the padding
+was a large, flat, obviously-pasted-on rectangle -- still not the real answer. The real
+fix is upstream of all three: REGIONS below only lists frames whose real aspect ratio
+is already close to a portrait's (a tight tolerance band, checked in main()) -- a
+handful of frames in these photos are genuinely landscape- or extreme-portrait-shaped
+(a wide lake scene, a very tall narrow strip) and are simply never assigned a portrait,
+left completely untouched. Trying to force a portrait into a landscape-shaped frame is
+the wrong move regardless of technique; the corresponding catalog items just don't get
+a baked position in these three photos (still sellable from the grid and the corridor).
 """
 import math
 from pathlib import Path
@@ -41,81 +55,57 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 ART_DIR = ROOT / "static/gallery/art"
-PANO_DIR = ROOT / "static/gallery/photoscene"
-
-ITEMS = [
-    "edgar-allan-poe", "frederick-douglass", "harriet-tubman", "abraham-lincoln", "mark-twain",
-    "susan-b-anthony", "walt-whitman", "sojourner-truth", "theodore-roosevelt", "nikola-tesla",
-    "ulysses-s-grant", "booker-t-washington", "sitting-bull", "geronimo", "clara-barton",
-    "elizabeth-cady-stanton", "charles-darwin", "queen-victoria", "john-brown", "pt-barnum",
-    "chief-joseph", "emily-dickinson", "robert-e-lee",
-]
+ORIGINALS_DIR = ROOT / "ops/photoscene-originals"   # true, never-baked source photos
+OUT_DIR = ROOT / "static/gallery/photoscene"         # baked result served to visitors
 
 ROOM_NAMES = {"entrance": "The Entrance", "main-room": "The Main Gallery", "rear-room": "The Rear Salon"}
 
+# Outer pixel bounding boxes (x0,y0,x1,y1) of real frames in each 2048x1024
+# equirectangular photo, hand-measured by cropping+gridding the image and reading it
+# off (see conversation history / ask Claude to redo this if the panoramas ever
+# change), each explicitly paired with the catalog item id that goes there -- NOT
+# matched positionally against a separate items list, so dropping a region (see
+# module docstring) can never silently shift every later item onto the wrong frame.
 REGIONS = {
     "entrance": [
-        (390, 320, 540, 515),
-        (780, 385, 885, 515),
-        (1020, 365, 1560, 540),
-        (1800, 365, 1910, 540),
-        (1945, 250, 2048, 595),
+        ("edgar-allan-poe", (390, 320, 540, 515)),
+        ("frederick-douglass", (780, 385, 885, 515)),
+        ("abraham-lincoln", (1800, 365, 1910, 540)),
     ],
     "main-room": [
-        (120, 320, 280, 565),
-        (420, 315, 595, 555),
-        (635, 355, 755, 540),
-        (1428, 290, 1618, 545),
-        (1645, 350, 1780, 530),
-        (1790, 290, 1970, 545),
+        ("susan-b-anthony", (120, 320, 280, 565)),
+        ("walt-whitman", (420, 315, 595, 555)),
+        ("sojourner-truth", (635, 355, 755, 540)),
+        ("theodore-roosevelt", (1428, 290, 1618, 545)),
+        ("nikola-tesla", (1645, 350, 1780, 530)),
+        ("ulysses-s-grant", (1790, 290, 1970, 545)),
     ],
     "rear-room": [
-        (0, 280, 268, 570),
-        (295, 300, 405, 565),
-        (620, 340, 788, 552),
-        (1085, 350, 1195, 545),
-        (1215, 345, 1330, 545),
-        (1370, 300, 1470, 545),
-        (1605, 260, 1830, 590),
-        (1900, 280, 2048, 590),
+        ("booker-t-washington", (0, 280, 268, 570)),
+        ("geronimo", (620, 340, 788, 552)),
+        ("clara-barton", (1085, 350, 1195, 545)),
+        ("elizabeth-cady-stanton", (1215, 345, 1330, 545)),
+        ("queen-victoria", (1605, 260, 1830, 590)),
     ],
 }
 
 W, H = 2048, 1024
 RADIUS = 650  # matches PHOTO_FRAME_RADIUS in gallery.html
-
-
-# The portrait PNGs are a bust on a plain, near-uniform backdrop -- sampled from a
-# corner pixel, consistent across the whole catalog (checked several at (3,3)).
-ART_BG = (231, 231, 231)
+ART_ASPECT = 900 / 1125  # w/h of the source portrait PNGs (0.8)
+# Regions must already be within this ratio of the portrait's own aspect (checked by
+# an assertion in main(), not silently handled) -- see module docstring for why a
+# region outside it is dropped from REGIONS instead of forced to fit some other way.
+ASPECT_TOLERANCE = (0.55, 1.05)
 
 
 def inner_box(x0, y0, x1, y1):
     """The region minus a hairline margin for the real frame's own inner edge -- the
-    area to fully replace."""
+    area to fully replace. A small, mild stretch to exactly this box is the ENTIRE
+    story now that REGIONS only lists frames within ASPECT_TOLERANCE of a portrait's
+    own shape -- no padding, no distortion, and the frame's real photographed border
+    and mat (just outside this box) stay as the actual visible frame."""
     margin_x, margin_y = (x1 - x0) * 0.03, (y1 - y0) * 0.03
     return x0 + margin_x, y0 + margin_y, x1 - margin_x, y1 - margin_y
-
-
-def fit_on_own_background(art, bw, bh):
-    """Resize the portrait to COVER the region at its own true aspect ratio (never
-    stretched or cropped into the subject) and place it centered on a canvas of the
-    art's own backdrop color, sized to the full region. Two earlier approaches both
-    replaced less than the whole region: fitting a smaller aspect-correct box inside
-    it left the ORIGINAL photographed art showing around the edges; stretching to fill
-    the region completely fixed that but visibly distorted the face on any frame whose
-    aspect ratio was far from the portrait's. This replaces the ENTIRE region every
-    time, at the portrait's real proportions every time -- the "leftover" space (when
-    the frame's own shape doesn't match a portrait) is filled with more of the
-    portrait's OWN plain background, not the wall's, not a foreign texture, so it
-    reads as this piece being mounted larger/smaller, never as a patch or a crop."""
-    aw, ah = art.size
-    scale = min(bw / aw, bh / ah)
-    rw, rh = max(1, round(aw * scale)), max(1, round(ah * scale))
-    resized = art.resize((rw, rh), Image.LANCZOS)
-    canvas = Image.new("RGB", (bw, bh), ART_BG)
-    canvas.paste(resized, ((bw - rw) // 2, (bh - rh) // 2))
-    return canvas
 
 
 def yaw_pitch(px, py):
@@ -134,20 +124,23 @@ def world_size(bx0, by0, bx1, by1):
 
 
 def main():
-    idx = 0
+    total = 0
     js_lines = ["const PHOTO_ROOMS = ["]
     for room, regions in REGIONS.items():
-        im = Image.open(PANO_DIR / f"{room}.jpg").convert("RGB")
+        im = Image.open(ORIGINALS_DIR / f"{room}.jpg").convert("RGB")
         js_lines.append(f'  {{ name:"{ROOM_NAMES[room]}", src:"/static/gallery/photoscene/{room}.jpg", slots:[')
-        for (x0, y0, x1, y1) in regions:
-            it = ITEMS[idx]; idx += 1
+        for (it, (x0, y0, x1, y1)) in regions:
+            aspect = (x1 - x0) / (y1 - y0)
+            lo, hi = ASPECT_TOLERANCE
+            assert lo <= aspect <= hi, (
+                f"{room}/{it}: region aspect {aspect:.2f} outside tolerance {ASPECT_TOLERANCE} -- "
+                f"drop this region from REGIONS rather than forcing a fit (see module docstring)"
+            )
+            total += 1
             bx0, by0, bx1, by1 = inner_box(x0, y0, x1, y1)
-            bx0i, by0i, bx1i, by1i = (int(round(v)) for v in (bx0, by0, bx1, by1))
-            bw, bh = bx1i - bx0i, by1i - by0i
-
-            art = Image.open(ART_DIR / f"{it}.png").convert("RGB")
-            replacement = fit_on_own_background(art, bw, bh)
-            im.paste(replacement, (bx0i, by0i))
+            bw, bh = int(round(bx1 - bx0)), int(round(by1 - by0))
+            art = Image.open(ART_DIR / f"{it}.png").convert("RGB").resize((bw, bh), Image.LANCZOS)
+            im.paste(art, (int(round(bx0)), int(round(by0))))
             yaw, pitch = yaw_pitch((bx0 + bx1) / 2, (by0 + by1) / 2)
             ww, wh = world_size(bx0, by0, bx1, by1)
             js_lines.append(
@@ -155,11 +148,11 @@ def main():
                 f'w:{round(ww, 1)}, h:{round(wh, 1)}}},'
             )
         js_lines.append("  ]},")
-        im.save(PANO_DIR / f"{room}.jpg", quality=90)
+        im.save(OUT_DIR / f"{room}.jpg", quality=90)
         print(f"{room}: baked {len(regions)} portraits")
     js_lines.append("];")
 
-    print(f"\nTOTAL ITEMS USED: {idx} of {len(ITEMS)}\n")
+    print(f"\nTOTAL BAKED: {total}\n")
     print("\n".join(js_lines))
 
 
