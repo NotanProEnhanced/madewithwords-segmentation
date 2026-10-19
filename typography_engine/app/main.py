@@ -21,6 +21,7 @@ from .config import (
     CURRENCY,
     DOWNLOAD_PRICE_CENTS,
     OUTPUTS_DIR,
+    PRINT_PNG_WIDTH,
     PRIVATE_DIR,
     PUBLIC_BASE_URL,
     STATIC_DIR,
@@ -459,6 +460,25 @@ def checkout(job: str = Form(...), fmt: str = Form("png")) -> JSONResponse:
     return JSONResponse({"ok": True, "url": session.url})
 
 
+def _ensure_hires_png(job: str) -> Path:
+    """The PNG a paying customer actually receives, rasterized at PRINT_PNG_WIDTH --
+    deliberately NOT the `{job}.png` written at /render time, which is sized to
+    whatever png_width the studio's live preview sent (currently hardcoded to 1500px
+    client-side, fine on screen, unreadable at the poster sizes the product copy
+    promises). The /render step already saved the real vector SVG to
+    PRIVATE_DIR/{job}.svg, so producing a proper high-resolution master here is one
+    cheap cairosvg rasterization, not a re-run of image analysis -- cached to
+    `{job}.hires.png` so it only happens once per job, the first time it's actually
+    needed, rather than on every preview/ink-swatch render during editing."""
+    hires_path = PRIVATE_DIR / f"{job}.hires.png"
+    if hires_path.exists():
+        return hires_path
+    svg_path = PRIVATE_DIR / f"{job}.svg"
+    svg_text = svg_path.read_text(encoding="utf-8")
+    write_png(svg_text, hires_path, output_width=PRINT_PNG_WIDTH)
+    return hires_path
+
+
 @app.get("/download")
 def download(job: str, session_id: str, fmt: str = "png"):
     """Serve the clean file only after verifying the Stripe payment for `job`."""
@@ -473,8 +493,16 @@ def download(job: str, session_id: str, fmt: str = "png"):
     if sess.get("payment_status") != "paid" or (sess.get("metadata") or {}).get("job") != job:
         return JSONResponse({"ok": False, "error": "not_paid"}, status_code=402)
     ext = "svg" if fmt == "svg" else "png"
-    path = PRIVATE_DIR / f"{job}.{ext}"
-    if not path.exists():
-        return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    if ext == "svg":
+        path = PRIVATE_DIR / f"{job}.svg"
+        if not path.exists():
+            return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+    else:
+        if not (PRIVATE_DIR / f"{job}.svg").exists():
+            return JSONResponse({"ok": False, "error": "unknown_job"}, status_code=404)
+        try:
+            path = _ensure_hires_png(job)
+        except Exception as e:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": "render_failed", "detail": str(e)}, status_code=500)
     media = "image/svg+xml" if ext == "svg" else "image/png"
     return FileResponse(str(path), media_type=media, filename=f"typortrait-{job}.{ext}")

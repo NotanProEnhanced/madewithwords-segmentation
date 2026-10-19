@@ -84,6 +84,17 @@ PRIVATE_DIR.mkdir(exist_ok=True)
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 DOWNLOAD_PRICE_CENTS = env_int("TYPO_PRICE_CENTS", 1499)     # e.g. 1499 = $14.99
 CURRENCY = os.environ.get("TYPO_CURRENCY", "usd")
+# The paid download's actual pixel width -- deliberately independent of whatever
+# png_width the studio UI sends for the live, interactive on-screen preview (that
+# value is tuned for fast re-renders on every ink swatch click, currently 1500px,
+# which is fine on a screen but unreadable blown up to the "print it anywhere, up to
+# poster size" the product copy promises). The render itself is a vector SVG, saved
+# to PRIVATE_DIR per job, so re-rasterizing it at a real print width costs one cheap
+# cairosvg call -- no re-analysis needed -- and is only ever done once per job,
+# lazily, the first time it's actually requested for a paid download (see
+# `_ensure_hires_png` in main.py). 3600px at the engine's 4:5 canvas is 3600x4500,
+# i.e. 12"x15" at 300dpi or 24"x30" at 150dpi -- genuinely poster-capable.
+PRINT_PNG_WIDTH = env_int("TYPO_PRINT_PNG_WIDTH", 3600)
 # Public base URL of the app, used to build Stripe success/cancel redirects.
 PUBLIC_BASE_URL = os.environ.get("TYPO_PUBLIC_URL", f"http://127.0.0.1:{PORT}")
 WATERMARK_URL = os.environ.get("TYPO_WATERMARK_URL", "https://typortrait.com")
