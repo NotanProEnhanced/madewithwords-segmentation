@@ -152,7 +152,13 @@ function placeholderBg(col){
   if(col==="aurora") return "linear-gradient(180deg,#10c8b8,#19a6e8,#3a6df0,#7b3ff0,#a62ee0)";
   return col;
 }
-const state = { file:null, ink:"navy", poster:false, style:"mosaic" };
+// Detect brand from URL (e.g., ?lovedinwords, ?pawsinwords, ?faithinwords)
+const urlParams = new URLSearchParams(window.location.search);
+const brand = urlParams.has("lovedinwords") ? "lovedinwords" :
+             urlParams.has("pawsinwords") ? "pawsinwords" :
+             urlParams.has("faithinwords") ? "faithinwords" : "typortrait";
+const state = { file:null, ink:"navy", poster:false, style:"mosaic", brand };
+
 function money(c,cur){ try{return new Intl.NumberFormat(undefined,{style:"currency",currency:(cur||"usd").toUpperCase()}).format((c||0)/100);}catch(e){return "$"+((c||0)/100).toFixed(2);} }
 // Show the price up front so it's never a surprise (single source: /pricing).
 fetch("/pricing").then(r=>r.json()).then(p=>{
@@ -284,6 +290,7 @@ async function render(ink,{animate=false,background=false}={}){
   fd.append("image",state.file); fd.append("words",words.value.trim());
   fd.append("ink",ink); fd.append("style",state.style); fd.append("message",words.value.trim());
   fd.append("poster",state.poster?"true":"false"); fd.append("png_width","1500");
+  fd.append("brand",state.brand);
   if(state.poster){ fd.append("title",title.value.trim()); fd.append("caption",caption.value.trim()); }
   try{
     const r=await fetch("/render",{method:"POST",body:fd}); const data=await r.json();
