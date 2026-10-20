@@ -1756,22 +1756,21 @@ async def render(
             status_code=422)
 
     cfg = RenderConfig()
-    if min_font_px is not None:
-        cfg.min_font_px = float(min_font_px)
+    # CLAMPED to the sizes the studio actually offers (57..120): below 57 the words stop
+    # being readable -- checked at 50, 45, 40 and 27 on the fixed set (see _allowed_size_mf)
+    # -- yet nothing below this line enforced that floor for the Words/mosaic engine itself,
+    # only for the displacement engine's derived _disp_ws ratio a few lines down. Any caller
+    # that posts (or, via the RenderConfig dataclass default, silently falls back to) a
+    # min_font_px under 57 -- the Message/Letter flow posts 20 -- rendered an unreadable
+    # portrait that the paid download then faithfully reproduced. Clamping here, the one
+    # place every render path funnels through, means no path can select an unreadable size.
+    cfg.min_font_px = min(120.0, max(57.0, float(min_font_px))) if min_font_px is not None else 57.0
     # Word size for the DISPLACEMENT engine, which has no per-word minimum and so ignores
     # min_font_px entirely -- the reason the studio's Small/Medium/Large buttons did nothing
     # on the Lifelike style. Carried as a ratio against the studio default of 57.
     #
-    # Explicitly 1.0 when the caller sends no size, rather than cfg.min_font_px / 57: that
-    # field defaults to 20, so deriving from it would silently give every API caller and
-    # every internal render 0.35x type -- a change to callers that asked for nothing.
-    #
-    # CLAMPED to the sizes the studio actually offers (57..120 -> 1.0..2.11). Below 57 the
-    # words stop being readable -- checked at 50, 45, 40 and 27 on the fixed set -- and
-    # several callers still send smaller numbers for reasons that predate this parameter
-    # meaning anything: the Message/Letter flow posts min_font_px=20, and Letter renders
-    # through this engine. Clamping here means no path can select an unreadable size, rather
-    # than every path having to remember not to.
+    # Derived from the raw min_font_px parameter rather than cfg.min_font_px (now clamped
+    # above) so a caller that sends no size still gets exactly 1.0, not 57/57 by coincidence.
     _disp_ws = (float(min_font_px) / 57.0) if min_font_px is not None else 1.0
     _disp_ws = min(max(_disp_ws, 1.0), 120.0 / 57.0)
     if background_hex:
