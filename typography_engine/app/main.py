@@ -2342,12 +2342,17 @@ def _brand_collections(host: str, brand_q: str = "") -> Optional[set]:
     devotional catalog (Christmas/Santa included). Every OTHER brand -- Typortrait, and
     anything unrecognized -- defaults to the secular set: enabling the gallery on a brand
     must never surface FaithInWords' devotional-only collections just because a shared
-    catalog.json and a shared private-art directory happen to hold both."""
+    catalog.json and a shared private-art directory happen to hold both.
+
+    "santa-claus" is the deliberate exception: a secular-framed subset of the Christmas
+    Collection's Santa items, duplicated under tp-prefixed ids (see static/gallery/catalog.json)
+    specifically so Typortrait and the other general-audience brands can sell it without also
+    exposing christmas's devotionally-framed items (the Christ Child, the Magi, St. Nicholas)."""
     h = (host or "").split(":")[0].lower()
     bq = (brand_q or "").lower()
     if "faithinwords" in h or bq == "faithinwords":
         return None
-    return {"historyinwords"}
+    return {"historyinwords", "santa-claus"}
 
 
 def _sitemap_paths(host: str, brand_q: str = "") -> list:
