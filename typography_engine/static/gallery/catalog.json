@@ -920,92 +920,47 @@
           "title": "Santa Claus",
           "items": [
             {
-              "id": "santa-claus",
-              "title": "Santa Claus",
+              "id": "santa-classic",
+              "title": "The Classic",
               "subject": "Santa Claus",
-              "words": "SANTA CLAUS JOY WONDER BELIEVE GIVING CHRISTMAS EVE SLEIGH REINDEER CHIMNEY MAGIC GENEROSITY KINDNESS",
-              "art": "original (AI-generated)",
+              "words": "SANTA CLAUS CLASSIC TIMELESS TRADITION JOLLY WARMTH KINDNESS GIVING WONDER BELIEVE JOY GENEROSITY",
+              "art": "TBD -- source pending",
               "text": "",
               "price": "29"
             },
             {
-              "id": "santa-jolly-classic",
-              "title": "The Jolly Classic",
+              "id": "santa-timeless-smile",
+              "title": "The Timeless Smile",
               "subject": "Santa Claus",
-              "words": "SANTA CLAUS JOLLY MERRY JOY HO HO HO CHEER LAUGHTER WARMTH KINDNESS GIVING VELVET",
-              "art": "original (AI-generated)",
+              "words": "SANTA CLAUS GENTLE SMILE WARM EYES KINDLY SPIRIT CHEER COMFORT GRACE PEACE JOY",
+              "art": "TBD -- source pending",
               "text": "",
               "price": "29"
             },
             {
-              "id": "santa-kindly-grandfather",
-              "title": "The Kindly Grandfather",
+              "id": "santa-hearty-laugh",
+              "title": "The Hearty Laugh",
               "subject": "Santa Claus",
-              "words": "SAINT NICHOLAS GENTLE WISE KINDNESS PATIENCE GRANDFATHER WARMTH GRACE COMFORT TENDER PEACE LOVE",
-              "art": "original (AI-generated)",
+              "words": "HO HO HO LAUGHTER JOY MIRTH DELIGHT JOLLY MERRY CHEER TWINKLE HAPPINESS WARMTH",
+              "art": "TBD -- source pending",
               "text": "",
               "price": "29"
             },
             {
-              "id": "santa-hearty-ho-ho-ho",
-              "title": "The Hearty Ho Ho Ho",
+              "id": "santa-fireside",
+              "title": "By the Fireside",
               "subject": "Santa Claus",
-              "words": "HO HO HO LAUGHTER MERRIMENT GLEE MIRTH DELIGHT TWINKLE JOLLY HAPPINESS WONDER JOY CHEER",
-              "art": "original (AI-generated)",
+              "words": "FIRESIDE HEARTH WARMTH HOME COZY CRACKLING GLOW COMFORT TRADITION FAMILY WONDER PEACE",
+              "art": "TBD -- source pending",
               "text": "",
               "price": "29"
             },
             {
-              "id": "santa-candlelight-wonder",
-              "title": "Candlelight & Wonder",
+              "id": "santa-christmas-whisper",
+              "title": "A Christmas Whisper",
               "subject": "Santa Claus",
-              "words": "BELIEVE WONDER MAGIC HOPE LIGHT PEACE STARLIGHT DREAMS MIRACLE GLOW FAITH SILENT NIGHT",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29"
-            },
-            {
-              "id": "santa-fresh-from-snow",
-              "title": "Fresh from the Snow",
-              "subject": "Santa Claus",
-              "words": "NORTH POLE SNOW FROST WINTER REINDEER SLEIGH BELLS JINGLE JOURNEY CRISP ADVENTURE WONDER",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29"
-            },
-            {
-              "id": "santa-by-the-tree",
-              "title": "By the Christmas Tree",
-              "subject": "Santa Claus",
-              "words": "CHRISTMAS TREE LIGHTS PRESENTS STOCKINGS MISTLETOE ORNAMENTS FAMILY HOME TRADITION MEMORIES CHEER",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29"
-            },
-            {
-              "id": "santa-peace-goodwill",
-              "title": "Peace & Goodwill",
-              "subject": "Santa Claus",
-              "words": "NOEL PEACE ON EARTH GOODWILL BLESSINGS GENEROSITY COMPASSION CHARITY GRACE HOPE LOVE JOY",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29"
-            },
-            {
-              "id": "santa-christmas-secret",
-              "title": "A Christmas Secret",
-              "subject": "Santa Claus",
-              "words": "SECRET SURPRISE WISHES DREAMS ANTICIPATION MYSTERY DELIGHT TWINKLE HUSH WONDER MAGIC BELIEVE",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29"
-            },
-            {
-              "id": "father-christmas-regal",
-              "title": "Father Christmas",
-              "subject": "Father Christmas",
-              "words": "FATHER CHRISTMAS SANTA CLAUS KRIS KRINGLE SAINT NICHOLAS LEGEND TRADITION MAJESTY GENEROSITY TIMELESS GLORY WONDER JOY",
-              "art": "original (AI-generated)",
+              "words": "SECRET WHISPER HUSH SURPRISE WISHES DREAMS MAGIC MYSTERY WONDER ANTICIPATION BELIEVE TWINKLE",
+              "art": "TBD -- source pending",
               "text": "",
               "price": "29"
             }
@@ -1016,99 +971,54 @@
     {
       "id": "santa-claus",
       "title": "Santa Claus",
-      "blurb": "Santa Claus and Father Christmas, each woven entirely from the words of the season -- the secular companion to the Christmas Collection.",
+      "blurb": "Santa Claus, woven entirely from the words of the season -- the secular companion to the Christmas Collection.",
       "sections": [
         {
           "id": "santa-claus",
           "title": "",
           "items": [
             {
-              "id": "tp-santa-claus",
-              "title": "Santa Claus",
+              "id": "tp-santa-classic",
+              "title": "The Classic",
               "subject": "Santa Claus",
-              "words": "SANTA CLAUS JOY WONDER BELIEVE GIVING CHRISTMAS EVE SLEIGH REINDEER CHIMNEY MAGIC GENEROSITY KINDNESS",
-              "art": "original (AI-generated)",
+              "words": "SANTA CLAUS CLASSIC TIMELESS TRADITION JOLLY WARMTH KINDNESS GIVING WONDER BELIEVE JOY GENEROSITY",
+              "art": "TBD -- source pending",
               "text": "",
               "price": "29"
             },
             {
-              "id": "tp-santa-jolly-classic",
-              "title": "The Jolly Classic",
+              "id": "tp-santa-timeless-smile",
+              "title": "The Timeless Smile",
               "subject": "Santa Claus",
-              "words": "SANTA CLAUS JOLLY MERRY JOY HO HO HO CHEER LAUGHTER WARMTH KINDNESS GIVING VELVET",
-              "art": "original (AI-generated)",
+              "words": "SANTA CLAUS GENTLE SMILE WARM EYES KINDLY SPIRIT CHEER COMFORT GRACE PEACE JOY",
+              "art": "TBD -- source pending",
               "text": "",
               "price": "29"
             },
             {
-              "id": "tp-santa-kindly-grandfather",
-              "title": "The Kindly Grandfather",
+              "id": "tp-santa-hearty-laugh",
+              "title": "The Hearty Laugh",
               "subject": "Santa Claus",
-              "words": "SAINT NICHOLAS GENTLE WISE KINDNESS PATIENCE GRANDFATHER WARMTH GRACE COMFORT TENDER PEACE LOVE",
-              "art": "original (AI-generated)",
+              "words": "HO HO HO LAUGHTER JOY MIRTH DELIGHT JOLLY MERRY CHEER TWINKLE HAPPINESS WARMTH",
+              "art": "TBD -- source pending",
               "text": "",
               "price": "29"
             },
             {
-              "id": "tp-santa-hearty-ho-ho-ho",
-              "title": "The Hearty Ho Ho Ho",
+              "id": "tp-santa-fireside",
+              "title": "By the Fireside",
               "subject": "Santa Claus",
-              "words": "HO HO HO LAUGHTER MERRIMENT GLEE MIRTH DELIGHT TWINKLE JOLLY HAPPINESS WONDER JOY CHEER",
-              "art": "original (AI-generated)",
+              "words": "FIRESIDE HEARTH WARMTH HOME COZY CRACKLING GLOW COMFORT TRADITION FAMILY WONDER PEACE",
+              "art": "TBD -- source pending",
               "text": "",
               "price": "29"
             },
             {
-              "id": "tp-santa-candlelight-wonder",
-              "title": "Candlelight & Wonder",
+              "id": "tp-santa-christmas-whisper",
+              "title": "A Christmas Whisper",
               "subject": "Santa Claus",
-              "words": "BELIEVE WONDER MAGIC HOPE LIGHT PEACE STARLIGHT DREAMS MIRACLE GLOW FAITH SILENT NIGHT",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29"
-            },
-            {
-              "id": "tp-santa-fresh-from-snow",
-              "title": "Fresh from the Snow",
-              "subject": "Santa Claus",
-              "words": "NORTH POLE SNOW FROST WINTER REINDEER SLEIGH BELLS JINGLE JOURNEY CRISP ADVENTURE WONDER",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29"
-            },
-            {
-              "id": "tp-santa-by-the-tree",
-              "title": "By the Christmas Tree",
-              "subject": "Santa Claus",
-              "words": "CHRISTMAS TREE LIGHTS PRESENTS STOCKINGS MISTLETOE ORNAMENTS FAMILY HOME TRADITION MEMORIES CHEER",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29"
-            },
-            {
-              "id": "tp-santa-peace-goodwill",
-              "title": "Peace & Goodwill",
-              "subject": "Santa Claus",
-              "words": "NOEL PEACE ON EARTH GOODWILL BLESSINGS GENEROSITY COMPASSION CHARITY GRACE HOPE LOVE JOY",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29"
-            },
-            {
-              "id": "tp-santa-christmas-secret",
-              "title": "A Christmas Secret",
-              "subject": "Santa Claus",
-              "words": "SECRET SURPRISE WISHES DREAMS ANTICIPATION MYSTERY DELIGHT TWINKLE HUSH WONDER MAGIC BELIEVE",
-              "art": "original (AI-generated)",
-              "text": "",
-              "price": "29"
-            },
-            {
-              "id": "tp-father-christmas-regal",
-              "title": "Father Christmas",
-              "subject": "Father Christmas",
-              "words": "FATHER CHRISTMAS SANTA CLAUS KRIS KRINGLE SAINT NICHOLAS LEGEND TRADITION MAJESTY GENEROSITY TIMELESS GLORY WONDER JOY",
-              "art": "original (AI-generated)",
+              "words": "SECRET WHISPER HUSH SURPRISE WISHES DREAMS MAGIC MYSTERY WONDER ANTICIPATION BELIEVE TWINKLE",
+              "art": "TBD -- source pending",
               "text": "",
               "price": "29"
             }
