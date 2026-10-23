@@ -2505,10 +2505,12 @@ _TRUST_LABELS = {"about": "About", "faq": "FAQ", "partners": "Partners",
                  "refunds": "Returns &amp; Refunds", "terms": "Terms", "privacy": "Privacy"}
 
 
-def _trust_brand(host: str = "") -> dict:
+def _trust_brand(host: str = "", brand_id: str = "") -> dict:
     """Name / home / favicon / support-email / tone for the trust pages, resolved
-    from the request host (falls back to Typortrait)."""
-    sb = _site_brand(host=host)
+    from a brand id (e.g. a staging ?brand= override) first, else the request host
+    (falls back to Typortrait). brand_id is optional and defaults to host-only
+    resolution, so existing callers are unaffected."""
+    sb = _site_brand(brand_id=brand_id, host=host)
     domain = sb["home"].split("//", 1)[-1].strip("/")
     kind = "faith" if "faithinwords" in domain else "memorial" if "lovedinwords" in domain else "generic"
     return {"name": sb["name"], "home": sb["home"], "fav": sb["fav"],
@@ -2542,24 +2544,30 @@ _TRUST_TPL = '''<!doctype html><html lang="en"><head>
 <meta name="twitter:image" content="[[OGIMAGE]]">
 <script type="application/ld+json">[[SCHEMA]]</script>
 <style>
- :root{--bg:#f5f1e8;--card:#fff;--ink:#221d16;--mut:#736a58;--line:#e4ddce;--gold:#a9812f;--navy:#1a2b52}
- *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
-  font:16px/1.7 system-ui,-apple-system,"Segoe UI",sans-serif}
+ /* Same design tokens as /gallery, /collections/*, /guides/* and /gallery/{item} --
+    kept in sync by hand, see the note on _COLLECTION_PAGE. If you change one, change
+    all five. */
+ :root{--paper:#faf8f3;--card:#fff;--ink:#2d261f;--muted:#7c7468;--navy:#2f3b52;
+       --line:#e8e2d6;--gold:#b07a2f;
+       --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+       --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+ *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);
+  font:16px/1.7 var(--sans)}
  a{color:var(--navy)}.wrap{max-width:1060px;margin:0 auto;padding:0 22px}
  header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;border-bottom:1px solid var(--line)}
- header .bm{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
- header a.back{font-size:14px;color:var(--mut);text-decoration:none}
+ header .bm{font-family:var(--serif);font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
+ header a.back{font-size:14px;color:var(--muted);text-decoration:none}
  .doc{max-width:760px;margin:0 auto;padding:34px 0 8px}
  .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600}
- .doc h1{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(28px,4vw,40px);margin:8px 0 4px;text-wrap:balance;color:var(--ink)}
- .doc h2{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:21px;color:var(--navy);margin:30px 0 6px}
+ .doc h1{font-family:var(--serif);font-weight:600;font-size:clamp(28px,4vw,40px);margin:8px 0 4px;text-wrap:balance;color:var(--ink)}
+ .doc h2{font-family:var(--serif);font-weight:600;font-size:21px;color:var(--navy);margin:30px 0 6px}
  .doc p,.doc li{color:#3a342a;font-size:16px;line-height:1.72}
  .doc ul{padding-left:20px;margin:8px 0}.doc li{margin:5px 0}
- .doc .upd{color:var(--mut);font-size:13px;margin:2px 0 10px}
- .doc .lead{font-family:"Palatino Linotype","Book Antiqua",Palatino,Georgia,serif;font-size:19px;line-height:1.6;color:var(--ink)}
+ .doc .upd{color:var(--muted);font-size:13px;margin:2px 0 10px}
+ .doc .lead{font-family:var(--serif);font-size:19px;line-height:1.6;color:var(--ink)}
  .doc a{color:var(--navy)}
- footer{border-top:1px solid var(--line);margin-top:40px;padding:24px 0 60px;color:var(--mut);font-size:13.5px;text-align:center}
- footer nav{margin-bottom:8px}footer nav a,footer nav span{margin:0 2px;color:var(--mut);text-decoration:none}
+ footer{border-top:1px solid var(--line);margin-top:40px;padding:24px 0 60px;color:var(--muted);font-size:13.5px;text-align:center}
+ footer nav{margin-bottom:8px}footer nav a,footer nav span{margin:0 2px;color:var(--muted);text-decoration:none}
  footer nav a:hover{color:var(--navy)}
 </style></head><body>
 <div class="wrap">
@@ -2720,18 +2728,21 @@ def _trust_doc(slug: str, b: dict) -> Optional[dict]:
 def _render_trust(slug: str, request: Request) -> HTMLResponse:
     """Serve a brand-aware trust page. Explicit routes (below) avoid any greedy
     catch-all that could shadow other single-segment GET routes."""
-    b = _trust_brand(request.headers.get("host", ""))
+    b = _trust_brand(request.headers.get("host", ""), request.query_params.get("brand", ""))
     doc = _trust_doc(slug, b)
     if not doc:
         raise HTTPException(status_code=404, detail="not_found")
     url = f"{_req_base(request)}/{slug}"
-    # The gallery back-link / "Browse the collection" footer are only valid for brands
-    # that actually HAVE a gallery. The memorial brand (Loved in Words) has none, so
-    # those links would 404 there — send it home / to the studio instead.
-    has_gallery = GALLERY_ENABLED and b["kind"] != "memorial"
+    # The gallery back-link / "Browse the gallery" footer are only valid for brands
+    # that actually have at least one collection to show. Checking b["kind"] != "memorial"
+    # alone (the original check) missed that PawsInWords is also "generic" kind with zero
+    # collections right now (see _brand_collections) -- reusing that same function here
+    # means this can never drift out of sync with the real policy again.
+    _allowed = _brand_collections(request.headers.get("host", ""), request.query_params.get("brand", ""))
+    has_gallery = GALLERY_ENABLED and (_allowed is None or len(_allowed) > 0)
     if has_gallery:
-        back = '<a class="back" href="/gallery">&larr; The Collection</a>'
-        footlink = ' &nbsp;<a href="/gallery">Browse the collection &rarr;</a>'
+        back = '<a class="back" href="/gallery">&larr; The Gallery</a>'
+        footlink = ' &nbsp;<a href="/gallery">Browse the whole gallery &rarr;</a>'
     else:
         back = f'<a class="back" href="/">&larr; Back to {b["name"]}</a>'
         footlink = ('' if b["kind"] != "memorial"
@@ -3362,6 +3373,7 @@ def gallery_bundle_download(request: Request, bundle: str, session_id: str):
 
 _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+[[FAV]]
 <title>[[TITLE]] &mdash; Sacred Word Portrait &middot; [[BRAND]]</title>
 <meta name="description" content="[[DESC]]">
 <link rel="canonical" href="[[URL]]">
@@ -3380,14 +3392,19 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
 <meta name="twitter:image" content="[[IMG]]">
 <script type="application/ld+json">[[LD]]</script>
 <style>
- :root{--bg:#f5f1e8;--card:#fff;--ink:#221d16;--mut:#736a58;--line:#e4ddce;--gold:#a9812f;--navy:#1a2b52}
- *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
-  font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
- .serif{font-family:"Palatino Linotype","Book Antiqua",Palatino,Georgia,serif}
+ /* Same design tokens as /gallery, /collections/* and /guides/* -- kept in sync by
+    hand, see the note on _COLLECTION_PAGE. If you change one, change all four. */
+ :root{--paper:#faf8f3;--card:#fff;--ink:#2d261f;--muted:#7c7468;--navy:#2f3b52;
+       --line:#e8e2d6;--gold:#b07a2f;
+       --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+       --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+ *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);
+  font:16px/1.6 var(--sans)}
+ .serif{font-family:var(--serif)}
  a{color:var(--navy)}.wrap{max-width:1060px;margin:0 auto;padding:0 22px}
  header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;border-bottom:1px solid var(--line)}
- header .bm{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
- header a.back{font-size:14px;color:var(--mut);text-decoration:none}
+ header .bm{font-family:var(--serif);font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
+ header a.back{font-size:14px;color:var(--muted);text-decoration:none}
  .product{display:grid;grid-template-columns:1fr 1fr;gap:44px;padding:40px 0 24px;align-items:start}
  @media(max-width:760px){.product{grid-template-columns:1fr;gap:26px}}
  .frame{background:#0c1730;border-radius:4px;overflow:hidden;box-shadow:0 30px 60px -28px rgba(20,16,10,.5);aspect-ratio:4/5}
@@ -3396,42 +3413,42 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
  .th{flex:0 0 auto;width:84px;padding:0;border:2px solid transparent;border-radius:8px;overflow:hidden;background:#0c1730;cursor:pointer}
  .th.on{border-color:var(--gold)} .th img{width:100%;height:70px;object-fit:cover;display:block}
  .receive{border-top:1px solid var(--line);margin-top:20px;padding-top:16px}
- .receive h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:0 0 8px}
+ .receive h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
  .receive ul{margin:0;padding-left:18px;font-size:14px;line-height:1.7;color:var(--ink)}
  .about{border-top:1px solid var(--line);margin-top:34px;padding-top:20px;max-width:70ch}
- .about h2{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:22px;color:var(--navy);margin:0 0 10px}
+ .about h2{font-family:var(--serif);font-weight:600;font-size:22px;color:var(--navy);margin:0 0 10px}
  .about p{font-size:16.5px;line-height:1.7;color:#3a342a;margin:0 0 12px}.about p:last-child{margin-bottom:0}
  .about i{color:var(--navy);font-style:italic}
  .related{border-top:1px solid var(--line);margin-top:34px;padding-top:24px}
- .related h2{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:22px;color:var(--navy);margin:0 0 16px}
+ .related h2{font-family:var(--serif);font-weight:600;font-size:22px;color:var(--navy);margin:0 0 16px}
  .relgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
  @media(max-width:640px){.relgrid{grid-template-columns:repeat(2,1fr)}}
  .relcard{text-decoration:none;color:var(--ink)} .relcard img{width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:8px;display:block;background:#0c1730}
- .relcard span{display:block;font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:14px;margin-top:7px;text-align:center}
+ .relcard span{display:block;font-family:var(--serif);font-size:14px;margin-top:7px;text-align:center}
  .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600}
- h1{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(30px,4.4vw,44px);margin:10px 0 4px;text-wrap:balance}
- .price{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:30px;color:var(--navy);margin:14px 0 2px}
- .pnote{color:var(--mut);font-size:14px;margin:0 0 18px}
+ h1{font-family:var(--serif);font-weight:600;font-size:clamp(30px,4.4vw,44px);margin:10px 0 4px;text-wrap:balance}
+ .price{font-family:var(--serif);font-size:30px;color:var(--navy);margin:14px 0 2px}
+ .pnote{color:var(--muted);font-size:14px;margin:0 0 18px}
  .scripture{border-left:3px solid var(--gold);margin:16px 0 4px;padding:3px 0 3px 15px}
  .scripture .scr-eyebrow{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);margin:0 0 5px;font-weight:600}
- .scripture p{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-style:italic;font-size:17px;line-height:1.5;color:var(--ink);margin:0 0 5px}
+ .scripture p{font-family:var(--serif);font-style:italic;font-size:17px;line-height:1.5;color:var(--ink);margin:0 0 5px}
  .scripture cite{font-style:normal;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
  .buy{width:100%;background:var(--navy);color:#fff;border:none;border-radius:10px;padding:15px;font-size:16px;font-weight:600;cursor:pointer}
  .buy:hover{background:#233a6b}
- .prints{margin-top:22px}.prints h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:0 0 10px}
+ .prints{margin-top:22px}.prints h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
  .opt{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--card);
   border:1px solid var(--line);border-radius:9px;padding:12px 14px;margin-bottom:9px;cursor:pointer;text-align:left;font:inherit;color:var(--ink)}
- .opt:hover{border-color:var(--navy)}.opt:disabled{opacity:.55;cursor:default}.opt small{color:var(--mut)}
+ .opt:hover{border-color:var(--navy)}.opt:disabled{opacity:.55;cursor:default}.opt small{color:var(--muted)}
  .opt b{font-size:16px;white-space:nowrap}
- .soon{color:var(--mut);font-size:13px;margin:4px 0 0}.err{color:#b0331f;font-size:14px;min-height:20px;margin-top:8px}
+ .soon{color:var(--muted);font-size:13px;margin:4px 0 0}.err{color:#b0331f;font-size:14px;min-height:20px;margin-top:8px}
  .woven{border-top:1px solid var(--line);margin-top:20px;padding-top:16px}
- .woven h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:0 0 8px}
+ .woven h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
  .woven p{font-size:12.5px;line-height:2;letter-spacing:.06em;text-transform:uppercase;color:#8a7f6a;margin:0}
- footer{border-top:1px solid var(--line);margin-top:30px;padding:26px 0 60px;color:var(--mut);font-size:13.5px;text-align:center}
- footer nav{margin-bottom:9px}footer nav a{margin:0 6px;color:var(--mut);text-decoration:none}footer nav a:hover{color:var(--navy)}
+ footer{border-top:1px solid var(--line);margin-top:30px;padding:26px 0 60px;color:var(--muted);font-size:13.5px;text-align:center}
+ footer nav{margin-bottom:9px}footer nav a{margin:0 6px;color:var(--muted);text-decoration:none}footer nav a:hover{color:var(--navy)}
 </style></head><body>
 <div class="wrap">
- <header><a class="bm" href="/gallery">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Collection</a></header>
+ <header><a class="bm" href="/gallery">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Gallery</a></header>
  <div class="product">
   <div class="media">
    <div class="frame"><img id="mainart" src="[[ART]]" alt="[[TITLE]] &mdash; sacred word portrait"></div>
@@ -3446,7 +3463,7 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
   <div class="panel">
    <div class="eyebrow">[[CAT]]</div>
    <h1>[[TITLE]]</h1>
-   <p class="serif" style="color:var(--mut);margin:2px 0 0">A portrait woven entirely from the names and titles that belong to [[SUBJECT]].</p>
+   <p class="serif" style="color:var(--muted);margin:2px 0 0">A portrait woven entirely from the names and titles that belong to [[SUBJECT]].</p>
    [[SCRIPTUREBLOCK]]
    <div class="price">$[[PRICE]]</div>
    <p class="pnote">High-res download + free phone &amp; desktop wallpapers &mdash; no watermark, print it anywhere.</p>
@@ -3463,7 +3480,7 @@ _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
  </div>
  [[ABOUT]]
  [[RELATEDSECTION]]
- <footer><nav>[[TRUSTNAV]]</nav>Each portrait is rendered entirely from the words that belong to its subject. &nbsp;&middot;&nbsp; <a href="/gallery">Browse the whole collection &rarr;</a></footer>
+ <footer><nav>[[TRUSTNAV]]</nav>Each portrait is rendered entirely from the words that belong to its subject. &nbsp;&middot;&nbsp; <a href="/gallery">Browse the whole gallery &rarr;</a></footer>
 </div>
 <script>
 var ITEM=[[ITEMJSON]];
@@ -3525,7 +3542,8 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
     # Brand-aware: the same item page serves the general gallery AND FaithInWords.com,
     # so the wordmark/site name/schema brand follow the host the visitor is on.
     host = (request.headers.get("host") or "").lower()
-    brand = "Faith in Words" if "faithinwords" in host else "Typortrait"
+    site_brand = _site_brand(brand_id=request.query_params.get("brand", ""), host=host)
+    brand = site_brand["name"]
     brand_ref = "faithinwords" if "faithinwords" in host else "gallery"   # default sale attribution
 
     digital_cents = products.gallery_price_for(products.get("digital"))[0]   # gallery channel
@@ -3615,16 +3633,14 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
             .replace("[[WORDS]]", _h.escape(" · ".join(words.split())))
             .replace("[[LD]]", ld)
             .replace("[[BRANDREF]]", _j.dumps(brand_ref))
-            .replace("[[ITEMJSON]]", _j.dumps(item_id)))
+            .replace("[[ITEMJSON]]", _j.dumps(item_id))
+            .replace("[[FAV]]", _fav_links(site_brand["fav"])))
     return HTMLResponse(html)
 
 
 _COLLECTION_PAGE = '''<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" type="image/svg+xml" href="/static/favicons/typortrait/favicon.svg">
-<link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/typortrait/favicon-32.png">
-<link rel="apple-touch-icon" href="/static/favicons/typortrait/apple-touch-icon.png">
-<link rel="icon" href="/static/favicons/typortrait/favicon.ico" sizes="any">
+[[FAV]]
 <title>[[TITLE]] &middot; [[BRAND]]</title>
 <meta name="description" content="[[DESC]]">
 <link rel="canonical" href="[[URL]]">
@@ -3735,7 +3751,8 @@ def collection_page(collection_id: str, request: Request) -> HTMLResponse:
     if col is None or (allow is not None and collection_id not in allow):
         raise HTTPException(status_code=404, detail="not_found")
 
-    brand = "Faith in Words" if "faithinwords" in host else "Typortrait"
+    site_brand = _site_brand(brand_id=request.query_params.get("brand", ""), host=host)
+    brand = site_brand["name"]
     base = _req_base(request)
     og_base = PUBLIC_BASE_URL.rstrip("/")
     page_url = f"{base}/collections/{collection_id}"
@@ -3825,12 +3842,14 @@ def collection_page(collection_id: str, request: Request) -> HTMLResponse:
             .replace("[[EYEBROW]]", _h.escape(brand if brand != "Typortrait" else "The Gallery"))
             .replace("[[BLURB]]", _h.escape(blurb))
             .replace("[[LD]]", ld)
-            .replace("[[BRAND]]", _h.escape(brand)))
+            .replace("[[BRAND]]", _h.escape(brand))
+            .replace("[[FAV]]", _fav_links(site_brand["fav"])))
     return HTMLResponse(html)
 
 
 _GUIDE_PAGE = '''<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+[[FAV]]
 <title>[[TITLE]]</title>
 <meta name="description" content="[[DESC]]">
 <link rel="canonical" href="[[URL]]">
@@ -3841,34 +3860,39 @@ _GUIDE_PAGE = '''<!doctype html><html lang="en"><head>
 <meta name="twitter:description" content="[[DESC]]"><meta name="twitter:image" content="[[IMG]]">
 <script type="application/ld+json">[[LD]]</script>
 <style>
- :root{--bg:#f5f1e8;--card:#fff;--ink:#221d16;--mut:#736a58;--line:#e4ddce;--gold:#a9812f;--navy:#1a2b52}
- *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+ /* Same design tokens as /gallery and /collections/* -- kept in sync by hand, see the
+    note on _COLLECTION_PAGE. If you change one, change all three. */
+ :root{--paper:#faf8f3;--card:#fff;--ink:#2d261f;--muted:#7c7468;--navy:#2f3b52;
+       --line:#e8e2d6;--gold:#b07a2f;
+       --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+       --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+ *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 var(--sans)}
  a{color:var(--navy)}.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
  header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;border-bottom:1px solid var(--line)}
- header .bm{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
- header a.back{font-size:14px;color:var(--mut);text-decoration:none}
+ header .bm{font-family:var(--serif);font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
+ header a.back{font-size:14px;color:var(--muted);text-decoration:none}
  .hero{max-width:70ch;margin:0 auto;padding:40px 0 6px}
  .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600}
- .hero h1{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(28px,4vw,42px);margin:10px 0 12px;text-wrap:balance;color:var(--ink)}
+ .hero h1{font-family:var(--serif);font-weight:600;font-size:clamp(28px,4vw,42px);margin:10px 0 12px;text-wrap:balance;color:var(--ink)}
  .hero .intro p{font-size:17.5px;line-height:1.66;color:#3a342a;margin:0 0 12px}.hero .intro b{color:var(--navy)}
  .cardgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin:26px 0 6px}
  @media(max-width:820px){.cardgrid{grid-template-columns:repeat(3,1fr)}}
  @media(max-width:560px){.cardgrid{grid-template-columns:repeat(2,1fr)}}
  .card{text-decoration:none;color:var(--ink)}
  .card img{width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:8px;display:block;background:#0c1730;box-shadow:0 16px 30px -20px rgba(20,16,10,.55)}
- .card .ct{display:block;font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:16px;margin-top:9px;text-align:center}
- .card .cs{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);text-align:center;margin-top:2px}
+ .card .ct{display:block;font-family:var(--serif);font-size:16px;margin-top:9px;text-align:center}
+ .card .cs{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:center;margin-top:2px}
  .more{border-top:1px solid var(--line);margin-top:40px;padding-top:20px;text-align:center;font-size:14px}
- .more b{color:var(--mut);margin-right:6px}.more a{margin:0 8px;color:var(--navy);text-decoration:none}
- footer{border-top:1px solid var(--line);margin-top:26px;padding:24px 0 60px;color:var(--mut);font-size:13.5px;text-align:center}
- footer nav{margin-bottom:8px}footer nav a{margin:0 6px;color:var(--mut);text-decoration:none}footer nav a:hover{color:var(--navy)}
+ .more b{color:var(--muted);margin-right:6px}.more a{margin:0 8px;color:var(--navy);text-decoration:none}
+ footer{border-top:1px solid var(--line);margin-top:26px;padding:24px 0 60px;color:var(--muted);font-size:13.5px;text-align:center}
+ footer nav{margin-bottom:8px}footer nav a{margin:0 6px;color:var(--muted);text-decoration:none}footer nav a:hover{color:var(--navy)}
 </style></head><body>
 <div class="wrap">
- <header><a class="bm" href="/gallery">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Collection</a></header>
+ <header><a class="bm" href="/gallery">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Gallery</a></header>
  <div class="hero"><div class="eyebrow">[[EYEBROW]]</div><h1>[[H1]]</h1><div class="intro">[[INTRO]]</div></div>
  <div class="cardgrid">[[CARDS]]</div>
  [[MORE]]
- <footer><nav>[[TRUSTNAV]]</nav><a href="/gallery">Browse the whole collection &rarr;</a></footer>
+ <footer><nav>[[TRUSTNAV]]</nav><a href="/gallery">Browse the whole gallery &rarr;</a></footer>
 </div></body></html>'''
 
 
@@ -3887,7 +3911,8 @@ def guide_page(slug: str, request: Request) -> HTMLResponse:
     og_base = PUBLIC_BASE_URL.rstrip("/")
     page_url = f"{base}/guides/{slug}"
     host = (request.headers.get("host") or "").lower()
-    brand = "Faith in Words" if "faithinwords" in host else "Typortrait"
+    site_brand = _site_brand(brand_id=request.query_params.get("brand", ""), host=host)
+    brand = site_brand["name"]
 
     cards, list_items, hero_img, n = "", [], "", 0
     for iid in g["items"]:
@@ -3935,7 +3960,8 @@ def guide_page(slug: str, request: Request) -> HTMLResponse:
             .replace("[[EYEBROW]]", _h.escape(g["eyebrow"]))
             .replace("[[H1]]", _h.escape(g["h1"]))
             .replace("[[LD]]", ld)
-            .replace("[[BRAND]]", _h.escape(brand)))
+            .replace("[[BRAND]]", _h.escape(brand))
+            .replace("[[FAV]]", _fav_links(site_brand["fav"])))
     return HTMLResponse(html)
 
 
