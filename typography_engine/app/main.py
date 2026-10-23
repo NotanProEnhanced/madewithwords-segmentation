@@ -2338,20 +2338,38 @@ def gallery_page(request: Request) -> HTMLResponse:
 def _brand_collections(host: str, brand_q: str = "") -> Optional[set]:
     """The collection ids a brand host (or ?brand= override, for staging -- staging has
     one hostname, so this is the only way to preview a non-default brand's view there)
-    may show, or None for 'all'. FaithInWords intentionally shows its full multi-collection
-    devotional catalog (Christmas/Santa included). Every OTHER brand -- Typortrait, and
-    anything unrecognized -- defaults to the secular set: enabling the gallery on a brand
-    must never surface FaithInWords' devotional-only collections just because a shared
-    catalog.json and a shared private-art directory happen to hold both.
+    may show. Per-brand policy:
 
-    "santa-claus" is the deliberate exception: a secular-framed subset of the Christmas
-    Collection's Santa items, duplicated under tp-prefixed ids (see static/gallery/catalog.json)
-    specifically so Typortrait and the other general-audience brands can sell it without also
-    exposing christmas's devotionally-framed items (the Christ Child, the Magi, St. Nicholas)."""
+      FaithInWords -- every SACRED/devotional collection, computed as "all collections
+        except the two secular ones" rather than a hardcoded list, so a newly added
+        devotional collection (another saint, another Old Masters piece) is included
+        automatically -- same "read catalog.json fresh, no restart needed" pattern
+        gallery_catalog._load_items() already uses. Never historyinwords or santa-claus;
+        a devotional brand must not surface secular content just because a shared
+        catalog.json and a shared private-art directory happen to hold both.
+
+      PawsInWords, LovedInWords -- no collections yet. Neither Santa Claus nor History
+        in Words belongs on these brands. PawsInWords is slated for its own dedicated
+        pet-portrait gallery collection in the future; until that collection actually
+        exists in the catalog, this returns empty rather than guessing at an id.
+
+      Typortrait, and anything unrecognized -- the secular flagship set: History in
+        Words plus the secular-framed Santa Claus collection (see "santa-claus" in
+        static/gallery/catalog.json, a tp-prefixed duplicate of the Christmas
+        Collection's Santa items, kept separate so it can be sold without also
+        exposing christmas's devotionally-framed items)."""
     h = (host or "").split(":")[0].lower()
     bq = (brand_q or "").lower()
-    if "faithinwords" in h or bq == "faithinwords":
-        return None
+    brand = bq or h
+    if "faithinwords" in brand:
+        try:
+            cat = json.loads((STATIC_DIR / "gallery" / "catalog.json").read_text(encoding="utf-8"))
+            return {c.get("id") for c in cat.get("collections", [])
+                    if c.get("id") not in ("historyinwords", "santa-claus")}
+        except Exception:  # noqa: BLE001 -- fail closed: show nothing rather than something wrong
+            return set()
+    if "pawsinwords" in brand or "lovedinwords" in brand:
+        return set()
     return {"historyinwords", "santa-claus"}
 
 
