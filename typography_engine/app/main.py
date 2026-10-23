@@ -3655,8 +3655,8 @@ _COLLECTION_PAGE = '''<!doctype html><html lang="en"><head>
  header a.back{font-size:14px;color:var(--muted);text-decoration:none}
  .hero{text-align:center;max-width:760px;margin:0 auto;padding:42px 0 8px}
  .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600}
- .hero h1{font-family:var(--serif);font-weight:600;font-size:clamp(30px,4.6vw,46px);margin:10px 0 6px;text-wrap:balance;color:var(--ink)}
- .hero .lead{font-family:var(--serif);font-size:19px;line-height:1.55;color:var(--muted);margin:0}
+ .hero h1{font-family:var(--serif);font-weight:600;font-size:34px;letter-spacing:-.02em;margin:0 0 6px;text-wrap:balance;color:var(--ink)}
+ .hero .lead{font-family:var(--sans);font-size:15.5px;line-height:1.5;color:var(--muted);margin:0 auto 4px;max-width:600px}
  .grp{margin:34px 0 6px}
  .grp h2{font-family:var(--serif);font-weight:600;font-size:24px;color:var(--navy);margin:0 0 16px;border-bottom:1px solid var(--line);padding-bottom:8px}
  .cardgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
