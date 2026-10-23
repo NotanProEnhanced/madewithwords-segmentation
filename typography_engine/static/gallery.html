@@ -16,8 +16,15 @@
          --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; }
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.5}
-  .wrap{max-width:1080px;margin:0 auto;padding:34px 20px 80px}
-  header{text-align:center;margin-bottom:8px}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px 80px}
+  /* Top bar: same treatment as the /collections/* pages' <header> -- a clickable
+     brand mark, so the gallery index and every collection page share one logo
+     style instead of the index being the only page without one. */
+  .topbar{display:flex;align-items:center;justify-content:center;padding:18px 0;
+          border-bottom:1px solid var(--line);margin-bottom:0}
+  .topbar .bm{font-family:var(--serif);font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
+  header{text-align:center;margin:34px 0 8px}
+  .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:10px}
   h1{font-family:var(--serif);font-weight:600;font-size:34px;letter-spacing:-.02em;margin:0 0 6px}
   .lead{color:var(--muted);font-size:15.5px;max-width:600px;margin:0 auto 4px}
   /* top tabs (collections) */
@@ -79,8 +86,11 @@
 </head>
 <body>
 <div class="wrap">
+  <header class="topbar">
+    <a class="bm" href="/" id="brandLogo">Typortrait</a>
+  </header>
   <header>
-    <div class="wordmark" id="brandWordmark" style="display:none;font:700 13px/1 system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--gold,#b0863a);margin:0 0 10px">FaithInWords</div>
+    <div class="eyebrow">The Gallery</div>
     <h1 id="brandTitle">The Typortrait Gallery</h1>
     <p class="lead" id="brandLead">Sacred figures and beloved moments, each portrait woven entirely from the words that belong to it.</p>
     <input id="search" placeholder="Search the collection…" autocomplete="off"
@@ -129,7 +139,7 @@ let CAT=null, PRODUCTS=null, DIGITAL_CENTS=1499, curCol=0, curSec=0, curItem=nul
 // must never surface secular pieces (Santa lives in the christmas collection).
 const BRANDS = {
   typortrait: {
-    wordmark: "", docTitle: "The Typortrait Gallery",
+    wordmark: "Typortrait", docTitle: "The Typortrait Gallery",
     title: "The Typortrait Gallery",
     lead: "History in Words: American icons and world figures, each portrait woven entirely from the words that belong to their story.",
     showTool: true, theme: null,
@@ -161,7 +171,9 @@ function currentBrand(){
 function applyBrand(){
   const b=BRANDS[currentBrand()]||BRANDS.typortrait;
   document.title=b.docTitle||b.title;
-  const wm=$("#brandWordmark"); if(wm){ wm.textContent=b.wordmark||""; wm.style.display=b.wordmark?"block":"none"; }
+  // Always-visible top-bar logo now (was a FaithInWords-only label that hid itself
+  // for Typortrait, back when Typortrait had no wordmark value at all).
+  const wm=$("#brandLogo"); if(wm) wm.textContent=b.wordmark||"Typortrait";
   const t=$("#brandTitle"); if(t) t.textContent=b.title;
   const l=$("#brandLead");  if(l) l.textContent=b.lead;
   if(b.theme){ for(const k in b.theme) document.documentElement.style.setProperty(k,b.theme[k]); }
