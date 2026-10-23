@@ -3603,6 +3603,10 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
 
 _COLLECTION_PAGE = '''<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/static/favicons/typortrait/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/typortrait/favicon-32.png">
+<link rel="apple-touch-icon" href="/static/favicons/typortrait/apple-touch-icon.png">
+<link rel="icon" href="/static/favicons/typortrait/favicon.ico" sizes="any">
 <title>[[TITLE]] &middot; [[BRAND]]</title>
 <meta name="description" content="[[DESC]]">
 <link rel="canonical" href="[[URL]]">
@@ -3618,47 +3622,53 @@ _COLLECTION_PAGE = '''<!doctype html><html lang="en"><head>
 <meta name="twitter:image" content="[[IMG]]">
 <script type="application/ld+json">[[LD]]</script>
 <style>
- :root{--bg:#f5f1e8;--card:#fff;--ink:#221d16;--mut:#736a58;--line:#e4ddce;--gold:#a9812f;--navy:#1a2b52}
- *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
-  font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+ /* Same design tokens as /gallery (static/gallery.html) -- kept in sync by hand since
+    one's a static file and the other's generated server-side, so they can't share a
+    single source. If you change one, change the other. */
+ :root{--paper:#faf8f3;--card:#fff;--ink:#2d261f;--muted:#7c7468;--navy:#2f3b52;
+       --line:#e8e2d6;--gold:#b07a2f;
+       --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+       --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+ *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);
+  font:16px/1.6 var(--sans)}
  a{color:var(--navy)}.wrap{max-width:1120px;margin:0 auto;padding:0 22px}
  header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;border-bottom:1px solid var(--line)}
- header .bm{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
- header a.back{font-size:14px;color:var(--mut);text-decoration:none}
+ header .bm{font-family:var(--serif);font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
+ header a.back{font-size:14px;color:var(--muted);text-decoration:none}
  .hero{text-align:center;max-width:760px;margin:0 auto;padding:42px 0 8px}
  .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600}
- .hero h1{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:clamp(30px,4.6vw,46px);margin:10px 0 6px;text-wrap:balance;color:var(--ink)}
- .hero .lead{font-family:"Palatino Linotype","Book Antiqua",Palatino,Georgia,serif;font-size:19px;line-height:1.55;color:var(--mut);margin:0}
+ .hero h1{font-family:var(--serif);font-weight:600;font-size:clamp(30px,4.6vw,46px);margin:10px 0 6px;text-wrap:balance;color:var(--ink)}
+ .hero .lead{font-family:var(--serif);font-size:19px;line-height:1.55;color:var(--muted);margin:0}
  .grp{margin:34px 0 6px}
- .grp h2{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:24px;color:var(--navy);margin:0 0 16px;border-bottom:1px solid var(--line);padding-bottom:8px}
+ .grp h2{font-family:var(--serif);font-weight:600;font-size:24px;color:var(--navy);margin:0 0 16px;border-bottom:1px solid var(--line);padding-bottom:8px}
  .cardgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
  @media(max-width:820px){.cardgrid{grid-template-columns:repeat(3,1fr)}}
  @media(max-width:560px){.cardgrid{grid-template-columns:repeat(2,1fr)}}
  .card{text-decoration:none;color:var(--ink)}
  .card img{width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:8px;display:block;background:#0c1730;box-shadow:0 16px 30px -20px rgba(20,16,10,.55)}
- .card .ct{display:block;font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:16px;margin-top:9px;text-align:center}
- .card .cs{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);text-align:center;margin-top:2px}
+ .card .ct{display:block;font-family:var(--serif);font-size:16px;margin-top:9px;text-align:center}
+ .card .cs{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:center;margin-top:2px}
  .colnav{border-top:1px solid var(--line);margin-top:40px;padding-top:20px;text-align:center;font-size:14px}
- .colnav a{margin:0 8px;color:var(--navy);text-decoration:none}.colnav b{color:var(--mut);margin-right:6px}
+ .colnav a{margin:0 8px;color:var(--navy);text-decoration:none}.colnav b{color:var(--muted);margin-right:6px}
  .sets{border-top:1px solid var(--line);margin-top:44px;padding-top:30px}
- .sets .shdr{text-align:center;font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:26px;color:var(--navy);margin:0 0 4px}
- .sets .ssub{text-align:center;color:var(--mut);margin:0 auto 24px;max-width:44em}
+ .sets .shdr{text-align:center;font-family:var(--serif);font-weight:600;font-size:26px;color:var(--navy);margin:0 0 4px}
+ .sets .ssub{text-align:center;color:var(--muted);margin:0 auto 24px;max-width:44em}
  .setgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
  @media(max-width:820px){.setgrid{grid-template-columns:repeat(2,1fr)}}
  @media(max-width:520px){.setgrid{grid-template-columns:1fr}}
  .setcard{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:18px 18px 20px;display:flex;flex-direction:column;position:relative}
  .setcard.flag{border-color:var(--gold);box-shadow:0 20px 40px -28px rgba(120,90,20,.5)}
- .setcard .sname{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:19px;color:var(--ink);margin:0}
- .setcard .smeta{font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:5px 0 12px}
- .setcard .sprice{font-family:"Palatino Linotype",Palatino,Georgia,serif;font-size:27px;color:var(--navy)}
- .setcard .sprice s{font-size:16px;color:var(--mut);margin-left:8px;font-family:system-ui,sans-serif}
+ .setcard .sname{font-family:var(--serif);font-weight:600;font-size:19px;color:var(--ink);margin:0}
+ .setcard .smeta{font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:5px 0 12px}
+ .setcard .sprice{font-family:var(--serif);font-size:27px;color:var(--navy)}
+ .setcard .sprice s{font-size:16px;color:var(--muted);margin-left:8px;font-family:system-ui,sans-serif}
  .setcard .ssave{display:inline-block;background:#f3ecda;color:#8a6a1e;font-size:12px;font-weight:700;border-radius:999px;padding:3px 10px;margin:8px 0 0;align-self:flex-start}
  .setcard .sbadge{position:absolute;top:-11px;right:14px;background:var(--gold);color:#fff;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:3px 10px}
  .setcard .setbuy{margin-top:16px;width:100%;background:var(--navy);color:#fff;border:none;border-radius:10px;padding:12px;font-size:15px;font-weight:600;cursor:pointer}
  .setcard .setbuy:hover{background:#233a6b}.setcard .setbuy:disabled{opacity:.6;cursor:default}
  .seterr{color:#b0331f;font-size:13.5px;text-align:center;min-height:18px;margin-top:12px}
- footer{border-top:1px solid var(--line);margin-top:26px;padding:24px 0 60px;color:var(--mut);font-size:13.5px;text-align:center}
- footer nav{margin-bottom:8px}footer nav a{margin:0 6px;color:var(--mut);text-decoration:none}footer nav a:hover{color:var(--navy)}
+ footer{border-top:1px solid var(--line);margin-top:26px;padding:24px 0 60px;color:var(--muted);font-size:13.5px;text-align:center}
+ footer nav{margin-bottom:8px}footer nav a{margin:0 6px;color:var(--muted);text-decoration:none}footer nav a:hover{color:var(--navy)}
 </style></head><body>
 <div class="wrap">
  <header><a class="bm" href="/gallery">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Gallery</a></header>
