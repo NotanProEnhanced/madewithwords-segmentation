@@ -8,6 +8,28 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/lovedinwords/favicon-32.png" />
 <link rel="apple-touch-icon" href="/static/favicons/lovedinwords/apple-touch-icon.png" />
 <link rel="icon" href="/static/favicons/lovedinwords/favicon.ico" sizes="any" />
+<script>
+// Gather is a global feature (GATHER_ENABLED has no per-brand scoping in app/gather.py,
+// app/main.py:211) -- it's only ever actually turned on for LovedInWords today, by
+// deployment convention, not by anything the code enforces. These favicon links are
+// hardcoded for that common case; this swaps them for the real host's brand if this
+// page is ever served from somewhere else, same client-side pattern static/index.html
+// already uses for its own favicon swap (see BRAND_ID / _FAV there).
+(function(){
+  var h = location.hostname.replace(/^www\./, "");
+  var id = h.includes("faithinwords") ? "faithinwords"
+         : h.includes("pawsinwords")  ? "pawsinwords"
+         : h.includes("everloved")    ? "everloved"
+         : h.includes("typortrait")   ? "typortrait"
+         : "lovedinwords";
+  if (id !== "lovedinwords") {
+    document.querySelectorAll('link[rel*="icon"]').forEach(function(l){
+      var href = l.getAttribute("href");
+      if (href) l.setAttribute("href", href.replace("/favicons/lovedinwords/", "/favicons/" + id + "/"));
+    });
+  }
+})();
+</script>
 <title>Your gather</title>
 <style>
   :root{ --paper:#faf8f3; --card:#fff; --ink:#2d261f; --muted:#7c7468; --navy:#2f3b52;
