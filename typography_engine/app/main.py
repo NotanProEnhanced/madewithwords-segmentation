@@ -3684,6 +3684,12 @@ _COLLECTION_PAGE = '''<!doctype html><html lang="en"><head>
  .card .cs{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:center;margin-top:2px}
  .colnav{border-top:1px solid var(--line);margin-top:40px;padding-top:20px;text-align:center;font-size:14px}
  .colnav a{margin:0 8px;color:var(--navy);text-decoration:none}.colnav b{color:var(--muted);margin-right:6px}
+ .personalize{border-top:1px solid var(--line);margin-top:40px;padding-top:30px;text-align:center}
+ .personalize h2{font-family:var(--serif);font-weight:600;font-size:24px;color:var(--navy);margin:0 0 8px}
+ .personalize p{color:var(--muted);font-size:15px;max-width:48em;margin:0 auto 18px}
+ .personalize a.cta{display:inline-block;background:var(--navy);color:#fff;text-decoration:none;
+   border-radius:10px;padding:13px 26px;font-size:15px;font-weight:600}
+ .personalize a.cta:hover{background:#233a6b}
  .sets{border-top:1px solid var(--line);margin-top:44px;padding-top:30px}
  .sets .shdr{text-align:center;font-family:var(--serif);font-weight:600;font-size:26px;color:var(--navy);margin:0 0 4px}
  .sets .ssub{text-align:center;color:var(--muted);margin:0 auto 24px;max-width:44em}
@@ -3708,6 +3714,7 @@ _COLLECTION_PAGE = '''<!doctype html><html lang="en"><head>
  <header><a class="bm" href="/gallery">[[BRAND]]</a><a class="back" href="/gallery">&larr; The Gallery</a></header>
  <div class="hero"><div class="eyebrow">[[EYEBROW]]</div><h1>[[TITLE]]</h1><p class="lead">[[BLURB]]</p></div>
  [[SECTIONS]]
+ [[PERSONALIZE]]
  [[BUNDLES]]
  [[COLNAV]]
  <footer><nav>[[TRUSTNAV]]</nav><a href="/gallery">Browse the whole gallery &rarr;</a></footer>
@@ -3797,6 +3804,20 @@ def collection_page(collection_id: str, request: Request) -> HTMLResponse:
                         for c in others)
         colnav = f'<nav class="colnav"><b>More collections:</b>{links}</nav>'
 
+    # The secular Santa collection is personalizable -- a catalog of source photos
+    # (static/choose-santa.html) feeds into the normal studio's upload path, so a
+    # visitor who'd rather have their OWN wording/name woven in can do that instead
+    # of just buying one of the five fixed renders above. Only this one collection;
+    # the devotional christmas collection has no equivalent personalizable catalog.
+    personalize_html = ""
+    if collection_id == "santa-claus":
+        personalize_html = (
+            '<section class="personalize"><h2>Want to make one your own?</h2>'
+            '<p>Pick one of these same Santas and personalize it — your own words, '
+            'a name, a message, your choice of colors — instead of the fixed designs above.</p>'
+            '<a class="cta" href="/static/choose-santa.html">Choose a Santa to personalize &rarr;</a>'
+            '</section>')
+
     # Curated sets for this collection (whole-collection flagship first, then sections).
     bundles = _gallery_bundles_for(collection_id)
     bundles_html = ""
@@ -3831,6 +3852,7 @@ def collection_page(collection_id: str, request: Request) -> HTMLResponse:
 
     html = (_COLLECTION_PAGE
             .replace("[[SECTIONS]]", sections_html)
+            .replace("[[PERSONALIZE]]", personalize_html)
             .replace("[[BUNDLES]]", bundles_html)
             .replace("[[BRANDREF]]", _j.dumps("faithinwords" if "faithinwords" in host else "gallery"))
             .replace("[[COLNAV]]", colnav)

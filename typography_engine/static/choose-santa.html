@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="icon" type="image/svg+xml" href="/static/favicons/typortrait/favicon.svg" />
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/typortrait/favicon-32.png" />
+<link rel="apple-touch-icon" href="/static/favicons/typortrait/apple-touch-icon.png" />
+<link rel="icon" href="/static/favicons/typortrait/favicon.ico" sizes="any" />
+<title>Choose a Santa &middot; Typortrait</title>
+<meta name="description" content="No photo of Santa on hand? Pick one of ours, then personalize it with your own words, names and colors." />
+<style>
+  /* Same design tokens as /gallery, /collections/*, /guides/* and /gallery/{item} --
+     kept in sync by hand, see the note on _COLLECTION_PAGE in app/main.py. */
+  :root{ --paper:#faf8f3; --card:#fff; --ink:#2d261f; --muted:#7c7468; --navy:#2f3b52;
+         --line:#e8e2d6; --gold:#b07a2f; --radius:16px;
+         --shadow:0 14px 40px rgba(30,28,22,.10);
+         --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+         --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.5}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px 80px}
+  .topbar{display:flex;align-items:center;justify-content:flex-start;padding:18px 0;
+          border-bottom:1px solid var(--line)}
+  .topbar .bm{font-family:var(--serif);font-size:20px;font-weight:600;color:var(--navy);text-decoration:none}
+  header{text-align:center;margin:34px 0 8px}
+  .eyebrow{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:10px}
+  h1{font-family:var(--serif);font-weight:600;font-size:34px;letter-spacing:-.02em;margin:0 0 6px}
+  .lead{color:var(--muted);font-size:15.5px;max-width:560px;margin:0 auto 4px}
+  .grid{display:flex;flex-wrap:wrap;justify-content:center;gap:22px;margin-top:34px}
+  .item{flex:0 1 240px;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;
+        border:1px solid var(--line);text-decoration:none;color:var(--ink);transition:transform .15s, box-shadow .15s;
+        display:block}
+  .item:hover{transform:translateY(-3px);box-shadow:0 20px 48px rgba(30,28,22,.16)}
+  .item img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;background:#eee}
+  .item .meta{padding:14px 16px 17px}
+  .item .t{font-family:var(--serif);font-size:18px;color:var(--ink);margin:0 0 6px}
+  .item .cta{display:inline-block;font-size:13px;font-weight:700;color:var(--navy)}
+  .item .cta .arrow{display:inline-block;transition:transform .15s}
+  .item:hover .cta .arrow{transform:translateX(3px)}
+  .foot{text-align:center;color:var(--muted);font-size:12.5px;margin-top:46px}
+  .foot a{color:var(--navy)}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="bm" href="/static/index.html">Typortrait</a>
+</header>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Holiday Collection</div>
+    <h1>Choose a Santa</h1>
+    <p class="lead">No photo of Santa on hand? Pick one of ours below, then make it yours — your own words, names and colors, woven into his portrait.</p>
+  </header>
+
+  <div class="grid">
+    <a class="item" href="/static/index.html?stock=classic">
+      <img src="/static/santa-sources/classic.webp" alt="Santa Claus — The Classic, a warm, timeless portrait" loading="lazy" decoding="async" />
+      <div class="meta"><p class="t">The Classic</p><span class="cta">Personalize this Santa <span class="arrow">&rarr;</span></span></div>
+    </a>
+    <a class="item" href="/static/index.html?stock=timeless-smile">
+      <img src="/static/santa-sources/timeless-smile.webp" alt="Santa Claus — The Timeless Smile, a gentle, warm-eyed portrait" loading="lazy" decoding="async" />
+      <div class="meta"><p class="t">The Timeless Smile</p><span class="cta">Personalize this Santa <span class="arrow">&rarr;</span></span></div>
+    </a>
+    <a class="item" href="/static/index.html?stock=hearty-laugh">
+      <img src="/static/santa-sources/hearty-laugh.webp" alt="Santa Claus — The Hearty Laugh, mid laughter" loading="lazy" decoding="async" />
+      <div class="meta"><p class="t">The Hearty Laugh</p><span class="cta">Personalize this Santa <span class="arrow">&rarr;</span></span></div>
+    </a>
+    <a class="item" href="/static/index.html?stock=fireside">
+      <img src="/static/santa-sources/fireside.webp" alt="Santa Claus — By the Fireside, a cozy portrait" loading="lazy" decoding="async" />
+      <div class="meta"><p class="t">By the Fireside</p><span class="cta">Personalize this Santa <span class="arrow">&rarr;</span></span></div>
+    </a>
+    <a class="item" href="/static/index.html?stock=christmas-whisper">
+      <img src="/static/santa-sources/christmas-whisper.webp" alt="Santa Claus — A Christmas Whisper, finger to his lips" loading="lazy" decoding="async" />
+      <div class="meta"><p class="t">A Christmas Whisper</p><span class="cta">Personalize this Santa <span class="arrow">&rarr;</span></span></div>
+    </a>
+  </div>
+
+  <p class="foot">Have your own photo instead? <a href="/static/index.html">Start from your own photo &rarr;</a></p>
+</div>
+</body>
+</html>
