@@ -307,8 +307,16 @@ _GALLERY_PRICE: Dict[str, int] = {
 _GALLERY_HIDE = {"print_5x7", "poster_8x10"}
 
 
-def gallery_price_for(p: Product) -> Tuple[int, int]:
-    """(price_cents, shipping_cents) for a product in the Sacred Collection channel."""
+def gallery_price_for(p: Product, item_id: Optional[str] = None) -> Tuple[int, int]:
+    """(price_cents, shipping_cents) for a product in the Sacred Collection channel.
+
+    Santa Claus collection items (id or sku prefixed `santa-`/`tp-santa-`) are priced
+    identically to the personalize studio's defaults, not the bulk gallery schedule --
+    buying one of the 5 fixed Santas should never cost more or less than personalizing
+    the same portrait, across the whole Pinterest/Instagram funnel for that collection.
+    """
+    if item_id and (item_id.startswith("santa-") or item_id.startswith("tp-santa-")):
+        return p.price_cents, p.shipping_cents
     return _GALLERY_PRICE.get(p.sku, p.price_cents), p.shipping_cents
 
 
@@ -316,15 +324,17 @@ def is_gallery_hidden(sku: str) -> bool:
     return (sku or "") in _GALLERY_HIDE
 
 
-def public_catalog(memorial: bool = False, gallery: bool = False) -> List[dict]:
+def public_catalog(memorial: bool = False, gallery: bool = False, item_id: Optional[str] = None) -> List[dict]:
     """JSON-safe catalog payload for the storefront UI. `gallery` selects the Sacred
     Collection channel (its own prices; thin-margin small prints hidden). `memorial`
-    selects the commission-adjusted brand prices. Default = the personalized studio."""
+    selects the commission-adjusted brand prices. `item_id` scopes gallery pricing to
+    one catalog item (see gallery_price_for -- matters for the Santa Claus collection).
+    Default = the personalized studio."""
     out = []
     for p in CATALOG:
         if gallery and p.sku in _GALLERY_HIDE:
             continue
-        price, ship = gallery_price_for(p) if gallery else price_for(p, memorial)
+        price, ship = gallery_price_for(p, item_id) if gallery else price_for(p, memorial)
         out.append({
             "sku": p.sku,
             "name": p.name,

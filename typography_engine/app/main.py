@@ -2993,7 +2993,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
     # Per-item digital price: the catalog item may carry a `price` (in dollars); use
     # it when present, else the gallery digital price. The value comes from the trusted
     # catalog on disk -- never from the request -- so a buyer cannot set their own price.
-    digital_cents = products.gallery_price_for(product)[0]
+    digital_cents = products.gallery_price_for(product, item_id=item)[0]
     try:
         _p = float(str(it.get("price") or "").strip())
         if _p > 0:
@@ -3030,7 +3030,7 @@ def gallery_checkout(request: Request, item: str = Form(...), sku: str = Form("d
     if product.memorial_only or product.size_variants or product.bundle_items or not product.printful_variant_id:
         return JSONResponse({"ok": False, "error": "unsupported_product"}, status_code=409)
     variant_id = product.printful_variant_id
-    eff_price, eff_ship = products.gallery_price_for(product)   # Sacred Collection schedule
+    eff_price, eff_ship = products.gallery_price_for(product, item_id=item)   # Sacred Collection schedule
     order_id = uuid.uuid4().hex[:16]
     line_items: List[dict] = [{
         "quantity": 1,
@@ -3172,7 +3172,7 @@ def _bundle_price_cents(n: int, complete: bool = False) -> Optional[int]:
 def _item_digital_cents(it: Optional[dict]) -> int:
     """A gallery item's individual digital price in cents (per-item override, else
     the Sacred Collection digital price). Mirrors the item page."""
-    base = products.gallery_price_for(products.get("digital"))[0]
+    base = products.gallery_price_for(products.get("digital"), item_id=(it or {}).get("id"))[0]
     try:
         p = float(str((it or {}).get("price") or "").strip())
         if p > 0:
@@ -3546,7 +3546,7 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
     brand = site_brand["name"]
     brand_ref = "faithinwords" if "faithinwords" in host else "gallery"   # default sale attribution
 
-    digital_cents = products.gallery_price_for(products.get("digital"))[0]   # gallery channel
+    digital_cents = products.gallery_price_for(products.get("digital"), item_id=it.get("id"))[0]   # gallery channel
     try:
         _p = float(str(it.get("price") or "").strip())
         if _p > 0:
@@ -3564,7 +3564,7 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
                        f'<p>&ldquo;{_h.escape(scrip)}&rdquo;</p>'
                        f'<cite>{_h.escape(scrip_ref)}</cite></blockquote>') if scrip else ""
 
-    prints = [p for p in products.public_catalog(gallery=True)
+    prints = [p for p in products.public_catalog(gallery=True, item_id=it.get("id"))
               if p["physical"] and not p["memorial_only"] and not p["sizes"]
               and p["orientation"] == "portrait"]   # gallery masters are 4:5 portrait -> portrait prints only
     live = bool(PRINTFUL_API_TOKEN)
