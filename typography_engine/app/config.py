@@ -141,6 +141,25 @@ UMAMI_HOST = os.environ.get("UMAMI_HOST", "https://cloud.umami.is").rstrip("/")
 # Hostname Umami records the event under (should match your tracked domain).
 UMAMI_HOSTNAME = os.environ.get("UMAMI_HOSTNAME", "app.typortrait.com")
 
+# --- Social ad pixels (Meta/Pinterest) --------------------------------------
+# Client-side base code: PageView/ViewContent on discovery pages (gallery item,
+# collection, choose-a-santa) via /pixel-config.js, plus a client Purchase fire
+# on the one post-payment page that's an actual HTML response (digital /success).
+# Neither ID is secret (both ship in the browser regardless); unset = no scripts
+# load at all. Same not-yet-configured-is-a-no-op posture as UMAMI_WEBSITE_ID above.
+META_PIXEL_ID = os.environ.get("META_PIXEL_ID", "")
+PINTEREST_TAG_ID = os.environ.get("PINTEREST_TAG_ID", "")
+# Server-side Conversions API: fired from _track_purchase_once, the one deduped
+# hook every completed sale already passes through (webhook, /order poll, and the
+# digital /success page) -- the only way to catch a conversion on a path with NO
+# HTML thank-you page at all, e.g. the gallery's direct-to-file digital download,
+# and immune to ad blockers/Safari ITP the way the client scripts above are not.
+# Each needs a real access token from that platform's Business/Ads Manager, not
+# just the pixel/tag id -- optional and independent of the client-side ids.
+META_CAPI_ACCESS_TOKEN = os.environ.get("META_CAPI_ACCESS_TOKEN", "")
+PINTEREST_CAPI_ACCESS_TOKEN = os.environ.get("PINTEREST_CAPI_ACCESS_TOKEN", "")
+PINTEREST_AD_ACCOUNT_ID = os.environ.get("PINTEREST_AD_ACCOUNT_ID", "")
+
 # --- Freemium / payments ---------------------------------------------------
 # Clean (unwatermarked) renders are stored here and only served after payment;
 # this directory is NOT mounted as static.

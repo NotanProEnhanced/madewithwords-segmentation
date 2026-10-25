@@ -53,7 +53,12 @@ from .config import (
     MAX_IMAGE_PIXELS,
     MAX_UPLOAD_BYTES,
     LOUPE_PNG_WIDTH,
+    META_CAPI_ACCESS_TOKEN,
+    META_PIXEL_ID,
     OUTPUTS_DIR,
+    PINTEREST_AD_ACCOUNT_ID,
+    PINTEREST_CAPI_ACCESS_TOKEN,
+    PINTEREST_TAG_ID,
     PREVIEW_PNG_WIDTH,
     OPS_PREVIEW_MAX_PX,
     PRINTFUL_API_TOKEN,
@@ -154,6 +159,26 @@ class _RevalidatingStatic(StaticFiles):
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
 if STATIC_DIR.exists():
     app.mount("/static", _RevalidatingStatic(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/pixel-config.js")
+def pixel_config_js():
+    """Client-side pixel ids as a tiny JS object, for static/tracking.js to load.
+    Routed outside /static (which is a plain file mount) so it can read the env-var
+    ids at request time; neither id is secret (both ship in the browser either way).
+    Not cached long, so flipping the env var takes effect without a redeploy wait."""
+    body = (
+        "window.TRACKING={meta:" + json.dumps(META_PIXEL_ID or "") +
+        ",pinterest:" + json.dumps(PINTEREST_TAG_ID or "") + "};"
+    )
+    return Response(body, media_type="application/javascript",
+                     headers={"Cache-Control": "public, max-age=300"})
+
+
+def _tracking_scripts() -> str:
+    """<script> tags to include /pixel-config.js + static/tracking.js on a server-
+    rendered page. Always present; both scripts are cheap no-ops with no ids set."""
+    return '<script src="/pixel-config.js"></script><script src="/static/tracking.js"></script>'
 
 
 def _not_found_page(request: Request) -> str:
@@ -3374,6 +3399,7 @@ def gallery_bundle_download(request: Request, bundle: str, session_id: str):
 _ITEM_PAGE = '''<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 [[FAV]]
+[[TRACKING]]
 <title>[[TITLE]] &mdash; Sacred Word Portrait &middot; [[BRAND]]</title>
 <meta name="description" content="[[DESC]]">
 <link rel="canonical" href="[[URL]]">
@@ -3634,13 +3660,15 @@ def gallery_item_page(item_id: str, request: Request) -> HTMLResponse:
             .replace("[[LD]]", ld)
             .replace("[[BRANDREF]]", _j.dumps(brand_ref))
             .replace("[[ITEMJSON]]", _j.dumps(item_id))
-            .replace("[[FAV]]", _fav_links(site_brand["fav"])))
+            .replace("[[FAV]]", _fav_links(site_brand["fav"]))
+            .replace("[[TRACKING]]", _tracking_scripts()))
     return HTMLResponse(html)
 
 
 _COLLECTION_PAGE = '''<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 [[FAV]]
+[[TRACKING]]
 <title>[[TITLE]] &middot; [[BRAND]]</title>
 <meta name="description" content="[[DESC]]">
 <link rel="canonical" href="[[URL]]">
@@ -3865,7 +3893,8 @@ def collection_page(collection_id: str, request: Request) -> HTMLResponse:
             .replace("[[BLURB]]", _h.escape(blurb))
             .replace("[[LD]]", ld)
             .replace("[[BRAND]]", _h.escape(brand))
-            .replace("[[FAV]]", _fav_links(site_brand["fav"])))
+            .replace("[[FAV]]", _fav_links(site_brand["fav"]))
+            .replace("[[TRACKING]]", _tracking_scripts()))
     return HTMLResponse(html)
 
 
@@ -3983,7 +4012,8 @@ def guide_page(slug: str, request: Request) -> HTMLResponse:
             .replace("[[H1]]", _h.escape(g["h1"]))
             .replace("[[LD]]", ld)
             .replace("[[BRAND]]", _h.escape(brand))
-            .replace("[[FAV]]", _fav_links(site_brand["fav"])))
+            .replace("[[FAV]]", _fav_links(site_brand["fav"]))
+            .replace("[[TRACKING]]", _tracking_scripts()))
     return HTMLResponse(html)
 
 
@@ -5763,6 +5793,60 @@ def _umami_event(name: str, data: Optional[dict] = None) -> None:
         pass
 
 
+def _social_capi_event(event_id: str, amount_cents: int, currency: str) -> None:
+    """Fire server-side Meta + Pinterest Conversions API purchase events, best-effort.
+
+    Unlike a client-side pixel, this works for a path with NO HTML thank-you page
+    at all (the gallery's direct-to-file digital download goes straight from Stripe
+    to a FileResponse) and isn't suppressible by an ad blocker or Safari ITP. Each
+    platform is independently optional -- unset access token, no-op for that one.
+
+    `event_id` should be the same id the client-side pixel (if any fired on this
+    sale too, e.g. the digital /success page) used for its Purchase event, so Meta/
+    Pinterest DEDUPE the two instead of double-counting one sale as two conversions.
+    """
+    value = round((amount_cents or 0) / 100.0, 2)
+    cur = (currency or "usd").upper()
+    try:
+        import time as _time
+        import httpx
+        now = int(_time.time())
+        if META_PIXEL_ID and META_CAPI_ACCESS_TOKEN:
+            try:
+                httpx.post(
+                    f"https://graph.facebook.com/v19.0/{META_PIXEL_ID}/events",
+                    params={"access_token": META_CAPI_ACCESS_TOKEN},
+                    json={"data": [{
+                        "event_name": "Purchase",
+                        "event_time": now,
+                        "event_id": event_id,
+                        "action_source": "website",
+                        "custom_data": {"value": value, "currency": cur},
+                    }]},
+                    timeout=4.0,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        if PINTEREST_AD_ACCOUNT_ID and PINTEREST_CAPI_ACCESS_TOKEN:
+            try:
+                httpx.post(
+                    f"https://api.pinterest.com/v5/ad_accounts/{PINTEREST_AD_ACCOUNT_ID}/events",
+                    headers={"Authorization": f"Bearer {PINTEREST_CAPI_ACCESS_TOKEN}"},
+                    json={"data": [{
+                        "event_name": "checkout",
+                        "action_source": "web",
+                        "event_time": now,
+                        "event_id": event_id,
+                        "custom_data": {"value": str(value), "currency": cur},
+                    }]},
+                    timeout=4.0,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # Persistent dedupe markers so the `purchase` conversion fires exactly once per
 # Stripe session no matter which completion path confirms the sale first
 # (webhook, the /order/{id} polling fallback, or the digital /success page) and
@@ -5983,6 +6067,15 @@ def _track_purchase_once(
             "sku": rec["sku"],
             "source": rec["source"],               # so referred sales (any sku) are countable
         })
+    # Never feed a memorial-brand sale (LovedInWords/EverLoved) to Meta/Pinterest ad
+    # retargeting -- same principle as /success dropping the "feature on social" ask
+    # for that flow: building an ad audience off a grieving family's purchase is off-key
+    # regardless of platform. First-party revenue tracking (above) is unaffected.
+    if not products.is_memorial_channel(rec["source"]):
+        # session_id as the event_id: if a client-side pixel ALSO fires this same sale's
+        # Purchase event (see /success), Meta/Pinterest dedupe the two via that shared id
+        # instead of double-counting one sale as two conversions.
+        _social_capi_event(session_id, rec["amount_cents"], rec["currency"])
 
 
 @app.post("/webhook/stripe")
@@ -6527,6 +6620,7 @@ def success(job: str, session_id: str):
     if paid:
         _warm_digital_files(job)   # no-op if the webhook already started it or it is on disk
     fav_brand = "typortrait"   # favicon brand; set to the job's brand below (memorial skins)
+    show_ads = False   # Meta/Pinterest client pixel: never on for memorial, set below once paid+brand are known
     jq, sq = quote(job, safe=""), quote(session_id, safe="")
     png_url = f"/download?job={jq}&fmt=png&session_id={sq}"
     studio_href, studio_label = _make_another(job)   # 'make another' keeps the buyer's brand + name
@@ -6545,6 +6639,9 @@ def success(job: str, session_id: str):
         except Exception:  # noqa: BLE001
             _ref = ""
         is_memorial = _ref == "lovedinwords"
+        # Broader than is_memorial above (which only drives the tribute-video wording):
+        # everloved/keepsake are also memorial-channel refs and must never reach an ad pixel.
+        show_ads = not products.is_memorial_channel(_ref)
         fav_brand = _ref or "typortrait"
         _brand_name = _checkout_brand(_ref)["name"]   # display name: Paws in Words / Loved in Words / Faith in Words / Typortrait
         if is_memorial:
@@ -6747,6 +6844,7 @@ def success(job: str, session_id: str):
     page = (
         "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>" + _fav_links(fav_brand) +
+        (_tracking_scripts() if show_ads else "") +
         f"<title>{_checkout_brand(fav_brand)['name']} — your download</title><link rel='stylesheet' href='/static/inter.css'><style>"
         ":root{--navy:#0d1b3a;--muted:#6b7280;--line:#ece9e3}"
         "*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;"
@@ -6785,7 +6883,11 @@ def success(job: str, session_id: str):
         ".chk input{margin-top:3px;flex-shrink:0}"
         ".chk a{color:var(--navy)}"
         ".link-wrap{text-align:center;margin-top:14px}"
-        "</style></head><body><div class='card'>" + inner + "</div></body></html>"
+        "</style></head><body><div class='card'>" + inner + "</div>" +
+        (f"<script>window.addEventListener('load',function(){{"
+         f"if(window.trackPurchase)trackPurchase({products.price_for(products.get('digital'), False)[0] / 100:.2f},"
+         f"'{CURRENCY.upper()}','digital',{json.dumps(session_id)});}});</script>" if show_ads else "") +
+        "</body></html>"
     )
     return HTMLResponse(page)
 
