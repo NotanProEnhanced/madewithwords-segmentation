@@ -556,6 +556,15 @@ def _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W,
             # VALUE by the source photo's own local brightness there (normalized to the
             # iris region's own mean), so the catchlight, the pupil's dark core and the
             # iris's natural shading show through instead of one uniform color.
+            #
+            # TODO (deliberately deferred 2026-10-26, not a bug): even with this and the
+            # eyelid-hull clip above, the iris is physically small (roughly 25-50px across)
+            # next to the word scale everywhere else, so close pixel-level zoom still reads
+            # smoother than the rest of the piece -- a resolution limit, not a blend issue.
+            # The remaining lever, if ever wanted: force an even finer word size specifically
+            # inside the iris (smaller than today's finest detail tier) so more letters
+            # actually fit. That's a separate, untested change to the size-tier logic in
+            # _lf_detail_field, not attempted here -- revisit only on request.
             _ivraw = cv2.cvtColor(cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA),
                                   cv2.COLOR_BGR2HSV)[..., 2].astype(np.float32)
             _iris_px = iris_m > 0.1
