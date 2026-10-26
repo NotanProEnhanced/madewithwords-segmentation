@@ -239,6 +239,12 @@ _k("TYPO_PER_FACE", "on/off", "1",
    "Size the type per face in a group photo rather than one global scale.")
 _k("TYPO_FACE_DETAIL", "float", "0.95",
    "How strongly the face is forced to the fine tier.")
+_k("TYPO_TIERED_FACE", "on/off (on = 1/true/on/yes)", "",
+   "Prototype: blend the face-detail floor down to TYPO_FACE_MEDIUM with distance from "
+   "the features, so cheeks/forehead/jaw read a genuine medium tier instead of matching "
+   "the eyes/nose/lips exactly. Off by default; TYPO_FACE_DETAIL's flat floor is unchanged.")
+_k("TYPO_FACE_MEDIUM", "float", "0.60",
+   "TYPO_TIERED_FACE only: the detail-field target far from any feature (cheeks/forehead/jaw/ears).")
 _k("TYPO_GRADUATE_BODY", "on/off", "1",
    "Step the type down continuously below the chin and above the face so body and hair are not giant words.")
 _k("TYPO_GROUP_UNIFORM", "on/off", "1",

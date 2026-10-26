@@ -1373,12 +1373,22 @@ def _lf_detail_field(H, face_w, W, mask_of, mask01, fmh, fw, all_pts, graduate, 
     # 0.95 to match docker-compose.yml, which is what every container actually runs.
     # The code said 0.8 and the measured field came back at 0.95 all day.
     _fdt = float(_settings.raw("TYPO_FACE_DETAIL") or 0.95)
+    # TYPO_TIERED_FACE (default OFF, prototype): instead of one flat _fdt floor across the
+    # whole face, blend it down to TYPO_FACE_MEDIUM (default 0.60) with distance from the
+    # actual features (feat_norm, already a smooth 0..1 decay from eyes/nose/mouth) -- so
+    # cheeks/forehead/jaw/ears read as a genuine MEDIUM tier, clearly between the fine
+    # features and the large body, instead of matching the features exactly. Off by
+    # default: _face_target == _fdt everywhere reproduces the prior behavior bit-for-bit.
+    _tiered_face = (_settings.raw("TYPO_TIERED_FACE") or "").strip().lower() in ("1", "true", "on", "yes")
+    _face_med = float(_settings.raw("TYPO_FACE_MEDIUM") or 0.60)
+    _face_target = (_face_med + (_fdt - _face_med) * feat_norm) if _tiered_face else _fdt
     if _fdt > 0.0:
         # Detail mask = the TIGHT face interior (not the wide face_norm feather, so the chin/
         # jaw/cheekbones get the FULL lift right to the jawline) PLUS an estimated EAR region on
         # each side. MediaPipe has no ear landmarks, so anchor small ellipses just outside the
         # face's lateral extremes at eye level, kept on the subject via mask01. Lifting df here
-        # makes chin/jaw/cheeks/ears read as FINE type, clearly finer than the neck below.
+        # makes chin/jaw/cheeks/ears read as FINE type (or, tiered, a medium step toward it),
+        # clearly finer than the neck below.
         # Tight feather so the floor stays SOLID right to the jawline/chin (a wider feather
         # tapered the floor at the chin edge, so the chin read larger than the mid-face).
         _detail = np.clip(cv2.GaussianBlur(fmh.astype(np.float32), (0, 0), sigmaX=max(1.0, fw * 0.025)), 0, 1)
@@ -1393,10 +1403,11 @@ def _lf_detail_field(H, face_w, W, mask_of, mask01, fmh, fw, all_pts, graduate, 
                             (int(round(_fwi * 0.14)), int(round(_fhi * 0.24))), 0, 0, 360, 1.0, -1)
         _ears = np.clip(cv2.GaussianBlur(_ears, (0, 0), sigmaX=max(1.0, fw * 0.04)), 0, 1) * mask01
         _detail = np.clip(np.maximum(_detail, _ears), 0, 1)
-        # FLOOR: raise df to at least _fdt across the face+ears (feathered by _detail), so the
-        # ear/chin/cheeks are forced to fine no matter their starting size, while the features
-        # (already ~1) and the neck (_detail~0) are untouched.
-        df = np.maximum(df, _fdt * _detail)
+        # FLOOR: raise df to at least _face_target across the face+ears (feathered by
+        # _detail) -- the ear/chin/cheeks are forced up (to fine, or tiered to medium-toward-
+        # fine near features) no matter their starting size, while the features (already ~1)
+        # and the neck (_detail~0) are untouched here.
+        df = np.maximum(df, _face_target * _detail)
     # === Graduate body + hair type (default ON; TYPO_GRADUATE_BODY=0 reverts) =========
     # Beyond the face the detail field falls to ~0, so the neck/clothing AND the crown of
     # the hair render at the LARGEST tier (giant words). Ramp df UP with distance away from
@@ -1493,8 +1504,11 @@ def _lf_detail_field(H, face_w, W, mask_of, mask01, fmh, fw, all_pts, graduate, 
             df = np.clip(df + 0.40 * _crown + 0.55 * _above * _notface, 0, 1)
     # =================================================================================
     # #1 Forehead is a big smooth plane that large letters dominate -> push the type
-    # finer above the brow line so it stops shouting.
-    brows = [_p[i] for _p in all_pts for grp in ("Lbrow", "Rbrow") for i in _GROUPS[grp] if i < len(_p)]
+    # finer above the brow line so it stops shouting. In tiered mode the forehead is
+    # DELIBERATELY held at the medium floor (_face_target) instead, so this extra push
+    # (which fights that) is skipped there.
+    brows = [] if _tiered_face else [_p[i] for _p in all_pts for grp in ("Lbrow", "Rbrow")
+                                      for i in _GROUPS[grp] if i < len(_p)]
     if brows:
         brow_y = float(np.mean([b[1] for b in brows]))
         _yy = np.arange(H, dtype=np.float32)[:, None]
@@ -1503,10 +1517,11 @@ def _lf_detail_field(H, face_w, W, mask_of, mask01, fmh, fw, all_pts, graduate, 
     df = cv2.GaussianBlur(df, (0, 0), sigmaX=max(2.0, fw * 0.06))   # ease the size steps further
     # Re-assert the face-detail FLOOR after the smoothing: the blur above pulls the chin's
     # LOWER edge down toward the larger neck (so the chin bottom read bigger than the forehead).
-    # Locking the floor here keeps the whole face -- chin bottom + ears included -- at the fine
-    # tier, with the size step to the neck happening right at the jaw, not inside the chin.
+    # Locking the floor here keeps the whole face -- chin bottom + ears included -- at the
+    # fine tier (or, tiered, the medium-toward-fine target), with the size step to the neck
+    # happening right at the jaw, not inside the chin.
     if _fdt > 0.0:
-        df = np.maximum(df, _fdt * _detail)
+        df = np.maximum(df, _face_target * _detail)
     # #4 Highlights breathe: the brightest skin otherwise keeps full-size, dense type and reads
     # as a flat wash. Push df UP in the brightest ~30% of the face so the type there goes FINER
     # -- smaller, airier words let the highlight breathe instead of caking. Face only; strength
