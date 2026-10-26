@@ -483,12 +483,27 @@ def _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W,
     # `irises` (t_iris there only affects what's blended INTO the mask, not its shape),
     # so this reproduces the identical mask without touching the already-working
     # _lf_iris_circles call sites. None when EYE_PLAIN or no eyes resolved, as before.
+    #
+    # Clipped to the real eyelid hull (same convex hull of _GROUPS["Leye"]/"Reye"] the
+    # sclera mask above is built from, e.g. the "No typography in the sclera" block) --
+    # a raw, unclipped circle paints iris color past the lower lid margin into under-eye
+    # skin on an eye that isn't wide open (confirmed visually: the circle's bottom arc
+    # sits clearly below the photographed lower lid line). The iris's measured radius can
+    # exceed how much of it the eyelids actually expose.
     iris_m = None
     if irises:
         iris_m = np.zeros((H, W), np.float32)
         ir_mean = float(np.mean([r for _, _, r in irises]))
         for icx, icy, ir in irises:
             cv2.circle(iris_m, (int(round(icx)), int(round(icy))), int(round(ir)), 1.0, -1, cv2.LINE_AA)
+        hull_m = np.zeros((H, W), np.float32)
+        for _fp in _eye_face_pts:
+            for _k in ("Leye", "Reye"):
+                _p = np.array([_fp[_i] for _i in _GROUPS[_k] if _i < len(_fp)], np.int32)
+                if len(_p) >= 3:
+                    cv2.fillConvexPoly(hull_m, cv2.convexHull(_p), 1.0)
+        if hull_m.any():
+            iris_m = iris_m * hull_m
         iris_m = np.clip(cv2.GaussianBlur(iris_m, (0, 0), sigmaX=max(1.0, ir_mean * 0.18)), 0, 1)
     if irises and iris_m is not None and g["tone"] == "light" and ink in ("photo", "mono"):
         from .tonal import _iris_tint, _iris_tint_face
