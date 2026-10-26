@@ -459,7 +459,7 @@ def _lf_noir(ink, out, _t):
 
 
 def _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W, _iris_face_idx,
-                   out, gray, _eye_face_pts, pts, glint, fw, discovery, _hl, breathe):
+                   out, gray, _eye_face_pts, pts, glint, fw, discovery, _hl, breathe, irises):
     """Living eyes, color: glyphs inside the iris carry the person's TRUE eye.
 
     Moved verbatim out of render_displacement_portrait; the parameters are what the
@@ -477,7 +477,19 @@ def _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W,
     # unaffected (their gate is `irises or teeth`).
     if _settings.raw("TYPO_EYE_PLAIN").strip().lower() in ("1", "true", "on", "yes"):
         irises = []
-        iris_m = None
+    # iris_m: the same iris-circle mask _lf_iris_circles builds ("iris_m is reused below
+    # for the color blend" -- its own docstring), rebuilt here since the split of this
+    # block out of render_displacement_portrait never forwarded it. Depends only on
+    # `irises` (t_iris there only affects what's blended INTO the mask, not its shape),
+    # so this reproduces the identical mask without touching the already-working
+    # _lf_iris_circles call sites. None when EYE_PLAIN or no eyes resolved, as before.
+    iris_m = None
+    if irises:
+        iris_m = np.zeros((H, W), np.float32)
+        ir_mean = float(np.mean([r for _, _, r in irises]))
+        for icx, icy, ir in irises:
+            cv2.circle(iris_m, (int(round(icx)), int(round(icy))), int(round(ir)), 1.0, -1, cv2.LINE_AA)
+        iris_m = np.clip(cv2.GaussianBlur(iris_m, (0, 0), sigmaX=max(1.0, ir_mean * 0.18)), 0, 1)
     if irises and iris_m is not None and g["tone"] == "light" and ink in ("photo", "mono"):
         from .tonal import _iris_tint, _iris_tint_face
 
@@ -2628,7 +2640,7 @@ def render_displacement_portrait(
         _sst["P_low"] = np.asarray(out, np.float32).copy()
         _sst["al"] = np.asarray(al, np.float32)
     out = _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W,
-        _iris_face_idx, out, gray, _eye_face_pts, pts, glint, fw, discovery, _hl, breathe)
+        _iris_face_idx, out, gray, _eye_face_pts, pts, glint, fw, discovery, _hl, breathe, irises)
     out = _lf_noir(ink, out, _t)
     out, buf = _lf_finish(an, g, W, ground, fw, gray, mask01, out, _t, _cdump, h0, out_width,
         w0, backdrop, _floral_key, soft01, print_aspect, _cid, _mmean, sharp_st=_sst)
