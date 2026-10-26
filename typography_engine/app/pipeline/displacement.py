@@ -549,13 +549,44 @@ def _lf_eye_colour(g, _t, an, ink, _cdump, ground, al, limbal, scl, teeth, H, W,
             im3 = iris_m[..., None]
         if im3 is not None and tint is not None:
             tip = np.array(tint[1][::-1], np.float32)        # lifted RGB -> BGR
+            # A single flat tint across the whole iris reads as a smooth pasted disc, not
+            # part of the piece's word-woven texture -- every other tonal variation in this
+            # portrait comes from real structure (luminance -> ink density), the iris
+            # should too. Keep the gate-verified hue/saturation (tip), but modulate its
+            # VALUE by the source photo's own local brightness there (normalized to the
+            # iris region's own mean), so the catchlight, the pupil's dark core and the
+            # iris's natural shading show through instead of one uniform color.
+            _ivraw = cv2.cvtColor(cv2.resize(an.img.bgr, (W, H), interpolation=cv2.INTER_AREA),
+                                  cv2.COLOR_BGR2HSV)[..., 2].astype(np.float32)
+            _iris_px = iris_m > 0.1
+            _ivmean = float(_ivraw[_iris_px].mean()) if _iris_px.any() else 128.0
+            # A real iris's own brightness range is narrow (a catchlight and a pupil edge
+            # are the only sharp features; the rest is a soft gradient), so the raw ratio to
+            # the mean barely moves and the tint still reads as flat. Boost the swing around
+            # 1.0 before clamping -- TYPO_IRIS_TEXTURE, default 2.4 -- so that real but subtle
+            # structure actually shows instead of being lost to the eye at this scale.
+            _itx = float(_settings.raw("TYPO_IRIS_TEXTURE") or 2.4)
+            _ivratio = 1.0 + (_ivraw / max(_ivmean, 1.0) - 1.0) * _itx
+            _ivmod = np.clip(_ivratio, 0.25, 2.2)[..., None]
+            tip = np.clip(tip[None, None, :] * _ivmod, 0, 255)
             # The iris is composited over the GROUND, so wherever ink alpha is low the navy
             # ground (13,27,58 RGB -- a saturated dark blue) shows through and a correctly
-            # sampled BROWN iris renders BLUE. TYPO_IRIS_ALPHA floors the alpha inside the
-            # iris so the sampled color wins. 0 (default) keeps the previous behavior.
+            # sampled BROWN iris renders BLUE. TYPO_IRIS_ALPHA used to floor the alpha to
+            # fix that, but a flat floor (production ran 0.88) also erases the REAL per-
+            # letter alpha shape -- the one place in the whole piece with no visible word
+            # texture, reading as a smooth pasted disc rather than part of the weave.
+            #
+            # Floor against a DARKENED version of the tint itself instead of the ground:
+            # same hue family (no blue shift -- the problem TYPO_IRIS_ALPHA was solving),
+            # but now the real, unfloored glyph alpha decides opacity, so individual
+            # letters still read as shading within the iris, the way ink density carries
+            # tone everywhere else in the portrait.
             _ia = float(_settings.raw("TYPO_IRIS_ALPHA") or 0.0)
-            _ial = np.maximum(al, _ia) if _ia > 0.0 else al
-            iout = np.array(g["bg"], np.float32) * (1 - _ial) + tip * _ial
+            if _ia > 0.0:
+                _dark_tip = tip * max(0.15, 1.0 - _ia)
+                iout = _dark_tip * (1 - al) + tip * al
+            else:
+                iout = np.array(g["bg"], np.float32) * (1 - al) + tip * al
             out = out * (1.0 - im3) + iout * im3
         elif im3 is not None:
             # The tint gate rejected the sample -- most often a low-saturation BROWN iris in

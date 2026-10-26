@@ -305,6 +305,10 @@ _k("TYPO_IRIS_ALPHA", "float", "0",
    "Opacity of the tinted-iris paint in the eye synthesis.")
 _k("TYPO_IRIS_LIFT", "float", "1.35",
    "Brightness lift on the iris paint.")
+_k("TYPO_IRIS_TEXTURE", "float", "2.4",
+   "Boost on the gate-verified iris tint's per-pixel brightness swing around its own mean, "
+   "sourced from the real photo, so a real but subtle catchlight/shading shows through "
+   "instead of the tint reading as one flat color. 0 reverts to a flat tint.")
 _k("TYPO_IRIS_PER_FACE", "on = 1/true/on/yes", "",
    "Sample the iris colour per face rather than once per photo.")
 _k("TYPO_WORD_EYES", "on = 1/true/on/yes", "0",
