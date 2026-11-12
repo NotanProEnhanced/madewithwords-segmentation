@@ -311,6 +311,11 @@ _k("TYPO_IRIS_TEXTURE", "float", "2.4",
    "instead of the tint reading as one flat color. 0 reverts to a flat tint.")
 _k("TYPO_IRIS_PER_FACE", "on = 1/true/on/yes", "",
    "Sample the iris colour per face rather than once per photo.")
+_k("TYPO_WORD_SCALE_BASE", "float", "1.0",
+   "Global multiplier on the four text-size tiers, applied ON TOP OF the per-render "
+   "word_scale (studio/buyer choice) rather than replacing it -- a site-wide 'slightly "
+   "bigger type' turn, with the four tiers' ratios to each other untouched, so the "
+   "large-to-small gradation looks the same, just scaled. 1.0 = no change.")
 _k("TYPO_WORD_EYES", "on = 1/true/on/yes", "0",
    "Photo look: skip the photographic eye paste and build the eye from the synthetic layers.")
 _k("TYPO_EYE_PHOTO", "float", "1.0",

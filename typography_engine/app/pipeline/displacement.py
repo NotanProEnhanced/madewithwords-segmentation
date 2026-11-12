@@ -1677,7 +1677,8 @@ def _lf_text_tiers(s, word_scale, _ssn, rows, irises):
     # Clamped so a bad value cannot produce a canvas of one enormous letter or a render
     # that never finishes. 0.2 is finer than the studio's smallest offer, 3.0 coarser than
     # its largest.
-    _wsc = float(np.clip(float(word_scale or 1.0), 0.2, 3.0))
+    _wsc_base = float(_settings.raw("TYPO_WORD_SCALE_BASE") or 1.0)
+    _wsc = float(np.clip(float(word_scale or 1.0) * _wsc_base, 0.2, 3.0))
     t_large, t_mid, t_fine, t_micro = (rows(64 * s * _ssn * _wsc), rows(40 * s * _ssn * _wsc),
                                        rows(26 * s * _ssn * _wsc), rows(16 * s * _ssn * _wsc))
     # Fifth tier, scaled to the EYE rather than the face: even "micro" type spans
@@ -2491,7 +2492,8 @@ def render_displacement_portrait(
     # the iris rows; the four tiers it warps are replaced by the flow field. See flow_place.
     _flow_log, _flow_w = None, None
     if _flow.on():
-        _fsz = _flow.size_field(df, s, _ssn, float(np.clip(float(word_scale or 1.0), 0.2, 3.0)))
+        _fsz = _flow.size_field(df, s, _ssn, float(np.clip(
+            float(word_scale or 1.0) * float(_settings.raw("TYPO_WORD_SCALE_BASE") or 1.0), 0.2, 3.0)))
         _chin = max(float(_p[:, 1].max()) for _p in all_pts)
         if (_settings.raw("TYPO_FLOW_ZONE") or "hair").strip().lower() != "all":
             _flow_w = _flow.hair_zone(mask01, fmh, _chin, fw, W, H, gray,
